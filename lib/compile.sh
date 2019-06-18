@@ -71,6 +71,7 @@ compile::upgrade(){
 compile::conda() {
 	local insdir
 	compile::_parse -r insdir "$@"
+	shift $# # necessary for conda activate
 
 	commander::print "installing conda and tools"
 	{	mkdir -p $insdir/conda && \
