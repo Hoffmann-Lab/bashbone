@@ -37,15 +37,15 @@ options::checkopt(){
 		-l | --log) arg=true; LOG=$2;;
 		-s | --source) arg=true; mapfile -d ',' -t TOSOURCE <<< $2;;
 		-i | --install) arg=true; mapfile -d ',' -t INSTALL <<< $2;;
-		-*) echo ":ERROR: illegal option $1"; return 1;; 
-		*) echo ":ERROR: illegal option $2"; return 1;;
+		-*) commander::printerr "illegal option $1"; return 1;; 
+		*) commander::printerr "illegal option $2"; return 1;;
 	esac
 	$arg && {
-		[[ ! $2 ]] && echo ":ERROR: argument missing for option $1" && return 1
-		[[ "$2" =~ ^- ]] && echo ":ERROR: illegal argument $2 for option $1" && return 1
+		[[ ! $2 ]] && commander::printerr "argument missing for option $1" && return 1
+		[[ "$2" =~ ^- ]] && commander::printerr "illegal argument $2 for option $1" && return 1
 		return 0
 	} || {
-		[[ $2 ]] && [[ ! "$2" =~ ^- ]] && echo ":ERROR: illegal argument $2 for option $1" && return 1
+		[[ $2 ]] && [[ ! "$2" =~ ^- ]] && commander::printerr "illegal argument $2 for option $1" && return 1
 		return 0
 	}
 }

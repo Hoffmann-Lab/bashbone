@@ -2,10 +2,7 @@
 # (c) Konstantin Riege
 shopt -s extglob
 trap 'die' INT TERM
-#trap 'kill -PIPE 0' EXIT # kills parental processes as well - shlog conflict
-#trap 'kill -PIPE -- -$$' EXIT # kill all childs - works only if $$ is process group leader
-trap 'kill -PIPE $(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+") &> /dev/null' EXIT # parse pstree
-# AVOID DOUBLE FORKS -> run(){cmd &}; run & -> i.e. cmd gets new process group and cannot be killed
+trap 'kill -PIPE $(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+") &> /dev/null' EXIT
 
 die() {
 	echo -ne "\e[0;31m"
