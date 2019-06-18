@@ -5,7 +5,7 @@ compile::_usage(){
 	cat <<- EOF 
 		usage:
 			-i <path>    | installation base
-			-t <threads> | installation base
+			-t <threads> | number of
 	EOF
 	return 0
 }
@@ -17,17 +17,19 @@ compile::_parse(){
 		case $arg in
 			r)	((++mandatory)); _insdir_parse=$OPTARG;;
 			s)	((++mandatory)); _threads_parse=$OPTARG;;
-			i)	((++mandatory)); _insdir_parse=$OPTARG;;
+			i)	((++mandatory)); _insdir_parse="$OPTARG";;
 			t)	((++mandatory)); _threads_parse=$OPTARG;;
 			*)	compile::_usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && { compile::_usage; return 1; }
+	[[ $mandatory -lt 4 ]] && { compile::_usage; return 1; }
+
+	return 0
 }
 
 compile::all(){
 	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads "$@" || return 1
 
 	{	compile::bashbone -i "$insdir" -t $threads && \
 		compile::conda -i "$insdir" -t $threads && \
