@@ -26,7 +26,7 @@ compile::all(){
 	local insdir
 	compile::_parse -r insdir "$@"
 
-	{	compile::src -i "$insdir" && \
+	{	compile::bashbone -i "$insdir" && \
 		compile::conda -i "$insdir" && \
 		compile::java -i "$insdir" && \
 		compile::perlmodules -i "$insdir" && \
@@ -44,17 +44,16 @@ compile::all(){
 	return 0
 }
 
-compile::src() {
+compile::bashbone() {
 	local insdir
 	compile::_parse -r insdir "$@"
 
-	commander::print "installing src"
-	{	mkdir -p $insdir/src && \
-		cp -r "$(readlink -e $(dirname $0))"/* $insdir/src && \
-		mkdir -p $insdir/latest && \
-		ln -sfn $insdir/src $insdir/latest/src
+	commander::print "installing bashbone"
+	{	mkdir -p "$insdir/bashbone-$VERSION" && \
+		cp -r "$(readlink -e $(dirname $0))"/* "$insdir/bashbone-$VERSION" && \
+		mkdir -p "$insdir/latest" && \
+		ln -sfn "$insdir/bashbone-$VERSION" "$insdir/latest/bashbone"
 	} || return 1
-
 	return 0
 }
 
@@ -62,8 +61,7 @@ compile::upgrade(){
 	local insdir
 	compile::_parse -r insdir "$@"
 
-	compile::src -i "$insdir" || return 1
-
+	compile::bashbone -i "$insdir" || return 1
 	return 0
 }
 

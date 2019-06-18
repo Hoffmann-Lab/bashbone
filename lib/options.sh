@@ -8,6 +8,7 @@ options::usage(){
 
 		OPTIONS
 		-i | --install [all|upgrade|[<tool>,..]] : install into given directory
+		-s | --source [path,..]                  : source file(s) to overload functions
 		-d | --directory [path]                  : installation path 
 		-t | --threads [value]                   : threads - predicted default: $THREADS
 		-l | --log [path]                        : log file - default: [-d]/install.log
@@ -21,7 +22,6 @@ options::usage(){
 	exit 0
 }
 
-
 options::checkopt(){
 	local arg=false
 	case $1 in
@@ -30,6 +30,7 @@ options::checkopt(){
 		-d | --directory) arg=true; INSDIR="$2";;
 		-t | --threads) arg=true; THREADS=$2;;
 		-l | --log) arg=true; LOG=$2;;
+		-s | --source) arg=true; mapfile -d ',' -t TOSOURCE <<< $2;;
 		-i | --install) arg=true; mapfile -d ',' -t INSTALL <<< $2;;
 		-*) echo ":ERROR: illegal option $1"; return 1;; 
 		*) echo ":ERROR: illegal option $2"; return 1;;
