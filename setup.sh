@@ -38,7 +38,7 @@ commander::print "installation started. please be patient." | tee $LOG || die "c
 progress::log -v $VERBOSITY -o $LOG
 
 for i in ${INSTALL[@]}; do # do not quote!! mapfile appends newline to last element
-	compile::$i -i $INSDIR -t $THREADS #&>> $LOG || die 
+	compile::$i -i $INSDIR -t $THREADS &>> $LOG || die 
 done
 
 commander::print "success"
