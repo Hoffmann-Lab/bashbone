@@ -27,8 +27,8 @@ configure::environment(){
 	export JAVA_HOME=$(ls -vd $insdir/jdk*/ | tail -1)
 	export MALLOC_ARENA_MAX=4
 	
-	export PATH=$(readlink -e $insdir/bin/* | xargs -echo | sed 's/ /:/g'):$PATH
-	export PATH=$(readlink -e $insdir/bin/*/scripts | xargs -echo | sed 's/ /:/g'):$PATH
+	export PATH=$(readlink -e $insdir/latest/* | xargs -echo | sed 's/ /:/g'):$PATH
+	export PATH=$(readlink -e $insdir/latest/*/scripts | xargs -echo | sed 's/ /:/g'):$PATH
 
 	return 0
 }
