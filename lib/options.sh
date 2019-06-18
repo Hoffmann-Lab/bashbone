@@ -3,12 +3,6 @@
 
 options::usage(){
 	cat <<- EOF
-		DESCRIPTION
-		setup bashbone and basic tools
-
-		VERSION
-		$VERSION
-
 		SYNOPSIS
 		$(basename $0) -i [all|upgrade|[<tool>,..]] -d [path]
 

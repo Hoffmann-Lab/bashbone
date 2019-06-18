@@ -1,4 +1,4 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-VERSION=0.1.0
+version=0.1.1
