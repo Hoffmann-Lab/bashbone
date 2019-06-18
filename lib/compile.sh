@@ -48,11 +48,14 @@ compile::bashbone() {
 	local insdir
 	compile::_parse -r insdir "$@"
 
+	local version 
+	source "$(readlink -e $(dirname $0))"/lib/version.sh
+
 	commander::print "installing bashbone"
-	{	mkdir -p "$insdir/bashbone-$VERSION" && \
-		cp -r "$(readlink -e $(dirname $0))"/* "$insdir/bashbone-$VERSION" && \
+	{	mkdir -p "$insdir/bashbone-$version" && \
+		cp -r "$(readlink -e $(dirname $0))"/* "$insdir/bashbone-$version" && \
 		mkdir -p "$insdir/latest" && \
-		ln -sfn "$insdir/bashbone-$VERSION" "$insdir/latest/bashbone"
+		ln -sfn "$insdir/bashbone-$version" "$insdir/latest/bashbone"
 	} || return 1
 	return 0
 }

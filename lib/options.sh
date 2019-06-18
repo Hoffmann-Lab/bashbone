@@ -10,15 +10,16 @@ options::usage(){
 		$(basename $0) -i [all|upgrade|[<tool>,..]] -d [path]
 
 		OPTIONS
-		-i | --install [all|upgrade|[<tool>,..]] : install into given directory
-		-d | --directory [path]                  : installation path 
-		-t | --threads [value]                   : threads - predicted default: $THREADS
-		-l | --log [path]                        : log file - default: [-d]/install.log
-		-v | --verbose                           : enable verbose mode
-		-h | --help                              : prints this message
+		-i | --install [all|upgrade] : install into given directory
+		-d | --directory [path]      : installation path 
+		-t | --threads [value]       : threads - predicted default: $THREADS
+		-l | --log [path]            : log file - default: [-d]/install.log
+		-v | --verbose               : enable verbose mode
+		-h | --help                  : prints this message
 
 		DEVELOPER OPTIONS
-		-s | --source [path,..]                  : source file(s) to overload functions
+		-s | --source [path,..]      : source file(s) to overload functions
+		-i | --install [<tool>,..]   : install into given directory
 
 		REFERENCES
 		(c) Konstantin Riege
