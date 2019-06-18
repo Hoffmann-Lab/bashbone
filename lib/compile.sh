@@ -4,18 +4,21 @@
 compile::_usage(){
 	cat <<- EOF 
 		usage:
-			-i <path> | installation base
+			-i <path>    | installation base
+			-t <threads> | installation base
 	EOF
 	return 0
 }
 
 compile::_parse(){
 	local OPTIND arg mandatory 
-	declare -n _insdir_parse
-	while getopts 'v:r:i:' arg; do
+	declare -n _insdir_parse _threads_parse
+	while getopts 'r:s:i:t:' arg; do
 		case $arg in
 			r)	((++mandatory)); _insdir_parse=$OPTARG;;
+			s)	((++mandatory)); _threads_parse=$OPTARG;;
 			i)	((++mandatory)); _insdir_parse=$OPTARG;;
+			t)	((++mandatory)); _threads_parse=$OPTARG;;
 			*)	compile::_usage; return 1;;
 		esac
 	done
@@ -23,30 +26,30 @@ compile::_parse(){
 }
 
 compile::all(){
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
-	{	compile::bashbone -i "$insdir" && \
-		compile::conda -i "$insdir" && \
-		compile::java -i "$insdir" && \
-		compile::perlmodules -i "$insdir" && \
-		compile::sortmerna -i "$insdir" && \
-		compile::segemehl -i "$insdir" && \
-		compile::dexseq -i "$insdir" && \
-		compile::wgcna -i "$insdir" && \
-		compile::dgca -i "$insdir" && \
-		compile::revigo -i "$insdir" && \
-		compile::gem -i "$insdir" && \
-		compile::idr -i "$insdir" && \
-		compile::knapsack -i "$insdir"
+	{	compile::bashbone -i "$insdir" -t $threads && \
+		compile::conda -i "$insdir" -t $threads && \
+		compile::java -i "$insdir" -t $threads && \
+		compile::perlmodules -i "$insdir" -t $threads && \
+		compile::sortmerna -i "$insdir" -t $threads && \
+		compile::segemehl -i "$insdir" -t $threads && \
+		compile::dexseq -i "$insdir" -t $threads && \
+		compile::wgcna -i "$insdir" -t $threads && \
+		compile::dgca -i "$insdir" -t $threads && \
+		compile::revigo -i "$insdir" -t $threads && \
+		compile::gem -i "$insdir" -t $threads && \
+		compile::idr -i "$insdir" -t $threads && \
+		compile::knapsack -i "$insdir" -t $threads
 	} || return 1
 
 	return 0
 }
 
 compile::bashbone() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	local version 
 	source "$(readlink -e $(dirname $0))"/lib/version.sh
@@ -61,16 +64,16 @@ compile::bashbone() {
 }
 
 compile::upgrade(){
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
-	compile::bashbone -i "$insdir" || return 1
+	compile::bashbone -i "$insdir" -t $threads || return 1
 	return 0
 }
 
 compile::conda() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 	shift $# # necessary for conda activate
 
 	commander::print "installing conda and tools"
@@ -136,8 +139,8 @@ compile::conda() {
 # Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); install.packages('~/src.tar.gz', repos = NULL, type = 'source')"
 
 compile::java() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing java"
 	{	url="http://download.oracle.com/otn-pub/java/jdk/11.0.2+9/f51449fcd52f4d52b93a989c5c56ed3c/jdk-11.0.2_linux-x64_bin.tar.gz" && \
@@ -191,8 +194,8 @@ compile::_javawrapper() {
 }
 
 compile::perlmodules() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing perl modules"
 	{	source $insdir/conda/bin/activate py2 && \
@@ -207,8 +210,8 @@ compile::perlmodules() {
 }
 
 compile::sortmerna() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing sortmerna"
 	{	source $insdir/conda/bin/activate py2 && \
@@ -227,15 +230,15 @@ compile::sortmerna() {
 
 	for i in rRNA_databases/*.fasta; do
 		o=index/$(basename $i .fasta)-L18
-		echo -ne "bin/indexdb_rna --ref $i,$o -m $memory -L 18\0"
+		echo -ne "bin/indexdb_rna --ref $i,$o -m 4096 -L 18\0"
 	done | xargs -0 -P $threads -I {} bash -c {} || return 1
 
 	return 0
 }
 
 compile::sortmerna_new_buggy() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing sortmerna"
 	{	source $insdir/conda/bin/activate py2 && \
@@ -260,8 +263,8 @@ compile::sortmerna_new_buggy() {
 }
 
 compile::segemehl () {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing segemehl"
 	{	source $insdir/conda/bin/activate py2 && \
@@ -300,8 +303,8 @@ compile::segemehl () {
 }
 
 compile::dexseq() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing dexseq"
 	{	source $insdir/conda/bin/activate py2 && \
@@ -322,8 +325,8 @@ compile::dexseq() {
 }
 
 compile::wgcna() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing wgcna"
 	{	source $insdir/conda/bin/activate py2r && \
@@ -334,8 +337,8 @@ compile::wgcna() {
 }
 
 compile::dgca() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing dgca"
 	{	source $insdir/conda/bin/activate py2r && \
@@ -346,8 +349,8 @@ compile::dgca() {
 }
 
 compile::revigo() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing revigo"
 	{	source $insdir/conda/bin/activate py2 && \
@@ -362,8 +365,8 @@ compile::revigo() {
 }
 
 compile::gem() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing gem"
 	{	source $insdir/conda/bin/activate py2 && \
@@ -383,8 +386,8 @@ compile::gem() {
 }
 
 compile::idr() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing idr"
 	{	source $insdir/conda/bin/activate py3 && \
@@ -403,8 +406,8 @@ compile::idr() {
 }
 
 compile::knapsack(){
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing knapsack"
 	{	source $insdir/conda/bin/activate py2r && \
@@ -417,8 +420,8 @@ compile::knapsack(){
 ### OLD STUFF
 
 compile::m6aviewer() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing m6aviewer"
 	{	source $insdir/conda/bin/activate py2 && \
@@ -435,8 +438,8 @@ compile::m6aviewer() {
 }
 
 compile::metpeak() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing metpeak"
 	{	source $insdir/conda/bin/activate py2r && \
@@ -447,8 +450,8 @@ compile::metpeak() {
 }
 
 compile::zerone() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing zerone"
 	{	source $insdir/conda/bin/activate py2 && \
@@ -468,8 +471,8 @@ compile::zerone() {
 }
 
 compile::dpgpc() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing dp_gp_cluster"
 	{	source $insdir/conda/bin/activate py2 && \
@@ -495,8 +498,8 @@ compile::dpgpc() {
 }
 
 compile::webgestalt() {
-	local insdir
-	compile::_parse -r insdir "$@"
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing webgestalt"
 	{	source $insdir/conda/bin/activate py2r && \
