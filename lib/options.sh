@@ -3,17 +3,22 @@
 
 options::usage(){
 	cat <<- EOF
+		DESCRIPTION
+		setup routine
+
 		SYNOPSIS
 		$(basename $0) -i [all|upgrade|[<tool>,..]] -d [path]
 
 		OPTIONS
 		-i | --install [all|upgrade|[<tool>,..]] : install into given directory
-		-s | --source [path,..]                  : source file(s) to overload functions
 		-d | --directory [path]                  : installation path 
 		-t | --threads [value]                   : threads - predicted default: $THREADS
 		-l | --log [path]                        : log file - default: [-d]/install.log
 		-v | --verbose                           : enable verbose mode
 		-h | --help                              : prints this message
+
+		DEVELOPER OPTIONS
+		-s | --source [path,..]                  : source file(s) to overload functions
 
 		REFERENCES
 		(c) Konstantin Riege
@@ -25,7 +30,7 @@ options::usage(){
 options::checkopt(){
 	local arg=false
 	case $1 in
-		-h | --help) usage;;
+		-h | --help) options::usage;;
 		-v | --verbose) VERBOSITY=2;;
 		-d | --directory) arg=true; INSDIR="$2";;
 		-t | --threads) arg=true; THREADS=$2;;
