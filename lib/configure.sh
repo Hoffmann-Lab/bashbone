@@ -126,9 +126,9 @@ configure::jvm(){
 	[[ $instances -gt $threads ]] && instances=$threads
 	[[ $instances -gt $maxinstances ]] && instances=$maxinstances
 
-	ithreads=$((maxthreads/instances))	
+	ithreads=$((maxthreads/instances))
 	jmem=$((maxmemory/instances))
-	[[ $jmem -gt $memory ]] && jmem=$memory
+	[[ $memory -gt 1 ]] && [[ $jmem -gt $memory ]] && jmem=$memory
 	jgct=$(((3+5*ithreads/8)/instances))
 	[[ $jgct -eq 0 ]] && jgct=1
 	jcgct=$((jgct/4))

@@ -223,10 +223,6 @@ preprocess::trimmomatic() {
 	declare -a a
 	mapfile -t < <(commander::runcmd -t $threads -a cmd1)
 	for l in "${MAPFILE[@]}"; do
-		# mapfile is inserting whitespace here
-		# mapfile -d ' ' -t <<< $l
-		# echo ${MAPFILE[@]}"x"${MAPFILE[0]}
-		# -> "/my/file x0"
 		a=($l)
 		phred["${a[@]:1}"]="${a[0]}"
 	done

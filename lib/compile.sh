@@ -11,7 +11,7 @@ compile::_usage(){
 }
 
 compile::_parse(){
-	local OPTIND arg mandatory 
+	local OPTIND arg mandatory
 	declare -n _insdir_parse _threads_parse
 	while getopts 'r:s:i:t:' arg; do
 		case $arg in

@@ -67,10 +67,6 @@ quantify::featurecounts() {
 			conda activate py3 && \
 			mapfile -t < <(commander::runcmd -t $threads -a cmd2)
 			for l in "${MAPFILE[@]}"; do
-				# mapfile is inserting whitespace here
-				# mapfile -d ' ' -t <<< $l
-				# echo ${MAPFILE[@]}"x"${MAPFILE[0]}
-				# -> "/my/file x0"
 				a=($l)
 				strandness["${a[@]:1}"]="${a[0]}"
 			done
