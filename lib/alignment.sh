@@ -71,8 +71,8 @@ alignment::segemehl() {
 
 	# read not properly paired - additional tag:
 	# YI:i:0 (orientation)
-	# YI:i:1 (laenge)
-	# YI:i:2 (orientation + laenge)
+	# YI:i:1 (insertsize)
+	# YI:i:2 (orientation + insertsize)
 	# YI:i:3 (chimeric)
 	# for splice site detection use $o.sngl.bed
 	declare -a cmd1
@@ -80,7 +80,7 @@ alignment::segemehl() {
 	for i in "${!_fq1_segemehl[@]}"; do
 		helper::basename -f "${_fq1_segemehl[$i]}" -o o -e e
 		o="$outdir/$o.bam"
-        $nosplitaln && params='' || params="-S $o" #segemehl trims suffix
+        $nosplitaln && params='' || params="-S $o " #segemehl trims suffix
 		[[ $accuracy ]] && params+="-A $accuracy "
 		if [[ ${_fq2_segemehl[$i]} ]]; then
 			[[ $insertsize ]] && params+="-I $insertsize "
