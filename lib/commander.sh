@@ -157,7 +157,7 @@ commander::runcmd(){
 		esac
 	done
 
-	return 1
+	_usage; return 1
 }
 
 commander::_test(){
