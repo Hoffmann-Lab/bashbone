@@ -519,7 +519,6 @@ alignment::slice(){
 
 	local tdir f i chrs o
 	declare -a cmd1 cmd2 cmd3
-	conda activate py2r
 	for m in "${_mapper_slice[@]}"; do
 		declare -n _bams_slice=$m
 		tdir="$tmpdir/$m"
@@ -564,7 +563,7 @@ alignment::slice(){
 			_bamslices_slice["$f"]="$o.slices.info"
 
 			i=0
-			mapfile -t < <(commander::runcmd -t 1 -a cmd1)
+			mapfile -t < <(conda activate py2r &>/dev/null && commander::runcmd -a cmd1)
 			for chrs in "${MAPFILE[@]}"; do
 				((++i))
 				echo "$o.slice$i.bam" >> "$o.slices.info"
@@ -584,15 +583,12 @@ alignment::slice(){
 			done
 		done
 	done
-	conda activate py2
 
 	$skip && {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	} || {
-		{	conda activate py2r && \
-			commander::runcmd -v -b -t $instances -a cmd2 && \
-			conda activate py2 && \
+		{	commander::runcmd -v -b -t $instances -a cmd2 && \
 			commander::runcmd -v -b -t $instances -a cmd3
 		} || { 
 			commander::printerr "$funcname failed"

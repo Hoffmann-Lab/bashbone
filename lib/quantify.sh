@@ -109,7 +109,9 @@ quantify::featurecounts() {
 	$skip && {
 		commander::printcmd -a cmd3
 	} || {
-		{	commander::runcmd -v -b -t $instances -a cmd3
+		{	conda activate py2r && \
+			commander::runcmd -v -b -t $instances -a cmd3 && \
+			conda activate py2
 		} || {
 			commander::printerr "$funcname failed"
 			return 1
