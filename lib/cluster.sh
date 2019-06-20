@@ -8,6 +8,7 @@ cluster::coexpression(){
 			$funcname usage: 
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
+			-f <value>    | filter cluster for 0|1|2|3
 			-t <threads>  | number of
 			-m <memory>   | amount of
 			-c <cmpfiles> | array of
@@ -21,12 +22,13 @@ cluster::coexpression(){
 		return 0
 	}
 
-	local OPTIND arg mandatory skip=false threads memory outdir tmpdir deseqdir countsdir
+	local OPTIND arg mandatory skip=false threads memory outdir tmpdir deseqdir countsdir clusterfilter=0
 	declare -n _mapper_coexpression _cmpfiles_coexpression _idfiles_coexpression
-	while getopts 'S:s:t:m:c:r:p:i:j:o:z:' arg; do
+	while getopts 'S:s:f:t:m:c:r:p:i:j:o:z:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
+			f) clusterfilter=$OPTARG;;
 			t) ((mandatory++)); threads=$OPTARG;;
 			m) ((mandatory++)); memory=$OPTARG;;
 			c) ((mandatory++)); _cmpfiles_coexpression=$OPTARG;;
@@ -74,7 +76,7 @@ cluster::coexpression(){
 		mv $tdir/joined $odir/experiments.deseq.tsv
 
 		# filter joined deseq tables requiers padj >0 due to NA replacement
-		perl -F'\t' -lane '
+		perl -F'\t' -slane '
 			$okmean=0;
 			$okfc=0;
 			$okpval=0;
@@ -83,8 +85,8 @@ cluster::coexpression(){
 				$okfc=1 if exists $F[$i+4] && abs(abs($F[$i+1])-abs($F[$i+4]))>=0.5;
 				$okpval=1 if $F[$i+2] > 0 && $F[$i+2] <= 0.05;
 			}
-			print $F[0] if ('$clusterfilter' =~ /(2|3)$/ ) || ('$clusterfilter' =~ /0$/ && $okpval == 1) || ('$clusterfilter' =~ /1$/ && $okmean+$okfc+$okpval == 3);
-		' "$odir/experiments.deseq.tsv" > "$odir/experiments.filtered.genes"
+			print $F[0] if ($cf =~ /(2|3)$/ ) || ($cf =~ /0$/ && $okpval == 1) || ($cf =~ /1$/ && $okmean+$okfc+$okpval == 3);
+		' -- -cf=$clusterfilter "$odir/experiments.deseq.tsv" > "$odir/experiments.filtered.genes"
 
 		for e in tpm vsc; do
 			[[ ! -s "$cdir/experiments.$e" ]] && continue
