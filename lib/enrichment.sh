@@ -239,6 +239,7 @@ enrichment::_revigo(){
 		'
 	CMD
 
+	# don't to 10**(-df$log10_p.value), values will get too small and treemap will fail
 	commander::makecmd -a _cmds2_revigo -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
 			suppressMessages(library("treemap"));
@@ -247,13 +248,12 @@ enrichment::_revigo(){
 			outf <- args[2];
 			domain <- args[3];
 			df <- read.table(revigo, header=T, sep="\t");
+			df$log10_p.value = -(df$log10_p.value);
 			df <- df[df$dispensability<0.7,];
-			df$log10_p.value = 10**abs(df$log10_p.value);
 			pdf(outf, width=16, height=9);
-			treemap(df, index = "description", vSize = "log10_p.value",
-				type = "categorical", vColor = "representative", title = domain,
-				inflate.labels = T, lowerbound.cex.labels = 0, force.print.labels = T,
-				position.legend = "none");
+			treemap(df, index = "description", vSize = "log10_p.value", type = "categorical",
+				vColor = "representative", title = domain, inflate.labels = T,
+				lowerbound.cex.labels = 0, force.print.labels = T, position.legend = "none");
 			graphics.off();
 		'
 	CMD
@@ -274,13 +274,12 @@ enrichment::_revigo(){
 			df <- read.table(revigo,header=T,sep="\t");
 			df <- merge(df,c,by="term_ID");
 			df$description <- paste(df$description," ","(",df$count,")", sep="");
-			df$log10_p.value = 10**abs(df$log10_p.value);
-			df=df[order(-df$log10_p.value),];
+			df=df[order(df$log10_p.value),];
 			df=head(df,min(minbars,nrow(df)));
 			pdf(outf,width=max(nchar(df$description))/5,height=min(minbars,nrow(df))/2+1.8);
 			par(mar=c(5,max(nchar(df$description))/3+3,5,1));
-			barplot(rev(df$log10_p.value), main=domain, horiz=T, names.arg=rev(df$description),
-				xlim=c(0, 100), xlab="-log10 p-value", col=rainbow(9)[1],
+			barplot(rev(-(df$log10_p.value)), main=domain, horiz=T, names.arg=rev(df$description),
+				xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(df$log10_p.value)+5)),
 				cex.names=0.8, las=1);
 			graphics.off();
 		'

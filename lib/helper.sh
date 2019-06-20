@@ -181,7 +181,6 @@ helper::_print(){
 
 helper::_println(){
 	declare -n __=$1
-	local e
 	printf '%s\n' "${__[@]}"
 }
 
