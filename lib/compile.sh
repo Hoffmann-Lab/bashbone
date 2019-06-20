@@ -122,7 +122,7 @@ compile::conda() {
 		conda install -y --override-channels -c iuc -c bioconda -c main -c conda-forge -c defaults -c quantstack \
 			r-devtools bioconductor-biocinstaller bioconductor-biocparallel \
 			bioconductor-genomicfeatures bioconductor-genefilter \
-			subread r-wgcna bioconductor-deseq2 bioconductor-dexseq bioconductor-clusterprofiler && \
+			subread r-wgcna bioconductor-deseq2 bioconductor-dexseq bioconductor-gseabase bioconductor-clusterprofiler && \
 		conda install -y --override-channels -c iuc -c bioconda -c main -c conda-forge -c defaults -c quantstack \
 			r-dplyr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-ggpubr r-treemap r-rngtools && \
 		conda clean -y -a && \

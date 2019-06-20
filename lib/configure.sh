@@ -23,6 +23,7 @@ configure::environment(){
 	commander::print "setting up environment"
 
 	shopt -s extglob
+	shopt -s expand_aliases
 
 	export JAVA_HOME=$(ls -vd $insdir/jdk*/ | tail -1)
 	export MALLOC_ARENA_MAX=4
