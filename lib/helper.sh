@@ -157,138 +157,138 @@ helper::addmemberfunctions(){
 }
 
 helper::_push(){
-	declare -n __=$1
+	declare -n __="$1"
 	__+=("$2")
 }
 
 helper::_pop(){
-	declare -n __=$1
+	declare -n __="$1"
 	__=("${__[@]:0:$((${#__[@]}-1))}")
 }
 
 helper::_slice(){
-	declare -n __=$1
+	declare -n __="$1"
 	__=("${__[@]:$2:$3}")
 }
 
 helper::_shift(){
-	declare -n __=$1
+	declare -n __="$1"
 	__=("${__[@]:1}")
 }
 
 helper::_print(){
-	declare -n __=$1
+	declare -n __="$1"
 	echo ${__[*]}
 }
 
 helper::_println(){
-	declare -n __=$1
+	declare -n __="$1"
 	printf '%s\n' "${__[@]}"
 }
 
 helper::_uc(){
-	declare -n __=$1
+	declare -n __="$1"
 	__=("${__[@]^^${2:-*}}")
 }
 
 helper::_ucfirst(){
-	declare -n __=$1
+	declare -n __="$1"
 	__=("${__[@]^${2:-*}}")
 }
 
 helper::_lc(){
-	declare -n __=$1
+	declare -n __="$1"
 	__=("${__[@],,${2:-*}}")
 }
 
 helper::_lcfirst(){
-	declare -n __=$1
+	declare -n __="$1"
 	__=("${__[@],${2:-*}}")
 }
 
 helper::_sum(){
-	declare -n __=$1
-	echo $((${__[@]/%/+}0))
+	declare -n __="$1"
+	__=$(("${__[@]/%/+}"0))
 }
 
 helper::_trimsuffixfirst(){
-	declare -n __=$1
-	__=("${__[@]%$2*}")
+	declare -n __="$1"
+	__=("${__[@]%"$2"*}")
 }
 
 helper::_trimsuffix(){
-	declare -n __=$1
-	__=("${__[@]%%$2*}")
+	declare -n __="$1"
+	__=("${__[@]%%"$2"*}")
 }
 
 helper::_trimprefixfirst(){
-	declare -n __=$1
-	__=("${__[@]#*$2}")
+	declare -n __="$1"
+	__=("${__[@]#*"$2"}")
 }
 
 helper::_trimprefix(){
-	declare -n __=$1
-	__=("${__[@]##*$2}")
+	declare -n __="$1"
+	__=("${__[@]##*"$2"}")
 }
 
 helper::_substring(){
-	declare -n __=$1
+	declare -n __="$1"
 	local i
 	for i in "${!__[@]}"; do
-		__[$i]=${__[$i]:$2:$3}
+		__[$i]="${__[$i]:$2:$3}"
 	done
 }
 
 helper::_replace(){
-	declare -n __=$1
-	__=("${__[@]/${2:-*}/$3}")
+	declare -n __="$1"
+	__=("${__[@]/${2:-*}/"$3"}")
 }
 
 helper::_replaceprefix(){
-	declare -n __=$1
-	__=("${__[@]/#${2:-*}/$3}")
+	declare -n __="$1"
+	__=("${__[@]/#${2:-*}/"$3"}")
 }
 
 helper::_replacesuffix(){
-	declare -n __=$1
-	__=("${__[@]/${2:-*}%/$3}")
+	declare -n __="$1"
+	__=("${__[@]/${2:-*}%/"$3"}")
 }
 
 helper::_uniq(){
-	declare -n __=$1
+	declare -n __="$1"
 	declare -A ___
 	local i
 	for i in "${!__[@]}"; do
-		___[${__[$i]}]=1
+		___["${__[$i]}"]=1
 	done
 	__=("${!___[@]}")
 }
 
 helper::_sort(){
-	declare -n __=$1
+	declare -n __="$1"
 	mapfile -t __ < <(printf '%s\n' "${__[@]}" | sort -V)
 }
 
 helper::_basename(){
-	declare -n __=$1
+	declare -n __="$1"
 	local i
 	for i in "${!__[@]}"; do
-		${__[$i]}=$(basename ${__[$i]} $2)
+		${__[$i]}="$(basename "${__[$i]}" "$2")"
 	done
 }
 
 helper::_dirname(){
-	declare -n __=$1
+	declare -n __="$1"
 	local i
 	for i in "${!__[@]}"; do
-		${__[$i]}=$(dirname ${__[$i]})
+		${__[$i]}="$(dirname "${__[$i]}")"
 	done
 }
 
 helper::_test(){
 	declare -a arr
 	helper::addmemberfunctions -v arr
-	arr.push "foo foo"
+	arr.push "f.o.o f.o.o"
 	arr.push bar
 	arr.push zar
 	arr.print
