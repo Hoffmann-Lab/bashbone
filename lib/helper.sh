@@ -110,7 +110,7 @@ helper::basename(){
 	return 0
 }
 
-helper::loadaliases(){
+helper::addmemberfunctions(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
 		commander::printerr {COMMANDER[0]}<<- EOF
@@ -122,13 +122,13 @@ helper::loadaliases(){
 	local OPTIND arg mandatory var
 	while getopts 'v:' arg; do
 		case $arg in
-			v)	mandatory=1; var=$OPTARG;;
+			v)	mandatory=1; var=$(printf '%q' "$OPTARG");;
 			*)	_usage;	return 1;;
 		esac
 	done
 	[[ ! $mandatory ]] && _usage && return 1
 
-	__=$(printf '%q' ${1})
+	shopt -s expand_aliases
 	eval "alias $var.push='helper::_push $var'"
 	eval "alias $var.pop='helper::_pop $var'"
 	eval "alias $var.slice='helper::_slice $var'"
@@ -140,16 +140,18 @@ helper::loadaliases(){
 	eval "alias $var.lc='helper::_lc $var'"
 	eval "alias $var.lcfist='helper::_lcfirst $var'"
 	eval "alias $var.sum='helper::_sum $var'"
-	eval "alias $var.prefix='helper::_prefix $var'"
-	eval "alias $var.prefixfirst='helper::_prefixfirst $var'"
-	eval "alias $var.suffix='helper::_suffix $var'"
-	eval "alias $var.suffixfirst='helper::_suffixfirst $var'"
+	eval "alias $var.trimprefix='helper::_prefix $var'"
+	eval "alias $var.trimprefixfirst='helper::_prefixfirst $var'"
+	eval "alias $var.trimsuffix='helper::_suffix $var'"
+	eval "alias $var.trimsuffixfirst='helper::_suffixfirst $var'"
 	eval "alias $var.substring='helper::_substring $var'"
 	eval "alias $var.replace='helper::_replace $var'"
 	eval "alias $var.replaceprefix='helper::_replaceprefix $var'"
 	eval "alias $var.replacesuffix='helper::_replacesuffix $var'"
 	eval "alias $var.uniq='helper::_uniq $var'"
 	eval "alias $var.sort='helper::_sort $var'"
+	eval "alias $var.basename='helper::_basename $var'"
+	eval "alias $var.dirname='helper::_dirname $var'"
 
 	return 0
 }
@@ -209,22 +211,22 @@ helper::_sum(){
 	echo $((${__[@]/%/+}0))
 }
 
-helper::_prefix(){
+helper::_trimsuffixfirst(){
 	declare -n __=$1
 	__=("${__[@]%$2*}")
 }
 
-helper::_prefixfirst(){
+helper::_trimsuffix(){
 	declare -n __=$1
 	__=("${__[@]%%$2*}")
 }
 
-helper::_suffix(){
+helper::_trimprefixfirst(){
 	declare -n __=$1
 	__=("${__[@]#*$2}")
 }
 
-helper::_suffixfirst(){
+helper::_trimprefix(){
 	declare -n __=$1
 	__=("${__[@]##*$2}")
 }
@@ -267,9 +269,25 @@ helper::_sort(){
 	mapfile -t __ < <(printf '%s\n' "${__[@]}" | sort -V)
 }
 
+helper::_basename(){
+	declare -n __=$1
+	local i
+	for i in "${!__[@]}"; do
+		${__[$i]}=$(basename ${__[$i]} $2)
+	done
+}
+
+helper::_dirname(){
+	declare -n __=$1
+	local i
+	for i in "${!__[@]}"; do
+		${__[$i]}=$(dirname ${__[$i]})
+	done
+}
+
 helper::_test(){
 	declare -a arr
-	helper::loadaliases -v arr
+	helper::addmemberfunctions -v arr
 	arr.push "foo foo"
 	arr.push bar
 	arr.push zar
