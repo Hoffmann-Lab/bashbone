@@ -120,45 +120,50 @@ helper::addmemberfunctions(){
 		return 0
 	}
 	local OPTIND arg mandatory var
+	declare -a vars
 	while getopts 'v:' arg; do
 		case $arg in
-			v)	mandatory=1; var=$(printf '%q' "$OPTARG");;
+			v)	mandatory=1; vars+=$(printf '%q' "$OPTARG");;
 			*)	_usage;	return 1;;
 		esac
 	done
 	[[ ! $mandatory ]] && _usage && return 1
 
 	shopt -s expand_aliases
-	eval "alias $var.push='helper::_push $var'"
-	eval "alias $var.pop='helper::_pop $var'"
-	eval "alias $var.slice='helper::_slice $var'"
-	eval "alias $var.print='helper::_print $var'"
-	eval "alias $var.println='helper::_println $var'"
-	eval "alias $var.shift='helper::_shift $var'"
-	eval "alias $var.uc='helper::_uc $var'"
-	eval "alias $var.ucfist='helper::_ucfirst $var'"
-	eval "alias $var.lc='helper::_lc $var'"
-	eval "alias $var.lcfist='helper::_lcfirst $var'"
-	eval "alias $var.sum='helper::_sum $var'"
-	eval "alias $var.trimprefix='helper::_prefix $var'"
-	eval "alias $var.trimprefixfirst='helper::_prefixfirst $var'"
-	eval "alias $var.trimsuffix='helper::_suffix $var'"
-	eval "alias $var.trimsuffixfirst='helper::_suffixfirst $var'"
-	eval "alias $var.substring='helper::_substring $var'"
-	eval "alias $var.replace='helper::_replace $var'"
-	eval "alias $var.replaceprefix='helper::_replaceprefix $var'"
-	eval "alias $var.replacesuffix='helper::_replacesuffix $var'"
-	eval "alias $var.uniq='helper::_uniq $var'"
-	eval "alias $var.sort='helper::_sort $var'"
-	eval "alias $var.basename='helper::_basename $var'"
-	eval "alias $var.dirname='helper::_dirname $var'"
+	for var in "${vars[@]}"; do
+		eval "alias $var.push='helper::_push $var'"
+		eval "alias $var.pop='helper::_pop $var'"
+		eval "alias $var.slice='helper::_slice $var'"
+		eval "alias $var.join='helper::_join $var'"
+		eval "alias $var.print='helper::_print $var'"
+		eval "alias $var.println='helper::_println $var'"
+		eval "alias $var.shift='helper::_shift $var'"
+		eval "alias $var.uc='helper::_uc $var'"
+		eval "alias $var.ucfist='helper::_ucfirst $var'"
+		eval "alias $var.lc='helper::_lc $var'"
+		eval "alias $var.lcfist='helper::_lcfirst $var'"
+		eval "alias $var.sum='helper::_sum $var'"
+		eval "alias $var.trimprefix='helper::_prefix $var'"
+		eval "alias $var.trimprefixfirst='helper::_prefixfirst $var'"
+		eval "alias $var.trimsuffix='helper::_suffix $var'"
+		eval "alias $var.trimsuffixfirst='helper::_suffixfirst $var'"
+		eval "alias $var.substring='helper::_substring $var'"
+		eval "alias $var.replace='helper::_replace $var'"
+		eval "alias $var.replaceprefix='helper::_replaceprefix $var'"
+		eval "alias $var.replacesuffix='helper::_replacesuffix $var'"
+		eval "alias $var.uniq='helper::_uniq $var'"
+		eval "alias $var.sort='helper::_sort $var'"
+		eval "alias $var.basename='helper::_basename $var'"
+		eval "alias $var.dirname='helper::_dirname $var'"
+	done
 
 	return 0
 }
 
 helper::_push(){
 	declare -n __="$1"
-	__+=("$2")
+	shift
+	__+=("$@")
 }
 
 helper::_pop(){
@@ -169,6 +174,14 @@ helper::_pop(){
 helper::_slice(){
 	declare -n __="$1"
 	__=("${__[@]:$2:$3}")
+}
+
+helper::_join(){
+	declare -n __="$1" ___
+	shift
+	for ___ in "$@"; do
+		__+=("${___[@]}")
+	done
 }
 
 helper::_shift(){
@@ -257,9 +270,9 @@ helper::_replacesuffix(){
 helper::_uniq(){
 	declare -n __="$1"
 	declare -A ___
-	local i
-	for i in "${!__[@]}"; do
-		___["${__[$i]}"]=1
+	local e
+	for e in "${__[@]}"; do
+		___["$e"]=1
 	done
 	__=("${!___[@]}")
 }

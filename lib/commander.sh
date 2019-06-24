@@ -73,10 +73,10 @@ commander::makecmd(){
 	while getopts ':a:o:s:c' arg; do
 		case $arg in
 			a)	mendatory=1; _cmds_makecmd=$OPTARG;;
-			s)	sep=$(echo -e "${OPTARG:- }");; # '\t' possible; old: _sep=${OPTARG:-' '}
+			s)	sep=$(echo -e "${OPTARG:- }");; # echo -e to make e.g. '\t' possible
 			o)	suffix=' > '"$OPTARG";;
 			c)	[[ ! $mendatory ]] && { _usage; return 1; }
-				shift $((OPTIND-1)) # remove '-a <cmd> -s <char> -c' from $*
+				shift $((OPTIND-1)) # remove '-a <cmd> -s <char> -o <file> -c' from $*
 				for fd in "${COMMANDER[@]}"; do
 					mapfile -u $fd -t
 					cmd_makecmd+=("${MAPFILE[*]}") # * instead of @ to concatenate
@@ -203,7 +203,7 @@ commander::_test(){
 	commander::runcmd -v -b -t $threads -a cmd || commander::printerr "failed"
 
 	commander::printerr ${FUNCNAME[0]} EXPECTED OUTPUT
-	commander::printerr 3<<-OUT
+	commander::printerr {COMMANDER[0]}<<-OUT
 		foo
 		bar
 		baz
