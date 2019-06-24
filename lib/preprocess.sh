@@ -605,7 +605,6 @@ preprocess::qcstats(){
 		multiplier=1
 		[[ "${_fq2_qcstats[$i]}" ]] && multiplier=2
 		rm -f $o
-		echo "HIER1"
 		for qdir in "${_qualdirs_qcstats[@]}"; do
 			tool=$(basename "$qdir")
 			c=$(unzip -p "$qdir/${b}_fastqc.zip" "${b}_fastqc/fastqc_data.txt" | grep -m 1 -F Total | awk -v mult=$multiplier '{print $3*mult}')
@@ -617,8 +616,6 @@ preprocess::qcstats(){
 		done > "$tmpdir/tmp.tsv" # strange!!! if piped directly into tac - tac's awk implementation fails
 		tac "$tmpdir/tmp.tsv" | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$outdir/preprocessing.barplot.tsv"
 	done
-
-	echo "HIER2"
 
 	declare -a cmd1
 	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD

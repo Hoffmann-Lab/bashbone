@@ -138,6 +138,9 @@ helper::addmemberfunctions(){
 		eval "alias $var.print='helper::_print $var'"
 		eval "alias $var.println='helper::_println $var'"
 		eval "alias $var.shift='helper::_shift $var'"
+		eval "alias $var.length='helper::_length $var'"
+		eval "alias $var.lastidx='helper::_lastidx $var'"
+		eval "alias $var.idxs='helper::_idxs $var'"
 		eval "alias $var.uc='helper::_uc $var'"
 		eval "alias $var.ucfist='helper::_ucfirst $var'"
 		eval "alias $var.lc='helper::_lc $var'"
@@ -187,6 +190,21 @@ helper::_join(){
 helper::_shift(){
 	declare -n __="$1"
 	__=("${__[@]:1}")
+}
+
+helper::_idxs(){
+	declare -n __="$1"
+	echo "${!__[@]}"
+}
+
+helper::_lastidx(){
+	declare -n __="$1"
+	echo $((${#__[@]}-1))
+}
+
+helper::_length(){
+	declare -n __="$1"
+	echo ${#__[@]}
 }
 
 helper::_print(){
