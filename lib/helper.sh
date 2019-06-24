@@ -123,7 +123,7 @@ helper::addmemberfunctions(){
 	declare -a vars
 	while getopts 'v:' arg; do
 		case $arg in
-			v)	mandatory=1; vars+=$(printf '%q' "$OPTARG");;
+			v)	mandatory=1; vars+=("$(printf '%q' "$OPTARG")");;
 			*)	_usage;	return 1;;
 		esac
 	done
