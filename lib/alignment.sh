@@ -225,7 +225,6 @@ alignment::postprocess() {
 	return 0
 }
 
-
 alignment::_uniqify() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
@@ -506,11 +505,8 @@ alignment::slice(){
 	done
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
-	commander::print "slicing alignments"
-
-	local instances mthreads ithreads m
-	read -r instances mthreads < <(configure::instances_by_memory -t $threads -m $memory)
-	instances=0
+	local minstances instances mthreads ithreads m
+	read -r minstances mthreads < <(configure::instances_by_memory -t $threads -m $memory)
 	for m in "${_mapper_slice[@]}"; do
 		declare -n _bams_slice=$m
 		((instances+=${#_bams_slice[@]}))
@@ -518,7 +514,7 @@ alignment::slice(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	local tdir f i chrs o
-	declare -a cmd1 cmd2 cmd3
+	declare -a cmd1 cmd2
 	for m in "${_mapper_slice[@]}"; do
 		declare -n _bams_slice=$m
 		tdir="$tmpdir/$m"
@@ -534,6 +530,7 @@ alignment::slice(){
 					args <- args[-1];
 					chr <- args[rep(c(T,F),length(args)/2)];
 					len <- as.numeric(args[rep(c(F,T),length(args)/2)]);
+					len <- as.integer(len/10);
 
 					srt <- sort(len,decreasing=T,index.return=1);
 					len <- srt$x;
@@ -554,9 +551,9 @@ alignment::slice(){
 					};
 				'
 			CMD
-				$mthreads $(samtools view -H "$f" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}')
+				$minstances $(samtools view -H "$f" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}')
 			CMD
-			
+
 			o="$tdir"/$(basename "$f")
 			o="${o%.*}"
 			rm -f "$o.slices.info"
@@ -576,20 +573,15 @@ alignment::slice(){
 						"$f"
 						$chrs > "$o.slice$i.bam"
 				CMD
-				alignment::_index \
-					-1 cmd3 \
-					-t $ithreads \
-					-i "$o.slice$i.bam"
 			done
 		done
 	done
 
 	$skip && {
 		commander::printcmd -a cmd2
-		commander::printcmd -a cmd3
 	} || {
-		{	commander::runcmd -v -b -t $instances -a cmd2 && \
-			commander::runcmd -v -b -t $instances -a cmd3
+		{	commander::print "slicing alignments" && \
+			commander::runcmd -v -b -t $instances -a cmd2
 		} || { 
 			commander::printerr "$funcname failed"
 			return 1
@@ -638,8 +630,8 @@ alignment::rmduplicates(){
 
 	local minstances mthreads ithreads jmem jgct jcgct 
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
-	local nfh=$(($(ulimit -n)/mthreads))
-	[[ ! $nfh ]] || [[ $nfh -le 1 ]] && nfh=$((1024/mthreads))
+	local nfh=$(($(ulimit -n)/minstances))
+	[[ ! $nfh ]] || [[ $nfh -le 1 ]] && nfh=$((1024/minstances))
 
 	local m i slice instances ithreads odir
 	for m in "${_mapper_rmduplicates[@]}"; do
@@ -648,16 +640,17 @@ alignment::rmduplicates(){
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a s
+	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
 		odir="$outdir/$m"
 		mkdir -p "$odir"
 		for i in "${!_bams_rmduplicates[@]}"; do
-			s=()
+			tomerge=()
 			while read -r slice; do
-				s+=("$slice")
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				alignment::_index -1 cmd1 -t $ithreads -i "$slice"
+				
+				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					picard
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -676,18 +669,25 @@ alignment::rmduplicates(){
 				CMD
 					mv "$slice.rmdup" "$slice"
 				CMD
+
+				tomerge+=("$slice")
 			done < "${_bamslices_rmduplicates[${_bams_rmduplicates[$i]}]}"
 
 			o="$odir"/$(basename "${_bams_rmduplicates[$i]}")
 			o="${o%.*}.rmdup.bam"
+
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
+					-c
+					-p
 					"$o"
-					$(printf '"%s" ' "${s[@]}")
+					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
+
+			_bamslices_rmduplicates["$o"]="${_bamslices_rmduplicates[${_bams_rmduplicates[$i]}]}"
 			_bams_rmduplicates[$i]="$o"
 		done
 	done
@@ -695,9 +695,11 @@ alignment::rmduplicates(){
 	$skip && {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	} || {
-		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -v -b -t $instances -a cmd2
+		{	commander::runcmd -v -b -t $instances -a cmd1 && \
+			commander::runcmd -v -b -t $minstances -a cmd2 && \
+			commander::runcmd -v -b -t $instances -a cmd3
 		} || { 
 			commander::printerr "$funcname failed"
 			return 1
