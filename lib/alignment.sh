@@ -124,6 +124,12 @@ alignment::segemehl() {
 	return 0
 }
 
+alignment::star() {
+	return 1
+	# DO USE outSAMmapqUnique 60 instead of 255 - necessary for gatk implemented MappingQualityAvailableReadFilter
+	# thuerefore used als q filter during unification - see alignment::uniqify
+}
+
 alignment::postprocess() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
@@ -287,7 +293,7 @@ alignment::_uniqify() {
 		$(samtools view -F 4 -h "$sambam" | head -10000 | grep -cE '\s+NH:i:[0-9]+\s+' ) -eq 0 ]]; then
 
 		#extract uniques just by MAPQ
-		[[ "$m" == "star" ]] && params+='-q 255' || params+='-q 1'
+		[[ "$m" == "star" ]] && params+='-q 60' || params+='-q 1'
 		commander::makecmd -a _cmds2_uniqify -s '&&' -c {COMMANDER[0]}<<- CMD
 			samtools view
 				$params
@@ -505,6 +511,8 @@ alignment::slice(){
 	done
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
+	commander::print "slicing alignments"
+
 	local minstances instances mthreads ithreads m
 	read -r minstances mthreads < <(configure::instances_by_memory -t $threads -m $memory)
 	for m in "${_mapper_slice[@]}"; do
@@ -514,7 +522,7 @@ alignment::slice(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	local tdir f i chrs o
-	declare -a cmd1 cmd2
+	declare -a cmd1 cmd2 cmd3
 	for m in "${_mapper_slice[@]}"; do
 		declare -n _bams_slice=$m
 		tdir="$tmpdir/$m"
@@ -559,13 +567,15 @@ alignment::slice(){
 			rm -f "$o.slices.info"
 			_bamslices_slice["$f"]="$o.slices.info"
 
+			alignment::_index -1 cmd2 -t $ithreads -i "$f"
+
 			i=0
 			mapfile -t < <(conda activate py2r &>/dev/null && commander::runcmd -a cmd1)
 			for chrs in "${MAPFILE[@]}"; do
 				((++i))
 				echo "$o.slice$i.bam" >> "$o.slices.info"
 				# -M for multi reagion iterator is faster and keeps sort order
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 					samtools view 
 						-@ $ithreads
 						-M
@@ -579,9 +589,10 @@ alignment::slice(){
 
 	$skip && {
 		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	} || {
-		{	commander::print "slicing alignments" && \
-			commander::runcmd -v -b -t $instances -a cmd2
+		{	commander::runcmd -v -b -t $instances -a cmd2 && \
+			commander::runcmd -v -b -t $instances -a cmd3
 		} || { 
 			commander::printerr "$funcname failed"
 			return 1
@@ -771,10 +782,12 @@ alignment::reorder() {
 			o="$(basename "${_bams_reorder[$i]}")"
 			o=${o%.*}
 
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 				ln -sfn "$genome" "$tdir/$o.fa"
 			CMD
 				samtools faidx "$tdir/$o.fa"
+			CMD
+				rm -f "$tdir/$o.dict"
 			CMD
 				picard
 					-Xmx${djmem}m
