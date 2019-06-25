@@ -708,3 +708,138 @@ alignment::rmduplicates(){
 
 	return 0
 }
+
+alignment::reorder() {
+	local funcname=${FUNCNAME[0]}
+	_usage() {
+		commander::printerr {COMMANDER[0]}<<- EOF
+			$funcname usage: 
+			-S <hardskip>  | true/false return
+			-s <softskip>  | truefalse only print commands
+			-t <threads>   | number of
+			-g <genome>    | path to
+			-m <memory>    | amount of
+			-r <mapper>    | array of sorted, indexed bams within array of
+			-c <sliceinfo> | array of
+			-p <tmpdir>    | path to
+			-o <outbase>   | path to
+		EOF
+		return 0
+	}
+
+	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir i
+	declare -n _mapper_reorder _bamslices_reorder
+	declare -A nidx tidx
+	while getopts 'S:s:t:g:m:r:1:2:c:p:o:' arg; do
+		case $arg in
+			S) $OPTARG && return 0;;
+			s) $OPTARG && skip=true;;
+			t) ((mandatory++)); threads=$OPTARG;;
+			m) ((mandatory++)); memory=$OPTARG;;
+			g) ((mandatory++)); genome="$OPTARG";;
+			r) ((mandatory++)); _mapper_reorder=$OPTARG;;
+			c) ((mandatory++)); _bamslices_reorder=$OPTARG;;
+			p) ((mandatory++)); tmpdir="$OPTARG";;
+			o) ((mandatory++)); outdir="$OPTARG";;
+			*) _usage; return 1;;
+		esac
+	done
+	[[ $mandatory -lt 7 ]] && _usage && return 1
+
+	commander::print "reordering alignments"
+
+	local minstances mthreads jmem jgct jcgct 
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
+
+	local m i slice odir tdir instances ithreads dinstances djmem djgct djcgct
+	for m in "${_mapper_reorder[@]}"; do
+		declare -n _bams_reorder=$m
+		((instances+=${#_bams_reorder[@]}))
+	done
+	read -r dinstances ithreads djmem djgct djcgct < <(configure::jvm -i $instances -t 1 -T $threads)
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+
+	declare -a tomerge cmd1 cmd2 cmd3 cmd4
+	for m in "${_mapper_reorder[@]}"; do
+		declare -n _bams_reorder=$m
+		odir="$outdir/$m"
+		tdir="$tmpdir/$m"
+		mkdir -p "$odir" "$tdir"
+
+		for i in "${!_bams_reorder[@]}"; do
+			tomerge=()
+			o="$(basename "${_bams_reorder[$i]}")"
+			o=${o%.*}
+
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				ln -sfn "$genome" "$tdir/$o.fa"
+			CMD
+				samtools faidx "$tdir/$o.fa"
+			CMD
+				picard
+					-Xmx${djmem}m
+					-XX:ParallelGCThreads=$djgct
+					-XX:ConcGCThreads=$djcgct
+					-Djava.io.tmpdir="$tmpdir"
+					CreateSequenceDictionary
+					R="$tdir/$o.fa"
+					VERBOSITY=WARNING
+			CMD
+
+			while read -r slice; do
+				alignment::_index -1 cmd2 -t $ithreads -i "$slice"
+
+				commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				picard
+					-Xmx${jmem}m
+					-XX:ParallelGCThreads=$jgct
+					-XX:ConcGCThreads=$jcgct
+					-Djava.io.tmpdir="$tmpdir"
+					ReorderSam
+					I="$slice"
+					O="$slice.ordered"
+					R="$tdir/$o.fa"
+					VALIDATION_STRINGENCY=SILENT
+					VERBOSITY=WARNING
+				CMD
+					mv "$slice.ordered" "$slice"
+				CMD
+
+				tomerge+=("$slice")
+			done < "${_bamslices_reorder[${_bams_reorder[$i]}]}"
+
+			o="$odir/$o.ordered.bam"
+			# slices have full sam header info used by merge to maintain the global sort order
+			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
+				samtools merge
+					-@ $ithreads
+					-f
+					-c
+					-p
+					"$o"
+					$(printf '"%s" ' "${tomerge[@]}")
+			CMD
+
+			_bamslices_reorder["$o"]="${_bamslices_reorder[${_bams_reorder[$i]}]}"
+			_bams_reorder[$i]="$o"
+		done
+	done
+
+	$skip && {
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+		commander::printcmd -a cmd4
+	} || {
+		{	commander::runcmd -v -b -t $dinstances -a cmd1 && \
+			commander::runcmd -v -b -t $instances -a cmd2 && \
+			commander::runcmd -v -b -t $minstances -a cmd3 && \
+			commander::runcmd -v -b -t $instances -a cmd4
+		} || { 
+			commander::printerr "$funcname failed"
+			return 1
+		}
+	}
+
+	return 0
+}
