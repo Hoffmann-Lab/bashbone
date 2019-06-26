@@ -521,8 +521,8 @@ alignment::slice(){
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	local tdir f i chrs o
-	declare -a cmd1 cmd2 cmd3
+	local tdir f i chrs o xinstances xthreads
+	declare -a cmd1 cmd2 cmd3 cmd4
 	for m in "${_mapper_slice[@]}"; do
 		declare -n _bams_slice=$m
 		tdir="$tmpdir/$m"
@@ -571,6 +571,8 @@ alignment::slice(){
 
 			i=0
 			mapfile -t < <(conda activate py2r &>/dev/null && commander::runcmd -a cmd1)
+			xinstances=$((${#MAPFILE[@]}*${#_bams_slice[@]}*${#_mapper_slice[@]}))
+			xthreads=$((threads/xinstances>0?threads/xinstances:1))
 			for chrs in "${MAPFILE[@]}"; do
 				((++i))
 				echo "$o.slice$i.bam" >> "$o.slices.info"
@@ -583,6 +585,7 @@ alignment::slice(){
 						"$f"
 						$chrs > "$o.slice$i.bam"
 				CMD
+				alignment::_index -1 cmd4 -t $xthreads -i "$o.slice$i.bam"
 			done
 		done
 	done
@@ -590,9 +593,11 @@ alignment::slice(){
 	$skip && {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
+		commander::printcmd -a cmd4
 	} || {
 		{	commander::runcmd -v -b -t $instances -a cmd2 && \
-			commander::runcmd -v -b -t $instances -a cmd3
+			commander::runcmd -v -b -t $instances -a cmd3 && \
+			commander::runcmd -v -b -t $((threads/xthreads)) -a cmd4
 		} || { 
 			commander::printerr "$funcname failed"
 			return 1
@@ -651,7 +656,7 @@ alignment::rmduplicates(){
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3
+	declare -a tomerge cmd1 cmd2
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
 		odir="$outdir/$m"
@@ -659,9 +664,7 @@ alignment::rmduplicates(){
 		for i in "${!_bams_rmduplicates[@]}"; do
 			tomerge=()
 			while read -r slice; do
-				alignment::_index -1 cmd1 -t $ithreads -i "$slice"
-				
-				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					picard
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -688,7 +691,7 @@ alignment::rmduplicates(){
 			o="${o%.*}.rmdup.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
@@ -706,11 +709,9 @@ alignment::rmduplicates(){
 	$skip && {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-		commander::printcmd -a cmd3
 	} || {
-		{	commander::runcmd -v -b -t $instances -a cmd1 && \
-			commander::runcmd -v -b -t $minstances -a cmd2 && \
-			commander::runcmd -v -b -t $instances -a cmd3
+		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
+			commander::runcmd -v -b -t $instances -a cmd2
 		} || { 
 			commander::printerr "$funcname failed"
 			return 1
@@ -770,7 +771,7 @@ alignment::reorder() {
 	read -r dinstances ithreads djmem djgct djcgct < <(configure::jvm -i $instances -t 1 -T $threads)
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3 cmd4
+	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_reorder[@]}"; do
 		declare -n _bams_reorder=$m
 		odir="$outdir/$m"
@@ -800,9 +801,7 @@ alignment::reorder() {
 			CMD
 
 			while read -r slice; do
-				alignment::_index -1 cmd2 -t $ithreads -i "$slice"
-
-				commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				picard
 					-Xmx${jmem}m
 					-XX:ParallelGCThreads=$jgct
@@ -823,7 +822,7 @@ alignment::reorder() {
 
 			o="$odir/$o.ordered.bam"
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
@@ -842,12 +841,10 @@ alignment::reorder() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
-		commander::printcmd -a cmd4
 	} || {
 		{	commander::runcmd -v -b -t $dinstances -a cmd1 && \
-			commander::runcmd -v -b -t $instances -a cmd2 && \
-			commander::runcmd -v -b -t $minstances -a cmd3 && \
-			commander::runcmd -v -b -t $instances -a cmd4
+			commander::runcmd -v -b -t $minstances -a cmd2 && \
+			commander::runcmd -v -b -t $instances -a cmd3
 		} || { 
 			commander::printerr "$funcname failed"
 			return 1
