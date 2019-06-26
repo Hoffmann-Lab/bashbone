@@ -664,7 +664,7 @@ alignment::rmduplicates(){
 		for i in "${!_bams_rmduplicates[@]}"; do
 			tomerge=()
 			while read -r slice; do
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					picard
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -682,6 +682,8 @@ alignment::rmduplicates(){
 						MAX_FILE_HANDLES=$nfh
 				CMD
 					mv "$slice.rmdup" "$slice"
+				CMD
+					samtools index -@ $mthreads "$slice" "${slice%.*}.bai"
 				CMD
 
 				tomerge+=("$slice")
@@ -801,7 +803,7 @@ alignment::reorder() {
 			CMD
 
 			while read -r slice; do
-				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				picard
 					-Xmx${jmem}m
 					-XX:ParallelGCThreads=$jgct
@@ -815,6 +817,8 @@ alignment::reorder() {
 					VERBOSITY=WARNING
 				CMD
 					mv "$slice.ordered" "$slice"
+				CMD
+					samtools index -@ $mthreads "$slice" "${slice%.*}.bai"
 				CMD
 
 				tomerge+=("$slice")

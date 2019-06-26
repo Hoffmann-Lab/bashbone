@@ -57,7 +57,8 @@ compile::bashbone() {
 	source "$(readlink -e $(dirname $0))"/lib/version.sh
 
 	commander::print "installing bashbone"
-	{	mkdir -p "$insdir/bashbone-$version" && \
+	{	rm -rf "$insdir/bashbone-$version" && \
+		mkdir -p "$insdir/bashbone-$version" && \
 		cp -r "$(readlink -e $(dirname $0))"/* "$insdir/bashbone-$version" && \
 		mkdir -p "$insdir/latest" && \
 		ln -sfn "$insdir/bashbone-$version" "$insdir/latest/bashbone"
