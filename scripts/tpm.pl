@@ -17,8 +17,8 @@
 
 use strict;
 use warnings;
+use feature ":5.10";
 use List::Util qw(min max);
-use v5.10;
 
 unless ($ARGV[0] && $ARGV[1]){
 	say "usage: tpm.pl file.gtf htseq.counts";

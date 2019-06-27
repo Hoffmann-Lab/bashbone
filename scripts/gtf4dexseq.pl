@@ -1,7 +1,7 @@
 #! /usr/bin/env perl
-use v5.10;
 use strict;
 use warnings;
+use feature ":5.10";
 use Getopt::Long;
 
 my $args = $#ARGV;

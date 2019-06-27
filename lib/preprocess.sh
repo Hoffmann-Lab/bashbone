@@ -91,6 +91,7 @@ preprocess::cutadapt() {
 
 	local instances ithreads
 	# parallelized cutadapt is faster on parallel data than max threads -> use max 10 per instance
+	# cutadapt cannot handle more than 64 threads
 	read -r instances ithreads < <(configure::instances_by_threads -i ${#_fq1_cutadapt[@]} -t 10 -T $threads)
 	
 	declare -a cmd1 cmd2
@@ -131,7 +132,9 @@ preprocess::cutadapt() {
 		commander::printcmd -a cmd2
 	} || {
 		{	mkdir -p "$outdir" && \
+			conda activate py3 && \
 			commander::runcmd -v -b -t $instances -a cmd1 && \
+			conda activate py2 && \
 			commander::runcmd -v -b -t $instances -a cmd2
 		} || { 
 			commander::printerr "$funcname failed"
