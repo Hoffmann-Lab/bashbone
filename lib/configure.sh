@@ -124,7 +124,7 @@ configure::jvm(){
 	local jmem jgct jcgct maxmemory=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
 	local maxinstances=$((maxmemory/memory))
 	[[ $maxinstances -gt $((maxthreads/ithreads)) ]] && maxinstances=$((maxthreads/ithreads))
-	[[ $instances -gt $threads ]] && instances=$threads
+	[[ $instances -gt $maxthreads ]] && instances=$maxthreads
 	[[ $instances -gt $maxinstances ]] && instances=$maxinstances
 
 	ithreads=$((maxthreads/instances))
