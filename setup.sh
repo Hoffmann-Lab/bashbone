@@ -1,8 +1,8 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
-shopt -s extglob
 trap 'die' INT TERM
-trap 'kill -PIPE $(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+") &> /dev/null' EXIT
+trap 'sleep 1; kill -PIPE $(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+") &> /dev/null' EXIT
+shopt -s extglob
 
 die() {
 	echo -ne "\e[0;31m"
@@ -33,13 +33,14 @@ done
 mkdir -p $INSDIR || die "cannot access $INSDIR"
 INSDIR=$(readlink -e $INSDIR)
 [[ ! $LOG ]] && LOG=$INSDIR/install.log
+touch $LOG && rm -f $LOG || die "cannot access $LOG"
 
-commander::print "installation started. please be patient." | tee $LOG || die "cannot access $LOG"
+commander::print "installation started. please be patient." | tee -a $LOG
 progress::log -v $VERBOSITY -o $LOG
 
 for i in ${INSTALL[@]}; do # do not quote!! mapfile appends newline to last element
-	compile::$i -i $INSDIR -t $THREADS &>> $LOG || die 
+	compile::$i -i $INSDIR -t $THREADS > >(tee -a $LOG) 2> >(tee -a $LOG >&2) || die 
 done
 
-commander::print "success"
+commander::print "success" | tee -a $LOG
 exit 0

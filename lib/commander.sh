@@ -4,7 +4,7 @@
 declare -a COMMANDER
 
 commander::print(){
-	[[ $* ]] && echo ":INFO: $*" >&2
+	[[ $* ]] && echo ":INFO: $*"
 	local fd
 	for fd in "${COMMANDER[@]}"; do
 		mapfile -u $fd -t
@@ -18,7 +18,7 @@ commander::print(){
 }
 
 commander::warn(){
-	[[ $* ]] && echo ":WARNING: $*" >&2
+	[[ $* ]] && echo ":WARNING: $*"
 	local fd
 	for fd in "${COMMANDER[@]}"; do
 		mapfile -u $fd -t
@@ -35,7 +35,7 @@ commander::printerr(){
 	local fd
 	for fd in "${COMMANDER[@]}"; do
 		mapfile -u $fd -t
-		printf ':ERROR: %s\n' "${MAPFILE[@]}"
+		printf ':ERROR: %s\n' "${MAPFILE[@]}" >&2
 	done
 	COMMANDER=()
 	echo -ne "\e[m"
