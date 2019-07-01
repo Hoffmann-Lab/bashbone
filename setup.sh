@@ -33,14 +33,13 @@ done
 mkdir -p $INSDIR || die "cannot access $INSDIR"
 INSDIR=$(readlink -e $INSDIR)
 [[ ! $LOG ]] && LOG=$INSDIR/install.log
-touch $LOG && rm -f $LOG || die "cannot access $LOG"
 
-commander::print "installation started. please be patient." | tee -a $LOG
+commander::print "installation started. please be patient." > $LOG || die "cannot access $LOG"
 progress::log -v $VERBOSITY -o $LOG
 
 for i in ${INSTALL[@]}; do # do not quote!! mapfile appends newline to last element
-	compile::$i -i $INSDIR -t $THREADS > >(tee -a $LOG) 2> >(tee -a $LOG >&2) || die 
+	compile::$i -i $INSDIR -t $THREADS >> $LOG 2> >(tee -a $LOG >&2) || die 
 done
 
-commander::print "success" | tee -a $LOG
+commander::print "success" >> $LOG
 exit 0
