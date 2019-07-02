@@ -119,7 +119,8 @@ commander::printcmd(){
 }
 
 commander::runcmd(){
-	trap 'rm -rf /dev/shm/commander::runcmd::$$' RETURN INT TERM
+    trap 'return $?' INT TERM
+	trap 'rm -rf $shdir' RETURN
 
 	local funcname=${FUNCNAME[0]}
 	_usage(){
@@ -142,7 +143,7 @@ commander::runcmd(){
 		case $arg in
 			t)	threads=$OPTARG;;
 			v)	verbose=true;;
-			b)	benchmark=true;;
+			b)	benchmark=1;;
 			a)	_cmds_runcmd=$OPTARG
 				[[ $_cmds_runcmd ]] || return 0
 				$verbose && {
@@ -150,9 +151,7 @@ commander::runcmd(){
 					commander::printcmd -a _cmds_runcmd
 				}
 				# better write to file to avoid xargs argument too long error
-				local shdir="/dev/shm/commander::runcmd::$$"
-				mkdir -p $shdir
-				local i md5sh
+				local i md5sh shdir=$(mktemp -d -p /dev/shm)
 				if [[ $benchmark ]]; then
 					# printf '%s\0' "${_cmds_runcmd[@]}" | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -0 -P $threads -I {} bash -c {}
 					for i in "${!_cmds_runcmd[@]}"; do
