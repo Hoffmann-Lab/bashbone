@@ -55,9 +55,9 @@ alignment::segemehl() {
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	} || {
 		commander::print "checking md5 sums"
-		thismd5genome=$(md5sum "$genome" 2> /dev/null | cut -d ' ' -f 1)
-		[[ -s "$genomeidx" ]] && thismd5segemehl=$(md5sum "$genomeidx" 2> /dev/null | cut -d ' ' -f 1)
-		if [[ "$thismd5genome" != "$md5genome" || "$thismd5segemehl" != "$md5segemehl" ]]; then
+		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
+		[[ -s "$genomeidx" ]] && thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
+		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5segemehl" || "$thismd5segemehl" != "$md5segemehl" ]]; then
 			commander::print "indexing genome for segemehl"
 			declare -a cmdidx
 			commander::makecmd -a cmdidx -s '|' -c {COMMANDER[0]}<<- CMD
@@ -521,6 +521,9 @@ alignment::slice(){
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
+	declare -n _bams_slice=${_mapper_slice[0]}
+	samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}' > $tmpdir/chr.info
+
 	local tdir f i chrs o xinstances xthreads
 	declare -a cmd1 cmd2 cmd3 cmd4
 	for m in "${_mapper_slice[@]}"; do
@@ -530,15 +533,19 @@ alignment::slice(){
 
 		for f in "${_bams_slice[@]}"; do
 			cmd1=()
+			#args <- args[-1];
+			#chr <- args[rep(c(T,F),length(args)/2)];
+			#len <- as.numeric(args[rep(c(F,T),length(args)/2)]);
+			#$(samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}') -> argument list too long
 			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+
 				Rscript - <<< '
 					suppressMessages(library("knapsack"));
 					args <- commandArgs(TRUE);
 					slices <- as.numeric(args[1]);
-					args <- args[-1];
-					chr <- args[rep(c(T,F),length(args)/2)];
-					len <- as.numeric(args[rep(c(F,T),length(args)/2)]);
-					len <- as.integer(len/10);
+					df <- read.table(args[2], header=F, sep="\t", stringsAsFactors=F);
+					chr <- df[,1];
+					len <- as.integer(df[,2]/10);
 
 					srt <- sort(len,decreasing=T,index.return=1);
 					len <- srt$x;
@@ -559,7 +566,7 @@ alignment::slice(){
 					};
 				'
 			CMD
-				$minstances $(samtools view -H "$f" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}')
+				$minstances $tmpdir/chr.info
 			CMD
 
 			o="$tdir"/$(basename "$f")

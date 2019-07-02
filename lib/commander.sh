@@ -119,6 +119,8 @@ commander::printcmd(){
 }
 
 commander::runcmd(){
+	trap 'rm -rf /dev/shm/commander::runcmd::$$' RETURN INT TERM
+
 	local funcname=${FUNCNAME[0]}
 	_usage(){
 		commander::printerr {COMMANDER[0]}<<- EOF
@@ -134,7 +136,7 @@ commander::runcmd(){
 		return 0
 	}
 
-	local OPTIND arg threads=1 verbose=false benchmark=false
+	local OPTIND arg threads=1 verbose=false benchmark
 	declare -n _cmds_runcmd # be very careful with circular name reference
 	while getopts 'vbt:a:' arg; do
 		case $arg in
@@ -147,11 +149,25 @@ commander::runcmd(){
 					echo ":INFO: running commands of array ${!_cmds_runcmd}"
 					commander::printcmd -a _cmds_runcmd
 				}
-				$benchmark && {
-					printf '%s\0' "${_cmds_runcmd[@]}" | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -0 -P $threads -I {} bash -c {}
-				} || {
-					printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $threads -I {} bash -c {}
-				}
+				# better write to file to avoid xargs argument too long error
+				local shdir="/dev/shm/commander::runcmd::$$"
+				mkdir -p $shdir
+				local i md5sh
+				if [[ $benchmark ]]; then
+					# printf '%s\0' "${_cmds_runcmd[@]}" | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -0 -P $threads -I {} bash -c {}
+					for i in "${!_cmds_runcmd[@]}"; do
+						md5sh=$(printf '%s\n' "$i${_cmds_runcmd[$i]}" | md5sum | cut -d ' ' -f 1)
+						printf '%s\n' "${_cmds_runcmd[$i]}" > "$shdir/$md5sh"
+						echo "$shdir/$md5sh"
+					done | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
+				else
+					# printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $threads -I {} bash -c {}
+					for i in "${!_cmds_runcmd[@]}"; do
+						md5sh=$(printf '%s\n' "$i${_cmds_runcmd[$i]}" | md5sum | cut -d ' ' -f 1)
+						printf '%s\n' "${_cmds_runcmd[$i]}" > "$shdir/$md5sh"
+						echo "$shdir/$md5sh"
+					done | xargs -P $threads -I {} bash {}
+				fi
 				return $((${PIPESTATUS[@]/%/+}0));;
 			*)	_usage;	return 1;;
 		esac
