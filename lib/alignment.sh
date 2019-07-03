@@ -656,7 +656,7 @@ alignment::rmduplicates(){
 	local nfh=$(($(ulimit -n)/minstances))
 	[[ ! $nfh ]] || [[ $nfh -le 1 ]] && nfh=$((1024/minstances))
 
-	local m i slice instances ithreads odir
+	local m i o slice instances ithreads odir
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
 		((instances+=${#_bams_rmduplicates[@]}))
@@ -730,6 +730,52 @@ alignment::rmduplicates(){
 	return 0
 }
 
+alignment::_genomedict() {
+	local funcname=${FUNCNAME[0]}
+	_usage() {
+		commander::printerr {COMMANDER[0]}<<- EOF
+			$funcname usage: 
+			-1 <cmds1>    | array of
+			-t <threads>  | number of
+			-i <genome>   | path to
+		EOF
+		return 0
+	}
+
+	local OPTIND arg mandatory threads genome tmpdir
+	declare -n _cmds1_genomedict
+	while getopts '1:t:i:p:' arg; do
+		case $arg in
+			1) ((mandatory++)); _cmds1_genomedict=$OPTARG;;
+			t) ((mandatory++)); threads=$OPTARG;;
+			i) ((mandatory++)); bam="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG";;
+			*) _usage; return 1;;
+		esac
+	done
+	[[ $mandatory -lt 4 ]] && _usage && return 1
+
+	local instances ithreads jmem jgct jcgct
+	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -T $threads)
+
+	commander::makecmd -a _cmds1_genomedict -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+		samtools faidx "$genome"
+	CMD
+		rm -f ${genome%.*}.dict
+	CMD
+		picard
+			-Xmx${jmem}m
+			-XX:ParallelGCThreads=$jgct
+			-XX:ConcGCThreads=$jcgct
+			-Djava.io.tmpdir="$tmpdir"
+			CreateSequenceDictionary
+			R="$genome"
+			VERBOSITY=WARNING
+	CMD
+
+	return 0
+}
+
 alignment::reorder() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
@@ -772,42 +818,26 @@ alignment::reorder() {
 	local minstances mthreads jmem jgct jcgct 
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
 
-	local m i slice odir tdir instances ithreads dinstances djmem djgct djcgct
+	local m i o slice odir instances ithreads
 	for m in "${_mapper_reorder[@]}"; do
 		declare -n _bams_reorder=$m
 		((instances+=${#_bams_reorder[@]}))
 	done
-	read -r dinstances ithreads djmem djgct djcgct < <(configure::jvm -i $instances -t 1 -T $threads)
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	declare -a tomerge cmd1 cmd2 cmd3
+	alignment::_genomedict \
+		-a cmd1 \
+		-i $genome \
+		-p $tmpdir \
+		-t $threads
 	for m in "${_mapper_reorder[@]}"; do
 		declare -n _bams_reorder=$m
 		odir="$outdir/$m"
-		tdir="$tmpdir/$m"
-		mkdir -p "$odir" "$tdir"
+		mkdir -p "$odir"
 
 		for i in "${!_bams_reorder[@]}"; do
 			tomerge=()
-			o="$(basename "${_bams_reorder[$i]}")"
-			o=${o%.*}
-
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-				ln -sfn "$genome" "$tdir/$o.fa"
-			CMD
-				samtools faidx "$tdir/$o.fa"
-			CMD
-				rm -f "$tdir/$o.dict"
-			CMD
-				picard
-					-Xmx${djmem}m
-					-XX:ParallelGCThreads=$djgct
-					-XX:ConcGCThreads=$djcgct
-					-Djava.io.tmpdir="$tmpdir"
-					CreateSequenceDictionary
-					R="$tdir/$o.fa"
-					VERBOSITY=WARNING
-			CMD
 
 			while read -r slice; do
 				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -819,7 +849,7 @@ alignment::reorder() {
 					ReorderSam
 					I="$slice"
 					O="$slice.ordered"
-					R="$tdir/$o.fa"
+					R="$genome"
 					VALIDATION_STRINGENCY=SILENT
 					VERBOSITY=WARNING
 				CMD
@@ -831,7 +861,9 @@ alignment::reorder() {
 				tomerge+=("$slice")
 			done < "${_bamslices_reorder[${_bams_reorder[$i]}]}"
 
-			o="$odir/$o.ordered.bam"
+			o="$odir/$(basename "${_bams_reorder[$i]}")"
+			o="${o%.*}.ordered.bam"
+
 			# slices have full sam header info used by merge to maintain the global sort order
 			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
@@ -853,7 +885,7 @@ alignment::reorder() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	} || {
-		{	commander::runcmd -v -b -t $dinstances -a cmd1 && \
+		{	commander::runcmd -v -b -t $threads -a cmd1 && \
 			commander::runcmd -v -b -t $minstances -a cmd2 && \
 			commander::runcmd -v -b -t $instances -a cmd3
 		} || { 
