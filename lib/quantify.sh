@@ -161,6 +161,7 @@ quantify::_featurecounts() {
 	# infer SE or PE
 	local params=''
 	[[ $(samtools view -F 4 -h "$bam" | head -10000 | samtools view -c -f 1) -gt 0 ]] && params+='-p '
+	[[ "$featuretag" == "exon_id" ]] && params+='-f -O '
 
 	commander::makecmd -a _cmds1_featurecounts -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 		featureCounts
