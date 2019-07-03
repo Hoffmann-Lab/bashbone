@@ -749,7 +749,7 @@ alignment::_genomedict() {
 		case $arg in
 			1) ((mandatory++)); _cmds1_genomedict=$OPTARG;;
 			t) ((mandatory++)); threads=$OPTARG;;
-			i) ((mandatory++)); bam="$OPTARG";;
+			i) ((mandatory++)); genome="$OPTARG";;
 			p) ((mandatory++)); tmpdir="$OPTARG";;
 			*) _usage; return 1;;
 		esac
