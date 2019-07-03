@@ -738,6 +738,7 @@ alignment::_genomedict() {
 			-1 <cmds1>    | array of
 			-t <threads>  | number of
 			-i <genome>   | path to
+			-p <tmpdir>   | path to
 		EOF
 		return 0
 	}
@@ -827,7 +828,7 @@ alignment::reorder() {
 
 	declare -a tomerge cmd1 cmd2 cmd3
 	alignment::_genomedict \
-		-a cmd1 \
+		-1 cmd1 \
 		-i $genome \
 		-p $tmpdir \
 		-t $threads
