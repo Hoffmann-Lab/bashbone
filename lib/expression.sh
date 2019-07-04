@@ -128,7 +128,8 @@ expression::joincounts() {
 	commander::print "joining count values plus zscore calculation"
 
 	declare -a cmd1 cmd2
-	local m f x i c t h mh sample condition library replicate pair cf e
+	local m f x i c t h mh sample condition library replicate pair cf e tmp="$(mktemp -p "$tmpdir")"
+	local tojoin="$tmp.tojoin" joined="$tmp.joined"
 	for m in "${_mapper_join[@]}"; do
 		odir="$outdir/$m"
 		tdir="$tmpdir/$m"
@@ -162,25 +163,25 @@ expression::joincounts() {
 		done
 
 		for e in tpm vsc; do
-			rm -f $tdir/joined.$e
 			h='id'
 			mh='id'
+			rm -f $joined
 			for x in "${!header[@]}"; do
 				h+="\t${header[$x]}"
 				mh+="\t${meanheader[$x]}"
-				sort -k 1,1V "${countfiles[${header[$x]}]}.$e" > "$tdir/tojoin.$e"
-				if [[ -s "$tdir/joined.$e" ]]; then
-					join -t $'\t' "$tdir/joined.$e" "$tdir/tojoin.$e" > "$tdir/tmp.$e"
-					mv "$tdir/tmp.$e" "$tdir/joined.$e"
+				sort -k 1,1V "${countfiles[${header[$x]}]}.$e" > "$tojoin"
+				if [[ -s "$joined" ]]; then
+					join -t $'\t' "$joined" "$tojoin" > "$tmp"
+					mv "$tmp" "$joined"
 				else
-					mv "$tdir/tojoin.$e" "$tdir/joined.$e"
+					mv "$tojoin" "$joined"
 				fi
 			done
 
 			echo -e "$h" > "$odir/experiments.$e"
-			cat "$tdir/joined.$e" >> "$odir/experiments.$e"
-			echo -e "$mh" > "$tdir/tmp.$e"
-			cat "$tdir/joined.$e" >> "$tdir/tmp.$e"
+			cat "$joined" >> "$odir/experiments.$e"
+			echo -e "$mh" > "$tmp.$e"
+			cat "$joined" >> "$tmp.$e"
 
 			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 				Rscript - <<< '
@@ -192,7 +193,7 @@ expression::joincounts() {
 					write.table(data.frame(id=rownames(means),means[,unique(colnames(df))]), row.names = F, file = outf, quote=F, sep="\t");
 				'
 			CMD
-				"$tdir/tmp.$e" "$odir/experiments.mean.$e"
+				"$tmp.$e" "$odir/experiments.mean.$e"
 			CMD
 
 			#df <- scale(log(df+1)) supposed to calculate z-scores but returns different values

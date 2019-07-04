@@ -55,6 +55,7 @@ alignment::segemehl() {
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	} || {
 		commander::print "checking md5 sums"
+		local thismd5genome thismd5segemehl
 		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 		[[ -s "$genomeidx" ]] && thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
 		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5segemehl" || "$thismd5segemehl" != "$md5segemehl" ]]; then
@@ -522,7 +523,8 @@ alignment::slice(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	declare -n _bams_slice=${_mapper_slice[0]}
-	samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}' > $tmpdir/chr.info
+	local chrinfo="$(mktemp -p "$tmpdir").chrinfo"
+	samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}' > "$chrinfo"
 
 	local tdir f i chrs o xinstances xthreads
 	declare -a cmd1 cmd2 cmd3 cmd4
@@ -566,7 +568,7 @@ alignment::slice(){
 					};
 				'
 			CMD
-				$minstances $tmpdir/chr.info
+				$minstances "$chrinfo"
 			CMD
 
 			o="$tdir"/$(basename "$f")
@@ -730,53 +732,6 @@ alignment::rmduplicates(){
 	return 0
 }
 
-alignment::_genomedict() {
-	local funcname=${FUNCNAME[0]}
-	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
-			$funcname usage: 
-			-1 <cmds1>    | array of
-			-t <threads>  | number of
-			-i <genome>   | path to
-			-p <tmpdir>   | path to
-		EOF
-		return 0
-	}
-
-	local OPTIND arg mandatory threads genome tmpdir
-	declare -n _cmds1_genomedict
-	while getopts '1:t:i:p:' arg; do
-		case $arg in
-			1) ((mandatory++)); _cmds1_genomedict=$OPTARG;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			i) ((mandatory++)); genome="$OPTARG";;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
-			*) _usage; return 1;;
-		esac
-	done
-	[[ $mandatory -lt 4 ]] && _usage && return 1
-
-	local instances ithreads jmem jgct jcgct
-	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -T $threads)
-
-	commander::makecmd -a _cmds1_genomedict -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-		samtools faidx "$genome"
-	CMD
-		rm -f ${genome%.*}.dict
-	CMD
-		picard
-			-Xmx${jmem}m
-			-XX:ParallelGCThreads=$jgct
-			-XX:ConcGCThreads=$jcgct
-			-Djava.io.tmpdir="$tmpdir"
-			CreateSequenceDictionary
-			R="$genome"
-			VERBOSITY=WARNING
-	CMD
-
-	return 0
-}
-
 alignment::reorder() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
@@ -826,12 +781,7 @@ alignment::reorder() {
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3
-	alignment::_genomedict \
-		-1 cmd1 \
-		-i $genome \
-		-p $tmpdir \
-		-t $threads
+	declare -a tomerge cmd1 cmd2
 	for m in "${_mapper_reorder[@]}"; do
 		declare -n _bams_reorder=$m
 		odir="$outdir/$m"
@@ -841,7 +791,7 @@ alignment::reorder() {
 			tomerge=()
 
 			while read -r slice; do
-				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				picard
 					-Xmx${jmem}m
 					-XX:ParallelGCThreads=$jgct
@@ -866,7 +816,7 @@ alignment::reorder() {
 			o="${o%.*}.ordered.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
@@ -884,11 +834,9 @@ alignment::reorder() {
 	$skip && {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-		commander::printcmd -a cmd3
 	} || {
-		{	commander::runcmd -v -b -t $threads -a cmd1 && \
-			commander::runcmd -v -b -t $minstances -a cmd2 && \
-			commander::runcmd -v -b -t $instances -a cmd3
+		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
+			commander::runcmd -v -b -t $instances -a cmd2
 		} || { 
 			commander::printerr "$funcname failed"
 			return 1

@@ -47,7 +47,8 @@ cluster::coexpression(){
 
 	declare -a cmd1
 	declare -A visited
-	local m f i j c t e tdir odir cdir ddir params
+	local m f i j c t e tdir odir cdir ddir params tmp="$(mktemp -p "$tmpdir")"
+	local tojoin="$tmp.tojoin" joined="$tmp.joined"
 	for m in "${_mapper_coexpression[@]}"; do
 		odir="$outdir/$m"
 		tdir="$tmpdir/$m"
@@ -56,6 +57,7 @@ cluster::coexpression(){
 		mkdir -p "$odir" "$tdir"
 		visited=()
 
+		rm -f $joined
 		for f in "${_cmpfiles_coexpression[@]}"; do
 			mapfile -t < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
@@ -63,17 +65,17 @@ cluster::coexpression(){
 				for t in "${MAPFILE[@]:$((++i)):${#MAPFILE[@]}}"; do
 					[[ ${visited["$c-vs-$t"]} ]] && continue || visited["$c-vs-$t"]=1
 
-					awk 'NR>1' "$ddir/$c-vs-$t/deseq.full.tsv" | sort -k1,1V | cut -f 1,2,3,7 | sed 's/NA/0/g'> "$tdir/tojoin"
-					if [[ -s "$tdir/joined" ]]; then
-						join -t $'\t' "$tdir/joined" "$tdir/tojoin" > "$tdir/tmp"
-						mv "$tdir/tmp" "$tdir/joined"
+					awk 'NR>1' "$ddir/$c-vs-$t/deseq.full.tsv" | sort -k1,1V | cut -f 1,2,3,7 | sed 's/NA/0/g' > "$tojoin"
+					if [[ -s "$joined" ]]; then
+						join -t $'\t' "$joined" "$tojoin" > "$tmp"
+						mv "$tmp" "$joined"
 					else
-						mv "$tdir/tojoin" "$tdir/joined"
+						mv "$tojoin" "$joined"
 					fi
 				done
 			done
 		done
-		mv $tdir/joined $odir/experiments.deseq.tsv
+		mv $joined $odir/experiments.deseq.tsv
 
 		# filter joined deseq tables requiers padj >0 due to NA replacement
 		perl -F'\t' -slane '

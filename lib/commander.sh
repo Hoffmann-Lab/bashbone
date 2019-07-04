@@ -120,7 +120,7 @@ commander::printcmd(){
 
 commander::runcmd(){
     trap 'return $?' INT TERM
-	trap 'rm -rf $shdir' RETURN
+	trap 'rm -rf $tmpdir' RETURN
 
 	local funcname=${FUNCNAME[0]}
 	_usage(){
@@ -150,21 +150,21 @@ commander::runcmd(){
 					echo ":INFO: running commands of array ${!_cmds_runcmd}"
 					commander::printcmd -a _cmds_runcmd
 				}
-				# better write to file to avoid xargs argument too long error
-				local i md5sh shdir=$(mktemp -d -p /dev/shm)
+				# better write to file to avoid xargs argument too long error due to -I {}
+				local i sh tmpdir=$(mktemp -d -p /dev/shm)
 				if [[ $benchmark ]]; then
 					# printf '%s\0' "${_cmds_runcmd[@]}" | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -0 -P $threads -I {} bash -c {}
 					for i in "${!_cmds_runcmd[@]}"; do
-						md5sh=$(printf '%s\n' "$i${_cmds_runcmd[$i]}" | md5sum | cut -d ' ' -f 1)
-						printf '%s\n' "${_cmds_runcmd[$i]}" > "$shdir/$md5sh"
-						echo "$shdir/$md5sh"
+						sh="$(mktemp -p $tmpdir).sh"
+						printf '%s\n' "${_cmds_runcmd[$i]}" > "$sh"
+						echo "$sh"
 					done | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
 				else
 					# printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $threads -I {} bash -c {}
 					for i in "${!_cmds_runcmd[@]}"; do
-						md5sh=$(printf '%s\n' "$i${_cmds_runcmd[$i]}" | md5sum | cut -d ' ' -f 1)
-						printf '%s\n' "${_cmds_runcmd[$i]}" > "$shdir/$md5sh"
-						echo "$shdir/$md5sh"
+						sh="$(mktemp -p $tmpdir).sh"
+						printf '%s\n' "${_cmds_runcmd[$i]}" > "$sh"
+						echo "$sh"
 					done | xargs -P $threads -I {} bash {}
 				fi
 				return $((${PIPESTATUS[@]/%/+}0));;
