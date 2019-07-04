@@ -120,7 +120,10 @@ commander::printcmd(){
 
 commander::runcmd(){
     trap 'return $?' INT TERM
-	trap 'rm -rf $tmpdir' RETURN
+	trap '[[ "${FUNCNAME[0]}" == "commander::runcmd" ]] && rm -rf $tmpdir' RETURN
+	# if function where runcmd is called executes return statement befor reaching runcmd, this trap is triggered anyways
+	# i.e. a prior defined $tmpdir will be removed by mistake
+	local tmpdir=$(mktemp -d -p /dev/shm) # define here in case _usage is triggered which calls return
 
 	local funcname=${FUNCNAME[0]}
 	_usage(){
@@ -151,7 +154,7 @@ commander::runcmd(){
 					commander::printcmd -a _cmds_runcmd
 				}
 				# better write to file to avoid xargs argument too long error due to -I {}
-				local i sh tmpdir=$(mktemp -d -p /dev/shm)
+				local i sh
 				if [[ $benchmark ]]; then
 					# printf '%s\0' "${_cmds_runcmd[@]}" | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -0 -P $threads -I {} bash -c {}
 					for i in "${!_cmds_runcmd[@]}"; do

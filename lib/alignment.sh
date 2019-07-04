@@ -599,14 +599,25 @@ alignment::slice(){
 		done
 	done
 
-	$skip && {
-		commander::printcmd -a cmd2
-		commander::printcmd -a cmd3
-		commander::printcmd -a cmd4
-	} || {
-		{	commander::runcmd -v -b -t $instances -a cmd2 && \
-			commander::runcmd -v -b -t $instances -a cmd3 && \
-			commander::runcmd -v -b -t $((threads/xthreads)) -a cmd4
+	# in case of many contigs, output will be too huge
+	# $skip && {
+	# 	commander::printcmd -a cmd2
+	# 	commander::printcmd -a cmd3
+	# 	commander::printcmd -a cmd4
+	# } || {
+	# 	{	commander::runcmd -v -b -t $instances -a cmd2 && \
+	# 		commander::runcmd -v -b -t $instances -a cmd3 && \
+	# 		commander::runcmd -v -b -t $((threads/xthreads)) -a cmd4
+	# 	} || { 
+	# 		commander::printerr "$funcname failed"
+	# 		return 1
+	# 	}
+	# }
+
+	$skip || {
+		{	commander::runcmd -b -t $instances -a cmd2 && \
+			commander::runcmd -b -t $instances -a cmd3 && \
+			commander::runcmd -b -t $((threads/xthreads)) -a cmd4
 		} || { 
 			commander::printerr "$funcname failed"
 			return 1
