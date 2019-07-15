@@ -21,14 +21,14 @@ genome::mkdict() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			5) ((mandatory++)); skipmd5=true;;
+			5) $OPTARG && skipmd5=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
 			i) ((mandatory++)); genome="$OPTARG";;
 			p) ((mandatory++)); tmpdir="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage && return 1
+	[[ $mandatory -lt 3 ]] && _usage && return 1
 
 	commander::print "creating genome dictionary"
 
