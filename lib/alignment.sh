@@ -528,7 +528,7 @@ alignment::slice(){
 
 	local tdir f i chrs o xinstances xthreads
 	declare -a cmd1 cmd2 cmd3 cmd4
-	for m in "${_mapper_slice[@]}"; do
+	for m in "${_mapper_slice[@]}"; do # do never ever skip this - pipeline rely on _bamslices_slice
 		declare -n _bams_slice=$m
 		tdir="$tmpdir/$m"
 		mkdir -p "$tdir"
@@ -848,6 +848,177 @@ alignment::reorder() {
 	} || {
 		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2
+		} || { 
+			commander::printerr "$funcname failed"
+			return 1
+		}
+	}
+
+	return 0
+}
+
+alignment::add4stats(){
+	local funcname=${FUNCNAME[0]}
+	_usage() {
+		commander::printerr {COMMANDER[0]}<<- EOF
+			$funcname usage: 
+			-r <mapper>    | array of sorted, indexed bams within array of
+		EOF
+		return 0
+	}
+
+	local OPTIND arg mandatory
+	declare -n _mapper_add4stats
+	while getopts 'r:' arg; do
+		case $arg in
+			r) ((mandatory++)); _mapper_add4stats=$OPTARG;;
+			*) _usage; return 1;;
+		esac
+	done
+	[[ $mandatory -lt 1 ]] && _usage && return 1
+
+	local m
+	for m in "${_mapper_add4stats[@]}"; do
+		declare -n _bams_add4stats=$m
+		for i in "${!_bams_add4stats[@]}"; do
+			declare -n _mi_add4stats=$m$i # references will be always globally declared
+			_mi_add4stats+=("${_bams_add4stats[$i]}")
+		done
+	done
+
+	return 0
+}
+
+alignment::bamstats(){
+	local funcname=${FUNCNAME[0]}
+	_usage() {
+		commander::printerr {COMMANDER[0]}<<- EOF
+			$funcname usage: 
+			-S <hardskip> | true/false return
+			-s <softskip> | true/false only print commands
+			-t <threads>  | number of
+			-r <mapper>   | array of sorted, indexed bams within array of
+			-o <outdir>   | path to
+		EOF
+		return 0
+	}
+
+	local OPTIND arg mandatory skip=false threads outdir
+	declare -n _mapper_bamstats
+	while getopts 'S:s:r:t:o:' arg; do
+		case $arg in
+			S) $OPTARG && return 0;;
+			s) $OPTARG && skip=true;;
+			t) ((mandatory++)); threads=$OPTARG;;
+			r) ((mandatory++)); _mapper_bamstats=$OPTARG;;
+			o) ((mandatory++)); outdir="$OPTARG";;
+			*) _usage; return 1;;
+		esac
+	done
+	[[ $mandatory -lt 3 ]] && _usage && return 1
+
+	commander::print "summarizing mapping stats"
+
+	local m instances ithreads
+	for m in "${_mapper_bamstats[@]}"; do
+		declare -n _bams_bamstats=$m
+		for i in "${!_bams_bamstats[@]}"; do
+			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
+			((instances+=${#_mi_bamstats[@]}))
+		done
+	done
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+
+	declare -a cmd1
+	for m in "${_mapper_bamstats[@]}"; do
+		declare -n _bams_bamstats=$m
+		for i in "${!_bams_bamstats[@]}"; do
+			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
+			for bam in "${_mi_bamstats[@]}"; do
+				[[ "$bam" =~ \.pool\. || "$bam" =~ \.pseudopool\. ]] && continue
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+					samtools flagstat
+						-@ $ithreads
+						"$bam"
+						> "${bam%.*}.flagstat"
+				CMD
+			done
+		done
+	done
+
+	$skip && {
+		commander::printcmd -a cmd1
+	} || {
+		{	commander::runcmd -v -b -t $instances -a cmd1
+		} || { 
+			commander::printerr "$funcname failed"
+			return 1
+		}
+	}
+
+	local filter b o all a s c
+	declare -a cmd2
+	for m in "${_mapper_bamstats[@]}"; do
+		declare -n _bams_bamstats=$m
+		odir="$outdir/$m"
+		mkdir -p "$odir"
+		echo -e "sample\ttype\tcount" > "$odir/mapping.barplot.tsv"
+		for i in "${!_bams_bamstats[@]}"; do
+			[[ "${_bams_bamstats[$i]}" =~ \.pool\. || "${_bams_bamstats[$i]}" =~ \.pseudopool\. ]] && continue
+			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
+			filter=''
+			b="$(basename "${_mi_bamstats[0]}")"
+			b="${b%.*}"
+			o="$odir/$b.stats"
+			all=''
+			if [[ -s "$outdir/$b.stats" ]]; then
+				all=$(tail -1 "$outdir/$b.stats" | cut -f 3)
+				tail -1 "$outdir/$b.stats" > $o
+			else
+				rm -f $o
+			fi
+			for bam in "${_mi_bamstats[@]}"; do
+				[[ ! $filter ]] && filter='mapped' || filter=$(echo $bam | rev | cut -d '.' -f 2 | rev)
+				a=$(grep mapped -m 1 ${bam%.*}.flagstat | cut -d ' ' -f 1)
+				s=$(grep secondary -m 1 ${bam%.*}.flagstat | cut -d ' ' -f 1) # get rid of multicounts - 0 if unique reads in bam only
+				c=$((a-s))
+				[[ ! $all ]] && all=$c
+				echo -e "$b\t$filter reads\t$c" >> $o
+			done
+			perl -F'\t' -lane '$all=$F[2] unless $all; $F[0].=" ($all)"; $F[2]=(100*$F[2]/$all); print join"\t",@F' $o | tac | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$odir/mapping.barplot.tsv"
+		done
+
+		commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+			Rscript - <<< '
+				suppressMessages(library("ggplot2"));
+				suppressMessages(library("scales"));
+				args <- commandArgs(TRUE);
+				intsv <- args[1];
+				outfile <- args[2];
+				m <- read.table(intsv, header=T, sep="\t");
+				l <- length(m$type)/length(unique(m$sample));
+				l <- m$type[1:l];
+				m$type = factor(m$type, levels=l);
+				pdf(outfile);
+				ggplot(m, aes(x = sample, y = count, fill = type)) +
+					ggtitle("Mapping") + xlab("Sample") + ylab("Readcount in %") +
+					theme_bw() + guides(fill=guide_legend(title=NULL)) +
+					theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+					geom_bar(position = "fill", stat = "identity") +
+					scale_y_continuous(labels = percent_format());
+				graphics.off();
+			'
+		CMD
+			"$odir/mapping.barplot.tsv"  "$odir/mapping.barplot.pdf"
+		CMD
+	done
+
+	$skip && {
+		commander::printcmd -a cmd2
+	} || {
+		{	conda activate py2r && \
+			commander::runcmd -v -b -t $threads -a cmd2 && \
+			conda activate py2
 		} || { 
 			commander::printerr "$funcname failed"
 			return 1

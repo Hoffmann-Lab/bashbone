@@ -68,7 +68,7 @@ genome::mkdict() {
 		} || {
 			{	commander::runcmd -v -b -t $threads -a cmd1 || return 1
 				local md5dict thismd5genome thismd5dict
-				md5dict=$(md5sum "$o" | cut -d ' ' -f 1)
+				md5dict=$(md5sum "$dict" | cut -d ' ' -f 1)
 				thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 				[[ -s "${genome%.*}.dict" ]] && thismd5dict=$(md5sum "${genome%.*}.dict" | cut -d ' ' -f 1)
 				[[ "$thismd5genome" != "$md5genome" || ! "$thismd5dict" || "$thismd5dict" != "$md5dict" ]] && commander::runcmd -v -b -t $threads -a cmd2

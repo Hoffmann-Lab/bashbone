@@ -612,11 +612,9 @@ preprocess::qcstats(){
 			tool=$(basename "$qdir")
 			c=$(unzip -p "$qdir/${b}_fastqc.zip" "${b}_fastqc/fastqc_data.txt" | grep -m 1 -F Total | awk -v mult=$multiplier '{print $3*mult}')
 			counts+=($c)
-
 			echo -e "$b\t$tool reads\t$c" >> $o
-			
 			perl -sle 'print join"\t",("$sample ($all)","$tool reads",(100*$c/$all))' -- -all=${counts[$((i*${#_qualdirs_qcstats[@]}))]} -c=$c -sample=$b -tool=$tool
-		done > "$tmpdir/tmp.tsv" # strange!!! if piped directly into tac - tac's awk implementation fails
+		done > "$tmpdir/tmp.tsv" # strange!!! if piped directly into tac - tac's awk implementation fails - not a shournal raceexception bug!
 		tac "$tmpdir/tmp.tsv" | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$outdir/preprocessing.barplot.tsv"
 	done
 

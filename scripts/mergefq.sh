@@ -56,12 +56,12 @@ open=$(readlink -e "$i" | file -f - | grep -Eo '(gzip|bzip)' && echo -cd || echo
 
 if [[ $u -gt 0 ]]; then
 	if [[ $u -eq 2 ]]; then
-		exec $open "$i" | paste - - - - | sed -n '2~2p' | tr '\t' '\n' | $z > "$o"
+		exec $open "$i" | sed -r '/^\s*$/d' | paste - - - - | sed -n '2~2p' | tr '\t' '\n' | $z > "$o"
 	else 
-		exec $open "$i" | paste - - - - | sed -n '1~2p' | tr '\t' '\n' | $z > "$o"
+		exec $open "$i" | sed -r '/^\s*$/d' | paste - - - - | sed -n '1~2p' | tr '\t' '\n' | $z > "$o"
 	fi
 else
-	exec $open "$i" "$j" | paste - - - - | LC_ALL=C sort -k1,1 -S $m -T "$d" --parallel=$t | tr '\t' '\n' | $z > "$o"
+	exec $open "$i" "$j" | sed -r '/^\s*$/d' | paste - - - - | LC_ALL=C sort -k1,1 -S $m -T "$d" --parallel=$t | tr '\t' '\n' | $z > "$o"
 fi
 
 exit
