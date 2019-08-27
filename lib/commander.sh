@@ -6,9 +6,10 @@ declare -a COMMANDER
 commander::print(){
 	[[ $* ]] && echo ":INFO: $*"
 	local fd
+	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
-		mapfile -u $fd -t
-		printf ':INFO: %s\n' "${MAPFILE[@]}"
+		mapfile -u $fd -t mapdata
+		printf ':INFO: %s\n' "${mapdata[@]}"
 		# while read -u $fd -r tmp; do
 		# 	echo ":INFO: $tmp"
 		# done
@@ -20,9 +21,11 @@ commander::print(){
 commander::warn(){
 	[[ $* ]] && echo ":WARNING: $*"
 	local fd
+	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
-		mapfile -u $fd -t
-		printf ':WARNING: %s\n' "${MAPFILE[@]}"
+		mapdata
+		mapfile -u $fd -t mapdata
+		printf ':WARNING: %s\n' "${mapdata[@]}"
 	done
 	COMMANDER=()
 
@@ -33,9 +36,10 @@ commander::printerr(){
 	echo -ne "\e[0;31m"
 	[[ $* ]] && echo ":ERROR: $*" >&2
 	local fd
+	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
-		mapfile -u $fd -t
-		printf ':ERROR: %s\n' "${MAPFILE[@]}" >&2
+		mapfile -u $fd -t mapdata
+		printf ':ERROR: %s\n' "${mapdata[@]}" >&2
 	done
 	COMMANDER=()
 	echo -ne "\e[m"
@@ -69,17 +73,17 @@ commander::makecmd(){
 
 	local OPTIND arg mandatory sep='|' suffix='' fd tmp
 	declare -n _cmds_makecmd # be very careful with circular name reference
-	declare -a cmd_makecmd # be very careful with references name space
+	declare -a mapdata cmd_makecmd # be very careful with references name space
 	while getopts ':a:o:s:c' arg; do
 		case $arg in
-			a)	mendatory=1; _cmds_makecmd=$OPTARG;;
+			a)	mandatory=1; _cmds_makecmd=$OPTARG;;
 			s)	sep=$(echo -e "${OPTARG:- }");; # echo -e to make e.g. '\t' possible
 			o)	suffix=' > '"$OPTARG";;
-			c)	[[ ! $mendatory ]] && { _usage; return 1; }
+			c)	[[ ! $mandatory ]] && { _usage; return 1; }
 				shift $((OPTIND-1)) # remove '-a <cmd> -s <char> -o <file> -c' from $*
 				for fd in "${COMMANDER[@]}"; do
-					mapfile -u $fd -t
-					cmd_makecmd+=("${MAPFILE[*]}") # * instead of @ to concatenate
+					mapfile -u $fd -t mapdata
+					cmd_makecmd+=("${mapdata[*]}") # * instead of @ to concatenate
 					exec {fd}>&- # just to be safe
 					# exec {fd}>&- to close fd in principle not necessary since heredoc is read only and handles closure after last EOF
 				done

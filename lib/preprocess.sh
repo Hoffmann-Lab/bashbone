@@ -223,9 +223,9 @@ preprocess::trimmomatic() {
 
 	declare -A phred
 	local l
-	declare -a a
-	mapfile -t < <(commander::runcmd -t $threads -a cmd1)
-	for l in "${MAPFILE[@]}"; do
+	declare -a a mapdata
+	mapfile -t mapdata < <(commander::runcmd -t $threads -a cmd1)
+	for l in "${mapdata[@]}"; do
 		a=($l)
 		phred["${a[@]:1}"]="${a[0]}"
 	done

@@ -527,7 +527,7 @@ alignment::slice(){
 	samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}' > "$chrinfo"
 
 	local tdir f i chrs o xinstances xthreads
-	declare -a cmd1 cmd2 cmd3 cmd4
+	declare -a mapdata cmd1 cmd2 cmd3 cmd4 
 	for m in "${_mapper_slice[@]}"; do # do never ever skip this - pipeline rely on _bamslices_slice
 		declare -n _bams_slice=$m
 		tdir="$tmpdir/$m"
@@ -579,10 +579,10 @@ alignment::slice(){
 			alignment::_index -1 cmd2 -t $ithreads -i "$f"
 
 			i=0
-			mapfile -t < <(conda activate py2r &>/dev/null && commander::runcmd -a cmd1)
-			xinstances=$((${#MAPFILE[@]}*${#_bams_slice[@]}*${#_mapper_slice[@]}))
+			mapfile -t mapdata < <(conda activate py2r &>/dev/null && commander::runcmd -a cmd1)
+			xinstances=$((${#mapdata[@]}*${#_bams_slice[@]}*${#_mapper_slice[@]}))
 			xthreads=$((threads/xinstances>0?threads/xinstances:1))
-			for chrs in "${MAPFILE[@]}"; do
+			for chrs in "${mapdata[@]}"; do
 				((++i))
 				echo "$o.slice$i.bam" >> "$o.slices.info"
 				# -M for multi reagion iterator is faster and keeps sort order

@@ -18,14 +18,14 @@ expression::deseq() {
 	}
 
 	local OPTIND arg mandatory skip=false threads countsdir outdir
-	declare -n _mapper_pca _cmpfiles_pca
+	declare -n _mapper_deseq _cmpfiles_deseq
 	while getopts 'S:s:t:r:c:i:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
-			r) ((mandatory++)); _mapper_pca=$OPTARG;;
-			c) ((mandatory++)); _cmpfiles_pca=$OPTARG;;
+			r) ((mandatory++)); _mapper_deseq=$OPTARG;;
+			c) ((mandatory++)); _cmpfiles_deseq=$OPTARG;;
 			i) ((mandatory++)); countsdir="$OPTARG";;
 			o) ((mandatory++)); outdir="$OPTARG";;
 			*) _usage; return 1;;
@@ -35,29 +35,29 @@ expression::deseq() {
 
 	commander::print "principal component and differential gene expression analyses"
 
-	local instances=${#_mapper_pca[@]} ithreads m
+	local instances=${#_mapper_deseq[@]} ithreads m
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 64 -T $threads)
 
-	declare -a cmd1 cmps
+	declare -a cmd1 cmps mapdata
 	declare -A visited
 	local f i c t odir countfile sample condition library replicate pair
-	for m in "${_mapper_pca[@]}"; do
+	for m in "${_mapper_deseq[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
 		visited=()
         cmps=()
 
-		if [[ $(awk '{print $5}' ${_cmpfiles_pca[0]}) ]]; then
+		if [[ $(awk '{print $5}' ${_cmpfiles_deseq[0]}) ]]; then
 			echo 'sample,countfile,condition,replicate,pairs' > "$odir/experiments.csv"
 		else
 			echo 'sample,countfile,condition,replicate' > "$odir/experiments.csv"
 		fi
 
-		for f in "${_cmpfiles_pca[@]}"; do
-			mapfile -t < <(cut -d $'\t' -f 2 $f | uniq)
+		for f in "${_cmpfiles_deseq[@]}"; do
+			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
-			for c in "${MAPFILE[@]::${#MAPFILE[@]}-1}"; do 
-				for t in "${MAPFILE[@]:$((++i)):${#MAPFILE[@]}}"; do
+			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do 
+				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					cmps+=("$c $t")
 					unset sample condition library replicate pair
 					while read -r sample condition library replicate pair; do
@@ -127,7 +127,7 @@ expression::joincounts() {
 
 	commander::print "joining count values plus zscore calculation"
 
-	declare -a cmd1 cmd2
+	declare -a cmd1 cmd2 mapdata
 	local m f x i c t h mh sample condition library replicate pair cf e tmp="$(mktemp -p "$tmpdir")"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
 	for m in "${_mapper_join[@]}"; do
@@ -138,10 +138,10 @@ expression::joincounts() {
 		declare -a header meanheader
 		x=0
 		for f in "${_cmpfiles_join[@]}"; do
-			mapfile -t < <(cut -d $'\t' -f 2 $f | uniq)
+			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
-			for c in "${MAPFILE[@]::${#MAPFILE[@]}-1}"; do 
-				for t in "${MAPFILE[@]:$((++i)):${#MAPFILE[@]}}"; do 
+			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do 
+				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do 
 					vsc="$deseqdir/$m/$c-vs-$t/experiments.vsc"
 					
 					unset sample condition library replicate pair

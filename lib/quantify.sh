@@ -62,11 +62,11 @@ quantify::featurecounts() {
 		commander::printcmd -a cmd2
 	} || {
 		{	local l
-			declare -a a
+			declare -a a mapdata
 			commander::runcmd -v -b -t $threads -a cmd1 && \
 			conda activate py3 && \
-			mapfile -t < <(commander::runcmd -t $threads -a cmd2)
-			for l in "${MAPFILE[@]}"; do
+			mapfile -t mapdata < <(commander::runcmd -t $threads -a cmd2)
+			for l in "${mapdata[@]}"; do
 				a=($l)
 				strandness["${a[@]:1}"]="${a[0]}"
 			done

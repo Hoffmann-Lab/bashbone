@@ -45,7 +45,7 @@ cluster::coexpression(){
 
 	commander::print "inferring coexpression"
 
-	declare -a cmd1
+	declare -a mapdata cmd1
 	declare -A visited
 	local m f i j c t e tdir odir cdir ddir params tmp="$(mktemp -p "$tmpdir")"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
@@ -59,10 +59,10 @@ cluster::coexpression(){
 
 		rm -f $joined
 		for f in "${_cmpfiles_coexpression[@]}"; do
-			mapfile -t < <(cut -d $'\t' -f 2 $f | uniq)
+			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
-			for c in "${MAPFILE[@]::${#MAPFILE[@]}-1}"; do 
-				for t in "${MAPFILE[@]:$((++i)):${#MAPFILE[@]}}"; do
+			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do 
+				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					[[ ${visited["$c-vs-$t"]} ]] && continue || visited["$c-vs-$t"]=1
 
 					awk 'NR>1' "$ddir/$c-vs-$t/deseq.full.tsv" | sort -k1,1V | cut -f 1,2,3,7 | sed 's/NA/0/g' > "$tojoin"

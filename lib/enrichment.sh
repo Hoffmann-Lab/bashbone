@@ -129,24 +129,6 @@ enrichment::_gsea(){
 			gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust")];
 			colnames(gsea) = c("id","count","pval","padj");
 			write.table(gsea, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");
-
-			dfpos <- df[df$log2FoldChange>0 , ];
-			gl <- abs(dfpos[, which(colnames(dfpos)=="log2FoldChange") ]);
-			names(gl) <- as.character(dfpos[, which(colnames(dfpos)=="id")]);
-			gl <- sort(gl, decreasing = T);
-			gsea <- GSEA(gl, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
-			gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust")];
-			colnames(gsea) = c("id","count","pval","padj");
-			write.table(gsea, row.names = F, file = file.path(odir,"goenrichment.pos.tsv"), quote=F, sep="\t");
-
-			dfneg <- df[df$log2FoldChange<0 , ];
-			gl <- abs(dfneg[, which(colnames(dfneg)=="log2FoldChange") ]);
-			names(gl) <- as.character(dfneg[, which(colnames(dfneg)=="id")]);
-			gl <- sort(gl, decreasing = T);
-			gsea <- GSEA(gl, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
-			gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust")];
-			colnames(gsea) = c("id","count","pval","padj");
-			write.table(gsea, row.names = F, file = file.path(odir,"goenrichment.neg.tsv") , quote=F, sep="\t");
 		'
 	CMD
 		"$outdir/reference.gmt" "$deseqtsv" "$outdir"
@@ -340,7 +322,7 @@ enrichment::go(){
 	# As GSEA’s permutation procedure involves re-computation of per-gene DE statistics, adaptations are necessary for RNA-seq. The EnrichmentBrowser implements an accordingly adapted version of GSEA, which allows incorporation of limma/voom, edgeR, or DESeq2 for repeated DE re-computation within GSEA.
 	# While it might be in some cases necessary to apply permutation-based GSEA for RNA-seq data, there are also alternatives avoiding permutation. Among them is ROtAtion gene Set Testing (ROAST), which uses rotation instead of permutation
 
-	declare -a cmd1 cmd2 enrichmentfiles
+	declare -a cmd1 cmd2 enrichmentfiles mapdata
 	local m f i c t domain odir
 	for m in "${_mapper_go[@]}"; do
 
@@ -354,10 +336,10 @@ enrichment::go(){
 		done
 
 		for f in "${_cmpfiles_go[@]}"; do
-			mapfile -t < <(cut -d $'\t' -f 2 $f | uniq)
+			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
-			for c in "${MAPFILE[@]::${#MAPFILE[@]}-1}"; do 
-				for t in "${MAPFILE[@]:$((++i)):${#MAPFILE[@]}}"; do 
+			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do 
+				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do 
 					deseqtsv="$deseqdir/$m/$c-vs-$t/deseq.tsv"
 					for domain in biological_process cellular_component molecular_function; do
 						odir="$deseqdir/$m/$c-vs-$t/$domain"

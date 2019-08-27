@@ -71,7 +71,9 @@ genome::mkdict() {
 				md5dict=$(md5sum "$dict" | cut -d ' ' -f 1)
 				thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 				[[ -s "${genome%.*}.dict" ]] && thismd5dict=$(md5sum "${genome%.*}.dict" | cut -d ' ' -f 1)
-				[[ "$thismd5genome" != "$md5genome" || ! "$thismd5dict" || "$thismd5dict" != "$md5dict" ]] && commander::runcmd -v -b -t $threads -a cmd2
+				if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5dict" || "$thismd5dict" != "$md5dict" ]]; then
+					commander::runcmd -v -b -t $threads -a cmd2 || return 1
+				fi
 			} || { 
 				commander::printerr "$funcname failed"
 				return 1
