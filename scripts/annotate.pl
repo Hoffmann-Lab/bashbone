@@ -43,7 +43,7 @@ if ($ARGV[1]){
 				if ($l[-1]=~/gene_biotype\s+\"([^\"]+)/){
 					$b = $1;
 				}
-				$m{$g} = join"\t",($n,$b,'');
+				$m{$g} = join"\t",($n,$b,$n);
 			}
 		}
 	close I;

@@ -36,6 +36,7 @@ for (t in unique(df$type)){
 	}
 }
 ar <- data.frame( row.names = ar, dummy = ac)
+if (nrow(ar) == 0) quit() #necessary if script is called with emty input
 colnames(ar)[1] <- type
 #if(length(unique(ac))==1) ar <- NA
 

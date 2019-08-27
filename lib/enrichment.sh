@@ -53,7 +53,11 @@ enrichment::_ora(){
 			tg <- suppressMessages(read.gmt(gmt));
 			genes <- scan(idsfile, character(), quote = "", quiet = T);
 			ora <- enricher(genes, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
-			ora <- as.data.frame(ora)[c("ID","Count","pvalue","p.adjust")];
+			if(is.null(ora)){
+				ora <- data.frame(matrix(ncol = 4, nrow = 0));
+			} else {
+				ora <- as.data.frame(ora)[c("ID","Count","pvalue","p.adjust")];
+			};
 			colnames(ora) = c("id","count","pval","padj");
 			write.table(ora, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");
 		'
@@ -126,7 +130,11 @@ enrichment::_gsea(){
 			names(gl) <- as.character(df[, which(colnames(df)=="id")]);
 			gl <- sort(gl, decreasing = T);
 			gsea <- GSEA(gl, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
-			gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust")];
+			if(is.null(gsea)){
+				gsea <- data.frame(matrix(ncol = 4, nrow = 0));
+			} else {
+				gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust")];
+			};
 			colnames(gsea) = c("id","count","pval","padj");
 			write.table(gsea, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");
 		'
