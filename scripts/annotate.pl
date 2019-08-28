@@ -43,7 +43,7 @@ if ($ARGV[1]){
 				if ($l[-1]=~/gene_biotype\s+\"([^\"]+)/){
 					$b = $1;
 				}
-				$m{$g} = join"\t",($n,$b,$n);
+				$m{$g} = join"\t",($n,$b,'NA');
 			}
 		}
 	close I;
@@ -74,6 +74,7 @@ for (2..$#ARGV){
 				next;
 			} # else: not next!
 		}
+		# do splits by '@' in case of merged gtf with ids of type feature@subfeature@subfeature...
 		if ($ps) {
 			if (/\((\S+)(\s\+|\s-)*\)\s+(0|0\.25)\s+0\s+t$/) {
 				my $n = $mps{$1};
@@ -84,11 +85,12 @@ for (2..$#ARGV){
 		} elsif($deseq) {
 			my $n = $m{$l[0]};
 			$n = $m{(split/\@/,$l[0])[-1]} unless $n;
-			$n = join"\t",('','','') unless $n;
+			$n = join"\t",('NA','NA','NA') unless $n;
 			say O join"\t",(@l,$n);
 		} else {
 			my $n = $m{$l[3]};
-			$n = join"\t",('','','') unless $n;
+			$n = $m{(split/\@/,$l[3])[-1]} unless $n;
+			$n = join"\t",('NA','NA','NA') unless $n;
 			say O join"\t",(@l,$n);
 		}
 	}

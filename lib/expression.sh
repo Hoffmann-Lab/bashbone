@@ -10,6 +10,7 @@ expression::deseq() {
 			-s <softskip> | truefalse only print commands
 			-t <threads>  | number of
 			-r <mapper>   | array of bams within array of
+			-g <gtf>      | path to
 			-c <cmpfiles> | array of
 			-i <htscdir>  | path to
 			-o <outdir>   | path to
@@ -17,14 +18,15 @@ expression::deseq() {
 		return 0
 	}
 
-	local OPTIND arg mandatory skip=false threads countsdir outdir
+	local OPTIND arg mandatory skip=false threads countsdir outdir gtf gtfinfo
 	declare -n _mapper_deseq _cmpfiles_deseq
-	while getopts 'S:s:t:r:c:i:o:' arg; do
+	while getopts 'S:s:t:r:g:c:i:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
 			r) ((mandatory++)); _mapper_deseq=$OPTARG;;
+			g) gtf="$OPTARG"; [[ -s "$gtf.info" ]] && "gtfinfo=$gtf.info"; [[ -s "$gtf.descr" ]] && gtfinfo="$gtf.descr";;
 			c) ((mandatory++)); _cmpfiles_deseq=$OPTARG;;
 			i) ((mandatory++)); countsdir="$OPTARG";;
 			o) ((mandatory++)); outdir="$OPTARG";;
@@ -38,9 +40,9 @@ expression::deseq() {
 	local instances=${#_mapper_deseq[@]} ithreads m
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 64 -T $threads)
 
-	declare -a cmd1 cmps mapdata
+	declare -a cmd1 cmd2 cmps mapdata
 	declare -A visited
-	local f i c t odir countfile sample condition library replicate pair
+	local f i c t o odir countfile sample condition library replicate pair
 	for m in "${_mapper_deseq[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
@@ -66,21 +68,31 @@ expression::deseq() {
 						[[ $pair ]] && pair=",$pair"
 						echo "$sample.$replicate,$countfile,$condition,$replicate$pair" >> "$odir/experiments.csv"
 					done < <(awk -v c=$c '$2==c' $f | sort -k4,4V && awk -v t=$t '$2==t' $f | sort -k4,4V)
+
+					if [[ $gtf ]]; then
+						for o in "$odir/$m/$c-vs-$t/deseq.tsv" "$odir/$m/$c-vs-$t/deseq.full.tsv" "$odir/$m/$c-vs-$t/deseq.noNA.tsv" "$odir/$m/$c-vs-$t/heatmap.vsc.ps" "$odir/$m/$c-vs-$t/heatmap.mean.vsc.ps"; do
+							commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+								annotate.pl "${gtfinfo:=0}" "$gtf" "$o"
+							CMD
+						done
+					fi
 				done
 			done
 		done
 
-		commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 			deseq2.R $ithreads "$odir/experiments.csv" "$odir" ${cmps[*]}
 		CMD
 	done
 
 	$skip && {
 		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
 	} || {
 		{	conda activate py2r && \
 			commander::runcmd -v -b -t $instances -a cmd1 && \
-			conda activate py2
+			conda activate py2 && \
+			commander::runcmd -v -b -t $threads -a cmd2
 		} || { 
 			commander::printerr "$funcname failed"
 			return 1
