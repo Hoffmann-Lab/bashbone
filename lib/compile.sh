@@ -147,7 +147,7 @@ compile::java() {
 	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing java"
-	{	url="https://download.oracle.com/otn-pub/java/jdk/12.0.1+12/69cfe15208a647278a19ef0990eea691/jdk-12.0.1_linux-x64_bin.tar.gz" && \
+	{	url="https://download.oracle.com/otn-pub/java/jdk/12.0.2+10/e482c34c86bd4bf8b56c0b35558996b9/jdk-12.0.2_linux-x64_bin.tar.gz" && \
 		wget -q --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O $insdir/java.tar.gz $url && \
 		tar -xzf $insdir/java.tar.gz -C $insdir && \
 		rm $insdir/java.tar.gz && \
