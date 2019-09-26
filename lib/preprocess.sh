@@ -62,7 +62,8 @@ preprocess::cutadapt() {
 			$funcname usage: 
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
-			-a <adapter>  | array of
+			-a <adapter1> | array of
+			-A <adapter2> | array of
 			-t <threads>  | number of
 			-o <outdir>   | path to
 			-1 <fastq1>   | array of
@@ -72,12 +73,13 @@ preprocess::cutadapt() {
 	}
 
 	local OPTIND arg mandatory skip=false threads outdir
-	declare -n _adapter_cutadapt _fq1_cutadapt _fq2_cutadapt
-	while getopts 'S:s:a:t:o:1:2:' arg; do
+	declare -n _adaptera_cutadapt _adapterA_cutadapt _fq1_cutadapt _fq2_cutadapt
+	while getopts 'S:s:a:A:t:o:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			a) ((mandatory++)); _adapter_cutadapt=$OPTARG;;
+			a) ((mandatory++)); _adaptera_cutadapt=$OPTARG;;
+			A) ((mandatory++)); _adapterA_cutadapt=$OPTARG;;
 			t) ((mandatory++)); threads=$OPTARG;;
 			o) ((mandatory++)); outdir="$OPTARG";;
 			1) ((mandatory++)); _fq1_cutadapt=$OPTARG;;
@@ -102,8 +104,8 @@ preprocess::cutadapt() {
 		if [[ "${_fq2_cutadapt[$i]}" ]]; then
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				cutadapt
-				${_adapter_cutadapt[@]/#/-b }
-				${_adapter_cutadapt[@]/#/-B }
+				${_adaptera_cutadapt[@]/#/-a }
+				${_adapterA_cutadapt[@]/#/-A }
 				-j $ithreads
 				-m 18
 				-o "$o1"
@@ -116,7 +118,7 @@ preprocess::cutadapt() {
 		else
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				cutadapt
-				${_adapter_cutadapt[@]/#/-b }
+				${_adapter_cutadapt[@]/#/-a }
 				-j $threads
 				-m 18
 				-o "$o1"
