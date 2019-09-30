@@ -25,11 +25,14 @@ configure::environment(){
 	shopt -s extglob
 	shopt -s expand_aliases
 
-	export JAVA_HOME=$(ls -vd $insdir/jdk*/ | tail -1)
+	JAVA_HOME=$(readlink -e $insdir/latest/java)
+	[[ $JAVA_HOME ]] && export JAVA_HOME=$(dirname $JAVA_HOME)
 	export MALLOC_ARENA_MAX=4
 	
 	export PATH=$(readlink -e $insdir/latest/* | xargs -echo | sed 's/ /:/g'):$PATH
 	export PATH=$(readlink -e $insdir/latest/*/scripts | xargs -echo | sed 's/ /:/g'):$PATH
+
+	source $insdir/conda/bin/activate py2
 
 	return 0
 }

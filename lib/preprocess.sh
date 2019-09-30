@@ -118,7 +118,7 @@ preprocess::cutadapt() {
 		else
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				cutadapt
-				${_adapter_cutadapt[@]/#/-a }
+				${_adaptera_cutadapt[@]/#/-a }
 				-j $threads
 				-m 18
 				-o "$o1"

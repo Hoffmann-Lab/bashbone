@@ -12,7 +12,8 @@ die() {
 }
 
 [[ ! $OSTYPE =~ linux ]] && die "unsupported operating system"
-bash --version | head -1 | cut -d ' ' -f 4 | cut -d '.' -f 1-2 | awk '$0<4.4{exit 1}' || die "requieres bash version 4.4 or above"
+[[ "$(ps -p $$ -o command= | cut -d ' ' -f 1)" == "bash" ]] || die "loading library requieres bash"
+([[ ${BASH_VERSINFO[0]} -gt 4 ]] || [[ ${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 4 ]]) || die "requieres bash version 4.4 or above"
 
 for f in "$(readlink -e $(dirname $0))"/lib/*.sh; do
 	source $f
