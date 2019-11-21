@@ -108,6 +108,7 @@ preprocess::cutadapt() {
 				${_adapterA_cutadapt[@]/#/-A }
 				-j $ithreads
 				-m 18
+				-O 5
 				-o "$o1"
 				-p "$o2"
 				"${_fq1_cutadapt[$i]}" "${_fq2_cutadapt[$i]}"
@@ -121,6 +122,7 @@ preprocess::cutadapt() {
 				${_adaptera_cutadapt[@]/#/-a }
 				-j $threads
 				-m 18
+				-O 5
 				-o "$o1"
 				"${_fq1_cutadapt[$i]}"
 			CMD

@@ -88,16 +88,17 @@ helper::basename(){
 		return 0
 	}
 
-	local OPTIND arg f
+	local OPTIND arg f mandatory
 	declare -n _ref_basename _ref_basenamex
 	while getopts 'f:o:e:' arg; do
 		case $arg in
-			f)	f="$OPTARG";;
+			f)	mandatory=1; f="$OPTARG";;
 			o)	_ref_basename=$OPTARG;;
 			e)	_ref_basenamex=$OPTARG;;
 			*)	_usage;	return 1;;
 		esac
 	done
+	[[ ! $mandatory ]] && _usage && return 1
 
 	readlink -e "$f" | file -f - | grep -qE '(gzip|bzip)' && {
 		_ref_basename=$(basename $f | rev | cut -d '.' -f 3- | rev)

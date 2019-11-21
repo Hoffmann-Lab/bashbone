@@ -310,7 +310,7 @@ enrichment::go(){
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
-			r) ((mandatory++)); _mapper_go=$OPTARG;;
+			r) _mapper_go=$OPTARG;;
 			c) _cmpfiles_go=$OPTARG;;
 			g) ((mandatory++)); gofile="$OPTARG";;
 			l) _idfiles_go="$OPTARG";;
@@ -318,7 +318,7 @@ enrichment::go(){
 			*) _usage; return 1;;
 		esac
 	done
-	( [[ $mandatory -lt 3 ]] || ( [[ ! $_idfiles_go ]] && [[ ! "$deseqdir" || ! $_cmpfiles_go ]] ) ) && _usage && return 1
+	( [[ $mandatory -lt 2 ]] || ( [[ ! $_idfiles_go ]] && [[ ! "$deseqdir" || ! $_cmpfiles_go ]] ) ) && _usage && return 1
 
 	commander::print "calculating go enrichment"
 
@@ -332,17 +332,17 @@ enrichment::go(){
 
 	declare -a cmd1 cmd2 enrichmentfiles mapdata
 	local m f i c t domain odir
-	for m in "${_mapper_go[@]}"; do
 
-		for f in "${_idfiles_go[@]}"; do
-			for domain in biological_process cellular_component molecular_function; do
-				odir="$(dirname $f)/$domain"
-				mkdir -p "$odir"
-				enrichment::_ora -1 cmd1 -2 cmd2 -d $domain -g $gofile -i $f -o $odir
-				enrichmentfiles+=("$odir/goenrichment.tsv")
-			done
+	for f in "${_idfiles_go[@]}"; do
+		for domain in biological_process cellular_component molecular_function; do
+			odir="$(dirname $f)/$domain"
+			mkdir -p "$odir"
+			enrichment::_ora -1 cmd1 -2 cmd2 -d $domain -g $gofile -i $f -o $odir
+			enrichmentfiles+=("$odir/goenrichment.tsv")
 		done
-
+	done
+		
+	for m in "${_mapper_go[@]}"; do
 		for f in "${_cmpfiles_go[@]}"; do
 			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0

@@ -91,15 +91,15 @@ compile::conda() {
 		conda create -y -n py3 python=3 && \
 		
 		# readline 7 causes library version number to be lower on the shared object warnings
-		# use quantstack gcc for r and perl module installation - defaults gcc has a weird usage
+		# use gouarin gcc for r and perl module installation - defaults gcc has a weird usage
 		# under perl > 5.22 List::MoreUtils installation fails
 		# macs2, tophat2/hisat2 and R stuff needs python2 whereas cutadapt,idr,rseqc need python3 env
 		conda activate py2 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c quantstack \
+		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
 			gcc-7 libgcc-7 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c quantstack \
+		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
 			make automake zlib ncurses xz bzip2 pigz pbzip2 ghostscript htslib readline=6 perl=5.22 perl-threaded=5.22 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c quantstack \
+		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
 			datamash \
 			fastqc trimmomatic rcorrector \
 			star bwa hisat2 macs2 \
@@ -108,24 +108,24 @@ compile::conda() {
 		conda clean -y -a && \
 
 		conda activate py3 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c quantstack \
+		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
 			gcc-7 libgcc-7 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c quantstack \
+		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
 			make automake zlib ncurses xz bzip2 pigz pbzip2 ghostscript readline=6 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c quantstack \
+		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
 			cutadapt rseqc && \
 		conda clean -y -a && \
 
 		conda activate py2r && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c quantstack \
+		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
 			gcc-7 libgcc-7 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c quantstack \
+		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
 			make automake zlib ncurses xz bzip2 pigz pbzip2 ghostscript readline=6 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c quantstack \
+		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
 			r-devtools bioconductor-biocinstaller bioconductor-biocparallel \
 			bioconductor-genomicfeatures bioconductor-genefilter \
 			subread r-wgcna bioconductor-deseq2 bioconductor-dexseq bioconductor-gseabase bioconductor-clusterprofiler && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c quantstack \
+		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
 			r-dplyr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-ggpubr r-treemap r-rngtools && \
 		conda clean -y -a && \
 

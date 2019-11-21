@@ -20,6 +20,7 @@ if ($ARGV[0]){
 		my @l=split/\t/;
 		push @l,"" while $#l<3;
 		$l[3]=~s/\s+\[Source.+//;
+		$l[3]="NA" if '$l[3]=~/^\s*$/';
 		$m{$l[0]}=join"\t",@l[1..3]; # name, biotype, description
 		$mps{$l[0]}=$l[1];
 	}

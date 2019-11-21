@@ -8,13 +8,17 @@ setup.sh -i bashbone -d $INSDIR [-s /my/overritten/compile/functions.sh]
 # all third party tools for direct NGS pipeline design
 setup.sh -i all -d $INSDIR [-s /my/overritten/compile/functions.sh]
 
+### activate
+
+source $INSDIR/latest/bashbone/activate.sh
+
+### list function
+
+bashbone
+
 ### usage
-## 0) for f in $INSDIR/latest/bashbone/lib/*.sh do source $f; done
-configure::environment -i $INSDIR
 
-## 1) from lib/helper.sh
-helper::_test
-
+## oo bash
 local x
 helper::addmemberfunctions -v x
 x.push "hallo"
@@ -25,7 +29,7 @@ x.replace l u
 x.print
 ...
 
-## 2) from lib/commander.sh
+## commander
 # COMMANDER is a requiered, builtin array!
 
 commander::_test
@@ -54,9 +58,15 @@ commander::printcmd -a cmd
 local threads=10
 commander::runcmd -v -b -t $THREADS -a cmd || commander::printerr "failed" 
 
-## 3) from lib/preprocess.sh
+## fastqc
 FASTQ1+=("/path/to/R1.fq")
 FASTQ2+=("/path/to/R2.fq")
 ...
 preprocess::fastqc -S false -s false -t $THREADS -o $OUTDIR	-1 FASTQ1 -2 FASTQ2
-# requieres setupped tools - see 0) setup all third party tools
+
+## go enrichment
+ids=()
+ids+=(first.list)
+ids+=(second.list)
+enrichment::go -t $THREADS -l ids -g $GOFILE
+#geneid \t goid \t [cellular_component|molecular_function|biological_process]
