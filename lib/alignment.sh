@@ -486,7 +486,7 @@ alignment::slice(){
 		commander::printerr {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-S <hardskip>  | true/false return
-			-s <softskip>  | truefalse only print commands
+			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
 			-m <memory>    | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
@@ -633,7 +633,7 @@ alignment::rmduplicates(){
 		commander::printerr {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-S <hardskip>  | true/false return
-			-s <softskip>  | truefalse only print commands
+			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
 			-m <memory>    | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
@@ -749,7 +749,7 @@ alignment::reorder() {
 		commander::printerr {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-S <hardskip>  | true/false return
-			-s <softskip>  | truefalse only print commands
+			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
 			-g <genome>    | path to
 			-m <memory>    | amount of

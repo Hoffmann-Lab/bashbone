@@ -11,9 +11,10 @@
 			([[ ${BASH_VERSINFO[0]} -gt 4 ]] || [[ ${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 4 ]]) && {
 				activate_insdir_bashbone=$(dirname $(dirname $(readlink -e ${BASH_SOURCE[0]})))
 				unset OPTIND
-				while getopts i: ARG; do
+				while getopts :i: ARG; do
 					case $ARG in
 						i) activate_insdir_bashbone="$OPTARG";;
+						:) echo "argument missing for option -i"; exit 1;;
 					esac
 				done
 				IFS=$'\n'

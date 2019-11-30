@@ -7,7 +7,7 @@ genome::mkdict() {
 		commander::printerr {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-S <hardskip> | true/false return
-			-s <softskip> | truefalse only print commands
+			-s <softskip> | true/false only print commands
 			-5 <skip>     | true/false md5sums, indexing respectively
 			-t <threads>  | number of
 			-i <genome>   | path to

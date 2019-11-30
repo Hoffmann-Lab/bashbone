@@ -7,7 +7,7 @@ expression::deseq() {
 		commander::printerr {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-S <hardskip> | true/false return
-			-s <softskip> | truefalse only print commands
+			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-r <mapper>   | array of bams within array of
 			-g <gtf>      | path to
