@@ -26,7 +26,7 @@ expression::deseq() {
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
 			r) ((mandatory++)); _mapper_deseq=$OPTARG;;
-			g) gtf="$OPTARG"; [[ -s "$gtf.info" ]] && "gtfinfo=$gtf.info"; [[ -s "$gtf.descr" ]] && gtfinfo="$gtf.descr";;
+			g) gtf="$OPTARG"; [[ -s "$gtf.info" ]] && gtfinfo="$gtf.info"; [[ -s "$gtf.descr" ]] && gtfinfo="$gtf.descr";;
 			c) ((mandatory++)); _cmpfiles_deseq=$OPTARG;;
 			i) ((mandatory++)); countsdir="$OPTARG";;
 			o) ((mandatory++)); outdir="$OPTARG";;
@@ -70,7 +70,7 @@ expression::deseq() {
 					done < <(awk -v c=$c '$2==c' $f | sort -k4,4V && awk -v t=$t '$2==t' $f | sort -k4,4V)
 
 					if [[ $gtf ]]; then
-						for o in "$odir/$m/$c-vs-$t/deseq.tsv" "$odir/$m/$c-vs-$t/deseq.full.tsv" "$odir/$m/$c-vs-$t/deseq.noNA.tsv" "$odir/$m/$c-vs-$t/heatmap.vsc.ps" "$odir/$m/$c-vs-$t/heatmap.mean.vsc.ps"; do
+						for o in "$odir/$c-vs-$t/deseq.tsv" "$odir/$c-vs-$t/deseq.full.tsv" "$odir/$c-vs-$t/deseq.noNA.tsv" "$odir/$c-vs-$t/heatmap.vsc.ps" "$odir/$c-vs-$t/heatmap.mean.vsc.ps"; do
 							commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
 								annotate.pl "${gtfinfo:=0}" "$gtf" "$o"
 							CMD

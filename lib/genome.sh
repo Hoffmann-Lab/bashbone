@@ -54,7 +54,9 @@ genome::mkdict() {
 				VERBOSITY=WARNING
 		CMD
 
-		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			grep -Eo 'SN:\S+' "$dict" | cut -d ':' -f 2- > "$genome.list"
+		CMD
 			mv "$dict" "${genome%.*}.dict"
 		CMD
 
