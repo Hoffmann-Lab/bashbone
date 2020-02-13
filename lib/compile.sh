@@ -74,62 +74,49 @@ compile::upgrade(){
 	return 0
 }
 
-compile::conda() {
+compile::conda_new() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
-	shift $# # necessary for conda activate
 
 	commander::print "installing conda and tools"
-	{	mkdir -p $insdir/conda && \
-		url='https://repo.continuum.io/miniconda/Miniconda2-latest-Linux-x86_64.sh' && \
+	{	url='https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh' && \
 		wget -q -O $insdir/miniconda.sh $url && \
+		version=$(bash $insdir/miniconda.sh -h | grep -F Installs | cut -d ' ' -f 3) && \
+		rm -rf $insdir/conda && \
+		mkdir -p $insdir/conda && \
 		bash $insdir/miniconda.sh -b -f -p $insdir/conda && \
 		rm $insdir/miniconda.sh && \
-		source $insdir/conda/bin/activate && \
-		conda create -y -n py2 python=2 && \
-		conda create -y -n py2r python=2 && \
-		conda create -y -n py3 python=3 && \
+
+		$insdir/conda/bin/conda env remove -n py2 && \
+		$insdir/conda/bin/conda env remove -n py3 && \
+		$insdir/conda/bin/conda create -y -n py2 python=2 && \
+		$insdir/conda/bin/conda create -y -n py2r python=2 && \
+		$insdir/conda/bin/conda create -y -n py3 python=3 && \
 		
-		# readline 7 causes library version number to be lower on the shared object warnings
-		# use gouarin gcc for r and perl module installation - defaults gcc has a weird usage
-		# under perl > 5.22 List::MoreUtils installation fails
 		# macs2, tophat2/hisat2 and R stuff needs python2 whereas cutadapt,idr,rseqc need python3 env
-		conda activate py2 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
-			gcc-7 libgcc-7 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
-			make automake zlib ncurses xz bzip2 pigz pbzip2 ghostscript htslib readline=6 perl=5.22 perl-threaded=5.22 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
+		
+		$insdir/conda/bin/conda install -n py2 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
+			perl perl-threaded perl-dbi perl-app-cpanminus perl-list-moreutils perl-try-tiny \
+			numpy scipy pysam cython \
 			datamash \
 			fastqc trimmomatic rcorrector \
 			star bwa hisat2 macs2 \
-			samtools picard bedtools && \
+			samtools picard bedtools \
 		chmod 755 $insdir/conda/envs/py2/bin/run_rcorrector.pl && \
-		conda clean -y -a && \
 
-		conda activate py3 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
-			gcc-7 libgcc-7 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
-			make automake zlib ncurses xz bzip2 pigz pbzip2 ghostscript readline=6 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
+		$insdir/conda/bin/conda install -n py3 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
 			cutadapt rseqc && \
-		conda clean -y -a && \
 
-		conda activate py2r && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
-			gcc-7 libgcc-7 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
-			make automake zlib ncurses xz bzip2 pigz pbzip2 ghostscript readline=6 && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
+		$insdir/conda/bin/conda install -n py2r -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
 			r-devtools bioconductor-biocinstaller bioconductor-biocparallel \
 			bioconductor-genomicfeatures bioconductor-genefilter \
-			subread r-wgcna bioconductor-deseq2 bioconductor-dexseq bioconductor-gseabase bioconductor-clusterprofiler && \
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c gouarin \
+			subread r-wgcna bioconductor-deseq2 bioconductor-dexseq bioconductor-gseabase bioconductor-clusterprofiler \
 			r-dplyr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-ggpubr r-treemap r-rngtools && \
-		conda clean -y -a && \
 
-		conda deactivate
+		$insdir/conda/bin/conda clean -y -a
 	} || return 1
 
 	return 0
@@ -147,8 +134,9 @@ compile::java() {
 	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing java"
-	{	url="https://download.oracle.com/otn-pub/java/jdk/12.0.2+10/e482c34c86bd4bf8b56c0b35558996b9/jdk-12.0.2_linux-x64_bin.tar.gz" && \
+	{	url="https://download.oracle.com/otn-pub/java/jdk/13.0.2+8/d4173c853231432d94f001e99d882ca7/jdk-13.0.2_linux-x64_bin.tar.gz" && \
 		wget -q --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O $insdir/java.tar.gz $url && \
+		version=$(echo $url | perl -lane '$_=~/jdk-([^-_]+)/; print $1') && \
 		tar -xzf $insdir/java.tar.gz -C $insdir && \
 		rm $insdir/java.tar.gz && \
 		mkdir -p $insdir/latest && \
@@ -197,17 +185,19 @@ compile::_javawrapper() {
 	return 0
 }
 
+# now part of conda py2 env
 compile::perlmodules() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
 	commander::print "installing perl modules"
 	{	source $insdir/conda/bin/activate py2 && \
-		url='cpanmin.us' && \
-		mkdir -p $insdir/cpanm && \
-		wget -q $url -O $insdir/cpanm/cpanm && \
-		chmod 755 $insdir/cpanm/cpanm && \
-		$insdir/cpanm/cpanm --reinstall List::MoreUtils Exporter::Tiny Try::Tiny
+#		url='cpanmin.us' && \
+#		mkdir -p $insdir/cpanm && \
+#		wget -q $url -O $insdir/cpanm/cpanm && \
+#		chmod 755 $insdir/cpanm/cpanm && \
+#		$insdir/cpanm/cpanm --reinstall List::MoreUtils Exporter::Tiny Try::Tiny
+		cpanm --reinstall List::MoreUtils Exporter::Tiny Try::Tiny
 	} || return 1
 
 	return 0
@@ -266,7 +256,7 @@ compile::sortmerna_new_buggy() {
 	return 0
 }
 
-compile::segemehl () {
+compile::segemehl() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
