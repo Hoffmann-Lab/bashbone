@@ -11,10 +11,11 @@ configure::environment(){
 		return 0
 	}
 
-	local OPTIND arg mandatory insdir
-	while getopts 'i:t:T:m:' arg; do
+	local OPTIND arg mandatory insdir activate_conda=true
+	while getopts 'i:c:' arg; do
 		case $arg in
 			i)	((mandatory++)); insdir="$OPTARG";;
+			c)	activate_conda="$OPTARG";;
 			*)	_usage; return 1;;
 		esac
 	done
@@ -32,7 +33,7 @@ configure::environment(){
 	export PATH=$(readlink -e $insdir/latest/* | xargs -echo | sed 's/ /:/g'):$PATH
 	export PATH=$(readlink -e $insdir/latest/*/scripts | xargs -echo | sed 's/ /:/g'):$PATH
 
-	source $insdir/conda/bin/activate py2
+	activate_conda && source $insdir/conda/bin/activate py2
 
 	return 0
 }

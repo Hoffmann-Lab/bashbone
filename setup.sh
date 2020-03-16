@@ -42,5 +42,5 @@ for i in ${INSTALL[@]}; do # do not quote!! mapfile appends newline to last elem
 	compile::$i -i $INSDIR -t $THREADS >> $LOG 2> >(tee -a $LOG >&2) || die 
 done
 
-commander::print "success" >> $LOG
+commander::print ":INFO: success" >> $LOG
 exit 0

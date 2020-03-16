@@ -74,7 +74,7 @@ compile::upgrade(){
 	return 0
 }
 
-compile::conda_new() {
+compile::conda() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
@@ -86,16 +86,17 @@ compile::conda_new() {
 		mkdir -p $insdir/conda && \
 		bash $insdir/miniconda.sh -b -f -p $insdir/conda && \
 		rm $insdir/miniconda.sh && \
+		source $insdir/conda/bin/activate && \
 
-		$insdir/conda/bin/conda env remove -n py2 && \
-		$insdir/conda/bin/conda env remove -n py3 && \
-		$insdir/conda/bin/conda create -y -n py2 python=2 && \
-		$insdir/conda/bin/conda create -y -n py2r python=2 && \
-		$insdir/conda/bin/conda create -y -n py3 python=3 && \
+		conda env remove -y -n py2 && \
+		conda env remove -y -n py3 && \
+		conda create -y -n py2 python=2 && \
+		conda create -y -n py2r python=2 && \
+		conda create -y -n py3 python=3 && \
 		
 		# macs2, tophat2/hisat2 and R stuff needs python2 whereas cutadapt,idr,rseqc need python3 env
 		
-		$insdir/conda/bin/conda install -n py2 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+		conda install -n py2 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
 			perl perl-threaded perl-dbi perl-app-cpanminus perl-list-moreutils perl-try-tiny \
 			numpy scipy pysam cython \
@@ -105,18 +106,18 @@ compile::conda_new() {
 			samtools picard bedtools \
 		chmod 755 $insdir/conda/envs/py2/bin/run_rcorrector.pl && \
 
-		$insdir/conda/bin/conda install -n py3 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+		conda install -n py3 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
 			cutadapt rseqc && \
 
-		$insdir/conda/bin/conda install -n py2r -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+		conda install -n py2r -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
 			r-devtools bioconductor-biocinstaller bioconductor-biocparallel \
 			bioconductor-genomicfeatures bioconductor-genefilter \
 			subread r-wgcna bioconductor-deseq2 bioconductor-dexseq bioconductor-gseabase bioconductor-clusterprofiler \
 			r-dplyr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-ggpubr r-treemap r-rngtools && \
 
-		$insdir/conda/bin/conda clean -y -a
+		conda clean -y -a
 	} || return 1
 
 	return 0

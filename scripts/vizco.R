@@ -94,10 +94,8 @@ colnames(res)[1] <- "mean_pw_ch_log"
 # append gene name and cluster ID
 flog2 <- cbind(flog,df[,c(1,ncol(df))], res)
 
-molt <- melt(flog2, id.vars = c("type", "id", "mean_pw_ch_log"), measure.vars = colnames(foo))
+molt <- reshape2::melt(flog2, id.vars = c("type", "id", "mean_pw_ch_log"), measure.vars = colnames(foo))
 
-pdf(paste(outbase, "trajectories.pdf", sep="."))
-#width=((as.integer(sqrt(cluster_count)+1))*2), height = ((as.integer(sqrt(cluster_count)+1))*3))
 ggplot(molt, aes(x = variable, y = value, group = id, color = mean_pw_ch_log)) +
 	theme_bw() +
 	theme(axis.text.x = element_text(angle = 90, hjust = 1, size = rel(min(1,15/ncol(df))))) +
@@ -106,7 +104,5 @@ ggplot(molt, aes(x = variable, y = value, group = id, color = mean_pw_ch_log)) +
 	stat_summary(aes(group = 1, linetype = ''), fun.y = 'median', geom = 'line', size = 1, show.legend = TRUE, colour = 'green') +
 	scale_color_gradient(low = "blue", high = "red") +
 	scale_linetype_discrete(name = paste("Median",labeldatatype, sep=" ")) +
-	facet_wrap( ~ type , ncol = (as.integer(sqrt(cluster_count)+1))
-)
-graphics.off()
-
+	facet_wrap( ~ type , ncol = (as.integer(sqrt(cluster_count)+1)))
+ggsave(paste(outbase, "trajectories.pdf", sep="."))
