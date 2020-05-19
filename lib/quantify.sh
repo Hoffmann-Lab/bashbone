@@ -64,6 +64,8 @@ quantify::featurecounts() {
 		{	local l
 			declare -a a mapdata
 			commander::runcmd -v -b -t $threads -a cmd1 && \
+			echo ":INFO: running commands of array cmd2" && \
+			commander::printcmd -a cmd2 && \
 			conda activate py3 && \
 			mapfile -t mapdata < <(commander::runcmd -t $threads -a cmd2)
 			for l in "${mapdata[@]}"; do

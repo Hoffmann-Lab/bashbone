@@ -50,13 +50,15 @@ enrichment::_ora(){
 			gmt <- args[1];
 			idsfile <- args[2];
 			odir <- args[3];
-			tg <- suppressMessages(read.gmt(gmt));
+			
 			genes <- scan(idsfile, character(), quote = "", quiet = T);
-			ora <- enricher(genes, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
-			if(is.null(ora)){
-				ora <- data.frame(matrix(ncol = 4, nrow = 0));
-			} else {
-				ora <- as.data.frame(ora)[c("ID","Count","pvalue","p.adjust")];
+			ora <- data.frame(matrix(ncol = 4, nrow = 0));
+			if(length(genes)>0){
+				tg <- suppressMessages(read.gmt(gmt));
+				ora <- enricher(genes, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
+				if(!is.null(ora)){
+					ora <- as.data.frame(ora)[c("ID","Count","pvalue","p.adjust")];
+				};
 			};
 			colnames(ora) = c("id","count","pval","padj");
 			write.table(ora, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");
@@ -117,7 +119,6 @@ enrichment::_gsea(){
 			gmt <- args[1];
 			ddsr <- args[2];
 			odir <- args[3];
-			tg <- suppressMessages(read.gmt(gmt));
 
 			df <- read.table(ddsr, header=T, sep="\t", stringsAsFactors=F);
 			df <- df[!is.na(df$log2FoldChange) , ];
@@ -126,14 +127,16 @@ enrichment::_gsea(){
 			df <- df[abs(df$log2FoldChange)>=0.5 , ];
 			df <- df[df$padj<=0.05 , ];
 
-			gl <- abs(df[, which(colnames(df)=="log2FoldChange") ]);
-			names(gl) <- as.character(df[, which(colnames(df)=="id")]);
-			gl <- sort(gl, decreasing = T);
-			gsea <- GSEA(gl, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
-			if(is.null(gsea)){
-				gsea <- data.frame(matrix(ncol = 4, nrow = 0));
-			} else {
-				gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust")];
+			gsea <- data.frame(matrix(ncol = 4, nrow = 0))
+			if(nrow(df)>0){
+				tg <- suppressMessages(read.gmt(gmt));
+				gl <- abs(df[, which(colnames(df)=="log2FoldChange") ]);
+				names(gl) <- as.character(df[, which(colnames(df)=="id")]);
+				gl <- sort(gl, decreasing = T);
+				gsea <- GSEA(gl, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
+				if(!is.null(gsea)){
+					gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust")];
+				};
 			};
 			colnames(gsea) = c("id","count","pval","padj");
 			write.table(gsea, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");

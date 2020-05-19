@@ -72,7 +72,7 @@ expression::deseq() {
 					if [[ $gtf ]]; then
 						for o in "$odir/$c-vs-$t/deseq.tsv" "$odir/$c-vs-$t/deseq.full.tsv" "$odir/$c-vs-$t/deseq.noNA.tsv" "$odir/$c-vs-$t/heatmap.vsc.ps" "$odir/$c-vs-$t/heatmap.mean.vsc.ps"; do
 							commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-								annotate.pl "${gtfinfo:=0}" "$gtf" "$o"
+								[[ -e "$o" ]] && annotate.pl "${gtfinfo:=0}" "$gtf" "$o" || true
 							CMD
 						done
 					fi

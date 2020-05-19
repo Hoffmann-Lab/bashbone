@@ -1004,7 +1004,7 @@ alignment::bamstats(){
 				ggplot(m, aes(x = sample, y = count, fill = type)) +
 					ggtitle("Mapping") + xlab("Sample") + ylab("Readcount in %") +
 					theme_bw() + guides(fill=guide_legend(title=NULL)) +
-					theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+					theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8)) +
 					geom_bar(position = "fill", stat = "identity") +
 					scale_y_continuous(labels = percent_format());
 				graphics.off();

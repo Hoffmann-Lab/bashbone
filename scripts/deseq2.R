@@ -31,13 +31,36 @@ graphics.off();
 
 rld <- rlog(dds, blind=FALSE);
 save(rld, file = file.path(outdir,"rld.Rdata"));
-
 data <- plotPCA(rld, intgroup = c("condition", "replicate"), returnData = T);
+write.table(data.frame(id=rownames(data),data), row.names = F, 
+	file=file.path(outdir,"pca_rld.tsv"), quote=F, sep="\t"
+);
 percentVar <- round(100 * attr(data, "percentVar"));
-pdf(file.path(outdir,"pca.pdf"));
+pdf(file.path(outdir,"pca_rld.pdf"));
 ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
-	ggtitle(paste("PC1 vs PC2: ", length(rownames(rld)), " genes")) +
-	scale_shape_manual(values=1:nrow(df)) +
+    ggtitle(paste("PC1 vs PC2: ", length(rownames(rld)), " genes")) +
+	scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
+    coord_fixed() + 
+    theme_bw() +
+    theme(legend.box = "horizontal") +
+    geom_point(size = 3) +
+    stat_ellipse() +
+    xlab(paste("PC1:",percentVar[1],"% variance",sep=" ")) +
+    ylab(paste("PC2:",percentVar[2],"% variance",sep=" "));
+graphics.off();
+
+#dds <- estimateSizeFactors(dds) # already done by DESeq
+raw <- DESeqTransform(SummarizedExperiment(log2(counts(dds, normalized=T) + 1), colData=colData(dds)));
+save(raw, file = file.path(outdir,"raw.Rdata"));
+data <- plotPCA(raw, intgroup = c("condition", "replicate"), returnData = T);
+write.table(data.frame(id=rownames(data),data), row.names = F, 
+	file=file.path(outdir,"pca_raw.tsv"), quote=F, sep="\t"
+);
+percentVar <- round(100 * attr(data, "percentVar"));
+pdf(file.path(outdir,"pca_raw.pdf"));
+ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
+	ggtitle(paste("PC1 vs PC2: ", length(rownames(raw)), " genes")) +
+	scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
 	coord_fixed() + 
 	theme_bw() +
 	theme(legend.box = "horizontal") +
@@ -49,9 +72,27 @@ graphics.off();
 
 vsd <- varianceStabilizingTransformation(dds, blind=FALSE);
 save(vsd, file = file.path(outdir,"vsd.Rdata"));
+data <- plotPCA(vsd, intgroup = c("condition", "replicate"), returnData = T);
+write.table(data.frame(id=rownames(data),data), row.names = F, 
+	file=file.path(outdir,"pca_vsd.tsv"), quote=F, sep="\t"
+);
+percentVar <- round(100 * attr(data, "percentVar"));
+pdf(file.path(outdir,"pca_vsd.pdf"));
+ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
+	ggtitle(paste("PC1 vs PC2: ", length(rownames(vsd)), " genes")) +
+	scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
+	coord_fixed() + 
+	theme_bw() +
+	theme(legend.box = "horizontal") +
+	geom_point(size = 3) +
+	stat_ellipse() +
+	xlab(paste("PC1:",percentVar[1],"% variance",sep=" ")) +
+	ylab(paste("PC2:",percentVar[2],"% variance",sep=" "));
+graphics.off();
 
 for (i in 1:length(ctr)){
 	odir <- file.path(outdir,paste(ctr[i],"-vs-",treat[i],sep=""));
+	cat(paste("working on ",ctr[i]," vs ",treat[i],"\n" , sep=""));
 	dir.create(odir, recursive = T);
 
 	ddsr <- results(dds, contrast=c("condition",treat[i],ctr[i]), parallel = TRUE, BPPARAM = BPPARAM);
@@ -70,12 +111,34 @@ for (i in 1:length(ctr)){
 	);
 
 	ddsr <- ddsr[ddsr$padj <= 0.05 , ];
+    cat(paste("generating plots for ",nrow(ddsr)," sign. diff. expr. genes" , sep=""));
 	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F, 
 		file=file.path(odir,"deseq.tsv"), quote=F, sep="\t"
 	);
-	pdf(file.path(odir,"ma_plot.pdf"));
-	plotMA(ddsr);
-	graphics.off();
+
+    if(nrow(ddsr)>0){
+		pdf(file.path(odir,"ma_plot.pdf"));
+		plotMA(ddsr);
+		graphics.off();
+	}
+
+	rldr <- rld[,rld$condition %in% c(ctr[i],treat[i])];
+	data <- plotPCA(rldr, intgroup = c("condition", "replicate"), returnData = T);
+	write.table(data.frame(id=rownames(data),data), row.names = F, 
+		file=file.path(odir,"pca.tsv"), quote=F, sep="\t"
+	);
+	percentVar <- round(100 * attr(data, "percentVar"));
+	ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
+		ggtitle(paste("PC1 vs PC2: ", length(rownames(rldr)), " genes")) +
+		scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
+		coord_fixed() + 
+		theme_bw() +
+		theme(legend.box = "horizontal") +
+		geom_point(size = 3) +
+		stat_ellipse() +
+		xlab(paste("PC1:",percentVar[1],"% variance",sep=" ")) +
+		ylab(paste("PC2:",percentVar[2],"% variance",sep=" "));
+	ggsave(file.path(odir,"pca.pdf"));
 
 	vsdr <- vsd[,vsd$condition %in% c(ctr[i],treat[i])];
 
@@ -93,30 +156,34 @@ for (i in 1:length(ctr)){
 		file = file.path(odir,"experiments.mean.vsc"), quote=F, sep="\t"
 	);
 
-	color <- colorRampPalette(brewer.pal(9, "GnBu"))(100);
-	topids <- rownames(ddsr)[1:min(50,nrow(ddsr))];
-	vsc <- vsc[rownames(vsc) %in% topids , ];
-	write.table(data.frame(id=rownames(vsc),vsc), row.names = F, 
-		file=file.path(odir,"heatmap.vsc"), quote=F, sep="\t"
-	);
-	postscript(file.path(odir,"heatmap.vsc.ps"));
-	heatmap.2(as.matrix(vsc), col = color, Rowv = T, Colv = F, scale = "none",
-		dendrogram = "row", trace = "none", margin = c(8, 8),
-		cexRow = 0.6, cexCol = 1, key.title = NA, key.ylab = NA,
-		key.xlab = "vsc", main = "Top 50 FC"
-	);
-	graphics.off();
-	meanvsc <- meanvsc[rownames(meanvsc) %in% topids , ];
-	write.table(data.frame(id=rownames(meanvsc),meanvsc), row.names = F, 
-		file = file.path(odir,"heatmap.mean.vsc"), quote=F, sep="\t"
-	);
-	postscript(file.path(odir,"heatmap.mean.vsc.ps"));
-	heatmap.2(as.matrix(meanvsc), col = color, Rowv = T, Colv = F, scale = "none",
-		dendrogram = "row", trace = "none", margin = c(8, 8),
-		cexRow = 0.6, cexCol = 1, key.title = NA, key.ylab = NA,
-		key.xlab = "vsc", main = "Top 50 FC"
-	);
-	graphics.off();
+	if(nrow(ddsr)>1){
+		color <- colorRampPalette(brewer.pal(9, "GnBu"))(100);
+		topids <- rownames(ddsr)[1:min(50,nrow(ddsr))];
+
+		vsc <- vsc[rownames(vsc) %in% topids , ];
+		write.table(data.frame(id=rownames(vsc),vsc), row.names = F, 
+			file=file.path(odir,"heatmap.vsc"), quote=F, sep="\t"
+		);
+		postscript(file.path(odir,"heatmap.vsc.ps"));
+		heatmap.2(as.matrix(vsc), col = color, Rowv = T, Colv = F, scale = "none",
+			dendrogram = "row", trace = "none", margin = c(8, 8),
+			cexRow = 0.6, cexCol = 0.8, key.title = NA, key.ylab = NA,
+			key.xlab = "vsc", main = "Top 50 FC"
+		);
+		graphics.off();
+
+		meanvsc <- meanvsc[rownames(meanvsc) %in% topids , ];
+		write.table(data.frame(id=rownames(meanvsc),meanvsc), row.names = F, 
+			file = file.path(odir,"heatmap.mean.vsc"), quote=F, sep="\t"
+		);
+		postscript(file.path(odir,"heatmap.mean.vsc.ps"));
+		heatmap.2(as.matrix(meanvsc), col = color, Rowv = T, Colv = F, scale = "none",
+			dendrogram = "row", trace = "none", margin = c(8, 8),
+			cexRow = 0.6, cexCol = 0.8, key.title = NA, key.ylab = NA,
+			key.xlab = "vsc", main = "Top 50 FC"
+		);
+		graphics.off();
+	}
 };
 
 quit()
