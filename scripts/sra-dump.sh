@@ -126,9 +126,12 @@ ftpdump(){
 
 #redirect stderr to subshell via process substitution and filter for failed SRR ids to print them to stdout instead
 # | print SSR ids to stdout and rest to stderr -> array of to redo ids
-
-[[ $(command -v fasterq-dump > /dev/null; echo $?) -eq 0 && $faster ]] && fasterqdump && exit 0 || die
-[[ $(command -v fastq-dump > /dev/null; echo $?) -gt 0 || $ebi ]] && ftpdump && exit 0 || die
+$faster && [[ $(command -v fasterq-dump > /dev/null; echo $?) -eq 0 ]] && {
+	fasterqdump && exit 0 || die
+}
+$ebi || [[ $(command -v fastq-dump > /dev/null; echo $?) -gt 0 ]] && {
+	ftpdump && exit 0 || die
+}
 srr=("$(fastqdump 2> >(tee /dev/fd/2 | awk -v x="$(basename "$0")" '/failed SRR[0-9]+$/{print "\nDONT WORRY! "x" WILL RETRY TO DOWNLOAD "$NF" FROM A DIFFERNT SOURCE" > "/dev/fd/2"; print $NF}') | awk '{if(/^SRR[0-9]+$/){print}else{print > "/dev/fd/2"}}')")
 ftpdump || die
 
