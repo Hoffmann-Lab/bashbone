@@ -18,7 +18,7 @@ options::usage(){
 		-h | --help                  : prints this message
 
 		DEVELOPER OPTIONS
-		-s | --source [path,..]      : source file(s) to overload functions
+		-s | --source [path,..]      : source file(s) to overload compile::[all|upgrade|<tool>] functions
 		-i | --install [<tool>,..]   : install into given directory
 
 		REFERENCES

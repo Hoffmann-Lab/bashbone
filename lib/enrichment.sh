@@ -127,7 +127,7 @@ enrichment::_gsea(){
 			df <- df[abs(df$log2FoldChange)>=0.5 , ];
 			df <- df[df$padj<=0.05 , ];
 
-			gsea <- data.frame(matrix(ncol = 4, nrow = 0))
+			gsea <- data.frame(matrix(ncol = 4, nrow = 0));
 			if(nrow(df)>0){
 				tg <- suppressMessages(read.gmt(gmt));
 				gl <- abs(df[, which(colnames(df)=="log2FoldChange") ]);
