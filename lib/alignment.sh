@@ -190,7 +190,7 @@ alignment::star() {
 		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5star" || "$thismd5star" != "$md5star" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::print "indexing genome for star"
 			local params=''
-			[[ "$thismd5gtf" ]] && params+=" --sjdbGTFfile '$gtf'"
+			[[ "$thismd5gtf" ]] && params+=" --sjdbGTFfile '$gtf' --sjdbOverhang 100"
 			local genomesize=$(du -sb "$genome" | cut -f 1)
 			[[ $(echo $genomesize | awk '{printf("%d",$1/1024/1024)'}) -lt 10 ]] && params+=' --genomeSAindexNbases '$(echo $genomesize | perl -M'List::Util qw(min)' -lane 'printf("%d",min(14, log($_)/2 - 1))')
 			genomeseqs=$(grep -c '^>' "$genome")
@@ -201,12 +201,11 @@ alignment::star() {
 				mkdir -p "$genomeidxdir"
 			CMD
 				STAR
+				$params
 				--runThreadN $threads
 				--runMode genomeGenerate
 				--genomeDir "$genomeidxdir"
-				--sjdbOverhang 100
 				--genomeFastaFiles "$genome"
-				$params
 			CMD
 			commander::runcmd -v -b -t $threads -a cmdidx || {
 				commander::printerr "$funcname failed at indexing"
