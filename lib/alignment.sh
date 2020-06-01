@@ -1032,7 +1032,7 @@ alignment::add4stats(){
 	for m in "${_mapper_add4stats[@]}"; do
 		declare -n _bams_add4stats=$m
 		for i in "${!_bams_add4stats[@]}"; do
-            declare -g -a $m$i=() #optional (see below), declare can be used with $var! but then without assignment 
+            declare -g -a $m$i #optional (see below), declare can be used with $var! but then without assignment 
 			declare -n _mi_add4stats=$m$i # non existing reference (here $m$i) will be always globally declared ("declare -g $m$i")
 			_mi_add4stats+=("${_bams_add4stats[$i]}")
 		done
