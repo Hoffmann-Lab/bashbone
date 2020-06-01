@@ -43,7 +43,7 @@ alignment::segemehl() {
 				_segemehl=segemehl
 			;;
 			1) 	((mandatory++)); _fq1_segemehl=$OPTARG;;
-			2) 	((mandatory++)); _fq2_segemehl=$OPTARG;;
+			2) 	_fq2_segemehl=$OPTARG;;
 			*) 	_usage; return 1;;
 		esac
 	done
@@ -64,7 +64,10 @@ alignment::segemehl() {
 			commander::makecmd -a cmdidx -s '|' -c {COMMANDER[0]}<<- CMD
 				segemehl -x "$genomeidx" -d "$genome"
 			CMD
-			commander::runcmd -v -b -t $threads -a cmdidx || commander::printerr "$funcname failed at indexing"
+			commander::runcmd -v -b -t $threads -a cmdidx || {
+				commander::printerr "$funcname failed at indexing"
+				return 1
+			}
 			thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
 			sed -i "s/md5segemehl=.*/md5segemehl=$thismd5segemehl/" $genome.md5.sh
 		fi
@@ -81,10 +84,10 @@ alignment::segemehl() {
 	for i in "${!_fq1_segemehl[@]}"; do
 		helper::basename -f "${_fq1_segemehl[$i]}" -o o -e e
 		o="$outdir/$o.bam"
-        $nosplitaln && params='' || params="-S $o " #segemehl trims suffix
-		[[ $accuracy ]] && params+="-A $accuracy "
+        $nosplitaln && params='' || params=" -S $o" #segemehl trims suffix
+		[[ $accuracy ]] && params+=" -A $accuracy"
 		if [[ ${_fq2_segemehl[$i]} ]]; then
-			[[ $insertsize ]] && params+="-I $insertsize "
+			[[ $insertsize ]] && params+=" -I $insertsize"
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				segemehl
 				$params
@@ -126,9 +129,157 @@ alignment::segemehl() {
 }
 
 alignment::star() {
-	return 1
-	# DO USE outSAMmapqUnique 60 instead of 255 - necessary for gatk implemented MappingQualityAvailableReadFilter
-	# thuerefore used als q filter during unification - see alignment::uniqify
+	local funcname=${FUNCNAME[0]}
+	_usage() {
+		commander::printerr {COMMANDER[0]}<<- EOF
+			$funcname usage: 
+			-S <hardskip>     | true/false return
+			-s <softskip>     | true/false only print commands
+			-5 <skip>         | true/false md5sums, indexing respectively
+			-t <threads>      | number of
+			-a <accuracy>     | optional: 80 to 100
+			-i <insertsize>   | optional: 50 to 200000+
+			-r <mapper>       | array of bams within array of
+			-g <genome>       | path to
+			-f <gtf>          | path to
+			-x <genomeidxdir> | path to
+			-p <nosplit>      | optional: true/false
+			-o <outdir>       | path to
+			-1 <fastq1>       | array of
+			-2 <fastq2>       | array of
+		EOF
+		return 0
+	}
+
+ 	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false
+	declare -n _fq1_star _fq2_star _star
+	while getopts 'S:s:5:t:g:f:x:a:p:i:r:o:1:2:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			5)	$OPTARG && skipmd5=true;;
+			t)	((mandatory++)); threads=$OPTARG;;
+			g)	((mandatory++)); genome="$OPTARG";;
+			f)	gtf="$OPTARG";;
+			x)	((mandatory++)); genomeidxdir="$OPTARG";;
+			o)	((mandatory++)); outdir="$OPTARG/star";;
+			a)	accuracy=$OPTARG;;
+			p)	nosplitaln=$OPTARG;;
+			i)	insertsize=$OPTARG;;
+			r)	((mandatory++))
+				declare -n _mapper_star=$OPTARG
+				_mapper_star+=(star)
+				_star=star
+			;;
+			1) 	((mandatory++)); _fq1_star=$OPTARG;;
+			2) 	_fq2_star=$OPTARG;;
+			*) 	_usage; return 1;;
+		esac
+	done
+	[[ $mandatory -lt 6 ]] && _usage && return 1
+	commander::print "mapping star"
+
+	$skipmd5 && {
+		commander::warn "skip checking md5 sums and genome indexing respectively"
+	} || {
+		commander::print "checking md5 sums"
+		local thismd5genome thismd5star thismd5gtf
+		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
+		[[ -s "$genomeidxdir/SA" ]] && thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
+		[[ -s $gtf ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
+		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5star" || "$thismd5star" != "$md5star" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
+			commander::print "indexing genome for star"
+			local params=''
+			[[ "$thismd5gtf" ]] && params+=" --sjdbGTFfile '$gtf'"
+			local genomesize=$(du -sb "$genome" | cut -f 1)
+			[[ $(echo $genomesize | awk '{printf("%d",$1/1024/1024)'}) -lt 10 ]] && params+=' --genomeSAindexNbases '$(echo $genomesize | perl -M'List::Util qw(min)' -lane 'printf("%d",min(14, log($_)/2 - 1))')
+			genomeseqs=$(grep -c '^>' "$genome")
+			[[ $genomeseqs -gt 5000 ]] && params+=' --genomeChrBinNbits '$(echo "$genomesize $genomeseqs" | perl -M'List::Util qw(min)' -lane 'printf("%d",min(18, log($F[0]/$F[1]))')
+				
+			declare -a cmdidx
+			commander::makecmd -a cmdidx -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				mkdir -p "$genomeidxdir"
+			CMD
+				STAR
+				--runThreadN $threads
+				--runMode genomeGenerate
+				--genomeDir "$genomeidxdir"
+				--sjdbOverhang 100
+				--genomeFastaFiles "$genome"
+				$params
+			CMD
+			commander::runcmd -v -b -t $threads -a cmdidx || {
+				commander::printerr "$funcname failed at indexing"
+				return 1
+			}
+
+			thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
+			sed -i "s/md5star=.*/md5star=$thismd5star/" $genome.md5.sh
+			[[ "$thismd5gtf" ]] && sed -i "s/md5gtf=.*/md5gtf=$thismd5gtf/" $genome.md5.sh
+		fi
+	}
+
+	declare -a cmd1
+	local a o e params extractcmd
+	for i in "${!_fq1_star[@]}"; do
+		helper::basename -f "${_fq1_star[$i]}" -o o -e e
+		o="$outdir/$o"
+
+		params='--outSAMmapqUnique 60' #use 60 instead of default 255 - necessary for gatk implemented MappingQualityAvailableReadFilter
+		helper::makecatcmd -c extractcmd -f "${_fq1_star[$i]}"
+		[[ $extractcmd != "cat" ]] && params+=" --readFilesCommand '$extractcmd'"
+		$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999'
+		[[ $accuracy ]] && params+=' --outFilterMismatchNoverReadLmax '$(echo $accuracy | awk '{print $1/100}')
+		
+		if [[ ${_fq2_star[$i]} ]]; then
+			[[ $insertsize ]] && params+=" --alignMatesGapMax $insertsize"
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				STAR
+				$params
+				--runThreadN $threads
+				--runMode alignReads
+				--genomeDir "$genomeidxdir"
+				--readFilesIn "${_fq1_star[$i]}" "${_fq2_star[$i]}"
+				--outFileNamePrefix "$o."
+				--runRNGseed 12345
+				--genomeLoad NoSharedMemory
+				--outSAMtype BAM Unsorted
+				--outMultimapperOrder Random
+			CMD
+				mv $o.Aligned.out.bam $o.bam
+			CMD
+		else
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				STAR
+				$params
+				--runThreadN $threads
+				--runMode alignReads
+				--genomeDir "$genomeidxdir"
+				--readFilesIn "${_fq1_star[$i]}"
+				--outFileNamePrefix "$o."
+				--runRNGseed 12345
+				--genomeLoad NoSharedMemory
+				--outSAMtype BAM Unsorted
+				--outMultimapperOrder Random
+			CMD
+				mv $o.Aligned.out.bam $o.bam
+			CMD
+		fi
+		_star+=("$o")
+	done
+
+	$skip && {
+		commander::printcmd -a cmd1 
+	} || {
+		{	mkdir -p "$outdir" && \
+			commander::runcmd -v -b -t 1 -a cmd1 
+		} || { 
+			commander::printerr "$funcname failed"
+			return 1
+		}
+	}
+
+ 	return 0
 }
 
 alignment::postprocess() {
