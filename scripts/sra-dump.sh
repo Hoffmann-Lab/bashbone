@@ -93,7 +93,7 @@ for i in $(seq 1 $#); do
 		srr+=("$id")
 	} || {
 		i="${#srr[@]}"
-		srr+=("$(esearch -db sra -query "$id" | efetch --format docsum | grep -oE 'SRR[^"]+')")
+		srr+=($(esearch -db sra -query "$id" | efetch --format docsum | grep -oE 'SRR[^"]+'))
 		n=$(esearch -db sra -query "$id" | efetch --format info | grep -oE 'sample_title="[^"]+' | cut -d '"' -f 2 | sort -Vu | xargs echo)
 		printf "$id\t%s\t$n\n" "${srr[@]:$i}" >&2
 	}

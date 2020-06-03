@@ -131,7 +131,8 @@ dlgenome::hg38() {
 	genome=$(curl -s https://www.ensembl.org/info/website/archives/assembly.html | grep -oP 'GRCh38.p[0-9]+' | sort -V | tail -1)
 
 	echo ":INFO: downloading $genome genome"
-	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.chromosome.*.fa.gz
+	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.chromosome.*.fa.gz
+	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'Homo_sapiens\.GRCh38\.dna\.chromosome\..+\.fa\.gz' ftp://ftp.ensembl.org/pub/current_fasta/homo_sapiens/dna/
 
 	echo ":INFO: extracting chrM"
 	gzip -dc Homo_sapiens.GRCh38.dna.chromosome.MT.fa.gz | sed "s/>.*/>chrM/" > $genome.fa
@@ -143,7 +144,8 @@ dlgenome::hg38() {
 	done
 
 	echo ":INFO: downloading annotation"
-	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_gtf/homo_sapiens/Homo_sapiens.GRCh38.*.chr.gtf.gz
+	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_gtf/homo_sapiens/Homo_sapiens.GRCh38.*.chr.gtf.gz
+	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'Homo_sapiens\.GRCh38\..+\.chr\.gtf\.gz' ftp://ftp.ensembl.org/pub/current_gtf/homo_sapiens/
 	
 	echo ":INFO: extracting annotation"
 	gzip -dc Homo_sapiens.GRCh38.*.chr.gtf.gz | perl -F'\t' -lane 'next unless $F[0]=~/^(\d+|X|Y|MT)$/; $F[0]="M" if $F[0] eq "MT"; $F[0]="chr$F[0]"; unless($f eq $F[0]){close O; $f=$F[0]; open O,">$f.gtf";} print O join("\t",@F); END{close O};'
@@ -178,7 +180,8 @@ dlgenome::hg38ensembl() {
 	dlgenome::hg38 || return 1
 	
 	echo ":INFO: downloading dbSNP"
-	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_variation/vcf/homo_sapiens/homo_sapiens-chr*.vcf.gz
+	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_variation/vcf/homo_sapiens/homo_sapiens-chr*.vcf.gz
+	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'homo_sapiens-chr.+\.vcf\.gz' ftp://ftp.ensembl.org/pub/current_variation/vcf/homo_sapiens/
 
 	echo ":INFO: extracting chrM"
 	gzip -dc homo_sapiens-chrMT.vcf.gz | awk '$1~/^#/ || $NF~/^dbSNP/ {OFS="\t"; if($1!~/^#/){if($1=="MT"){$1="chrM"}else{$1="chr"$1}} print}' > $genome.fa.vcf
@@ -231,7 +234,8 @@ dlgenome::hg19() {
 	genome='GRCh37.p13'
 
 	echo ":INFO: downloading $genome genome"
-	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/grch37/current/fasta/homo_sapiens/dna/Homo_sapiens.GRCh37.dna.chromosome.*.fa.gz
+	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/grch37/current/fasta/homo_sapiens/dna/Homo_sapiens.GRCh37.dna.chromosome.*.fa.gz
+	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'Homo_sapiens\.GRCh37\.dna\.chromosome\..+\.fa\.gz' ftp://ftp.ensembl.org/pub/grch37/current/fasta/homo_sapiens/dna/
 
 	echo ":INFO: extracting chrM"
 	gzip -dc Homo_sapiens.GRCh37.dna.chromosome.MT.fa.gz | sed "s/>.*/>chrM/" > $genome.fa
@@ -243,7 +247,8 @@ dlgenome::hg19() {
 	done
 
 	echo ":INFO: downloading annotation"
-	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/grch37/current/gtf/homo_sapiens/Homo_sapiens.GRCh37.*.chr.gtf.gz
+	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/grch37/current/gtf/homo_sapiens/Homo_sapiens.GRCh37.*.chr.gtf.gz
+	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'Homo_sapiens\.GRCh37\..+\.chr\.gtf\.gz' ftp://ftp.ensembl.org/pub/grch37/current/gtf/homo_sapiens/
 	
 	echo ":INFO: extracting annotation"
 	gzip -dc Homo_sapiens.GRCh37.*.chr.gtf.gz | perl -F'\t' -lane 'next unless $F[0]=~/^(\d+|X|Y|MT)$/; $F[0]="M" if $F[0] eq "MT"; $F[0]="chr$F[0]"; unless($f eq $F[0]){close O; $f=$F[0]; open O,">$f.gtf";} print O join("\t",@F); END{close O};'
@@ -278,7 +283,8 @@ dlgenome::hg19ensembl() {
 	dlgenome::hg38 || return 1
 
 	echo ":INFO: downloading dbSNP"
-	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/grch37/current/variation/vcf/homo_sapiens/homo_sapiens-chr*.vcf.gz
+	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/grch37/current/variation/vcf/homo_sapiens/homo_sapiens-chr*.vcf.gz
+	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'homo_sapiens-chr.+\.vcf\.gz' ftp://ftp.ensembl.org/pub/grch37/current/variation/vcf/homo_sapiens/
 	
 	echo ":INFO: extracting chrM"
 	gzip -dc homo_sapiens-chrMT.vcf.gz | awk '$1~/^#/ || $NF~/^dbSNP/ {OFS="\t"; if($1!~/^#/){if($1=="MT"){$1="chrM"}else{$1="chr"$1}} print}' > $genome.fa.vcf
@@ -331,7 +337,8 @@ dlgenome::mm10() {
 	genome=$(curl -s https://www.ensembl.org/info/website/archives/assembly.html | grep -oP 'GRCm38.p[0-9]+' | sort -V | tail -1)
 
 	echo ":INFO: downloading $genome genome" 
-	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.chromosome.*.fa.gz
+	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.chromosome.*.fa.gz
+	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'Mus_musculus\.GRCm38\.dna\.chromosome\..+\.fa\.gz' ftp://ftp.ensembl.org/pub/current_fasta/mus_musculus/dna/
 
 	echo ":INFO: extracting chrM"
 	gzip -dc Mus_musculus.GRCm38.dna.chromosome.MT.fa.gz | sed "s/>.*/>chrM/" > $genome.fa
@@ -343,7 +350,8 @@ dlgenome::mm10() {
 	done
 
 	echo ":INFO: downloading annotation"
-	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_gtf/mus_musculus/Mus_musculus.GRCm38.*.chr.gtf.gz
+	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_gtf/mus_musculus/Mus_musculus.GRCm38.*.chr.gtf.gz
+	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'Mus_musculus\.GRCm38\..+\.chr\.gtf\.gz' ftp://ftp.ensembl.org/pub/current_gtf/mus_musculus/
 
 	echo ":INFO: extracting annotation"
 	gzip -dc Mus_musculus.GRCm38.*.chr.gtf.gz | perl -F'\t' -lane 'next unless $F[0]=~/^(\d+|X|Y|MT)$/; $F[0]="M" if $F[0] eq "MT"; $F[0]="chr$F[0]"; unless($f eq $F[0]){close O; $f=$F[0]; open O,">$f.gtf";} print O join("\t",@F); END{close O};'
