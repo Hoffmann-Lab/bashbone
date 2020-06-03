@@ -264,7 +264,7 @@ alignment::star() {
 				mv $o.Aligned.out.bam $o.bam
 			CMD
 		fi
-		_star+=("$o")
+		_star+=("$o.bam")
 	done
 
 	$skip && {
