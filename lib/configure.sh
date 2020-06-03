@@ -6,7 +6,8 @@ configure::environment(){
 	_usage(){
 		commander::printerr {COMMANDER[0]}<<- EOF
 			$funcname usage:
-			-i <insdir>   | path to
+			-i <insdir> | path to
+			-c <conda>  | true/false activate
 		EOF
 		return 0
 	}

@@ -190,6 +190,7 @@ alignment::star() {
 		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5star" || "$thismd5star" != "$md5star" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::print "indexing genome for star"
 			local params=''
+			#100 = assumend usual read length
 			[[ "$thismd5gtf" ]] && params+=" --sjdbGTFfile '$gtf' --sjdbOverhang 100"
 			local genomesize=$(du -sb "$genome" | cut -f 1)
 			[[ $(echo $genomesize | awk '{printf("%d",$1/1024/1024)'}) -lt 10 ]] && params+=' --genomeSAindexNbases '$(echo $genomesize | perl -M'List::Util qw(min)' -lane 'printf("%d",min(14, log($_)/2 - 1))')
@@ -227,11 +228,14 @@ alignment::star() {
 		params='--outSAMmapqUnique 60' #use 60 instead of default 255 - necessary for gatk implemented MappingQualityAvailableReadFilter
 		helper::makecatcmd -c extractcmd -f "${_fq1_star[$i]}"
 		[[ $extractcmd != "cat" ]] && params+=" --readFilesCommand '$extractcmd'"
-		$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999'
 		[[ $accuracy ]] && params+=' --outFilterMismatchNoverReadLmax '$(echo $accuracy | awk '{print $1/100}')
 		
 		if [[ ${_fq2_star[$i]} ]]; then
-			[[ $insertsize ]] && params+=" --alignMatesGapMax $insertsize"
+			$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999' || {
+				[[ $insertsize ]] || insertsize=100000
+				params+=" --alignMatesGapMax $insertsize --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
+			}
+			# from towopassmode option on, params are taken from star-fusion wiki
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				STAR
 				$params
@@ -244,10 +248,33 @@ alignment::star() {
 				--genomeLoad NoSharedMemory
 				--outSAMtype BAM Unsorted
 				--outMultimapperOrder Random
+				--outReadsUnmapped None
+				--outSAMunmapped Within
+				--twopassMode Basic
+				--outSAMstrandField intronMotif
+				--chimSegmentMin 12
+				--chimJunctionOverhangMin 8
+				--chimOutJunctionFormat 1
+				--alignSJDBoverhangMin 10
+				--alignSJstitchMismatchNmax 5 -1 5 5
+				--outSAMattrRGline ID:GRPundef
+				--chimMultimapScoreRange 3
+				--chimScoreJunctionNonGTAG -4
+				--chimMultimapNmax 20
+				--chimNonchimScoreDropMin 10
+				--peOverlapNbasesMin 12
+				--peOverlapMMp 0.1
+				--alignInsertionFlush Right
+				--alignSplicedMateMapLminOverLmate 0
+				--alignSplicedMateMapLmin 30
 			CMD
 				mv $o.Aligned.out.bam $o.bam
 			CMD
 		else
+			$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999' || {
+				[[ $insertsize ]] || insertsize=100000
+				params+=" --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
+			}
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				STAR
 				$params
@@ -260,6 +287,23 @@ alignment::star() {
 				--genomeLoad NoSharedMemory
 				--outSAMtype BAM Unsorted
 				--outMultimapperOrder Random
+				--outReadsUnmapped None
+				--outSAMunmapped Within
+				--twopassMode Basic
+				--outSAMstrandField intronMotif
+				--chimSegmentMin 12
+				--chimJunctionOverhangMin 8
+				--chimOutJunctionFormat 1
+				--alignSJDBoverhangMin 10
+				--alignSJstitchMismatchNmax 5 -1 5 5
+				--outSAMattrRGline ID:GRPundef
+				--chimMultimapScoreRange 3
+				--chimScoreJunctionNonGTAG -4
+				--chimMultimapNmax 20
+				--chimNonchimScoreDropMin 10
+				--peOverlapNbasesMin 12
+				--peOverlapMMp 0.1
+				--alignInsertionFlush Right
 			CMD
 				mv $o.Aligned.out.bam $o.bam
 			CMD
