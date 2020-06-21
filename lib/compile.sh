@@ -94,21 +94,24 @@ compile::conda() {
 		conda create -y -n py2r python=2 && \
 		conda create -y -n py3 python=3 && \
 		
-		# macs2, tophat2/hisat2 and R stuff needs python2 whereas cutadapt,idr,rseqc need python3 env
-		
+		# macs2, tophat2/hisat2 and some R stuff needs python2 whereas cutadapt,idr,rseqc need python3 env
+		# star-fusion needs perl-set-intervaltree perl-db-file perl-set-intervaltree perl-uri perl-io-gzip
+		#   installation might be fixed manually via perl-app-cpanminus and execution of cpanm Set::IntervalTree URI ...
 		conda install -n py2 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
-			perl perl-threaded perl-dbi perl-app-cpanminus perl-list-moreutils perl-try-tiny \
+			perl perl-threaded perl-db-file perl-dbi perl-app-cpanminus perl-list-moreutils perl-try-tiny perl-set-intervaltree perl-uri \
 			numpy scipy pysam cython \
 			datamash \
 			fastqc trimmomatic rcorrector \
-			star bwa hisat2 macs2 \
+			star star-fusion bwa hisat2 macs2 \
 			samtools picard bedtools \
 		chmod 755 $insdir/conda/envs/py2/bin/run_rcorrector.pl && \
+		conda list -n py2 -f "fastqc|trimmomatic|rcorrector|star|star-fusion|bwa|hisat2|macs2|samtols|picard|bedtools" | grep -v '^#' > $insdir/condatools.txt && \
 
 		conda install -n py3 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
 			cutadapt rseqc && \
+		conda list -n py3 -f "cutadapt|rseqc" | grep -v '^#' >> $insdir/condatools.txt && \
 
 		conda install -n py2r -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
@@ -116,6 +119,7 @@ compile::conda() {
 			bioconductor-genomicfeatures bioconductor-genefilter \
 			subread r-wgcna bioconductor-deseq2 bioconductor-dexseq bioconductor-gseabase bioconductor-clusterprofiler \
 			r-dplyr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-ggpubr r-treemap r-rngtools && \
+		conda list -n py2r -f "subread|r-wgcna|bioconductor-deseq2|bioconductor-dexseq" | grep -v '^#' >> $insdir/condatools.txt && \
 
 		conda clean -y -a
 	} || return 1

@@ -26,6 +26,7 @@ configure::environment(){
 
 	shopt -s extglob
 	shopt -s expand_aliases
+	ulimit -n $(ulimit -Hn)
 
 	JAVA_HOME=$(readlink -e $insdir/latest/java)
 	[[ $JAVA_HOME ]] && export JAVA_HOME=$(dirname $JAVA_HOME)

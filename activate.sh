@@ -10,6 +10,7 @@
 		[[ ! $OSTYPE =~ linux ]] && echo "unsupported operating system" || {
 			([[ ${BASH_VERSINFO[0]} -gt 4 ]] || [[ ${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 4 ]]) && {
 				activate_insdir_bashbone=$(dirname $(dirname $(readlink -e ${BASH_SOURCE[0]})))
+				activate_conda_bashbone=true
 				error=false
 				unset OPTIND
 				while getopts :i:c: ARG; do
@@ -25,7 +26,7 @@
 						source "$f"
 					done && {
 						unset IFS
-						configure::environment -i $activate_insdir_bashbone -c ${activate_conda_bashbone:=true}
+						configure::environment -i $activate_insdir_bashbone -c $activate_conda_bashbone
 					} || {
 						unset IFS
 						echo "install directory cannot be found to activate conda"
