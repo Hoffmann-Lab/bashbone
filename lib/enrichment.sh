@@ -146,44 +146,6 @@ enrichment::_gsea(){
 	CMD
 
 	return 0
-
-	### MYSTERIOUS GSEA BELOW - RETURNS HUGE LISTS
-	# dds <- dds[!is.na(rowData(dds)$ADJ.PVAL),]
-	# dds <- idMap(dds, org="hsa", from="ENSEMBL", to="ENTREZID")
-	# ora <- sbea(method="ora", se=dds, gs=gs, perm=0, padj.method='BH', out.file=file.path(odir,"ora.tsv"))
-	# time consuming: gsea <- sbea(method="gsea", se=dds, gs=gs, perm=100, padj.method='BH', out.file=file.path(odir,"gsea.tsv"))
-	# eaBrowse(ora, html.only=T, out.dir=file.path(odir,"html"), report.name="oraReport")
-	# gsRanking(gsea)
-	Rscript - <<< '
-		suppressMessages(library("EnrichmentBrowser"));
-		suppressMessages(library("DESeq2"));
-		args <- commandArgs(TRUE);
-		gmt <- args[1];
-		rdata <- args[2];
-		odir <- args[3];
-		glist <- args[4];
-		gs <- getGenesets(gmt);
-		load(rdata);
-		df <- data.frame(results(dds)[, c("log2FoldChange", "pvalue", "padj", "stat", "baseMean")]);
-		colnames(df)[1:4] <- c("FC", "PVAL", "ADJ.PVAL", "DESeq2.STAT");
-		rowData(dds) <- df;
-		colData(dds)$GROUP <- as.integer(colData(dds)$condition)-1;
-		if (!is.null(colData(dds)$pairs)) colData(dds)$BLOCK <- colData(dds)$pairs;
-		if(!is.na(glist) && length(glist)>1){
-			glist <- scan(glist, character(), quote = "", quiet = T);
-			dds <- dds[rownames(dds) %in% glist,];
-		} else {
-			dds <- dds[!is.na(rowData(dds)$ADJ.PVAL),];
-			dds <- dds[!is.na(rowData(dds)$FC),];
-			dds <- dds[rowData(dds)$baseMean > 0,];
-			dds <- dds[rowData(dds)$ADJ.PVAL <= 0.05,];
-			dds <- dds[rowData(dds)$FC >= 0.5,];
-		};
-		gsea <- sbea(method="roast", se=dds, gs=gs, padj.method="BH", alpha=0.05);
-		gsea <- as.data.frame(gsRanking(gsea), stringsAsFactors=F);
-		colnames(gsea) = c("id","count","direction","pval","padj");
-		write.table(gsea, row.names = F, file = file.path(odir,"goenrichment.tsv") , quote=F, sep="\t");
-	' "$outdir/reference.gmt" "$ddsobjfile" "$outdir"
 }
 
 enrichment::_revigo(){

@@ -8,19 +8,28 @@ suppressMessages(library("gplots"));
 suppressMessages(library("RColorBrewer"));
 args <- commandArgs(TRUE);
 threads <- as.numeric(args[1]);
-incsv <- args[2]; # sample,countfile,condition,replicate[,pairs]
+incsv <- args[2]; # sample,countfile,condition,replicate[,factor1,factor2,..]
 outdir <- args[3];
 args <- args[4:length(args)];
 ctr <- args[rep(c(T,F),length(args)/2)]; # wt t1 wt t2 t1 t2
 treat <- args[rep(c(F,T),length(args)/2)];
 BPPARAM <- MulticoreParam(workers = threads);
-df <- read.table(incsv, header=T, sep=",", stringsAsFactors=F);
 
-if(is.null(df$pairs) || length(Reduce(intersect, split(df$pairs,df$condition))) == 0){
-	ddsHTSeq <- DESeqDataSetFromHTSeqCount(sampleTable=df, directory="", design= ~ condition);
-} else {
-	ddsHTSeq <- DESeqDataSetFromHTSeqCount(sampleTable=df, directory="", design= ~ pairs + condition);
-};
+df <- read.table(incsv, header=T, sep=",", stringsAsFactors=F);
+colnames(df)[1:4] <- c("sample","countfile","condition","replicate");
+factors <- c();
+if(length(colnames(df)) > 4){
+	for (f in colnames(df)[5:length(colnames(df))]){
+		v <- df[,f];
+		# xxxx @ aabb == 0 || xyxy @ aabb -> a:xy , b:xy -> {x,y} > 0 i.e. no linear combination, whereas xyzz , aabb -> a:xy , b:z -> {} == 0 i.e. deseq error
+		if (length(levels(as.factor(v))) > 1 && length(Reduce(intersect, split(v,df$condition))) > 0){
+			factors <- c(factors,f);
+		}
+	}
+}
+design <- as.formula(paste("~",paste(c(factors,"condition"),collapse=" + "))); # e.g. ~ factor1 + factor2 + condition
+
+ddsHTSeq <- DESeqDataSetFromHTSeqCount(sampleTable = df, directory = "", design = design);
 
 dds <- DESeq(ddsHTSeq, parallel = TRUE, BPPARAM = BPPARAM);
 save(dds, file = file.path(outdir,"dds.Rdata"));

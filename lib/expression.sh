@@ -42,31 +42,26 @@ expression::deseq() {
 
 	declare -a cmd1 cmd2 cmps mapdata
 	declare -A visited
-	local f i c t o odir countfile sample condition library replicate pair
+	local f i c t o odir countfile sample condition library replicate factors
 	for m in "${_mapper_deseq[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
 		visited=()
         cmps=()
 
-		if [[ $(awk '{print $5}' ${_cmpfiles_deseq[0]}) ]]; then
-			echo 'sample,countfile,condition,replicate,pairs' > "$odir/experiments.csv"
-		else
-			echo 'sample,countfile,condition,replicate' > "$odir/experiments.csv"
-		fi
-
+        perl -lane 'push @o,"sample,countfile,condition,replicate"; for (4..$#F){push @o,"factor".($_-3)}END{print join",",@o}' > "$odir/experiments.csv"
 		for f in "${_cmpfiles_deseq[@]}"; do
 			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do 
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					cmps+=("$c $t")
-					unset sample condition library replicate pair
-					while read -r sample condition library replicate pair; do
+					unset sample condition library replicate factors
+					while read -r sample condition library replicate factors; do
 						[[ ${visited["$sample.$replicate"]} ]] && continue || visited["$sample.$replicate"]=1
 						countfile=$(readlink -e "$countsdir/$m/$sample"*.+(reduced|htsc) | head -1)
-						[[ $pair ]] && pair=",$pair"
-						echo "$sample.$replicate,$countfile,$condition,$replicate$pair" >> "$odir/experiments.csv"
+						[[ $factors ]] && factors=","$(echo $factors | sed -r 's/\s+/,/g')
+						echo "$sample.$replicate,$countfile,$condition,$replicate$factors" >> "$odir/experiments.csv"
 					done < <(awk -v c=$c '$2==c' $f | sort -k4,4V && awk -v t=$t '$2==t' $f | sort -k4,4V)
 
 					if [[ $gtf ]]; then
@@ -140,7 +135,7 @@ expression::joincounts() {
 	commander::print "joining count values plus zscore calculation"
 
 	declare -a cmd1 cmd2 mapdata
-	local m f x i c t h mh sample condition library replicate pair cf e tmp="$(mktemp -p "$tmpdir")"
+	local m f x i c t h mh sample condition library replicate factors cf e tmp="$(mktemp -p "$tmpdir")"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
 	for m in "${_mapper_join[@]}"; do
 		odir="$outdir/$m"
@@ -156,8 +151,8 @@ expression::joincounts() {
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do 
 					vsc="$deseqdir/$m/$c-vs-$t/experiments.vsc"
 					
-					unset sample condition library replicate pair
-					while read -r sample condition library replicate pair; do
+					unset sample condition library replicate factors
+					while read -r sample condition library replicate factors; do
 						[[ ${countfiles["$sample.$replicate"]} ]] && continue
 						header[$x]="$sample.$replicate"
 						meanheader[$x]="$condition"
