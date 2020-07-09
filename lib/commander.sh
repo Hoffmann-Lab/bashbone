@@ -113,7 +113,7 @@ commander::printcmd(){
 	while getopts 'a:' arg; do
 		case $arg in
 			a)	_cmds_printcmd=$OPTARG
-				printf ':CMD: %s\n' "${_cmds_printcmd[@]}"
+				[[ "${#_cmds_printcmd[@]}" -gt 0 ]] && printf ':CMD: %s\n' "${_cmds_printcmd[@]}"
 				return 0;;
 			*)	_usage; return 1;;
 		esac

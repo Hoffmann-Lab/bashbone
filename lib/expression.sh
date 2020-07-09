@@ -1,6 +1,182 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
+expression::diego() {
+	local funcname=${FUNCNAME[0]}
+	_usage() {
+		commander::printerr {COMMANDER[0]}<<- EOF
+			$funcname usage: 
+			-S <hardskip> | true/false return
+			-s <softskip> | true/false only print commands
+			-5 <skip>     | true/false md5sums, gtf prep respectively
+			-t <threads>  | number of
+			-r <mapper>   | array of bams within array of
+			-g <gtf>      | path to
+			-c <cmpfiles> | array of
+			-i <htscdir>  | path to
+			-j <mapeddir> | path to
+			-p <tmpdir>   | path to
+			-o <outdir>   | path to
+		EOF
+		return 0
+	}
+
+	local OPTIND arg mandatory skip=false skipmd5=false threads countsdir mappeddir tmpdir outdir gtf
+	declare -n _mapper_diego _cmpfiles_diego
+	while getopts 'S:s:5:t:r:g:c:i:j:p:o:' arg; do
+		case $arg in
+			S) $OPTARG && return 0;;
+			s) $OPTARG && skip=true;;
+			5) $OPTARG && skipmd5=true;;
+			t) ((mandatory++)); threads=$OPTARG;;
+			r) ((mandatory++)); _mapper_diego=$OPTARG;;
+			g) ((mandatory++)); gtf="$OPTARG";;
+			c) ((mandatory++)); _cmpfiles_diego=$OPTARG;;
+			i) ((mandatory++)); countsdir="$OPTARG";;
+			j) ((mandatory++)); mappeddir="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG";;
+			o) ((mandatory++)); outdir="$OPTARG";;
+			*) _usage; return 1;;
+		esac
+	done
+	[[ $mandatory -lt 8 ]] && _usage && return 1
+
+	commander::print "differential splice junction analyses"
+
+	$skipmd5 && {
+		commander::warn "skip checking md5 sums and thus annotation preparation"
+	} || {
+		commander::print "checking md5 sums"
+		local thismd5gtf
+		[[ -s $gtf ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
+		if [[ ! -s ${gtf%.*}.diego.gtf ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
+			commander::print "preparing annotation for differential splice junction analyses"
+
+			declare -a cmdprep
+			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD
+				gfftoDIEGObed.pl -g $gtf -o ${gtf%.*}.diego.gtf
+			CMD
+
+			{	conda activate py3 && \
+				commander::runcmd -v -b -t $threads -a cmdprep && \
+				conda activate py2
+			} || { 
+				commander::printerr "$funcname failed at annotation preparation"
+				return 1
+			}
+		fi
+	}
+
+	declare -a cmd1 cmd2 mapdata
+	declare -A visited
+	local m f i c t odir tdir sjfile countfile min sample condition library replicate factors
+	for m in "${_mapper_diego[@]}"; do
+		visited=()
+		for f in "${_cmpfiles_diego[@]}"; do
+			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
+			i=0
+			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do 
+				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
+					odir="$outdir/$m/$c-vs-$t"
+					tdir="$tmpdir/$m/diego"
+					mkdir -p "$odir" "$tdir"
+					rm -f "$odir/groups.tsv" "$odir/sjlist.tsv" "$odir/countslist.tsv"
+					unset sample condition library replicate factors
+					while read -r sample condition library replicate factors; do
+						[[ ${visited["$sample.$replicate"]} ]] && continue || visited["$sample.$replicate"]=1
+						sjfile=$(readlink -e "$mappeddir/$m/$sample"*.sj | head -1)
+						countfile=$(readlink -e "$countsdir/$m/$sample"*exoncounts.+(htsc|reduced) | head -1)
+						[[ $sjfile ]] && echo -e "$sample.$replicate\t$sjfile" >> "$odir/list.sj.tsv"
+						echo -e "$sample.$replicate\t$countfile" >> "$odir/list.ex.tsv"
+						echo -e "$condition\t$sample.$replicate" >> "$odir/groups.tsv"
+					done < <(awk -v c=$c '$2==c' $f | sort -k4,4V && awk -v t=$t '$2==t' $f | sort -k4,4V)
+
+					min=$(cut -d $'\t' -f 1 "$odir/groups.tsv" | sort | uniq -c | column -t | cut -d ' ' -f 1 | sort -k1,1 | head -1)
+					if [[ -e "$odir/sjlist.tsv" ]]; then
+						if [[ $m == "segemehl" ]]; then
+							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+								cd \$(mktemp -d -p $tdir)
+							CMD
+								pre_segemehl.pl
+									-l "$odir/list.sj.tsv"
+									-a "$genome.diego.gtf"
+									-o "$odir/input.sj.tsv"
+							CMD
+						elif [[ $m == "star" ]]; then
+							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+								cd \$(mktemp -d -p $tdir)
+							CMD
+								pre_STAR.py
+									-l "$odir/list.sj.tsv"
+									-d "$genome.diego.gtf"
+									-o "$odir/input.sj.tsv"
+							CMD
+						fi
+						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+							diego.py
+								-d $min 
+								-a "$odir/input.sj.tsv"
+								-b "$odir/groups.tsv"
+								-x $c
+								> "$odir/diego.sj.tsv"
+						CMD
+						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+							diego.py
+								-d $min 
+								-a "$odir/input.sj.tsv"
+								-b "$odir/groups.tsv"
+								-x $c
+								-e
+								-f "$odir/dendrogram.sj"
+						CMD
+					fi
+
+					commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+						cd \$(mktemp -d -p $tdir)
+					CMD
+						HTseq2DoDAS.pl
+							-i "$odir/list.ex.tsv"
+							-o "$odir/input.ex.tsv"
+					CMD
+					commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+						diego.py
+							-d $min 
+							-a "$odir/input.ex.tsv"
+							-b "$odir/groups.tsv"
+							-x $c
+							> "$odir/diego.ex.tsv"
+					CMD
+					commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+						diego.py
+							-d $min 
+							-a "$odir/input.ex.tsv"
+							-b "$odir/groups.tsv"
+							-x $c
+							-e
+							-f "$odir/dendrogram.ex"
+					CMD
+				done
+			done
+		done
+	done
+
+	$skip && {
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+	} || {
+		{	conda activate py3 && \
+			commander::runcmd -v -b -t $threads -a cmd1 && \
+			commander::runcmd -v -b -t $threads -a cmd2 && \
+			conda activate py2
+		} || { 
+			commander::printerr "$funcname failed"
+			return 1
+		}
+	}
+
+	return 0
+}
+
 expression::deseq() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
@@ -47,9 +223,9 @@ expression::deseq() {
 		odir="$outdir/$m"
 		mkdir -p "$odir"
 		visited=()
-        cmps=()
+		cmps=()
 
-        perl -lane 'push @o,"sample,countfile,condition,replicate"; for (4..$#F){push @o,"factor".($_-3)}END{print join",",@o}' > "$odir/experiments.csv"
+		head -1 ${_cmpfiles_deseq[0]} | perl -lane 'push @o,"sample,countfile,condition,replicate"; for (4..$#F){push @o,"factor".($_-3)}END{print join",",@o}' > "$odir/experiments.csv"
 		for f in "${_cmpfiles_deseq[@]}"; do
 			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
@@ -59,7 +235,7 @@ expression::deseq() {
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
 						[[ ${visited["$sample.$replicate"]} ]] && continue || visited["$sample.$replicate"]=1
-						countfile=$(readlink -e "$countsdir/$m/$sample"*.+(reduced|htsc) | head -1)
+						countfile=$(readlink -e "$countsdir/$m/$sample"*.counts.+(reduced|htsc) | head -1)
 						[[ $factors ]] && factors=","$(echo $factors | sed -r 's/\s+/,/g')
 						echo "$sample.$replicate,$countfile,$condition,$replicate$factors" >> "$odir/experiments.csv"
 					done < <(awk -v c=$c '$2==c' $f | sort -k4,4V && awk -v t=$t '$2==t' $f | sort -k4,4V)

@@ -132,6 +132,7 @@ helper::addmemberfunctions(){
 
 	shopt -s expand_aliases
 	for var in "${vars[@]}"; do
+		eval "alias $var.get='helper::_get $var'"
 		eval "alias $var.push='helper::_push $var'"
 		eval "alias $var.pop='helper::_pop $var'"
 		eval "alias $var.slice='helper::_slice $var'"
@@ -164,6 +165,19 @@ helper::addmemberfunctions(){
 	return 0
 }
 
+helper::_get(){
+	declare -n __="$1"
+	[[ $2 ]] && {
+		local j=1
+		[[ $3 ]] && {
+			[[ $3 -lt 0 ]] && j=$((${#__[@]}-$2+$3)) || {
+				[[ $3 -eq 0 ]] && j=${#__[@]} || j=$(($3-$2+1))
+			}
+		}
+		echo "${__[@]:$2:$j}"
+	} || echo ${__[*]}
+}
+
 helper::_push(){
 	declare -n __="$1"
 	shift
@@ -177,6 +191,7 @@ helper::_pop(){
 
 helper::_slice(){
 	declare -n __="$1"
+	local j=$(($3-$2+1))
 	__=("${__[@]:$2:$3}")
 }
 
@@ -324,6 +339,8 @@ helper::_test(){
 	arr.push bar
 	arr.push zar
 	arr.print
+	arr.get 0 -1
+	arr.get 1 0
 	arr.sort
 	arr.print
 	arr.uc [fa]

@@ -42,9 +42,9 @@ alignment::segemehl() {
 				_mapper_segemehl+=(segemehl)
 				_segemehl=segemehl
 			;;
-			1) 	((mandatory++)); _fq1_segemehl=$OPTARG;;
-			2) 	_fq2_segemehl=$OPTARG;;
-			*) 	_usage; return 1;;
+			1)	((mandatory++)); _fq1_segemehl=$OPTARG;;
+			2)	_fq2_segemehl=$OPTARG;;
+			*)	_usage; return 1;;
 		esac
 	done
 	[[ $mandatory -lt 6 ]] && _usage && return 1
@@ -83,12 +83,12 @@ alignment::segemehl() {
 	local o e params
 	for i in "${!_fq1_segemehl[@]}"; do
 		helper::basename -f "${_fq1_segemehl[$i]}" -o o -e e
-		o="$outdir/$o.bam"
-        $nosplitaln && params='' || params=" -S $o" #segemehl trims suffix
+		o="$outdir/$o"
+		$nosplitaln && params='' || params=" -S $o.sj" #segemehl trims suffix
 		[[ $accuracy ]] && params+=" -A $accuracy"
 		if [[ ${_fq2_segemehl[$i]} ]]; then
 			[[ $insertsize ]] && params+=" -I $insertsize"
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				segemehl
 				$params
 				-i "$genomeidx"
@@ -97,10 +97,12 @@ alignment::segemehl() {
 				-p "${_fq2_segemehl[$i]}"
 				-t $threads
 				-b
-				-o "$o"
+				-o "$o.bam"
+			CMD
+				ln -sfnr $o.sngl.bed $o.sj
 			CMD
 		else
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				segemehl
 				$params
 				-i "$genomeidx"
@@ -108,10 +110,12 @@ alignment::segemehl() {
 				-q "${_fq1_segemehl[$i]}"
 				-t $threads
 				-b
-				-o "$o"
+				-o "$o.bam"
+			CMD
+				ln -sfnr $o.sngl.bed $o.sj
 			CMD
 		fi
-		_segemehl+=("$o")
+		_segemehl+=("$o.bam")
 	done
 
 	$skip && {
@@ -171,9 +175,9 @@ alignment::star() {
 				_mapper_star+=(star)
 				_star=star
 			;;
-			1) 	((mandatory++)); _fq1_star=$OPTARG;;
-			2) 	_fq2_star=$OPTARG;;
-			*) 	_usage; return 1;;
+			1)	((mandatory++)); _fq1_star=$OPTARG;;
+			2)	_fq2_star=$OPTARG;;
+			*)	_usage; return 1;;
 		esac
 	done
 	[[ $mandatory -lt 6 ]] && _usage && return 1
@@ -236,7 +240,7 @@ alignment::star() {
 				params+=" --alignMatesGapMax $insertsize --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
 			}
 			# from towopassmode option on, params are taken from star-fusion wiki
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				STAR
 				$params
 				--runThreadN $threads
@@ -270,12 +274,14 @@ alignment::star() {
 			CMD
 				mv $o.Aligned.out.bam $o.bam
 			CMD
+				ln -sfnr $o.JS.out.tab $o.sj
+			CMD
 		else
 			$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999' || {
 				[[ $insertsize ]] || insertsize=100000
 				params+=" --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
 			}
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				STAR
 				$params
 				--runThreadN $threads
@@ -306,6 +312,8 @@ alignment::star() {
 				--alignInsertionFlush Right
 			CMD
 				mv $o.Aligned.out.bam $o.bam
+			CMD
+				ln -sfnr $o.JS.out.tab $o.sj
 			CMD
 		fi
 		_star+=("$o.bam")
@@ -937,6 +945,121 @@ alignment::rmduplicates(){
 	return 0
 }
 
+alignment::clipmateoverlaps() {
+# must not handle supplementary i.e. circular/chimeric transcripts due to potentially uneven lists
+# if not flagged as supplementary and mate2 is mapped totally before mate1, both will be flagged as unmapped
+# fully covered by mate will be flagged as unmapped
+# adjusted poolsize will consume ~15gb memory
+	local funcname=${FUNCNAME[0]}
+	_usage() {
+		commander::printerr {COMMANDER[0]}<<- EOF
+			$funcname usage: 
+			-S <hardskip>  | true/false return
+			-s <softskip>  | true/false only print commands
+			-t <threads>   | number of
+			-m <memory>    | amount of
+			-r <mapper>    | array of sorted, indexed bams within array of
+			-c <sliceinfo> | array of
+			-o <outbase>   | path to
+		EOF
+		return 0
+	}
+
+	local OPTIND arg mandatory skip=false threads memory outdir
+	declare -n _mapper_clipmateoverlaps _bamslices_clipmateoverlaps
+	declare -A nidx tidx
+	while getopts 'S:s:t:m:r:c:p:o:' arg; do
+		case $arg in
+			S) $OPTARG && return 0;;
+			s) $OPTARG && skip=true;;
+			t) ((mandatory++)); threads=$OPTARG;;
+			m) ((mandatory++)); memory=$OPTARG;;
+			r) ((mandatory++)); _mapper_clipmateoverlaps=$OPTARG;;
+			c) ((mandatory++)); _bamslices_clipmateoverlaps=$OPTARG;;
+			o) ((mandatory++)); outdir="$OPTARG";;
+			*) _usage; return 1;;
+		esac
+	done
+	[[ $mandatory -lt 5 ]] && _usage && return 1
+
+	commander::print "clipping ends of overlapping mate pairs"
+
+	local m i o slice odir instances ithreads minstances mthreads
+	read -r minstances mthreads < <(configure::instances_by_memory -t $threads -m $memory)
+
+	for m in "${_mapper_clipmateoverlaps[@]}"; do
+		declare -n _bams_clipmateoverlaps=$m
+		((instances+=${#_bams_clipmateoverlaps[@]}))
+	done
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+
+	declare -a tomerge cmd1 cmd2 cmd3
+	for m in "${_mapper_clipmateoverlaps[@]}"; do
+		declare -n _bams_clipmateoverlaps=$m
+		odir="$outdir/$m"
+		mkdir -p "$odir"
+
+		for i in "${!_bams_clipmateoverlaps[@]}"; do
+			tomerge=()
+
+			while read -r slice; do
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+					bam clipOverlap
+						--in "$slice"
+						--out "$slice.mateclipped"
+						--unmapped
+						--excludeFlags 0x80C
+						--poolSize 10000000
+						--stats
+				CMD
+					[[ $? -le 2 ]] && true || false
+				CMD
+
+				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+					mv "$slice.mateclipped" "$slice"
+				CMD
+					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
+				CMD
+
+				tomerge+=("$slice")
+			done < "${_bamslices_clipmateoverlaps[${_bams_clipmateoverlaps[$i]}]}"
+
+			o="$odir/$(basename "${_bams_clipmateoverlaps[$i]}")"
+			o="${o%.*}.mateclipped.bam"
+
+			# slices have full sam header info used by merge to maintain the global sort order
+			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+				samtools merge
+					-@ $ithreads
+					-f
+					-c
+					-p
+					"$o"
+					$(printf '"%s" ' "${tomerge[@]}")
+			CMD
+
+			_bamslices_clipmateoverlaps["$o"]="${_bamslices_clipmateoverlaps[${_bams_clipmateoverlaps[$i]}]}"
+			_bams_clipmateoverlaps[$i]="$o"
+		done
+	done
+
+	$skip && {
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+	} || {
+		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
+			commander::runcmd -v -b -t $instances -a cmd2 && \
+			commander::runcmd -v -b -t $instances -a cmd3
+		} || { 
+			commander::printerr "$funcname failed"
+			return 1
+		}
+	}
+
+	return 0
+}
+
 alignment::reorder() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
@@ -958,7 +1081,7 @@ alignment::reorder() {
 	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir i
 	declare -n _mapper_reorder _bamslices_reorder
 	declare -A nidx tidx
-	while getopts 'S:s:t:g:m:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:g:m:r:c:p:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -997,17 +1120,17 @@ alignment::reorder() {
 
 			while read -r slice; do
 				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-				picard
-					-Xmx${jmem}m
-					-XX:ParallelGCThreads=$jgct
-					-XX:ConcGCThreads=$jcgct
-					-Djava.io.tmpdir="$tmpdir"
-					ReorderSam
-					I="$slice"
-					O="$slice.ordered"
-					R="$genome"
-					VALIDATION_STRINGENCY=SILENT
-					VERBOSITY=WARNING
+					picard
+						-Xmx${jmem}m
+						-XX:ParallelGCThreads=$jgct
+						-XX:ConcGCThreads=$jcgct
+						-Djava.io.tmpdir="$tmpdir"
+						ReorderSam
+						I="$slice"
+						O="$slice.ordered"
+						R="$genome"
+						VALIDATION_STRINGENCY=SILENT
+						VERBOSITY=WARNING
 				CMD
 					mv "$slice.ordered" "$slice"
 				CMD

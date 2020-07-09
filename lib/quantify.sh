@@ -8,6 +8,7 @@ quantify::featurecounts() {
 			$funcname usage: 
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
+			-5 <skip>     | true/false md5sums, gtf prep respectively
 			-t <threads>  | number of
 			-r <mapper>   | array of bams within array of
 			-g <gtf>      | path to
@@ -19,12 +20,13 @@ quantify::featurecounts() {
 		return 0
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir gtf level featuretag
+	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf level featuretag
 	declare -n _mapper_featurecounts
-	while getopts 'S:s:t:r:g:l:f:p:o:' arg; do
+	while getopts 'S:s:5:t:r:g:l:f:p:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
+			5) $OPTARG && skipmd5=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
 			r) ((mandatory++)); _mapper_featurecounts=$OPTARG;;
 			g) ((mandatory++)); gtf="$OPTARG";;
@@ -39,6 +41,27 @@ quantify::featurecounts() {
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
 	commander::print "inferring alignments library preparation method"
+
+	$skipmd5 && {
+		commander::warn "skip checking md5 sums and thus annotation preparation"
+	} || {
+		commander::print "checking md5 sums"
+		local thismd5gtf
+		[[ -s $gtf ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
+		if [[ ! -s ${gtf%.*}.transcripts.gtf ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
+			commander::print "preparing annotation for exon level quantification"
+
+			declare -a cmdprep
+			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD
+				gtf2transcripts.pl -o ${gtf%.*}.transcripts.gtf $gtf
+			CMD
+
+			commander::runcmd -v -b -t $threads -a cmdprep || {
+				commander::printerr "$funcname failed at annotation preparation"
+				return 1
+			}
+		fi
+	}
 
 	declare -a cmd1 cmd2
 	local m f
@@ -87,6 +110,7 @@ quantify::featurecounts() {
 		declare -n _bams_featurecounts=$mapper
 		((instances+=${#_bams_featurecounts[@]}))
 	done
+	instances=$((instances*2))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 64 -T $threads)
 
 	declare -a cmd3
@@ -95,7 +119,6 @@ quantify::featurecounts() {
 		mkdir -p "$outdir/$m"
 		for f in "${_bams_featurecounts[@]}"; do
 			o=$outdir/$m/$(basename $f)
-			o=${o%.*}.counts
 			quantify::_featurecounts \
 				-1 cmd3 \
 				-t $ithreads \
@@ -104,7 +127,16 @@ quantify::featurecounts() {
 				-g "$gtf" \
 				-l ${level:-exon} \
 				-f ${featuretag:-gene_id} \
-				-o "$o"
+				-o "${o%.*}.counts"
+			quantify::_featurecounts \
+				-1 cmd3 \
+				-t $ithreads \
+				-i "$f" \
+				-s ${strandness["$f"]:-?} \
+				-g "$gtf" \
+				-l ${level:-exon} \
+				-f exon_id \
+				-o "${o%.*}.exoncounts"
 		done
 	done
 

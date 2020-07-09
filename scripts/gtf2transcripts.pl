@@ -4,55 +4,53 @@ use warnings;
 use feature ":5.10";
 use Getopt::Long;
 
-my $args = $#ARGV;
-
-my $biotype='';
-my %utr;
-my $excludeutr;
-my %exonnumber;
-my %fakeid;
-my $fakeidc=0;
-my %genesgtf;
-my %genesdex;
-my %exonsdex;
-my %exonsgtf;
-my $filedex;
-my $filegtf;
-my @ids;
-
 sub help {
 	print <<EOF;
 Synopsis: 
 gtf4dexseq.pl [options] annotation.gtf
 
 Description:
-Converts a GTF file into a DEXSeq readable annotation format.
+Converts a GTF file into a transcript based GTF and/or DEXSeq readable annotation format, both suitable for featureCounts based quantification.
+I.e. each transcript is treated as a gene with its related exons. Please note, no CDS or other features will be printed.
 
-Required GTF info fields (column 9): gene_id, exon_number 
-Recommended, additional info fields: transcript_id and gene_biotype to filter features for
+Requirements:
+Input GTF needs to besorted by -k1,1 -k4,4n -k5,5n
+GTF feature exon with info fields: transcript_id, gene_id, exon_number, (optional: gene_biotype)
 
-UTR overlapping exons can be excluded from the output to reduce the risk of finding some of them as differntially expressed just by alternative start/stop sites.
-Required feature type (column 3): a substring matching UTR or utr e.g. five_prime_utr
+Optional functions:
+1) experimental - TODO: Better truncate exons according to CDS
+UTR overlapping exons can be excluded from the output to reduce the risk of finding some of them as differntially expressed due to alternative start/stop sites.
+Required feature type at column 3: a string containing 'UTR' or 'utr' e.g. five_prime_utr or 3primeUTR
+
+2) filter GTF according to a given gene_biotype
+E.g. filter for commonly poly-A transcriptsby a regular expression: (protein_coding|TEC|antisense|lincRNA|sense_intronic|sense_overlapping)
+The GTF info fields will be searched for /gene_biotype "<regex>"/
 
 Options:
--d|--outdexseq <file> (required)
--g|--outgtf <file>    (optional)
+-o|--outgtf <file>    (required unless -d)
+-d|--outdexseq <file> (required unless -o)
+-b|--biotype <regex>  (optional)
 -x|--excludeutr       (optional)
 -h|--help"
 EOF
 	exit 0;
 }
 
+my (%utr, $excludeutr, %exonnumber, %fakeid, %genesgtf, %genesdex, %exonsdex, %exonsgtf, $filedex, $filegtf, @ids);
+my $biotype='';
+my $fakeidc=0;
+
+&help if $#ARGV == -1;
 (Getopt::Long::Parser->new)->getoptions(
-	'g|outgtf:s' => \$filegtf,
+	'o|outgtf:s' => \$filegtf,
 	'd|outdexseq=s' => \$filedex,
 	'x|excludeutr' => \$excludeutr,
 	'b|biotype:s' => sub {
 		$biotype = qr/gene_biotype\s+\"$_[1]\"/;
 	},
 	'h|help' => \&help
-);
-&help if $args < 2;
+) or &help;
+&help unless $filegtf || $filedex;
 
 my @in;
 while(<>){
@@ -89,11 +87,12 @@ for (@in){
 	}
 
 	unless (exists $exonnumber{"$tid\@$gid"}){
-		$genesdex{"$tid\@$gid"} = [$l[0],"gtf4dexseq.pl","aggregate_gene",$l[3],$l[3],".",$l[6],".","gene_id \"$tid\@$gid\""];
-		$genesgtf{"$tid\@$gid"} = [$l[0],"gtf4dexseq.pl","gene",$l[3],$l[3],".",$l[6],".","gene_id \"$tid\@$gid\""];
+		$genesdex{"$tid\@$gid"} = [$l[0],"gtf4dexseq.pl","aggregate_gene",$l[3],0,".",$l[6],".","gene_id \"$tid\@$gid\""];
+		$genesgtf{"$tid\@$gid"} = [$l[0],"gtf4dexseq.pl","gene",$l[3],0,".",$l[6],".","gene_id \"$tid\@$gid\""];
 		push @ids, "$tid\@$gid";
 	}
 	$genesdex{"$tid\@$gid"}[4] = $l[4];
+	$genesgtf{"$tid\@$gid"}[4] = $l[4];
 	$exonnumber{"$tid\@$gid"}++;
 
 	my $n = join("",(0)x(3-length($exonnumber{"$tid\@$gid"})),$exonnumber{"$tid\@$gid"});
@@ -102,12 +101,14 @@ for (@in){
 }
 
 open GTF, ">$filegtf" or die $! if $filegtf;
-open DEX, ">$filedex" or die $!;
+open DEX, ">$filedex" or die $! if $filedex;
 
 for my $id (@ids){
 	if ($#{$exonsdex{$id}} > 1){
-		say DEX join("\t",@{$genesdex{$id}});
-		say DEX join("\t",@$_) for @{$exonsdex{$id}};
+		if($filedex){
+			say DEX join("\t",@{$genesdex{$id}});
+			say DEX join("\t",@$_) for @{$exonsdex{$id}};
+		}
 		if ($filegtf){
 			say GTF join("\t",@{$genesgtf{$id}});
             say GTF join("\t",@$_) for @{$exonsgtf{$id}};
@@ -115,5 +116,5 @@ for my $id (@ids){
 	}
 }
 
-close DEX;
+close DEX if $filedex;
 close GTF if $filegtf;
