@@ -219,7 +219,6 @@ alignment::star() {
 
 			thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
 			sed -i "s/md5star=.*/md5star=$thismd5star/" $genome.md5.sh
-			[[ "$thismd5gtf" ]] && sed -i "s/md5gtf=.*/md5gtf=$thismd5gtf/" $genome.md5.sh
 		fi
 	}
 
