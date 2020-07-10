@@ -259,7 +259,6 @@ alignment::star() {
 				--chimJunctionOverhangMin 8
 				--chimOutJunctionFormat 1
 				--alignSJstitchMismatchNmax 5 -1 5 5
-				--outSAMattrRGline ID:GRPundef
 				--chimMultimapScoreRange 3
 				--chimScoreJunctionNonGTAG -4
 				--chimMultimapNmax 20
