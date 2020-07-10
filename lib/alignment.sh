@@ -259,7 +259,6 @@ alignment::star() {
 				--chimSegmentMin 12
 				--chimJunctionOverhangMin 8
 				--chimOutJunctionFormat 1
-				--alignSJDBoverhangMin 10
 				--alignSJstitchMismatchNmax 5 -1 5 5
 				--outSAMattrRGline ID:GRPundef
 				--chimMultimapScoreRange 3
@@ -271,6 +270,7 @@ alignment::star() {
 				--alignInsertionFlush Right
 				--alignSplicedMateMapLminOverLmate 0
 				--alignSplicedMateMapLmin 30
+				--outSAMattrRGline ID:A1 SM:sample1 LB:library1 PU:unit1 PL:illumina
 			CMD
 				mv $o.Aligned.out.bam $o.bam
 			CMD
@@ -1015,7 +1015,7 @@ alignment::clipmateoverlaps() {
 					[[ $? -le 2 ]] && true || false
 				CMD
 
-				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					mv "$slice.mateclipped" "$slice"
 				CMD
 					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
