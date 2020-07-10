@@ -105,11 +105,12 @@ quantify::featurecounts() {
 	# featurecounts cannot handle more than 64 threads
 	local instances ithreads m f
 	for m in "${_mapper_featurecounts[@]}"; do
-		declare -n _bams_featurecounts=$mapper
+		declare -n _bams_featurecounts=$m
 		((instances+=${#_bams_featurecounts[@]}))
 	done
 	instances=$((instances*2))
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 64 -T $threads)
+	# ${instances:=1} in case of misuse of this function for annotation preparation without bam files
+	read -r instances ithreads < <(configure::instances_by_threads -i ${instances:=1} -t 64 -T $threads)
 
 	declare -a cmd3
 	for m in "${_mapper_featurecounts[@]}"; do
