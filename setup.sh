@@ -16,7 +16,7 @@ die() {
 ([[ ${BASH_VERSINFO[0]} -gt 4 ]] || [[ ${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 4 ]]) || die "requieres bash version 4.4 or above"
 
 for f in "$(readlink -e $(dirname $0))"/lib/*.sh; do
-	source $f
+	source $f || die "unexpected error in source code - please contact developer"
 done
 
 THREADS=$(cat /proc/cpuinfo | grep -cF processor)
@@ -28,7 +28,7 @@ options::parse "$@" || die "parameterization issue"
 [[ ! $INSDIR ]] && die "mandatory parameter -d missing"
 
 for f in ${TOSOURCE[@]}; do
-	source $f || die
+	source $f || die "unexpected error in source code - please contact developer"
 done
 
 mkdir -p $INSDIR || die "cannot access $INSDIR"

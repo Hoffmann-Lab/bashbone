@@ -35,7 +35,9 @@ configure::environment(){
 	export PATH=$(readlink -e $insdir/latest/* | xargs -echo | sed 's/ /:/g'):$PATH
 	export PATH=$(readlink -e $insdir/latest/*/scripts | xargs -echo | sed 's/ /:/g'):$PATH
 
-	$activate_conda && source $insdir/conda/bin/activate py2
+	$activate_conda && {
+		source $insdir/conda/bin/activate py2 &> /dev/null || return 1
+	}
 
 	return 0
 }

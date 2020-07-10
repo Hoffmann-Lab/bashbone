@@ -40,7 +40,7 @@ quantify::featurecounts() {
 
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
-	commander::print "inferring alignments library preparation method"
+	commander::print "inferring library preparation method and quantifying reads"
 
 	$skipmd5 && {
 		commander::warn "skip checking md5 sums and thus annotation preparation"
@@ -102,8 +102,6 @@ quantify::featurecounts() {
 		}
 	}
 
-	commander::print "quantifying reads"
-
 	# featurecounts cannot handle more than 64 threads
 	local instances ithreads m f
 	for m in "${_mapper_featurecounts[@]}"; do
@@ -127,6 +125,7 @@ quantify::featurecounts() {
 				-g "$gtf" \
 				-l ${level:-exon} \
 				-f ${featuretag:-gene_id} \
+				-p "$tmpdir" \
 				-o "${o%.*}.counts"
 			quantify::_featurecounts \
 				-1 cmd3 \
@@ -136,6 +135,7 @@ quantify::featurecounts() {
 				-g "$gtf" \
 				-l ${level:-exon} \
 				-f exon_id \
+				-p "$tmpdir" \
 				-o "${o%.*}.exoncounts"
 		done
 	done
@@ -170,6 +170,7 @@ quantify::_featurecounts() {
 			-g <gtf>        | path to
 			-l <level>      | feature (default: exon)
 			-f <tag>        | feature (default: gene_id)
+			-p <tmpdir>     | path to
 			-o <outfile>    | path to
 		EOF
 		return 0
@@ -177,7 +178,7 @@ quantify::_featurecounts() {
 
 	local OPTIND arg mandatory threads bam strandness gtf outfile level featuretag
 	declare -n _cmds1_featurecounts
-	while getopts '1:t:s:i:g:l:f:o:' arg; do
+	while getopts '1:t:s:i:g:l:f:o:p:' arg; do
 		case $arg in
 			1) ((mandatory++)); _cmds1_featurecounts=$OPTARG;;
 			t) ((mandatory++)); threads=$OPTARG; [[ $threads -gt 64 ]] && threads=64;;
@@ -187,10 +188,11 @@ quantify::_featurecounts() {
 			l) level=$OPTARG;;
 			f) featuretag=$OPTARG;;
 			o) ((mandatory++)); outfile="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 7 ]] && _usage && return 1
 
 	# infer SE or PE
 	local params=''
@@ -283,8 +285,8 @@ quantify::_tpm() {
 	_usage() {
 		commander::printerr {COMMANDER[0]}<<- EOF
 			$funcname usage: 
-			-1 <cmds1>      | array of
-			-g <gtf>        | path to
+			-1 <cmds1>     | array of
+			-g <gtf>       | path to
 			-i <countfile> | path to
 		EOF
 		return 0

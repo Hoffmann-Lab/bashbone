@@ -194,7 +194,7 @@ expression::deseq() {
 		return 0
 	}
 
-	local OPTIND arg mandatory skip=false threads countsdir outdir gtf gtfinfo
+	local OPTIND arg mandatory skip=false threads countsdir outdir gtf
 	declare -n _mapper_deseq _cmpfiles_deseq
 	while getopts 'S:s:t:r:g:c:i:o:' arg; do
 		case $arg in
@@ -202,7 +202,7 @@ expression::deseq() {
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
 			r) ((mandatory++)); _mapper_deseq=$OPTARG;;
-			g) gtf="$OPTARG"; [[ -s "$gtf.info" ]] && gtfinfo="$gtf.info"; [[ -s "$gtf.descr" ]] && gtfinfo="$gtf.descr";;
+			g) gtf="$OPTARG";;
 			c) ((mandatory++)); _cmpfiles_deseq=$OPTARG;;
 			i) ((mandatory++)); countsdir="$OPTARG";;
 			o) ((mandatory++)); outdir="$OPTARG";;
@@ -218,7 +218,7 @@ expression::deseq() {
 
 	declare -a cmd1 cmd2 cmps mapdata
 	declare -A visited
-	local f i c t o odir countfile sample condition library replicate factors
+	local f i c t odir countfile sample condition library replicate factors
 	for m in "${_mapper_deseq[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
@@ -239,21 +239,17 @@ expression::deseq() {
 						[[ $factors ]] && factors=","$(echo $factors | sed -r 's/\s+/,/g')
 						echo "$sample.$replicate,$countfile,$condition,$replicate$factors" >> "$odir/experiments.csv"
 					done < <(awk -v c=$c '$2==c' $f | sort -k4,4V && awk -v t=$t '$2==t' $f | sort -k4,4V)
-
-					if [[ $gtf ]]; then
-						for o in "$odir/$c-vs-$t/deseq.tsv" "$odir/$c-vs-$t/deseq.full.tsv" "$odir/$c-vs-$t/deseq.noNA.tsv" "$odir/$c-vs-$t/heatmap.vsc.ps" "$odir/$c-vs-$t/heatmap.mean.vsc.ps"; do
-							commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-								[[ -e "$o" ]] && annotate.pl "${gtfinfo:=0}" "$gtf" "$o" || true
-							CMD
-						done
-					fi
 				done
 			done
 		done
 
-		commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-			deseq2.R $ithreads "$odir/experiments.csv" "$odir" ${cmps[*]}
-		CMD
+		expression::_deseq \
+			-1 cmd1 \
+			-2 cmd2 \
+			-t $ithreads \
+			-i "$odir/experiments.csv" \
+			-c "${cmps[*]}" \
+			-o "$odir"
 	done
 
 	$skip && {
@@ -269,6 +265,62 @@ expression::deseq() {
 			return 1
 		}
 	}
+
+	return 0
+}
+
+expression::_deseq() {
+	local funcname=${FUNCNAME[0]}
+	_usage() {
+		commander::printerr {COMMANDER[0]}<<- EOF
+			$funcname usage: 
+			-1 <cmds1>   | array of
+			-2 <cmds2>   | array of
+			-t <threads> | number of
+			-i <incsv>   | path to
+			-g <gtf>     | path to
+			-c <cmps>    | string of pairs
+			-o <outdir>  | path to
+		EOF
+		return 0
+	}
+
+	local OPTIND arg mandatory threads csvfile gtf outdir gtfinfo
+	declare -n _cmds1_deseq _cmds2_deseq
+	declare -a cmppairs
+	while getopts '1:2:t:i:g:c:o:' arg; do
+		case $arg in
+			1) ((mandatory++)); _cmds1_deseq=$OPTARG;;
+			2) ((mandatory++)); _cmds2_deseq=$OPTARG;;
+			t) ((mandatory++)); threads=$OPTARG;;
+			i) ((mandatory++)); csvfile="$OPTARG";;
+			g) gtf="$OPTARG";;
+			c) ((mandatory++)); mapfile -t -d ',' cmppairs <<< "$OPTARG"; cmppairs[-1]="$(sed -r 's/\s*\n*$//' <<< "${cmppairs[-1]}")";;
+			o) ((mandatory++)); outdir="$OPTARG";;
+			*) _usage; return 1;;
+		esac
+	done
+	[[ $mandatory -lt 5 ]] && _usage && return 1
+
+	commander::makecmd -a _cmds1_deseq -s '|' -c {COMMANDER[0]}<<- CMD
+		deseq2.R $threads "$csvfile" "$outdir" ${cmppairs[*]}
+	CMD
+
+	if [[ $gtf ]]; then
+		gtfinfo=$(readlink -e "$gtf"*.+(info|descr) | head -1);
+		local c t odir
+		for i in $(seq 0 2 $((${#cmppairs[@]}-1))); do
+			c=${cmppairs[$i]}
+			t=${cmppairs[$((i+1))]}
+			odir="$outdir/$c-vs-$t"
+			for f in "$odir/deseq.tsv" "$odir/deseq.full.tsv" "$odir/deseq.noNA.tsv" \
+					"$odir/heatmap.vsc.ps" "$odir/heatmap.mean.vsc.ps" "$odir/heatmap.vsc.zscores.ps" "$odir/heatmap.mean.vsc.zscores.ps"; do
+				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+					[[ -e "$o" ]] && annotate.pl "${gtfinfo:=0}" "$gtf" "$f" || true
+				CMD
+			done
+		done
+	fi
 
 	return 0
 }

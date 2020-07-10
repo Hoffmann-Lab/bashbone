@@ -8,7 +8,7 @@ cluster::coexpression(){
 			$funcname usage: 
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
-			-f <value>    | filter cluster for 0|1|2|3
+			-f <value>    | filter cluster for 0|1|2|20|21
 			-t <threads>  | number of
 			-m <memory>   | amount of
 			-c <cmpfiles> | array of
@@ -87,7 +87,7 @@ cluster::coexpression(){
 				$okfc=1 if exists $F[$i+4] && abs(abs($F[$i+1])-abs($F[$i+4]))>=0.5;
 				$okpval=1 if $F[$i+2] > 0 && $F[$i+2] <= 0.05;
 			}
-			print $F[0] if ($cf =~ /(2|3)$/ ) || ($cf =~ /0$/ && $okpval == 1) || ($cf =~ /1$/ && $okmean+$okfc+$okpval == 3);
+			print $F[0] if ($cf =~ /2$/ ) || ($cf =~ /0$/ && $okpval == 1) || ($cf =~ /1$/ && $okmean+$okfc+$okpval == 3);
 		' -- -cf=$clusterfilter "$odir/experiments.deseq.tsv" > "$odir/experiments.filtered.genes"
 
 		for e in tpm vsc; do
@@ -97,7 +97,7 @@ cluster::coexpression(){
 
 			mkdir -p "$odir/$e"
 			params=FALSE
-			[[ $clusterfilter =~ 3 ]] && params=TRUE
+			[[ $clusterfilter =~ 2 ]] && params=TRUE
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				wgcna.R $((memory/1024/2)) ${e^^*} $params "$odir/experiments.filtered.$e" "$odir/$e"
 			CMD
