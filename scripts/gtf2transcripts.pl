@@ -96,8 +96,8 @@ for (@in){
 	$exonnumber{"$tid\@$gid"}++;
 
 	my $n = join("",(0)x(3-length($exonnumber{"$tid\@$gid"})),$exonnumber{"$tid\@$gid"});
-	push @{$exonsdex{"$tid\@$gid"}}, [$l[0],"gtf4dexseq.pl","exonic_part",$l[3],$l[4],".",$l[6],".","transcripts \"$tid\"; exonic_part_number \"$n\"; gene_id \"$tid\@$gid\""];
-	push @{$exonsgtf{"$tid\@$gid"}}, [$l[0],"gtf4dexseq.pl","exon",$l[3],$l[4],".",$l[6],".","transcript_id \"$tid\"; exon_number \"$n\"; gene_id \"$tid\@$gid\"; exon_id \"$tid\@$gid:$n\""];
+	push @{$exonsdex{"$tid\@$gid"}}, [$l[0],"gtf2transcripts.pl","exonic_part",$l[3],$l[4],".",$l[6],".","transcripts \"$tid\"; exonic_part_number \"$n\"; gene_id \"$tid\@$gid\""];
+	push @{$exonsgtf{"$tid\@$gid"}}, [$l[0],"gtf2transcripts.pl","exon",$l[3],$l[4],".",$l[6],".","transcript_id \"$tid\"; exon_number \"$n\"; gene_id \"$tid\@$gid\"; exon_id \"$tid\@$gid:$n\""];
 }
 
 open GTF, ">$filegtf" or die $! if $filegtf;
