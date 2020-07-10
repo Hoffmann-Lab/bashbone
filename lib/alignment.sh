@@ -272,7 +272,7 @@ alignment::star() {
 			CMD
 				mv $o.Aligned.out.bam $o.bam
 			CMD
-				ln -sfnr $o.JS.out.tab $o.sj
+				ln -sfnr $o.SJ.out.tab $o.sj
 			CMD
 		else
 			$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999' || {
