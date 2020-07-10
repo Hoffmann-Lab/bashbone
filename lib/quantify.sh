@@ -109,8 +109,8 @@ quantify::featurecounts() {
 		((instances+=${#_bams_featurecounts[@]}))
 	done
 	instances=$((instances*2))
-	# ${instances:=1} in case of misuse of this function for annotation preparation without bam files
-	read -r instances ithreads < <(configure::instances_by_threads -i ${instances:=1} -t 64 -T $threads)
+	# $((instances==0?1:instances)) in case of misuse of this function for annotation preparation without bam files
+	read -r instances ithreads < <(configure::instances_by_threads -i $((instances==0?1:instances)) -t 64 -T $threads)
 
 	declare -a cmd3
 	for m in "${_mapper_featurecounts[@]}"; do
