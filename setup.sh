@@ -35,7 +35,7 @@ mkdir -p $INSDIR || die "cannot access $INSDIR"
 INSDIR=$(readlink -e $INSDIR)
 [[ ! $LOG ]] && LOG=$INSDIR/install.log
 
-touch $LOG || die "cannot access $LOG"
+echo > $LOG || die "cannot access $LOG"
 progress::log -v $VERBOSITY -o $LOG
 commander::print "installation started. please be patient." >> $LOG
 
