@@ -1001,14 +1001,16 @@ alignment::clipmateoverlaps() {
 			tomerge=()
 
 			while read -r slice; do
+				# use stdout with bam extension to enfoce bam output
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 					bam clipOverlap
 						--in "$slice"
-						--out "$slice.mateclipped"
+						--out -.bam
 						--unmapped
 						--excludeFlags 0x80C
 						--poolSize 10000000
 						--stats
+					> "$slice.mateclipped"
 				CMD
 					[[ $? -le 2 ]] && true || false
 				CMD
