@@ -99,7 +99,7 @@ expression::diego() {
 									-a "${gtf%.*}.diego.bed"
 									-o "input.sj.tsv"
 							CMD
-								mv input.sj.tsv $odir/input.sj.tsv"
+								mv input.sj.tsv "$odir/input.sj.tsv"
 							CMD
 						elif [[ $m == "star" ]]; then
 							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -109,7 +109,7 @@ expression::diego() {
 									-l "$odir/list.sj.tsv"
 									-d "${gtf%.*}.diego.bed"
 							CMD
-								mv junction_table.txt $odir/input.sj.tsv"
+								mv junction_table.txt "$odir/input.sj.tsv"
 							CMD
 						fi
 						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
