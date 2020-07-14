@@ -56,7 +56,7 @@ quantify::featurecounts() {
 				dexseq_prepare_annotation2.py
 					-r no
 					-f "$tmpdir/tmp.gtf"
-					$gtf /dev/null
+					$gtf "${gtf%.*}.dexseq.gtf"
 			CMD
 				sed -r 's/(.+gene_id\s+")([^"]+)(.+exon_number\s+")([^"]+)(.+)/\1\2\3\4\5; exon_id "\2:\4"/' "$tmpdir/tmp.gtf" > "${gtf%.*}.transcripts.gtf"
 			CMD

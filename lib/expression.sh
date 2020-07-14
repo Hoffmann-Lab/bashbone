@@ -49,12 +49,12 @@ expression::diego() {
 		commander::print "checking md5 sums"
 		local thismd5gtf
 		[[ -s $gtf ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
-		if [[ ! -s ${gtf%.*}.diego.gtf ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
+		if [[ ! -s ${gtf%.*}.diego.bed ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::print "preparing annotation for differential splice junction analyses"
 
 			declare -a cmdprep
 			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD
-				gfftoDIEGObed.pl -g $gtf -o ${gtf%.*}.diego.gtf
+				gfftoDIEGObed.pl -g $gtf -o ${gtf%.*}.diego.bed
 			CMD
 
 			{	conda activate py3 && \
@@ -96,7 +96,7 @@ expression::diego() {
 							CMD
 								pre_segemehl.pl
 									-l "$odir/list.sj.tsv"
-									-a "$genome.diego.gtf"
+									-a "$genome.diego.bed"
 									-o "$odir/input.sj.tsv"
 							CMD
 						elif [[ $m == "star" ]]; then
@@ -105,7 +105,7 @@ expression::diego() {
 							CMD
 								pre_STAR.py
 									-l "$odir/list.sj.tsv"
-									-d "$genome.diego.gtf"
+									-d "$genome.diego.bed"
 									-o "$odir/input.sj.tsv"
 							CMD
 						fi
