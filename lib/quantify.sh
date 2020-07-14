@@ -52,8 +52,15 @@ quantify::featurecounts() {
 			commander::print "preparing annotation for exon level quantification"
 
 			declare -a cmdprep
-			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD
-				gtf2transcripts.pl -o ${gtf%.*}.transcripts.gtf $gtf
+			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				dexseq_prepare_annotation2.py
+					-r no
+					-f "$tmpdir/tmp.gtf"
+					$gtf /dev/null
+			CMD
+				sed -r 's/(.+gene_id\s+")([^"]+)(.+exon_number\s+")([^"]+)(.+)/\1\2\3\4\5; exon_id "\2:\4"/' "$tmpdir/tmp.gtf" > "${gtf%.*}.transcripts.gtf"
+			CMD
+				rm -f "$tmpdir/tmp.gtf"
 			CMD
 
 			commander::runcmd -v -b -t $threads -a cmdprep || {
@@ -133,7 +140,7 @@ quantify::featurecounts() {
 				-t $ithreads \
 				-i "$f" \
 				-s ${strandness["$f"]:-?} \
-				-g "$gtf" \
+				-g "${gtf%.*}.transcripts.gtf" \
 				-l ${level:-exon} \
 				-f exon_id \
 				-p "$tmpdir" \

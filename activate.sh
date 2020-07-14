@@ -27,7 +27,7 @@
 						source "$f"
 					done && {
 						unset IFS
-						configure::environment -i $insdir_tools_bashbone -c $activate_conda_bashbone || {
+						configure::environment -i $insdir_tools_bashbone -b $insdir_bashbone -c $activate_conda_bashbone || {
 							unset IFS
 							echo ":ERROR: bashbone $version activation failed" >&2
 							echo ":ERROR: tried $insdir_tools_bashbone but"

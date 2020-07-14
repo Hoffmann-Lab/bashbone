@@ -6,21 +6,23 @@ configure::environment(){
 	_usage(){
 		commander::printerr {COMMANDER[0]}<<- EOF
 			$funcname usage:
-			-i <insdir> | path to
+			-i <insdir> | root path to tools
+			-b <insdir> | root path to bashbone
 			-c <conda>  | true/false activate
 		EOF
 		return 0
 	}
 
-	local OPTIND arg mandatory insdir activate_conda=true
-	while getopts 'i:c:' arg; do
+	local OPTIND arg mandatory insdir_tools insdir_bashbone activate_conda=true
+	while getopts 'i:b:c:' arg; do
 		case $arg in
-			i)	((mandatory++)); insdir="$OPTARG";;
+			i)	((mandatory++)); insdir_tools="$OPTARG";;
+			b)	((mandatory++)); insdir_bashbone="$OPTARG";;
 			c)	activate_conda="$OPTARG";;
 			*)	_usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 1 ]] && _usage && return 1
+	[[ $mandatory -lt 2 ]] && _usage && return 1
 
 	commander::print "setting up environment"
 
@@ -28,12 +30,12 @@ configure::environment(){
 	shopt -s expand_aliases
 	ulimit -n $(ulimit -Hn)
 
-	JAVA_HOME=$(readlink -e $insdir/latest/java)
+	JAVA_HOME=$(readlink -e $insdir_tools/latest/java)
 	[[ $JAVA_HOME ]] && export JAVA_HOME=$(dirname $JAVA_HOME)
 	export MALLOC_ARENA_MAX=4
 	
-	export PATH=$(readlink -e $insdir/latest/* | xargs -echo | sed 's/ /:/g'):$PATH
-	export PATH=$(readlink -e $insdir/latest/*/scripts | xargs -echo | sed 's/ /:/g'):$PATH
+	export PATH=$(readlink -e $insdir_tools/latest/* | xargs -echo | sed 's/ /:/g'):$PATH
+	export PATH=$(readlink -e $insdir_bashbone/scripts | xargs -echo | sed 's/ /:/g'):$PATH
 
 	$activate_conda && {
 		source $insdir/conda/bin/activate py2 &> /dev/null || return 1

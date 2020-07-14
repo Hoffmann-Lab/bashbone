@@ -104,7 +104,7 @@ compile::conda() {
 			datamash \
 			fastqc trimmomatic rcorrector \
 			star star-fusion bwa hisat2 macs2 \
-			samtools picard bamutil \
+			htseq samtools picard bamutil \
 		chmod 755 $insdir/conda/envs/py2/bin/run_rcorrector.pl && \
 		conda list -n py2 -f "fastqc|trimmomatic|rcorrector|star|star-fusion|bwa|hisat2|macs2|samtols|picard" | grep -v '^#' > $insdir/condatools.txt && \
 
@@ -308,7 +308,8 @@ compile::dexseq() {
 
 	commander::print "installing dexseq"
 	{	source $insdir/conda/bin/activate py2 && \
-		cat <(echo '#!/usr/bin/env python') $insdir/conda/envs/py2r/lib/R/library/DEXSeq/python_scripts/dexseq_prepare_annotation.py > $insdir/conda/envs/py2/bin/dexseq_prepare_annotation.py && \
+		#cat <(echo '#!/usr/bin/env python') $insdir/conda/envs/py2r/lib/R/library/DEXSeq/python_scripts/dexseq_prepare_annotation.py > $insdir/conda/envs/py2/bin/dexseq_prepare_annotation.py && \
+		rm -f $insdir/conda/envs/py2r/lib/R/library/DEXSeq/python_scripts/dexseq_prepare_annotation.py && \
 		chmod 755 $insdir/conda/envs/py2/bin/dexseq_prepare_annotation.py && \
 		cd $insdir && \
         rm -rf Subread_to_DEXSeq && \
@@ -317,8 +318,7 @@ compile::dexseq() {
 		mkdir -p bin && \
 		mv *.py bin && \
 		mkdir -p $insdir/latest && \
-		ln -sfn $PWD/bin $insdir/latest/preparedexseq && \
-		pip install htseq
+		ln -sfn $PWD/bin $insdir/latest/preparedexseq
 	} || return 1
 
 	return 0
