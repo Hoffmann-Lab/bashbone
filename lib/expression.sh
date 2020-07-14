@@ -89,7 +89,7 @@ expression::diego() {
 					done < <(awk -v c=$c '$2==c' $f | sort -k4,4V && awk -v t=$t '$2==t' $f | sort -k4,4V)
 
 					min=$(cut -d $'\t' -f 1 "$odir/groups.tsv" | sort | uniq -c | column -t | cut -d ' ' -f 1 | sort -k1,1 | head -1)
-					if [[ -s "$odir/sjlist.tsv" ]]; then
+					if [[ -s "$odir/list.sj.tsv" ]]; then
 						if [[ $m == "segemehl" ]]; then
 							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 								cd \$(mktemp -d -p $tdir)
