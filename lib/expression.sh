@@ -91,22 +91,25 @@ expression::diego() {
 					min=$(cut -d $'\t' -f 1 "$odir/groups.tsv" | sort | uniq -c | column -t | cut -d ' ' -f 1 | sort -k1,1 | head -1)
 					if [[ -s "$odir/list.sj.tsv" ]]; then
 						if [[ $m == "segemehl" ]]; then
-							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 								cd \$(mktemp -d -p $tdir)
 							CMD
 								pre_segemehl.pl
 									-l "$odir/list.sj.tsv"
-									-a "$genome.diego.bed"
-									-o "$odir/input.sj.tsv"
+									-a "${gtf%.*}.diego.bed"
+									-o "input.sj.tsv"
+							CMD
+								mv input.sj.tsv $odir/input.sj.tsv"
 							CMD
 						elif [[ $m == "star" ]]; then
-							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 								cd \$(mktemp -d -p $tdir)
 							CMD
 								pre_STAR.py
 									-l "$odir/list.sj.tsv"
-									-d "$genome.diego.bed"
-									-o "$odir/input.sj.tsv"
+									-d "${gtf%.*}.diego.bed"
+							CMD
+								mv junction_table.txt $odir/input.sj.tsv"
 							CMD
 						fi
 						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
