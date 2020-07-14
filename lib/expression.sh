@@ -68,10 +68,8 @@ expression::diego() {
 	}
 
 	declare -a cmd1 cmd2 mapdata
-	declare -A visited
 	local m f i c t odir tdir sjfile countfile min sample condition library replicate factors
 	for m in "${_mapper_diego[@]}"; do
-		visited=()
 		for f in "${_cmpfiles_diego[@]}"; do
 			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
@@ -80,10 +78,9 @@ expression::diego() {
 					odir="$outdir/$m/$c-vs-$t"
 					tdir="$tmpdir/$m/diego"
 					mkdir -p "$odir" "$tdir"
-					rm -f "$odir/groups.tsv" "$odir/sjlist.tsv" "$odir/countslist.tsv"
+					rm -f "$odir/groups.tsv" "$odir/list.sj.tsv" "$odir/list.ex.tsv"
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
-						[[ ${visited["$sample.$replicate"]} ]] && continue || visited["$sample.$replicate"]=1
 						sjfile=$(readlink -e "$mappeddir/$m/$sample"*.sj | head -1)
 						countfile=$(readlink -e "$countsdir/$m/$sample"*exoncounts.+(htsc|reduced) | head -1)
 						[[ $sjfile ]] && echo -e "$sample.$replicate\t$sjfile" >> "$odir/list.sj.tsv"
@@ -92,7 +89,7 @@ expression::diego() {
 					done < <(awk -v c=$c '$2==c' $f | sort -k4,4V && awk -v t=$t '$2==t' $f | sort -k4,4V)
 
 					min=$(cut -d $'\t' -f 1 "$odir/groups.tsv" | sort | uniq -c | column -t | cut -d ' ' -f 1 | sort -k1,1 | head -1)
-					if [[ -e "$odir/sjlist.tsv" ]]; then
+					if [[ -s "$odir/sjlist.tsv" ]]; then
 						if [[ $m == "segemehl" ]]; then
 							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 								cd \$(mktemp -d -p $tdir)
@@ -134,7 +131,7 @@ expression::diego() {
 					commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 						cd \$(mktemp -d -p $tdir)
 					CMD
-						HTseq2DoDAS.pl
+						HTseq2DIEGO.pl
 							-i "$odir/list.ex.tsv"
 							-o "$odir/input.ex.tsv"
 					CMD
