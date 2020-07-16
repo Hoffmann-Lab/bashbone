@@ -2,10 +2,11 @@
 # (c) Konstantin Riege
 trap 'die' INT TERM
 trap 'sleep 1; echo -e "\r "; kill -PIPE $(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+") &> /dev/null' EXIT
+shopt -s extglob
 
 die() {
 	echo -ne "\e[0;31m"
-	echo "\r:ERROR: $*" >&2
+	echo -e "\r:ERROR: $*" >&2
 	echo -ne "\e[m"
 	exit 1
 }
