@@ -96,7 +96,7 @@ expression::diego() {
 		return 1
 	}
 
-	declare -a cmd1 cmd2 mapdata
+	declare -a cmd1 cmd2 mapdata tdirs
 	local m f i c t odir tdir sjfile countfile min sample condition library replicate factors
 	for m in "${_mapper_diego[@]}"; do
 		for f in "${_cmpfiles_diego[@]}"; do
@@ -120,8 +120,9 @@ expression::diego() {
 					min=$(cut -d $'\t' -f 1 "$odir/groups.tsv" | sort | uniq -c | column -t | cut -d ' ' -f 1 | sort -k1,1 | head -1)
 					if [[ -s "$odir/list.sj.tsv" ]]; then
 						if [[ $m == "segemehl" ]]; then
+							tdirs+=("$(mktemp -d -p "$tdir")")
 							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-								cd \$(mktemp -d -p $tdir)
+								cd "${tdirs[-1]}"
 							CMD
 								pre_segemehl.pl
 									-l "$odir/list.sj.tsv"
@@ -131,8 +132,9 @@ expression::diego() {
 								mv input.sj.tsv "$odir/input.sj.tsv"
 							CMD
 						elif [[ $m == "star" ]]; then
+							tdirs+=("$(mktemp -d -p "$tdir")")
 							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-								cd \$(mktemp -d -p $tdir)
+								cd "${tdirs[-1]}"
 							CMD
 								pre_STAR.py
 									-l "$odir/list.sj.tsv"
@@ -160,8 +162,9 @@ expression::diego() {
 						CMD
 					fi
 
+					tdirs+=("$(mktemp -d -p "$tdir")")
 					commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						cd \$(mktemp -d -p $tdir)
+						cd "${tdirs[-1]}"
 					CMD
 						HTseq2DIEGO.pl
 							-i "$odir/list.ex.tsv"
@@ -197,12 +200,14 @@ expression::diego() {
 			commander::runcmd -v -b -t $threads -a cmd1 && \
 			commander::runcmd -v -b -t $threads -a cmd2 && \
 			conda activate py2
-		} || { 
+		} || {
+			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
 
+	rm -rf "${tdirs[@]}"
 	return 0
 }
 
@@ -502,11 +507,13 @@ expression::joincounts() {
 			commander::runcmd -v -b -t $threads -a cmd1 && \
 			commander::runcmd -v -b -t $threads -a cmd2 && \
 			conda activate py2
-		} || { 
+		} || {
+			rm -f "$tmp".* 
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
 
+	rm -f "$tmp".*
 	return 0
 }

@@ -818,12 +818,14 @@ alignment::slice(){
 		{	commander::runcmd -b -t $instances -a cmd2 && \
 			commander::runcmd -b -t $instances -a cmd3 && \
 			commander::runcmd -b -t $((threads/xthreads)) -a cmd4
-		} || { 
+		} || {
+			rm -f "$chrinfo"
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
 
+	rm -f "$chrinfo"
 	return 0
 }
 

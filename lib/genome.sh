@@ -76,12 +76,14 @@ genome::mkdict() {
 				if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5dict" || "$thismd5dict" != "$md5dict" ]]; then
 					commander::runcmd -v -b -t $threads -a cmd2 || return 1
 				fi
-			} || { 
+			} || {
+				rm -f "$dict"
 				commander::printerr "$funcname failed"
 				return 1
 			}
 		}
 	}
 
+	rm -f "$dict"
 	return 0
 }
