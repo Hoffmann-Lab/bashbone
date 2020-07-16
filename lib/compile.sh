@@ -69,7 +69,6 @@ compile::bashbone() {
 compile::upgrade(){
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
-
 	compile::bashbone -i "$insdir" -t $threads || return 1
 	return 0
 }

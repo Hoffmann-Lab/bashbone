@@ -36,8 +36,8 @@ options::checkopt(){
 		-d | --directory) arg=true; INSDIR="$2";;
 		-t | --threads) arg=true; THREADS=$2;;
 		-l | --log) arg=true; LOG=$2;;
-		-s | --source) arg=true; mapfile -d ',' -t TOSOURCE <<< $2;;
-		-i | --install) arg=true; mapfile -d ',' -t INSTALL <<< $2;;
+		-s | --source) arg=true; mapfile -t -d ',' TOSOURCE < <(printf '%s' "$2");;
+		-i | --install) arg=true; mapfile -t -d ',' INSTALL < <(printf '%s' "$2");;
 		-*) commander::printerr "illegal option $1"; return 1;; 
 		*) commander::printerr "illegal option $2"; return 1;;
 	esac

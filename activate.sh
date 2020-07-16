@@ -23,7 +23,7 @@
 				done
 				$error || {
 					IFS=$'\n'
-					for f in $insdir_bashbone/lib/*.sh; do
+					for f in "$insdir_bashbone/lib/"*.sh; do
 						source "$f"
 					done && {
 						unset IFS

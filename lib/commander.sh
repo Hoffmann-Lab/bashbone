@@ -4,12 +4,12 @@
 declare -a COMMANDER
 
 commander::print(){
-	[[ $* ]] && echo ":INFO: $*"
+	[[ $* ]] && echo -e "\r:INFO: $*"
 	local fd
 	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
 		mapfile -u $fd -t mapdata
-		printf ':INFO: %s\n' "${mapdata[@]}"
+		printf '\r:INFO: %s\n' "${mapdata[@]}"
 		# while read -u $fd -r tmp; do
 		# 	echo ":INFO: $tmp"
 		# done
@@ -19,13 +19,13 @@ commander::print(){
 }
 
 commander::warn(){
-	[[ $* ]] && echo ":WARNING: $*"
+	[[ $* ]] && echo -e "\r:WARNING: $*"
 	local fd
 	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
 		mapdata
 		mapfile -u $fd -t mapdata
-		printf ':WARNING: %s\n' "${mapdata[@]}"
+		printf '\r:WARNING: %s\n' "${mapdata[@]}"
 	done
 	COMMANDER=()
 
@@ -34,12 +34,12 @@ commander::warn(){
 
 commander::printerr(){
 	echo -ne "\e[0;31m"
-	[[ $* ]] && echo ":ERROR: $*" >&2
+	[[ $* ]] && echo -e "\r:ERROR: $*" >&2
 	local fd
 	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
 		mapfile -u $fd -t mapdata
-		printf ':ERROR: %s\n' "${mapdata[@]}" >&2
+		printf '\r:ERROR: %s\n' "${mapdata[@]}" >&2
 	done
 	COMMANDER=()
 	echo -ne "\e[m"
@@ -80,10 +80,10 @@ commander::makecmd(){
 			s)	sep=$(echo -e "${OPTARG:- }");; # echo -e to make e.g. '\t' possible
 			o)	suffix=' > '"$OPTARG";;
 			c)	[[ ! $mandatory ]] && { _usage; return 1; }
-				shift $((OPTIND-1)) # remove '-a <cmd> -s <char> -o <file> -c' from $*
+				shift $((OPTIND-1)) # remove '-a <cmd>' '-s <char> '-o <file>' '-c' from $@
 				for fd in "${COMMANDER[@]}"; do
 					mapfile -u $fd -t mapdata
-					cmd_makecmd+=("${mapdata[*]}") # * instead of @ to concatenate
+					cmd_makecmd+=("${mapdata[*]}") # * instead of @ to concatenate a non-splitted sentence instead of single non-splitted words
 					exec {fd}>&- # just to be safe
 					# exec {fd}>&- to close fd in principle not necessary since heredoc is read only and handles closure after last EOF
 				done
@@ -113,7 +113,7 @@ commander::printcmd(){
 	while getopts 'a:' arg; do
 		case $arg in
 			a)	_cmds_printcmd=$OPTARG
-				[[ "${#_cmds_printcmd[@]}" -gt 0 ]] && printf ':CMD: %s\n' "${_cmds_printcmd[@]}"
+				[[ "${#_cmds_printcmd[@]}" -gt 0 ]] && printf '\r:CMD: %s\n' "${_cmds_printcmd[@]}"
 				return 0;;
 			*)	_usage; return 1;;
 		esac
@@ -123,11 +123,9 @@ commander::printcmd(){
 }
 
 commander::runcmd(){
-    trap 'return $?' INT TERM
-	trap '[[ "${FUNCNAME[0]}" == "commander::runcmd" ]] && rm -rf $tmpdir' RETURN
-	# if function where runcmd is called executes return statement befor reaching runcmd, this trap is triggered anyways
-	# i.e. a prior defined $tmpdir will be removed by mistake
-	local tmpdir=$(mktemp -d -p /dev/shm) # define here in case _usage is triggered which calls return
+	trap '[[ $commander__runcmd__tmpdir ]] && rm -rf $commander__runcmd__tmpdir' RETURN USR1 PIPE
+	# trap will be globally defined and replace existing traps upon first function call
+	# define this trap also for USR1 and PIPE signal sent from parent pipeline script
 
 	local funcname=${FUNCNAME[0]}
 	_usage(){
@@ -154,22 +152,22 @@ commander::runcmd(){
 			a)	_cmds_runcmd=$OPTARG
 				[[ $_cmds_runcmd ]] || return 0
 				$verbose && {
-					echo ":INFO: running commands of array ${!_cmds_runcmd}"
+					commander::print "running commands of array ${!_cmds_runcmd}"
 					commander::printcmd -a _cmds_runcmd
 				}
 				# better write to file to avoid xargs argument too long error due to -I {}
-				local i sh
+				local i sh commander__runcmd__tmpdir=$(mktemp -d -p /dev/shm)
 				if [[ $benchmark ]]; then
 					# printf '%s\0' "${_cmds_runcmd[@]}" | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -0 -P $threads -I {} bash -c {}
 					for i in "${!_cmds_runcmd[@]}"; do
-						sh="$(mktemp -p $tmpdir).sh"
+						sh="$(mktemp -p "$commander__runcmd__tmpdir" --suffix=".sh")"
 						printf '%s\n' "${_cmds_runcmd[$i]}" > "$sh"
 						echo "$sh"
 					done | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
 				else
 					# printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $threads -I {} bash -c {}
 					for i in "${!_cmds_runcmd[@]}"; do
-						sh="$(mktemp -p $tmpdir).sh"
+						sh="$(mktemp -p "$commander__runcmd__tmpdir" --suffix=".sh")"
 						printf '%s\n' "${_cmds_runcmd[$i]}" > "$sh"
 						echo "$sh"
 					done | xargs -P $threads -I {} bash {}
@@ -206,7 +204,7 @@ commander::_test(){
 		' | awk '{print \$0}'
 	CMD
 
-	commander::makecmd -a cmd -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+	commander::makecmd -a cmd -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 		perl -l - <<< '
 			print "$x";
 		'
@@ -222,24 +220,34 @@ commander::_test(){
 		'
 	CMD
 
+	commander::makecmd -a cmd -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+		perl -sE '
+			say "$x";
+		'
+	CMD
+		-- -x="$x"
+	CMD
+
 	commander::runcmd -v -b -t $threads -a cmd || commander::printerr "failed"
 
-	commander::printerr ${FUNCNAME[0]} EXPECTED OUTPUT
+	commander::warn ${FUNCNAME[0]} EXPECTED OUTPUT to stderr
 	commander::printerr {COMMANDER[0]}<<-OUT
 		foo
 		bar
 		baz
 		:INFO: running commands of array cmd
-		:CMD: perl -sl - -x='hello world' <<< 'print "$x"' | awk '{print $0}' 
+		:CMD: perl -sl - -x='hello world' <<< 'print "$x"' | awk '{print $0}'
 		:CMD: perl -sl - -x='hello world' <<< ' print "$x"; ' | awk '{print $0}'
 		:CMD: perl -l - <<< ' print "hello world"; ' | awk '{print $0}'
-		:CMD: perl -l - <<< ' print "hello world"; ' |awk '{print $0}'
+		:CMD: perl -l - <<< ' print "hello world"; ' | awk '{print $0}'
 		:CMD: perl -s - -x='hello world' <<< ' print "$x";  print " hello world\n"; '
+		:CMD: perl -sE ' say "$x"; '   -- -x="hello world"
 		hello world
 		hello world
 		hello world
 		hello world
 		hello world hello world
+		hello world
 		:BENCHMARK: runtime 0:00.03 [hours:]minutes:seconds
 		:BENCHMARK: memory 4328 Kbytes
 	OUT
