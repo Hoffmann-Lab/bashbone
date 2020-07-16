@@ -20,13 +20,12 @@ quantify::featurecounts() {
 		return 0
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf level featuretag
+	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf level="exon" featuretag="gene_id"
 	declare -n _mapper_featurecounts
-	while getopts 'S:s:5:t:r:g:l:f:p:o:' arg; do
+	while getopts 'S:s:t:r:g:l:f:p:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			5) $OPTARG && skipmd5=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
 			r) ((mandatory++)); _mapper_featurecounts=$OPTARG;;
 			g) ((mandatory++)); gtf="$OPTARG";;
@@ -41,34 +40,6 @@ quantify::featurecounts() {
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
 	commander::print "inferring library preparation method and quantifying reads"
-
-	$skipmd5 && {
-		commander::warn "skip checking md5 sums and thus annotation preparation"
-	} || {
-		commander::print "checking md5 sums"
-		local thismd5gtf
-		[[ -s $gtf ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
-		if [[ ! -s ${gtf%.*}.transcripts.gtf ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
-			commander::print "preparing annotation for exon level quantification"
-
-			declare -a cmdprep
-			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-				dexseq_prepare_annotation2.py
-					-r no
-					-f "$tmpdir/tmp.gtf"
-					$gtf "${gtf%.*}.dexseq.gtf"
-			CMD
-				sed -r 's/(.+gene_id\s+")([^"]+)(.+exon_number\s+")([^"]+)(.+)/\1\2\3\4\5; exon_id "\2:\4"/' "$tmpdir/tmp.gtf" > "${gtf%.*}.transcripts.gtf"
-			CMD
-				rm -f "$tmpdir/tmp.gtf"
-			CMD
-
-			commander::runcmd -v -b -t $threads -a cmdprep || {
-				commander::printerr "$funcname failed at annotation preparation"
-				return 1
-			}
-		fi
-	}
 
 	declare -a cmd1 cmd2
 	local m f
@@ -131,20 +102,10 @@ quantify::featurecounts() {
 				-i "$f" \
 				-s ${strandness["$f"]:-?} \
 				-g "$gtf" \
-				-l ${level:-exon} \
-				-f ${featuretag:-gene_id} \
+				-l $level \
+				-f $featuretag \
 				-p "$tmpdir" \
-				-o "${o%.*}.counts"
-			quantify::_featurecounts \
-				-1 cmd3 \
-				-t $ithreads \
-				-i "$f" \
-				-s ${strandness["$f"]:-?} \
-				-g "${gtf%.*}.transcripts.gtf" \
-				-l ${level:-exon} \
-				-f exon_id \
-				-p "$tmpdir" \
-				-o "${o%.*}.exoncounts"
+				-o "${o%.*}.${featuretag/_id/}counts"
 		done
 	done
 
@@ -267,7 +228,7 @@ quantify::tpm() {
 		declare -n _bams_tpm=$m
 		for f in "${_bams_tpm[@]}"; do
 			countfile="$countsdir/$m/$(basename $f)"
-			countfile=$(readlink -e "${countfile%.*}"*.counts.+(reduced|htsc) | head -1)
+			countfile=$(readlink -e "${countfile%.*}"*.+(genecounts|counts).+(reduced|htsc) | head -1)
 			quantify::_tpm \
 				-1 cmd1 \
 				-g $gtf \

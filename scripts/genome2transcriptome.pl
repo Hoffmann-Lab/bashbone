@@ -51,7 +51,7 @@ input gtf needs to be sorted this way:
   sort -k3,3r -k1,1 -k4,4n -k5,5n
 gtf features: 
   transcript
-  exon (at least one per transcript, even for ncRNAs
+  exon (at least one per transcript, even for ncRNAs)
   CDS (optional)
 gtf info fields:
   transcript_id
@@ -114,6 +114,7 @@ try {
 			$tseq{$tid}.=$subseq; # elongate transcript sequence
 			$F[4]=$F[3]+length($subseq)-1; # set new stop position
 			$enewsta{"$tid$eno"}=$F[3]; # keep new position to recalculate related CDS
+			$F[0]=$tid;
 			say OGTF join"\t",@F;
 			say join"\t",@F if $verbose;
 		}
@@ -126,6 +127,7 @@ try {
 			$sta=$enewsta{"$tid$eno"}+$F[3]-$eorigsta{"$tid$eno"}; # calculate new start position
 			$F[4]=$sta+$F[4]-$F[3]; # set new stop position
 			$F[3]=$sta; # set new start position
+			$F[0]=$tid;
 			say OGTF join"\t",@F;
 			say join"\t",@F if $verbose;
 			$csta{$tid}=$F[3] unless exists $csta{$tid}; # due to sort -k4,4 keep very first CDS start position for UTR calculation
@@ -137,6 +139,7 @@ try {
 	open OFA,">$outdir/transcriptome.fa" or &mydie($!);
 	for $tid (sort {$a cmp $b} keys %t){
 		@F=split/\t/,$t{$tid};
+		$F[0]=$tid;
 		$F[2]="gene"; # treat transcript as gene in new annotation
 		$F[3]=1; # set start posotion
 		$F[4]=length($tseq{$tid}); # set stop position

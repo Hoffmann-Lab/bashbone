@@ -48,23 +48,52 @@ expression::diego() {
 	} || {
 		commander::print "checking md5 sums"
 		local thismd5gtf
-		[[ -s $gtf ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
+		declare -a cmdprep
+		[[ -s "$gtf" ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
 		if [[ ! -s ${gtf%.*}.diego.bed ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::print "preparing annotation for differential splice junction analyses"
-
-			declare -a cmdprep
 			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD
-				gfftoDIEGObed.pl -g $gtf -o ${gtf%.*}.diego.bed
+				gfftoDIEGObed.pl -g "$gtf" -o "${gtf%.*}.diego.bed"
 			CMD
-
-			{	conda activate py3 && \
-				commander::runcmd -v -b -t $threads -a cmdprep && \
-				conda activate py2
-			} || { 
-				commander::printerr "$funcname failed at annotation preparation"
-				return 1
-			}
 		fi
+
+		if [[ ! -s "${gtf%.*}.aggregated.gtf" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
+			commander::print "preparing annotation for exon_id tag based quantification"
+			# one may replace /dev/null by e.g. "${gtf%.*}.dexseq.gtf" for future dexeq integration
+			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				dexseq_prepare_annotation2.py
+					-r no
+					-f "$tmpdir/tmp.gtf"
+					"$gtf" /dev/null
+			CMD
+				sed -r 's/(.+gene_id\s+")([^"]+)(.+exon_number\s+")([^"]+)(.+)/\1\2\3\4\5; exon_id "\2:\4"/' "$tmpdir/tmp.gtf" > "${gtf%.*}.aggregated.gtf"
+			CMD
+				rm -f "$tmpdir/tmp.gtf"
+			CMD
+		fi
+
+		{	conda activate py3 && \
+			commander::runcmd -v -b -t $threads -a cmdprep && \
+			conda activate py2
+		} || { 
+			commander::printerr "$funcname failed at annotation preparation"
+			return 1
+		}
+	}
+
+	quantify::featurecounts \
+		-S false \
+		-s "$skip" \
+		-t $threads \
+		-p $tmpdir \
+		-g "${gtf%.*}.aggregated.gtf" \
+		-l exon \
+		-f exon_id \
+		-o "$countsdir" \
+		-r _mapper_diego || {
+
+		commander::printerr "$funcname failed"
+		return 1
 	}
 
 	declare -a cmd1 cmd2 mapdata
@@ -82,7 +111,7 @@ expression::diego() {
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
 						sjfile=$(readlink -e "$mappeddir/$m/$sample"*.sj | head -1)
-						countfile=$(readlink -e "$countsdir/$m/$sample"*exoncounts.+(htsc|reduced) | head -1)
+						countfile=$(readlink -e "$countsdir/$m/$sample"*.exoncounts.htsc | head -1)
 						[[ $sjfile ]] && echo -e "$sample.$replicate\t$sjfile" >> "$odir/list.sj.tsv"
 						echo -e "$sample.$replicate\t$countfile" >> "$odir/list.ex.tsv"
 						echo -e "$condition\t$sample.$replicate" >> "$odir/groups.tsv"
@@ -235,7 +264,7 @@ expression::deseq() {
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
 						[[ ${visited["$sample.$replicate"]} ]] && continue || visited["$sample.$replicate"]=1
-						countfile=$(readlink -e "$countsdir/$m/$sample"*.counts.+(reduced|htsc) | head -1)
+						countfile=$(readlink -e "$countsdir/$m/$sample"*.+(genecounts|counts).+(reduced|htsc) | head -1)
 						[[ $factors ]] && factors=","$(echo $factors | sed -r 's/\s+/,/g')
 						echo "$sample.$replicate,$countfile,$condition,$replicate$factors" >> "$odir/experiments.csv"
 					done < <(awk -v c=$c '$2==c' $f | sort -k4,4V && awk -v t=$t '$2==t' $f | sort -k4,4V)
@@ -315,7 +344,7 @@ expression::_deseq() {
 			odir="$outdir/$c-vs-$t"
 			for f in "$odir/deseq.tsv" "$odir/deseq.full.tsv" "$odir/deseq.noNA.tsv" \
 					"$odir/heatmap.vsc.ps" "$odir/heatmap.mean.vsc.ps" "$odir/heatmap.vsc.zscores.ps" "$odir/heatmap.mean.vsc.zscores.ps"; do
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a _cmds2_deseq -s '|' -c {COMMANDER[0]}<<- CMD
 					[[ -e "$o" ]] && annotate.pl "${gtfinfo:=0}" "$gtf" "$f" || true
 				CMD
 			done

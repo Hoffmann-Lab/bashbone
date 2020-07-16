@@ -17,7 +17,7 @@ cleanup(){
 
 die(){
 	#in contrast to exit, kill works also if triggered within a subshell - $(sratoolkit [..])
-	echo -e "UNFORSEEN ERROR" >&2
+	echo -e "$*" >&2
 	kill -USR1 $$
 }
 
@@ -25,7 +25,7 @@ usage(){
 	cat <<- EOF
 		SYNOPSIS
 		  $(basename "$0") retrieves fastq data from ncbi sra based on GSM, SRR or SRX accession numbers
-		  - initially, information on given accession numbers will be shown
+		  - initially, information for given accession numbers will be printed to stderr
 		  - downloads will be saved to current working directory ("$PWD")
 		  - support for parallel download instances
 		  - if installed, sra-toolkit via ncbi gov resource is priorized over retrieval via ebi uk mirror
@@ -37,6 +37,8 @@ usage(){
 		USAGE
 		  $(basename "$0") [OPTIONS] [GSM|SRR|SRX|SRP] [GSM|SRR|SRX|SRP] [..]
 		OPTIONS
+		  -s        : optional, show received information for given accession numbers and exit
+		  -o [file] : optional, additionally print information for given accession numbers to file
 		  -p [num]  : optional, number of maximum parallel download instances (2)
 		  -t [path] : optional, path to temporary directory ("$PWD")
 		  -e        : optional, switch to ebi uk mirror utilizing wget
@@ -54,12 +56,14 @@ usage(){
 }
 
 unset OPTIND
-while getopts p:t:feh ARG; do
+while getopts o:p:t:sfeh ARG; do
 	case $ARG in
+		o) outfile="$OPTARG";;
 		p) instances="$OPTARG";;
 		t) tmp="$OPTARG";;
 		f) faster=true;;
 		e) ebi=true;;
+		s) nodownload=true;;
 		h|*) usage;;
 	esac
 done
@@ -75,6 +79,10 @@ threads=${threads:-2}
 tmp="$(mktemp -d -p "${tmp:-$PWD}")"
 faster=${faster:-false}
 ebi=${ebi:-false}
+nodownload=${nodownload:-false}
+outfile=${outfile:-/dev/null}
+mkdir -p $(dirname $outfile) || die "ERROR cannot create directory for output file"
+echo > $outfile || die "ERROR cannot create output file"
 
 [[ -s "$HOME/.ncbi/user-settings.mkfg" ]] && {
 	cfg="$(grep -E '/repository/user/main/public/root\s*=.+' "$HOME/.ncbi/user-settings.mkfg")"
@@ -95,7 +103,7 @@ for i in $(seq 1 $#); do
 		i="${#srr[@]}"
 		srr+=($(esearch -db sra -query "$id" | efetch --format docsum | grep -oE 'SRR[^"]+'))
 		n=$(esearch -db sra -query "$id" | efetch --format info | grep -oE 'sample_title="[^"]+' | cut -d '"' -f 2 | sort -Vu | xargs echo)
-		printf "$id\t%s\t$n\n" "${srr[@]:$i}" >&2
+		printf "$id\t%s\t$n\n" "${srr[@]:$i}" | tee -a $outfile >&2
 	}
 done
 
@@ -124,15 +132,20 @@ ftpdump(){
 	done | xargs -0 -P $instances -I {} bash -c {} || return 1
 }
 
-#redirect stderr to subshell via process substitution and filter for failed SRR ids to print them to stdout instead
-# | print SSR ids to stdout and rest to stderr -> array of to redo ids
+$nodownload && exit 0
+
 $faster && [[ $(command -v fasterq-dump > /dev/null; echo $?) -eq 0 ]] && {
-	fasterqdump && exit 0 || die
+	fasterqdump && exit 0 || die "UNFORSEEN ERROR"
 }
 $ebi || [[ $(command -v fastq-dump > /dev/null; echo $?) -gt 0 ]] && {
-	ftpdump && exit 0 || die
+	ftpdump && exit 0 || die "UNFORSEEN ERROR"
 }
+# redirect stderr to subshell via process substitution to be used as stdout
+# use tee to directly print stdout again as stderr and further filter stdout for failed SRR ids via awk
+# print message in awk to stderr and check if accession number is truely SRR by second awk command utilizing regex
+# second awk print SSR ids to stdout or other ID to stderr
+# finally, srr array holds SRR numbers to be re-downloaded via ftpdump
 srr=("$(fastqdump 2> >(tee /dev/fd/2 | awk -v x="$(basename "$0")" '/failed SRR[0-9]+$/{print "\nDONT WORRY! "x" WILL RETRY TO DOWNLOAD "$NF" FROM A DIFFERNT SOURCE" > "/dev/fd/2"; print $NF}') | awk '{if(/^SRR[0-9]+$/){print}else{print > "/dev/fd/2"}}')")
-ftpdump || die
+ftpdump || die "UNFORSEEN ERROR"
 
 exit 0
