@@ -104,15 +104,15 @@ compile::conda() {
 			datamash \
 			fastqc trimmomatic rcorrector \
 			star star-fusion bwa hisat2 macs2 \
-			htseq samtools picard bamutil \
+			samtools picard bamutil \
 		chmod 755 $insdir/conda/envs/py2/bin/run_rcorrector.pl && \
 		conda list -n py2 -f "fastqc|trimmomatic|rcorrector|star|star-fusion|bwa|hisat2|macs2|samtols|picard" | grep -v '^#' > $insdir/condatools.txt && \
 
 		conda install -n py3 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
 			numpy scipy pysam cython matplotlib \
-			cutadapt rseqc diego bedtools && \
-		conda list -n py3 -f "cutadapt|rseqc|diego|bedtools" | grep -v '^#' >> $insdir/condatools.txt && \
+			cutadapt rseqc htseq diego bedtools && \
+		conda list -n py3 -f "cutadapt|rseqc|diego|bedtools|htseq" | grep -v '^#' >> $insdir/condatools.txt && \
 
 		conda install -n py2r -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
