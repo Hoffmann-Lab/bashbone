@@ -28,7 +28,6 @@ commander::warn(){
 		printf '\r:WARNING: %s\n' "${mapdata[@]}"
 	done
 	COMMANDER=()
-
 	return 0
 }
 
@@ -43,7 +42,6 @@ commander::printerr(){
 	done
 	COMMANDER=()
 	echo -ne "\e[m"
-
 	return 0
 }
 
@@ -123,10 +121,6 @@ commander::printcmd(){
 }
 
 commander::runcmd(){
-	trap '[[ $commander__runcmd__tmpdir ]] && rm -rf $commander__runcmd__tmpdir' RETURN USR1 PIPE
-	# trap will be globally defined and replace existing traps upon first function call
-	# define this trap also for USR1 and PIPE signal sent from parent pipeline script
-
 	local funcname=${FUNCNAME[0]}
 	_usage(){
 		commander::printerr {COMMANDER[0]}<<- EOF
@@ -142,37 +136,129 @@ commander::runcmd(){
 		return 0
 	}
 
-	local OPTIND arg threads=1 verbose=false benchmark
+	local OPTIND arg threads=1 verbose=false benchmark=false
 	declare -n _cmds_runcmd # be very careful with circular name reference
 	while getopts 'vbt:a:' arg; do
 		case $arg in
 			t)	threads=$OPTARG;;
 			v)	verbose=true;;
-			b)	benchmark=1;;
+			b)	benchmark=true;;
 			a)	_cmds_runcmd=$OPTARG
 				[[ $_cmds_runcmd ]] || return 0
 				$verbose && {
 					commander::print "running commands of array ${!_cmds_runcmd}"
 					commander::printcmd -a _cmds_runcmd
 				}
+				local i sh tmpdir
 				# better write to file to avoid xargs argument too long error due to -I {}
-				local i sh commander__runcmd__tmpdir=$(mktemp -d -p /dev/shm)
-				if [[ $benchmark ]]; then
-					# printf '%s\0' "${_cmds_runcmd[@]}" | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -0 -P $threads -I {} bash -c {}
-					for i in "${!_cmds_runcmd[@]}"; do
-						sh="$(mktemp -p "$commander__runcmd__tmpdir" --suffix=".sh")"
-						printf '%s\n' "${_cmds_runcmd[$i]}" > "$sh"
-						echo "$sh"
-					done | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
-				else
-					# printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $threads -I {} bash -c {}
-					for i in "${!_cmds_runcmd[@]}"; do
-						sh="$(mktemp -p "$commander__runcmd__tmpdir" --suffix=".sh")"
-						printf '%s\n' "${_cmds_runcmd[$i]}" > "$sh"
-						echo "$sh"
-					done | xargs -P $threads -I {} bash {}
-				fi
-				return $((${PIPESTATUS[@]/%/+}0));;
+				# old: printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $threads -I {} bash -c {}
+				# use a subshell with its own trap, destructed if subshell terminates
+				$benchmark && {
+					(
+						trap 'rm -rf "$tmpdir"' ERR INT TERM EXIT
+						tmpdir=$(mktemp -d -p /dev/shm)
+						for i in "${!_cmds_runcmd[@]}"; do
+							sh="$(mktemp -p "$tmpdir" --suffix=".sh")"
+							echo "#!/usr/bin/env bash" > "$sh"
+							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
+							echo "$sh"
+						done | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
+						exit $((${PIPESTATUS[@]/%/+}0))
+					)
+				} || {
+					(
+						trap 'rm -rf "$tmpdir"' ERR INT TERM EXIT
+						tmpdir=$(mktemp -d -p /dev/shm)
+						for i in "${!_cmds_runcmd[@]}"; do
+							sh="$(mktemp -p "$tmpdir" --suffix=".sh")"
+							echo "#!/usr/bin/env bash" > "$sh"
+							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
+							echo "$sh"
+						done | xargs -P $threads -I {} bash {}
+						exit $((${PIPESTATUS[@]/%/+}0))
+					)
+				}
+				return $?;;
+			*)	_usage; return 1;;
+		esac
+	done
+
+	_usage; return 1
+}
+
+commander::qsubcmd(){
+	local funcname=${FUNCNAME[0]}
+	_usage(){
+		commander::printerr {COMMANDER[0]}<<- EOF
+			$funcname usage:
+			-v           | verbose on
+			-b           | benchmark on
+			-h <hosts>   | sge digestable list of
+			-l <logfile> | sge nodes shared path to
+			-t <threads> | number of
+			-p <env>     | name of parallel 
+			-a <cmds>    | ALWAYS LAST OPTION
+			               array of
+			example:
+			$funcname -v -h "!bcl102&!bcl103" -p envname -t 4 -a cmd
+			$funcname -v -h "!bcl102&!bcl103" -a cmd
+		EOF
+		return 0
+	}
+
+	local OPTIND arg threads=1 verbose=false benchmark=false penv log hosts
+	declare -n _cmds_qsubcmd # be very careful with circular name reference
+	declare -a mapdata
+	while getopts 'vbt:l:h:p:a:' arg; do
+		case $arg in
+			v)	verbose=true;;
+			b)	benchmark=true;;
+			t)	threads=$OPTARG;;
+			l)	log="$OPTARG";;
+			h)	hosts="-l h=$OPTARG";;
+			p)	penv="-pe $OPTARG";;
+			a)	_cmds_qsubcmd=$OPTARG
+				[[ $_cmds_qsubcmd ]] || return 0
+				$verbose && {
+					commander::print "running commands of array ${!_cmds_qsubcmd}"
+					commander::printcmd -a _cmds_qsubcmd
+				}
+				[[ $penv ]] && penv+=" $threads"
+				local i sh e tmpdir ex
+				local jobname
+				(
+					trap '[[ $jobname ]] && qdel "$jobname.*"; rm -rf "$tmpdir"; rm -f "$ex"' ERR INT TERM EXIT
+					tmpdir=$(mktemp -d -p /dev/shm)
+					jobname="$(basename "$tmpdir")"
+					jobname="X${jobname#*.}" # ensure first character to be a letter
+					[[ $log ]] && ex="$(dirname "$log")"/$jobname.exitcodes || ex="$tmpdir/exitcodes"
+					for i in "${!_cmds_qsubcmd[@]}"; do
+						sh="$(mktemp -p "$tmpdir" --suffix=".$i.sh")"
+						[[ ! $log ]] && log="${sh%.*}.out"
+
+						echo "#!/usr/bin/env bash" > "$sh"
+						printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
+						echo "echo \$? >> '$ex'" >> "$sh"
+
+						qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh"
+					done
+					$benchmark && {
+						command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" \
+						qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true
+						e=$?
+					} || {
+						qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true
+						e=$?
+					}
+					unset jobname # do this for qdel trap handling, since check for $? -gt 0 may call qdel just because cmd failed
+					[[ $log && -e "$ex" ]] && {
+						mapfile -t mapdata < "$ex"
+						exit $((${mapdata[@]/%/+}0))
+					} || {
+						exit $e
+					}
+				)
+				return $?;;
 			*)	_usage;	return 1;;
 		esac
 	done
