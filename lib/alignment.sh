@@ -363,7 +363,7 @@ alignment::postprocess() {
 	done
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
-	local instances ithreads m i outbase tmpbase newbam
+	local instances ithreads m i outbase tdir newbam
 	for m in "${_mapper_process[@]}"; do
 		declare -n _bams_process=$m
 		((instances+=${#_bams_process[@]}))
@@ -372,16 +372,14 @@ alignment::postprocess() {
 
 	commander::print "$job alignments"
 
-	declare -a cmd1 cmd2
+	declare -a cmd1 cmd2 tdirs
 	for m in "${_mapper_process[@]}"; do
 		declare -n _bams_process=$m
-		mkdir -p "$outdir/$m" "$tmpdir/$m"
+		tdir="$tmpdir/$m"
+		mkdir -p "$outdir/$m" "$tdir"
 		for i in "${!_bams_process[@]}"; do
-			outbase=$(basename "${_bams_process[$i]}")
+			outbase=$outdir/$m/$(basename "${_bams_process[$i]}")
 			outbase="${outbase%.*}"
-			tmpbase=$tmpdir/$m/$outbase
-			outbase=$outdir/$m/$outbase
-			
 			case $job in 
 				uniqify)
 					alignment::_uniqify \
@@ -390,18 +388,19 @@ alignment::postprocess() {
 						-t $ithreads \
 						-m $m \
 						-i "${_bams_process[$i]}" \
-						-o $outbase \
+						-o "$outbase" \
 						-r newbam
 					_bams_process[$i]="$newbam"
 				;;
 				sort)
 					instances=1
+					tdirs+=("$(mktemp -d -p "$tdir" cleanup.XXXXXXXXXX)")
 					alignment::_sort \
 						-1 cmd1 \
 						-t $threads \
 						-i "${_bams_process[$i]}" \
-						-o $outbase \
-						-p $tmpbase \
+						-o "$outbase" \
+						-p "${tdirs[-1]}" \
 						-r newbam
 					_bams_process[$i]="$newbam"
 				;;
@@ -420,15 +419,16 @@ alignment::postprocess() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	mkdir -p "$outdir" && \
-			commander::runcmd -v -b -t $instances -a cmd1 && \
+		{	commander::runcmd -v -b -t $instances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2
-		} || { 
+		} || {
+			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
 
+	rm -rf "${tdirs[@]}"
 	return 0
 }
 
@@ -537,13 +537,13 @@ alignment::_sort() {
 			-t <threads>  | number of
 			-i <bam>      | binary alignment file
 			-o <outbase>  | path to
-			-p <tmpbase>  | path to
+			-p <tmpdir>   | path to
 			-r <var>      | returned alignment file
 		EOF
 		return 0
 	}
 
-	local OPTIND arg mandatory threads bam outbase tmpbase
+	local OPTIND arg mandatory threads bam outbase tmpdir
 	declare -n _cmds1_sort _returnfile_sort
 	while getopts '1:t:i:o:p:r:' arg; do
 		case $arg in
@@ -551,7 +551,7 @@ alignment::_sort() {
 			t) ((mandatory++)); threads=$OPTARG;;
 			i) ((mandatory++)); bam="$OPTARG";;
 			o) ((mandatory++)); outbase="$OPTARG";;
-			p) ((mandatory++)); tmpbase="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG";;
 			r) _returnfile_sort=$OPTARG; ;;
 			*) _usage; return 1;;
 		esac
@@ -561,11 +561,12 @@ alignment::_sort() {
 	_returnfile_sort="$outbase.sorted.bam"
 
 	commander::makecmd -a _cmds1_sort -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-		rm -f "$tmpbase.*"
+		cd "$tmpdir"
 	CMD
 		samtools sort
 			-@ $threads
-			-T "$tmpbase"
+			-O BAM
+			-T "$(basename "$outbase")"
 			"$bam"
 			> "$_returnfile_sort"
 	CMD
@@ -723,7 +724,7 @@ alignment::slice(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	declare -n _bams_slice=${_mapper_slice[0]}
-	local chrinfo="$(mktemp -p "$tmpdir").chrinfo"
+	local chrinfo="$(mktemp -p "$tmpdir" --suffix=".chrinfo" cleanup.XXXXXXXXXX)"
 	samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}' > "$chrinfo"
 
 	local tdir f i chrs o xinstances xthreads

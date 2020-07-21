@@ -155,10 +155,11 @@ commander::runcmd(){
 				# use a subshell with its own trap, destructed if subshell terminates
 				$benchmark && {
 					(
-						trap 'rm -rf "$tmpdir"' ERR INT TERM EXIT
-						tmpdir=$(mktemp -d -p /dev/shm)
+						trap 'rm -rf "$tmpdir"' EXIT
+						trap 'exit $?' ERR INT TERM
+						tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 						for i in "${!_cmds_runcmd[@]}"; do
-							sh="$(mktemp -p "$tmpdir" --suffix=".sh")"
+							sh="$(mktemp -p "$tmpdir" --suffix=".sh" job.XXXXXXXXXX)"
 							echo "#!/usr/bin/env bash" > "$sh"
 							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 							echo "$sh"
@@ -167,10 +168,11 @@ commander::runcmd(){
 					)
 				} || {
 					(
-						trap 'rm -rf "$tmpdir"' ERR INT TERM EXIT
-						tmpdir=$(mktemp -d -p /dev/shm)
+						trap 'rm -rf "$tmpdir"' EXIT
+						trap 'exit $?' ERR INT TERM
+						tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 						for i in "${!_cmds_runcmd[@]}"; do
-							sh="$(mktemp -p "$tmpdir" --suffix=".sh")"
+							sh="$(mktemp -p "$tmpdir" --suffix=".sh" job.XXXXXXXXXX)"
 							echo "#!/usr/bin/env bash" > "$sh"
 							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 							echo "$sh"
@@ -227,27 +229,28 @@ commander::qsubcmd(){
 				local i sh e tmpdir ex
 				local jobname
 				(
-					trap '[[ $jobname ]] && qdel "$jobname.*"; rm -rf "$tmpdir"; rm -f "$ex"' ERR INT TERM EXIT
-					tmpdir=$(mktemp -d -p /dev/shm)
+					trap '[[ $jobname ]] && qdel "$jobname.*"; rm -rf "$tmpdir"; rm -f "$ex"' EXIT
+					trap 'exit $?' ERR INT TERM
+					tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 					jobname="$(basename "$tmpdir")"
 					jobname="X${jobname#*.}" # ensure first character to be a letter
 					[[ $log ]] && ex="$(dirname "$log")"/$jobname.exitcodes || ex="$tmpdir/exitcodes"
 					for i in "${!_cmds_qsubcmd[@]}"; do
-						sh="$(mktemp -p "$tmpdir" --suffix=".$i.sh")"
+						sh="$(mktemp -p "$tmpdir" --suffix=".$i.sh" job.XXXXXXXXXX)"
 						[[ ! $log ]] && log="${sh%.*}.out"
 
 						echo "#!/usr/bin/env bash" > "$sh"
 						printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
 						echo "echo \$? >> '$ex'" >> "$sh"
 
-						qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh"
+						qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh" > /dev/null
 					done
 					$benchmark && {
 						command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" \
-						qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true
+						qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
 						e=$?
 					} || {
-						qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true
+						qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
 						e=$?
 					}
 					unset jobname # do this for qdel trap handling, since check for $? -gt 0 may call qdel just because cmd failed

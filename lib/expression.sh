@@ -105,7 +105,7 @@ expression::diego() {
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do 
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					odir="$outdir/$m/$c-vs-$t"
-					tdir="$tmpdir/$m/diego"
+					tdir="$tmpdir/$m"
 					mkdir -p "$odir" "$tdir"
 					rm -f "$odir/groups.tsv" "$odir/list.sj.tsv" "$odir/list.ex.tsv"
 					unset sample condition library replicate factors
@@ -120,9 +120,9 @@ expression::diego() {
 					min=$(cut -d $'\t' -f 1 "$odir/groups.tsv" | sort | uniq -c | column -t | cut -d ' ' -f 1 | sort -k1,1 | head -1)
 					if [[ -s "$odir/list.sj.tsv" ]]; then
 						if [[ $m == "segemehl" ]]; then
-							tdirs+=("$(mktemp -d -p "$tdir")")
+							tdirs+=("$(mktemp -d -p "$tdir" cleanup.XXXXXXXXXX)")
 							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-								cd "${tdirs[-1]}"
+								cd "$tdir"
 							CMD
 								pre_segemehl.pl
 									-l "$odir/list.sj.tsv"
@@ -132,7 +132,7 @@ expression::diego() {
 								mv input.sj.tsv "$odir/input.sj.tsv"
 							CMD
 						elif [[ $m == "star" ]]; then
-							tdirs+=("$(mktemp -d -p "$tdir")")
+							tdirs+=("$(mktemp -d -p "$tdir" cleanup.XXXXXXXXXX)")
 							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 								cd "${tdirs[-1]}"
 							CMD
@@ -162,7 +162,7 @@ expression::diego() {
 						CMD
 					fi
 
-					tdirs+=("$(mktemp -d -p "$tdir")")
+					tdirs+=("$(mktemp -d -p "$tdir" cleanup.XXXXXXXXXX)")
 					commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 						cd "${tdirs[-1]}"
 					CMD
@@ -397,7 +397,7 @@ expression::joincounts() {
 	commander::print "joining count values plus zscore calculation"
 
 	declare -a cmd1 cmd2 mapdata
-	local m f x i c t h mh sample condition library replicate factors cf e tmp="$(mktemp -p "$tmpdir")"
+	local m f x i c t h mh sample condition library replicate factors cf e tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
 	for m in "${_mapper_join[@]}"; do
 		odir="$outdir/$m"

@@ -50,16 +50,16 @@ compile::all(){
 }
 
 compile::bashbone() {
-	local insdir threads
+	local insdir threads src=$(dirname $(readlink -e $0))
 	compile::_parse -r insdir -s threads "$@"
 
 	local version 
-	source "$(readlink -e $(dirname $0))"/lib/version.sh
+	source $src/lib/version.sh
 
 	commander::print "installing bashbone"
 	{	rm -rf "$insdir/bashbone-$version" && \
 		mkdir -p "$insdir/bashbone-$version" && \
-		cp -r "$(readlink -e $(dirname $0))"/* "$insdir/bashbone-$version" && \
+		cp -r "$src"/* "$insdir/bashbone-$version" && \
 		mkdir -p "$insdir/latest" && \
 		ln -sfn "$insdir/bashbone-$version" "$insdir/latest/bashbone"
 	} || return 1

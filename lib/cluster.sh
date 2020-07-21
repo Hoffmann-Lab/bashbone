@@ -47,7 +47,7 @@ cluster::coexpression(){
 
 	declare -a mapdata cmd1
 	declare -A visited
-	local m f i j c t e tdir odir cdir ddir params tmp="$(mktemp -p "$tmpdir")"
+	local m f i j c t e tdir odir cdir ddir params tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
 	for m in "${_mapper_coexpression[@]}"; do
 		odir="$outdir/$m"

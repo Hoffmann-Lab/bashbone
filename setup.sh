@@ -1,7 +1,11 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
+trap '
+	pids=($(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
+	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null
+	echo -e "\r "
+' EXIT
 trap 'die' INT TERM
-trap 'sleep 1; echo -e "\r "; kill -PIPE $(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+") &> /dev/null' EXIT
 shopt -s extglob
 
 die() {
@@ -15,7 +19,7 @@ die() {
 [[ "$(ps -p $$ -o command= | cut -d ' ' -f 1)" == "bash" ]] || die "loading library requieres bash"
 ([[ ${BASH_VERSINFO[0]} -gt 4 ]] || [[ ${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 4 ]]) || die "requieres bash version 4.4 or above"
 
-for f in "$(readlink -e $(dirname $0))"/lib/*.sh; do
+for f in "$(dirname $(readlink -e $0))"/lib/*.sh; do
 	source $f || die "unexpected error in source code - please contact developer"
 done
 
