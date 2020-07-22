@@ -1,6 +1,7 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 trap '
+	sleep 1
 	pids=($(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
 	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null
 	echo -e "\r "
@@ -56,5 +57,5 @@ done
 exec 3>&-
 exec 4>&-
 
-commander::print "success" | tee -ai $LOG
+commander::print "success" >> $LOG
 exit 0
