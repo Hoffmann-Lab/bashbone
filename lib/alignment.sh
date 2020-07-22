@@ -725,110 +725,98 @@ alignment::slice(){
 
 	declare -n _bams_slice=${_mapper_slice[0]}
 	local chrinfo="$(mktemp -p "$tmpdir" --suffix=".chrinfo" cleanup.XXXXXXXXXX)"
-	samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}' > "$chrinfo"
+	samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t0\t\2/p}' > "$chrinfo"
 
-	local tdir f i chrs o xinstances xthreads
-	declare -a mapdata cmd1 cmd2 cmd3 cmd4 
+	local tdir f i bed o
+	declare -a mapdata cmd1 cmd2 cmd3 cmd4
+
+	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+		Rscript - <<< '
+			suppressMessages(library("knapsack"));
+			args <- commandArgs(TRUE);
+			slices <- as.numeric(args[1]);
+			df <- read.table(args[2], header=F, sep="\t", stringsAsFactors=F);
+
+			len <- as.integer(df[,3]/10+1);
+			srt <- sort(len,decreasing=T,index.return=1);
+			len <- srt$x;
+			df <- df[srt$ix,];
+
+			lmax <- max(len);
+			n <- slices+1;
+			bins <- c();
+			i <- 1;
+			while(n > slices){
+				i <- i+1;
+				b <- binpacking(len, cap=as.integer(lmax/2*i+1));
+				n <- b$nbins;
+				bins <- b$xbins;
+			};
+			for (j in 1:n){
+				write.table(df[bins %in% j,], row.names = F, col.names = F, file=paste(args[2],"knapsack",j,"bed",sep="."), quote=F, sep="\t");
+			};
+		'
+	CMD
+		$minstances "$chrinfo"
+	CMD
+
+	# do never ever skip this - pipeline rely on _bamslices_slice
+	conda activate py2r
+	commander::runcmd -v -b -t $threads -a cmd1 || {
+		rm -f "$chrinfo"*
+		commander::printerr "$funcname failed"
+		return 1
+	}
+	conda activate py2
+
 	for m in "${_mapper_slice[@]}"; do # do never ever skip this - pipeline rely on _bamslices_slice
 		declare -n _bams_slice=$m
 		tdir="$tmpdir/$m"
 		mkdir -p "$tdir"
-
 		for f in "${_bams_slice[@]}"; do
-			cmd1=()
-			#args <- args[-1];
-			#chr <- args[rep(c(T,F),length(args)/2)];
-			#len <- as.numeric(args[rep(c(F,T),length(args)/2)]);
-			#$(samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}') -> argument list too long
-			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-
-				Rscript - <<< '
-					suppressMessages(library("knapsack"));
-					args <- commandArgs(TRUE);
-					slices <- as.numeric(args[1]);
-					df <- read.table(args[2], header=F, sep="\t", stringsAsFactors=F);
-					chr <- df[,1];
-					len <- as.integer(df[,2]/10);
-
-					srt <- sort(len,decreasing=T,index.return=1);
-					len <- srt$x;
-					chr <- chr[srt$ix];
-
-					lmax <- max(len);
-					n <- slices+1;
-					bins <- c();
-					i <- 1;
-					while(n > slices){
-						i <- i+1;
-						b <- binpacking(len, cap=as.integer(lmax/2*i+1));
-						n <- b$nbins;
-						bins <- b$xbins;
-					};
-					for (j in 1:n){
-						cat(paste(chr[bins %in% j],sep="",collapse=" "), sep="\n");
-					};
-				'
-			CMD
-				$minstances "$chrinfo"
-			CMD
-
 			o="$tdir"/$(basename "$f")
 			o="${o%.*}"
-			rm -f "$o.slices.info"
 			_bamslices_slice["$f"]="$o.slices.info"
 
 			alignment::_index -1 cmd2 -t $ithreads -i "$f"
 
+			rm -f "$o.slices.info"
 			i=0
-			mapfile -t mapdata < <(conda activate py2r &>/dev/null && commander::runcmd -a cmd1)
-			xinstances=$((${#mapdata[@]}*${#_bams_slice[@]}*${#_mapper_slice[@]}))
-			xthreads=$((threads/xinstances>0?threads/xinstances:1))
-			for chrs in "${mapdata[@]}"; do
+			for bed in "$chrinfo.knapsack".*.bed; do
 				((++i))
 				echo "$o.slice$i.bam" >> "$o.slices.info"
-				# -M for multi reagion iterator is faster and keeps sort order
-				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					samtools view 
 						-@ $ithreads
+						-L "$bed"
 						-M
 						-b
 						"$f"
-						$chrs > "$o.slice$i.bam"
+						> "$o.slice$i.bam"
 				CMD
-				alignment::_index -1 cmd4 -t $xthreads -i "$o.slice$i.bam"
+					samtools index -@ $ithreads "$o.slice$i.bam" "$o.slice$i.bai"
+				CMD
 			done
 		done
 	done
 
-	# in case of many contigs, output will be too huge
-	# $skip && {
-	# 	commander::printcmd -a cmd2
-	# 	commander::printcmd -a cmd3
-	# 	commander::printcmd -a cmd4
-	# } || {
-	# 	{	commander::runcmd -v -b -t $instances -a cmd2 && \
-	# 		commander::runcmd -v -b -t $instances -a cmd3 && \
-	# 		commander::runcmd -v -b -t $((threads/xthreads)) -a cmd4
-	# 	} || { 
-	# 		commander::printerr "$funcname failed"
-	# 		return 1
-	# 	}
-	# }
-
-	$skip || {
-		{	commander::runcmd -b -t $instances -a cmd2 && \
-			commander::runcmd -b -t $instances -a cmd3 && \
-			commander::runcmd -b -t $((threads/xthreads)) -a cmd4
+	$skip && {
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+	} || {
+		{	commander::runcmd -v -b -t $instances -a cmd2 && \
+			commander::runcmd -v -b -t $instances -a cmd3
 		} || {
-			rm -f "$chrinfo"
+			rm -f "$chrinfo"*
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
 
-	rm -f "$chrinfo"
+	rm -f "$chrinfo"*
 	return 0
 }
+
 
 alignment::rmduplicates(){
 	local funcname=${FUNCNAME[0]}
@@ -842,7 +830,7 @@ alignment::rmduplicates(){
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
-			-o <outbase>   | path to
+			-o <outdir>    | path to
 		EOF
 		return 0
 	}
@@ -1206,6 +1194,10 @@ alignment::add4stats(){
 			_mi_add4stats+=("${_bams_add4stats[$i]}")
 		done
 	done
+	# idea for datastructure mapper(segemehl,star)
+	# 1: segemehl(bam1,bam2) -> segemehl0+=(bam1), segemehl1+=(bam2) -> segemehl0(bam1), segemehl1(bam2)
+	# 2: segemehl(bam1.uniq,bam2.uniq) -> segemehl0+=(bam1.uniq), segemehl1+=(bam2.uniq) -> segemehl0(bam,bam.uniq) segemehl1(bam,bam.uniq)
+	# 3: [..] -> segemehl0(bam,bam.uniq,bam.uniq.rmdup) segemehl1(bam,bam.uniq,bam.uniq.rmdup)
 
 	return 0
 }
@@ -1256,7 +1248,7 @@ alignment::bamstats(){
 		for i in "${!_bams_bamstats[@]}"; do
 			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
 			for bam in "${_mi_bamstats[@]}"; do
-				[[ "$bam" =~ \.pool\. || "$bam" =~ \.pseudopool\. ]] && continue
+				[[ "$bam" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 					samtools flagstat
 						-@ $ithreads
@@ -1285,14 +1277,14 @@ alignment::bamstats(){
 		mkdir -p "$odir"
 		echo -e "sample\ttype\tcount" > "$odir/mapping.barplot.tsv"
 		for i in "${!_bams_bamstats[@]}"; do
-			[[ "${_bams_bamstats[$i]}" =~ \.pool\. || "${_bams_bamstats[$i]}" =~ \.pseudopool\. ]] && continue
+			[[ "${_bams_bamstats[$i]}" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
 			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
 			filter=''
 			b="$(basename "${_mi_bamstats[0]}")"
 			b="${b%.*}"
 			o="$odir/$b.stats"
 			all=''
-			if [[ -s "$outdir/$b.stats" ]]; then
+			if [[ -s "$outdir/$b.stats" ]]; then # check if there is a preprocessing fastq stats file
 				all=$(tail -1 "$outdir/$b.stats" | cut -f 3)
 				tail -1 "$outdir/$b.stats" > $o
 			else
@@ -1303,7 +1295,7 @@ alignment::bamstats(){
 				a=$(grep mapped -m 1 ${bam%.*}.flagstat | cut -d ' ' -f 1)
 				s=$(grep secondary -m 1 ${bam%.*}.flagstat | cut -d ' ' -f 1) # get rid of multicounts - 0 if unique reads in bam only
 				c=$((a-s))
-				[[ ! $all ]] && all=$c
+				[[ ! $all ]] && all=$c # set all to what was mapped in first file unless preprocessing fastq stats file was found
 				echo -e "$b\t$filter reads\t$c" >> $o
 			done
 			perl -F'\t' -lane '$all=$F[2] unless $all; $F[0].=" ($all)"; $F[2]=(100*$F[2]/$all); print join"\t",@F' $o | tac | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$odir/mapping.barplot.tsv"
