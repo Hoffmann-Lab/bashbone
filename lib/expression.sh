@@ -122,7 +122,7 @@ expression::diego() {
 						if [[ $m == "segemehl" ]]; then
 							tdirs+=("$(mktemp -d -p "$tdir" cleanup.XXXXXXXXXX)")
 							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-								cd "$tdir"
+								cd "${tdirs[-1]}"
 							CMD
 								pre_segemehl.pl
 									-l "$odir/list.sj.tsv"
