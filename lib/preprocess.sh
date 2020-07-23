@@ -243,7 +243,8 @@ preprocess::trimmomatic() {
 	for i in "${!_fq1_trimmomatic[@]}"; do
 		helper::basename -f "${_fq1_trimmomatic[$i]}" -o o1 -e e1
 		helper::basename -f "${_fq1_trimmomatic[$i]}" -o o2 -e e2
-		e=$(echo $e | cut -d '.' -f 1)
+		e1=$(echo $e1 | cut -d '.' -f 1)
+		e2=$(echo $e2 | cut -d '.' -f 1)
 		o1="$outdir/$o1.$e1.gz"
 		o2="$outdir/$o2.$e2.gz"
 		os1="$outdir/singletons.$o1.$e1.gz"

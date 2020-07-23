@@ -30,16 +30,16 @@ configure::environment(){
 	shopt -s expand_aliases
 	ulimit -n $(ulimit -Hn)
 
+	$activate_conda && {
+		source $insdir_tools/conda/bin/activate py2 &> /dev/null || return 1
+	}
+
 	local tp=$(readlink -e $insdir_tools/latest)
 	[[ $tp && -e $tp/java ]] && export JAVA_HOME=$(dirname $(readlink -e $tp/java))
 	export MALLOC_ARENA_MAX=4
 	
 	[[ $tp ]] && export PATH=$(readlink -e $tp/* | xargs -echo | sed 's/ /:/g'):$PATH
 	export PATH=$(readlink -e $insdir_bashbone/scripts | xargs -echo | sed 's/ /:/g'):$PATH
-
-	$activate_conda && {
-		source $insdir_tools/conda/bin/activate py2 &> /dev/null || return 1
-	}
 
 	return 0
 }

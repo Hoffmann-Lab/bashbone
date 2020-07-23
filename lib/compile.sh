@@ -15,7 +15,7 @@ compile::_parse(){
 	declare -n _insdir_parse _threads_parse
 	while getopts 'r:s:i:t:' arg; do
 		case $arg in
-			r)	((++mandatory)); _insdir_parse=$OPTARG;;
+			r)	((++mandatory)); _insdir_parse="$OPTARG";;
 			s)	((++mandatory)); _threads_parse=$OPTARG;;
 			i)	((++mandatory)); _insdir_parse="$OPTARG";;
 			t)	((++mandatory)); _threads_parse=$OPTARG;;
@@ -34,6 +34,7 @@ compile::all(){
 	{	compile::bashbone -i "$insdir" -t $threads && \
 		compile::conda -i "$insdir" -t $threads && \
 		compile::java -i "$insdir" -t $threads && \
+		compile::trimmomatic -i "$insdir" -t $threads && \
 		compile::sortmerna -i "$insdir" -t $threads && \
 		compile::segemehl -i "$insdir" -t $threads && \
 		compile::dexseq -i "$insdir" -t $threads && \
@@ -149,42 +150,43 @@ compile::java() {
 }
 
 compile::_javawrapper() {
-	cat <<- EOF > $1 || return 1
+	cat <<- EOF > "$1" || return 1
 		#!/usr/bin/env bash
-		set -eu -o pipefail
-		export LC_ALL=en_US.UTF-8
-
 		java=java
-		if [[ -n \$JAVA_HOME ]]; then
-			if [[ -e \$JAVA_HOME/bin/java ]]; then
-				java=\$JAVA_HOME/bin/java
-			fi
-		fi
-
-		jvm_mem_opts=""
-		jvm_prop_opts=""
-		pass_args=""
+		[[ \$JAVA_HOME && -e "\$JAVA_HOME/bin/java" ]] && java="\$JAVA_HOME/bin/java"
+		declare -a jvm_mem_args jvm_prop_args pass_args
 		for arg in \$@; do
 			case \$arg in
-				'-D'*) jvm_prop_opts="\$jvm_prop_opts \$arg";;
-				'-XX'*) jvm_prop_opts="\$jvm_prop_opts \$arg";;
-				'-Xm'*) jvm_mem_opts="\$jvm_mem_opts \$arg";;
-				*) pass_args="\$pass_args \$arg";;
+				-D*) jvm_prop_args+=("\$arg");;
+				-XX*) jvm_prop_args+=("\$arg");;
+				-Xm*) jvm_mem_args+=("\$arg");;
+				*) pass_args+=("\$arg");;
 			esac
 		done
-		[[ ! \$jvm_mem_opts ]] && jvm_mem_opts="-Xms512m -Xmx1g"
-
-		pass_arr=(\$pass_args)
-		if [[ \${pass_arr[0]:=} == org* ]]; then
-			eval \$java \$jvm_mem_opts \$jvm_prop_opts -cp $2 \$pass_args
-		else
-			eval \$java \$jvm_mem_opts \$jvm_prop_opts -jar $2 \$pass_args
-		fi
-		exit
+		[[ ! \$jvm_mem_args ]] && jvm_mem_args+=("-Xms1024m") && jvm_mem_args+=("-Xmx4g")
+		exec "\$java" "\${jvm_mem_args[@]}" "\${jvm_prop_args[@]}" -jar "$2" "\${pass_args[@]}"
 	EOF
-	chmod 755 $1 || return 1
+	chmod 755 "$1" || return 1
 	
 	return 0
+}
+
+compile::trimmomatic(){
+	# conda trimmomatic wrapper is written in python and thus dont like process substitutions as files
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
+
+	commander::print "installing trimmomatic"
+	{	source $insdir/conda/bin/activate py2 && \
+		url='http://www.usadellab.org/cms/uploads/supplementary/Trimmomatic/Trimmomatic-0.39.zip' && \
+		wget -q $url -O $insdir/trimmomatic.zip && \
+		unzip -d $insdir $insdir/trimmomatic.zip && \
+		rm $insdir/trimmomatic.zip && \
+		cd $(ls -dv $insdir/Trimmomatic-*/ | tail -1) && \
+		mkdir -p bin && \
+		commander::_javawrapper bin/trimmomatic $(readlink -e trimmomatic-*.jar) && \
+		ln -sfn $PWD/bin $insdir/latest/trimmomatic
+	}
 }
 
 compile::sortmerna() {
