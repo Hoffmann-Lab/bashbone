@@ -235,15 +235,19 @@ preprocess::trimmomatic() {
 	done
 
 	local instances ithreads jmem jgct jcgct
-	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i ${#_fq1_trimmomatic[@]} -t 6 -T $threads)
+	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i ${#_fq1_trimmomatic[@]} -t 8 -T $threads)
 
+	# trimmomatic bottleneck are number of used compression threads (4) - thus use pigz
 	declare -a cmd2 cmd3
-	local i o1 o2
+	local i o1 o2 e1 e2
 	for i in "${!_fq1_trimmomatic[@]}"; do
-		o1="$outdir"/$(basename "${_fq1_trimmomatic[$i]}")
-		o2="$outdir"/$(basename "${_fq2_trimmomatic[$i]}")
-		os1="$outdir"/singletons.$(basename "${_fq1_trimmomatic[$i]}")
-		os2="$outdir"/singletons.$(basename "${_fq2_trimmomatic[$i]}")
+		helper::basename -f "${_fq1_trimmomatic[$i]}" -o o1 -e e1
+		helper::basename -f "${_fq1_trimmomatic[$i]}" -o o2 -e e2
+		e=$(echo $e | cut -d '.' -f 1)
+		o1="$outdir/$o1.$e1.gz"
+		o2="$outdir/$o2.$e2.gz"
+		os1="$outdir/singletons.$o1.$e1.gz"
+		os2="$outdir/singletons.$o2.$e2.gz"
 		if [[ ${_fq2_trimmomatic[$i]} ]]; then
 			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
 				trimmomatic
@@ -255,14 +259,12 @@ preprocess::trimmomatic() {
 				-threads $ithreads
 				-${phred["${_fq1_trimmomatic[$i]}"]}
 				"${_fq1_trimmomatic[$i]}" "${_fq2_trimmomatic[$i]}"
-				"$o1" "$os1"
-				"$o2" "$os2"
+				>(pigz -p $ithreads -c > "$o1") >(pigz -p $ithreads -c > "$os1")
+				>(pigz -p $ithreads -c > "$o2") >(pigz -p $ithreads -c > "$os2")
 				SLIDINGWINDOW:5:22
 				MINLEN:18
 				TOPHRED33
 			CMD
-			helper::makezipcmd -a cmd3 -t $threads -c "${_fq1_trimmomatic[$i]}" -c "${_fq2_trimmomatic[$i]}" -z o1 -z o2
-			helper::makezipcmd -a cmd3 -t $threads -c "${_fq1_trimmomatic[$i]}" -c "${_fq2_trimmomatic[$i]}" -z os1 -z os2
 			_fq1_trimmomatic[$i]="$o1"
 			_fq2_trimmomatic[$i]="$o2"
 		else
@@ -276,23 +278,20 @@ preprocess::trimmomatic() {
 				-threads $ithreads
 				-${phred["${_fq1_trimmomatic[$i]}"]}
 				"${_fq1_trimmomatic[$i]}"
-				"$o1"
+				>(pigz -p $ithreads -c > "$o1")
 				SLIDINGWINDOW:5:22
 				MINLEN:18
 				TOPHRED33
 			CMD
-			helper::makezipcmd -a cmd3 -t $threads -c "${_fq1_trimmomatic[$i]}" -z o1
 			_fq1_trimmomatic[$i]="$o1"
 		fi
 	done
 
 	$skip && {
-		commander::printcmd -a cmd2 
-		commander::printcmd -a cmd3
+		commander::printcmd -a cmd2
 	} || {
 		{	mkdir -p "$outdir" && \
-			commander::runcmd -v -b -t $instances -a cmd2 && \
-			commander::runcmd -v -b -t 1 -a cmd3
+			commander::runcmd -v -b -t $instances -a cmd2
 		} || {
 			commander::printerr "$funcname failed"
 			return 1

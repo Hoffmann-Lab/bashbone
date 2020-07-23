@@ -31,14 +31,14 @@ helper::makezipcmd(){
 	done
 	[[ ! $mandatory || ${#check_makezipcmd[@]} -ne ${#tozip_makezipcmd[@]} ]] && { _usage; return 1; }
 
-    local i
+	local i
 	for i in "${!check_makezipcmd[@]}"; do
-		readlink -e "${check_makezipcmd[$i]}" | file -f - | grep -qF compressed || {
-            declare -n _f_makezipcmd=${tozip_makezipcmd[$i]}
+		readlink -e "${check_makezipcmd[$i]}" | file -f - | grep -qE '(gzip|bzip)' || {
+			declare -n _f_makezipcmd=${tozip_makezipcmd[$i]}
 			commander::makecmd -a _cmds_makezipcmd -s '|' -c {COMMANDER[0]}<<- CMD
 				pigz -p $threads -k -c "$_f_makezipcmd" > "$_f_makezipcmd.gz"
 			CMD
-            _f_makezipcmd="$_f_makezipcmd.gz"
+			_f_makezipcmd="$_f_makezipcmd.gz"
 		}
 	done
 
