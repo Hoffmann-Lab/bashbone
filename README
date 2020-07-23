@@ -1,5 +1,9 @@
-#### a NGS bash library and tools as well as useful scripts installer
-#### requieres bash version 4.4 or above
+#### a NGS bash library mainly designed for gene expression analysis
+shipped with useful scripts as well as an optional non-root installer for all required tools
+requires bash version 4.4 or above
+
+### quick start
+source activate.sh -c false
 
 ### setup
 # lib only

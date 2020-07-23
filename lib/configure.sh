@@ -30,11 +30,11 @@ configure::environment(){
 	shopt -s expand_aliases
 	ulimit -n $(ulimit -Hn)
 
-	JAVA_HOME=$(readlink -e $insdir_tools/latest/java)
-	[[ $JAVA_HOME ]] && export JAVA_HOME=$(dirname $JAVA_HOME)
+	local tp=$(readlink -e $insdir_tools/latest)
+	[[ $tp && -e $tp/java ]] && export JAVA_HOME=$(dirname $(readlink -e $tp/java))
 	export MALLOC_ARENA_MAX=4
 	
-	export PATH=$(readlink -e $insdir_tools/latest/* | xargs -echo | sed 's/ /:/g'):$PATH
+	[[ $tp ]] && export PATH=$(readlink -e $tp/* | xargs -echo | sed 's/ /:/g'):$PATH
 	export PATH=$(readlink -e $insdir_bashbone/scripts | xargs -echo | sed 's/ /:/g'):$PATH
 
 	$activate_conda && {
