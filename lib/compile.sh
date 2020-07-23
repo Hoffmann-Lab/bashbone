@@ -180,7 +180,7 @@ compile::trimmomatic(){
 	{	source $insdir/conda/bin/activate py2 && \
 		url='http://www.usadellab.org/cms/uploads/supplementary/Trimmomatic/Trimmomatic-0.39.zip' && \
 		wget -q $url -O $insdir/trimmomatic.zip && \
-		unzip -d $insdir $insdir/trimmomatic.zip && \
+		unzip -o -d $insdir $insdir/trimmomatic.zip && \
 		rm $insdir/trimmomatic.zip && \
 		cd $(ls -dv $insdir/Trimmomatic-*/ | tail -1) && \
 		mkdir -p bin && \
