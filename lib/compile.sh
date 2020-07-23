@@ -184,7 +184,7 @@ compile::trimmomatic(){
 		rm $insdir/trimmomatic.zip && \
 		cd $(ls -dv $insdir/Trimmomatic-*/ | tail -1) && \
 		mkdir -p bin && \
-		commander::_javawrapper bin/trimmomatic $(readlink -e trimmomatic-*.jar) && \
+		compile::_javawrapper bin/trimmomatic $(readlink -e trimmomatic-*.jar) && \
 		ln -sfn $PWD/bin $insdir/latest/trimmomatic
 	}
 }
