@@ -4,12 +4,12 @@
 declare -a COMMANDER
 
 commander::print(){
-	[[ $* ]] && echo -e "\r:INFO: $*"
+	[[ $* ]] && echo ":INFO: $*"
 	local fd
 	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
 		mapfile -u $fd -t mapdata
-		printf '\r:INFO: %s\n' "${mapdata[@]}"
+		printf ':INFO: %s\n' "${mapdata[@]}"
 		# while read -u $fd -r tmp; do
 		# 	echo ":INFO: $tmp"
 		# done
@@ -19,13 +19,13 @@ commander::print(){
 }
 
 commander::warn(){
-	[[ $* ]] && echo -e "\r:WARNING: $*"
+	[[ $* ]] && echo ":WARNING: $*"
 	local fd
 	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
 		mapdata
 		mapfile -u $fd -t mapdata
-		printf '\r:WARNING: %s\n' "${mapdata[@]}"
+		printf ':WARNING: %s\n' "${mapdata[@]}"
 	done
 	COMMANDER=()
 	return 0
@@ -33,12 +33,12 @@ commander::warn(){
 
 commander::printerr(){
 	echo -ne "\e[0;31m"
-	[[ $* ]] && echo -e "\r:ERROR: $*" >&2
+	[[ $* ]] && echo ":ERROR: $*" >&2
 	local fd
 	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
 		mapfile -u $fd -t mapdata
-		printf '\r:ERROR: %s\n' "${mapdata[@]}" >&2
+		printf ':ERROR: %s\n' "${mapdata[@]}" >&2
 	done
 	COMMANDER=()
 	echo -ne "\e[m"
@@ -111,7 +111,7 @@ commander::printcmd(){
 	while getopts 'a:' arg; do
 		case $arg in
 			a)	_cmds_printcmd=$OPTARG
-				[[ "${#_cmds_printcmd[@]}" -gt 0 ]] && printf '\r:CMD: %s\n' "${_cmds_printcmd[@]}"
+				[[ "${#_cmds_printcmd[@]}" -gt 0 ]] && printf ':CMD: %s\n' "${_cmds_printcmd[@]}"
 				return 0;;
 			*)	_usage; return 1;;
 		esac
