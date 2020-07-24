@@ -99,11 +99,11 @@ compile::conda() {
 			perl perl-threaded perl-db-file perl-dbi perl-app-cpanminus perl-list-moreutils perl-try-tiny perl-set-intervaltree perl-uri \
 			numpy scipy pysam cython matplotlib \
 			datamash \
-			fastqc trimmomatic rcorrector \
+			fastqc rcorrector \
 			star star-fusion bwa hisat2 \
 			samtools picard bamutil \
 		chmod 755 $insdir/conda/envs/py2/bin/run_rcorrector.pl && \
-		conda list -n py2 -f "fastqc|trimmomatic|rcorrector|star|star-fusion|bwa|hisat2|samtols|picard" | grep -v '^#' > $insdir/condatools.txt && \
+		conda list -n py2 -f "fastqc|rcorrector|star|star-fusion|bwa|hisat2|samtols|picard" | grep -v '^#' > $insdir/condatools.txt && \
 
 		conda install -n py3 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
@@ -143,16 +143,18 @@ compile::java() {
 		tar -xzf $insdir/java.tar.gz -C $insdir && \
 		rm $insdir/java.tar.gz && \
 		mkdir -p $insdir/latest && \
-		ln -sfn $(ls -vd $insdir/jdk*/bin/ | tail -1) $insdir/latest/java
+		ln -sfn $(ls -vd $insdir/jdk-*/bin | tail -1) $insdir/latest/java
 	} || return 1
 
 	return 0
 }
 
 compile::_javawrapper() {
+	local java=java
+	[[ $3 ]] && java="$3"
 	cat <<- EOF > "$1" || return 1
 		#!/usr/bin/env bash
-		java=java
+		java=$java
 		[[ \$JAVA_HOME && -e "\$JAVA_HOME/bin/java" ]] && java="\$JAVA_HOME/bin/java"
 		declare -a jvm_mem_args jvm_prop_args pass_args
 		for arg in \$@; do
@@ -172,7 +174,7 @@ compile::_javawrapper() {
 }
 
 compile::trimmomatic(){
-	# conda trimmomatic wrapper is written in python and thus dont like process substitutions as files
+	# conda trimmomatic wrapper is written in python and thus cannot handle process substitutions
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
@@ -183,8 +185,8 @@ compile::trimmomatic(){
 		unzip -o -d $insdir $insdir/trimmomatic.zip && \
 		rm $insdir/trimmomatic.zip && \
 		cd $(ls -dv $insdir/Trimmomatic-*/ | tail -1) && \
-		mkdir -p bin && \
-		compile::_javawrapper bin/trimmomatic $(readlink -e trimmomatic-*.jar) && \
+		mkdir -p $insdir/latest bin && \
+		compile::_javawrapper bin/trimmomatic $(readlink -e trimmomatic-*.jar) $insdir/latest/java/java && \
 		ln -sfn $PWD/bin $insdir/latest/trimmomatic
 	}
 }

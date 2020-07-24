@@ -29,15 +29,15 @@ configure::environment(){
 	shopt -s extglob
 	shopt -s expand_aliases
 	ulimit -n $(ulimit -Hn)
+	export MALLOC_ARENA_MAX=4
 
 	$activate_conda && {
 		source $insdir_tools/conda/bin/activate py2 &> /dev/null || return 1
 	}
 
 	local tp=$(readlink -e $insdir_tools/latest)
-	[[ $tp && -e $tp/java ]] && export JAVA_HOME=$(dirname $(readlink -e $tp/java))
-	export MALLOC_ARENA_MAX=4
-	
+	# better stay off to avoid conflicts with conda openjdk and pre-compiled jars requesting specific versions (e.g. IncompatibleClassChangeError)
+	# [[ $tp && -e $tp/java ]] && export JAVA_HOME=$(dirname $(readlink -e $tp/java))
 	[[ $tp ]] && export PATH=$(readlink -e $tp/* | xargs -echo | sed 's/ /:/g'):$PATH
 	export PATH=$(readlink -e $insdir_bashbone/scripts | xargs -echo | sed 's/ /:/g'):$PATH
 
