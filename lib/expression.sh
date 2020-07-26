@@ -21,7 +21,7 @@ expression::diego() {
 		return 0
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads countsdir mappeddir tmpdir outdir gtf
+	local OPTIND arg mandatory skip=false skipmd5=false threads countsdir mappeddir tmpdir outdir gtf tmp
 	declare -n _mapper_diego _cmpfiles_diego
 	while getopts 'S:s:5:t:r:g:c:i:j:p:o:' arg; do
 		case $arg in
@@ -59,14 +59,14 @@ expression::diego() {
 
 		if [[ ! -s "${gtf%.*}.aggregated.gtf" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::print "preparing annotation for exon_id tag based quantification"
-			# one may replace /dev/null by e.g. "${gtf%.*}.dexseq.gtf" for future dexeq integration
+			tmp=$(mktemp -p "$tmpdir" --suffix=".gtf" cleanup.XXXXXXXXXX)
 			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				dexseq_prepare_annotation2.py
 					-r no
-					-f "$tmpdir/tmp.gtf"
-					"$gtf" /dev/null
+					-f "$tmp"
+					"$gtf" "${gtf%.*}.dexseq.gtf"
 			CMD
-				sed -r 's/(.+gene_id\s+")([^"]+)(.+exon_number\s+")([^"]+)(.+)/\1\2\3\4\5; exon_id "\2:\4"/' "$tmpdir/tmp.gtf" > "${gtf%.*}.aggregated.gtf"
+				sed -r 's/(.+gene_id\s+")([^"]+)(.+exon_number\s+")([^"]+)(.+)/\1\2\3\4\5; exon_id "\2:\4"/' "$tmp" > "${gtf%.*}.aggregated.gtf"
 			CMD
 				rm -f "$tmpdir/tmp.gtf"
 			CMD
@@ -75,10 +75,12 @@ expression::diego() {
 		{	conda activate py3 && \
 			commander::runcmd -v -b -t $threads -a cmdprep && \
 			conda activate py2
-		} || { 
+		} || {
+			rm -f $tmp
 			commander::printerr "$funcname failed at annotation preparation"
 			return 1
 		}
+		rm -rf $tmp
 	}
 
 	quantify::featurecounts \
@@ -282,6 +284,7 @@ expression::deseq() {
 			-2 cmd2 \
 			-t $ithreads \
 			-i "$odir/experiments.csv" \
+			-g $gtf \
 			-c "${cmps[*]}" \
 			-o "$odir"
 	done
@@ -329,12 +332,12 @@ expression::_deseq() {
 			t) ((mandatory++)); threads=$OPTARG;;
 			i) ((mandatory++)); csvfile="$OPTARG";;
 			g) gtf="$OPTARG";;
-			c) ((mandatory++)); mapfile -t -d ',' cmppairs <<< "$OPTARG"; cmppairs[-1]="$(sed -r 's/\s*\n*$//' <<< "${cmppairs[-1]}")";;
+			c) ((mandatory++)); mapfile -t -d ',' cmppairs < <(printf '%s' "$OPTARG");;
 			o) ((mandatory++)); outdir="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 6 ]] && _usage && return 1
 
 	commander::makecmd -a _cmds1_deseq -s '|' -c {COMMANDER[0]}<<- CMD
 		deseq2.R $threads "$csvfile" "$outdir" ${cmppairs[*]}
