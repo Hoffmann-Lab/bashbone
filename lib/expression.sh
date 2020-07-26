@@ -332,7 +332,7 @@ expression::_deseq() {
 			t) ((mandatory++)); threads=$OPTARG;;
 			i) ((mandatory++)); csvfile="$OPTARG";;
 			g) gtf="$OPTARG";;
-			c) ((mandatory++)); mapfile -t -d ',' cmppairs < <(printf '%s' "$OPTARG");;
+			c) ((mandatory++)); mapfile -t -d ' ' cmppairs < <(printf '%s' "$OPTARG");;
 			o) ((mandatory++)); outdir="$OPTARG";;
 			*) _usage; return 1;;
 		esac
@@ -353,7 +353,7 @@ expression::_deseq() {
 			for f in "$odir/deseq.tsv" "$odir/deseq.full.tsv" "$odir/deseq.noNA.tsv" \
 					"$odir/heatmap.vsc.ps" "$odir/heatmap.mean.vsc.ps" "$odir/heatmap.vsc.zscores.ps" "$odir/heatmap.mean.vsc.zscores.ps"; do
 				commander::makecmd -a _cmds2_deseq -s '|' -c {COMMANDER[0]}<<- CMD
-					[[ -e "$o" ]] && annotate.pl "${gtfinfo:=0}" "$gtf" "$f" || true
+					[[ -e "$f" ]] && annotate.pl "${gtfinfo:=0}" "$gtf" "$f" || true
 				CMD
 			done
 		done
