@@ -31,8 +31,8 @@ quantify::featurecounts() {
 			g) ((mandatory++)); gtf="$OPTARG";;
 			l) level=$OPTARG;;
 			f) featuretag=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -41,16 +41,16 @@ quantify::featurecounts() {
 
 	commander::print "inferring library preparation method and quantifying reads"
 
-	declare -a cmd1 cmd2
+	declare -a cmd1 cmd2 tfiles
 	local m f
 	for m in "${_mapper_featurecounts[@]}"; do
 		declare -n _bams_featurecounts=$m
-		mkdir -p "$tmpdir/$m"
 		for f in "${_bams_featurecounts[@]}"; do
+			tfiles+=("$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
 			alignment::_inferexperiment \
 				-1 cmd1 \
 				-2 cmd2 \
-				-p "$tmpdir/$m" \
+				-p "${tfiles[-1]}" \
 				-i "$f" \
 				-g "$gtf"
 		done
@@ -75,10 +75,12 @@ quantify::featurecounts() {
 			done
 			conda activate py2
 		} || {
+			rm -f "${tfiles[@]}"
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
+	rm -f "${tfiles[@]}"
 
 	# featurecounts cannot handle more than 64 threads
 	local instances ithreads m f
@@ -90,12 +92,13 @@ quantify::featurecounts() {
 	# $((instances==0?1:instances)) in case of misuse of this function for annotation preparation without bam files
 	read -r instances ithreads < <(configure::instances_by_threads -i $((instances==0?1:instances)) -t 64 -T $threads)
 
-	declare -a cmd3
+	declare -a cmd3 tdirs
 	for m in "${_mapper_featurecounts[@]}"; do
 		declare -n _bams_featurecounts=$m
 		mkdir -p "$outdir/$m"
 		for f in "${_bams_featurecounts[@]}"; do
 			o=$outdir/$m/$(basename $f)
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.featurecounts)")
 			quantify::_featurecounts \
 				-1 cmd3 \
 				-t $ithreads \
@@ -104,7 +107,7 @@ quantify::featurecounts() {
 				-g "$gtf" \
 				-l $level \
 				-f $featuretag \
-				-p "$tmpdir" \
+				-p "${tdirs[-1]}" \
 				-o "${o%.*}.${featuretag/_id/}counts"
 		done
 	done
@@ -116,11 +119,13 @@ quantify::featurecounts() {
 			commander::runcmd -v -b -t $instances -a cmd3 && \
 			conda activate py2
 		} || {
+			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
 
+	rm -rf "${tdirs[@]}"
 	return 0
 }
 
@@ -165,7 +170,7 @@ quantify::_featurecounts() {
 
 	# infer SE or PE
 	local params=''
-	[[ $(samtools view -F 4 -h "$bam" | head -10000 | samtools view -c -f 1) -gt 0 ]] && params+='-p '
+	[[ $(samtools view -F 4 "$bam" | head -10000 | cat <(samtools view -H "$bam") - | samtools view -c -f 1) -gt 0 ]] && params+='-p '
 	[[ "$featuretag" != "gene_id" ]] && params+='-f -O '
 
 	commander::makecmd -a _cmds1_featurecounts -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD

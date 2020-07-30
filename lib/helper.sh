@@ -17,19 +17,18 @@ helper::makezipcmd(){
 	}
 
 	local OPTIND arg mandatory threads=1
-	declare -a check_makezipcmd
-	declare -a tozip_makezipcmd # be very careful with references name space
-	declare -n _cmds_makezipcmd # be very careful with circular name reference
+	declare -a check_makezipcmd tozip_makezipcmd
+	declare -n _cmds_makezipcmd
 	while getopts 'a:t:c:z:' arg; do
 		case $arg in
-			a)	mandatory=1; _cmds_makezipcmd=$OPTARG;;
-			t) 	threads=$OPTARG;;
-			c)	check_makezipcmd+=("$OPTARG");;
-			z)	tozip_makezipcmd+=("$OPTARG");;
-			*)	_usage;	return 1;;
+			a) ((mandatory++)); _cmds_makezipcmd=$OPTARG;;
+			t) threads=$OPTARG;;
+			c) ((mandatory++)); check_makezipcmd+=("$OPTARG");;
+			z) ((mandatory++)); tozip_makezipcmd+=("$OPTARG");;
+			*) _usage; return 1;;
 		esac
 	done
-	[[ ! $mandatory || ${#check_makezipcmd[@]} -ne ${#tozip_makezipcmd[@]} ]] && { _usage; return 1; }
+	[[ $mandatory -lt 3 || ${#check_makezipcmd[@]} -ne ${#tozip_makezipcmd[@]} ]] && _usage && return 1
 
 	local i
 	for i in "${!check_makezipcmd[@]}"; do
@@ -58,17 +57,18 @@ helper::makecatcmd(){
 		return 0
 	}
 
-	local OPTIND arg f
-	declare -n _ref_makecatcmd
+	local OPTIND arg mandatory f
+	declare -n _makecatcmd
 	while getopts 'f:c:' arg; do
 		case $arg in
-			c)	_ref_makecatcmd=$OPTARG;;
-			f)	f="$OPTARG";;
-			*)	_usage; return 1;;
+			c) ((mandatory++)); _makecatcmd=$OPTARG;;
+			f) ((mandatory++)); f="$OPTARG";;
+			*) _usage; return 1;;
 		esac
 	done
+	[[ $mandatory -lt 2 ]] && _usage && return 1
 
-	_ref_makecatcmd=$(readlink -e "$f" | file -f - | grep -Eo '(gzip|bzip)' && echo -cd || echo cat)
+	_makecatcmd=$(readlink -e "$f" | file -f - | grep -Eo '(gzip|bzip)' && echo -cd || echo cat)
 
 	return 0
 }
@@ -89,23 +89,23 @@ helper::basename(){
 	}
 
 	local OPTIND arg f mandatory
-	declare -n _ref_basename _ref_basenamex
+	declare -n _basename _basenamex
 	while getopts 'f:o:e:' arg; do
 		case $arg in
-			f)	mandatory=1; f="$OPTARG";;
-			o)	_ref_basename=$OPTARG;;
-			e)	_ref_basenamex=$OPTARG;;
-			*)	_usage;	return 1;;
+			f) ((mandatory++)); f="$OPTARG";;
+			o) ((mandatory++)); _basename=$OPTARG;;
+			e) ((mandatory++)); _basenamex=$OPTARG;;
+			*) _usage; return 1;;
 		esac
 	done
-	[[ ! $mandatory ]] && _usage && return 1
+	[[ $mandatory -lt 3 ]] && _usage && return 1
 
 	readlink -e "$f" | file -f - | grep -qE '(gzip|bzip)' && {
-		_ref_basename=$(basename $f | rev | cut -d '.' -f 3- | rev)
-		_ref_basenamex=$(basename $f | rev | cut -d '.' -f 1-2 | rev)
+		_basename=$(basename $f | rev | cut -d '.' -f 3- | rev)
+		_basenamex=$(basename $f | rev | cut -d '.' -f 1-2 | rev)
 	} || {
-		_ref_basename=$(basename $f | rev | cut -d '.' -f 2- | rev)
-		_ref_basenamex=$(basename $f | rev | cut -d '.' -f 1 | rev)
+		_basename=$(basename $f | rev | cut -d '.' -f 2- | rev)
+		_basenamex=$(basename $f | rev | cut -d '.' -f 1 | rev)
 	}
 
 	return 0
@@ -124,11 +124,11 @@ helper::addmemberfunctions(){
 	declare -a vars
 	while getopts 'v:' arg; do
 		case $arg in
-			v)	mandatory=1; vars+=("$(printf '%q' "$OPTARG")");;
-			*)	_usage;	return 1;;
+			v) ((mandatory++)); vars+=("$(printf '%q' "$OPTARG")");;
+			*) _usage; return 1;;
 		esac
 	done
-	[[ ! $mandatory ]] && _usage && return 1
+	[[ $mandatory -lt 1 ]] && _usage && return 1
 
 	shopt -s expand_aliases
 	for var in "${vars[@]}"; do

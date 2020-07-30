@@ -15,11 +15,11 @@ compile::_parse(){
 	declare -n _insdir_parse _threads_parse
 	while getopts 'r:s:i:t:' arg; do
 		case $arg in
-			r)	((++mandatory)); _insdir_parse="$OPTARG";;
-			s)	((++mandatory)); _threads_parse=$OPTARG;;
-			i)	((++mandatory)); _insdir_parse="$OPTARG";;
-			t)	((++mandatory)); _threads_parse=$OPTARG;;
-			*)	compile::_usage; return 1;;
+			r) ((++mandatory)); _insdir_parse="$OPTARG";;
+			s) ((++mandatory)); _threads_parse=$OPTARG;;
+			i) ((++mandatory)); _insdir_parse="$OPTARG";;
+			t) ((++mandatory)); _threads_parse=$OPTARG;;
+			*) compile::_usage; return 1;;
 		esac
 	done
 	[[ $mandatory -lt 4 ]] && { compile::_usage; return 1; }
@@ -103,7 +103,7 @@ compile::conda() {
 			star star-fusion bwa hisat2 \
 			samtools picard bamutil \
 		chmod 755 $insdir/conda/envs/py2/bin/run_rcorrector.pl && \
-		conda list -n py2 -f "fastqc|rcorrector|star|star-fusion|bwa|hisat2|samtols|picard" | grep -v '^#' > $insdir/condatools.txt && \
+		conda list -n py2 -f "fastqc|rcorrector|star|star-fusion|bwa|hisat2|samtols|picard|bamutil" | grep -v '^#' > $insdir/condatools.txt && \
 
 		conda install -n py3 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \

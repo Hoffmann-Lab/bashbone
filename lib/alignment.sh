@@ -33,7 +33,7 @@ alignment::segemehl() {
 			t)	((mandatory++)); threads=$OPTARG;;
 			g)	((mandatory++)); genome="$OPTARG";;
 			x)	((mandatory++)); genomeidx="$OPTARG";;
-			o)	((mandatory++)); outdir="$OPTARG/segemehl";;
+			o)	((mandatory++)); outdir="$OPTARG/segemehl"; mkdir -p "$outdir" || return 1;;
 			a)	accuracy=$OPTARG;;
 			p)	nosplitaln=$OPTARG;;
 			i)	insertsize=$OPTARG;;
@@ -121,8 +121,7 @@ alignment::segemehl() {
 	$skip && {
 		commander::printcmd -a cmd1 
 	} || {
-		{	mkdir -p "$outdir" && \
-			commander::runcmd -v -b -t 1 -a cmd1 
+		{	commander::runcmd -v -b -t 1 -a cmd1 
 		} || { 
 			commander::printerr "$funcname failed"
 			return 1
@@ -166,7 +165,7 @@ alignment::star() {
 			g)	((mandatory++)); genome="$OPTARG";;
 			f)	gtf="$OPTARG";;
 			x)	((mandatory++)); genomeidxdir="$OPTARG";;
-			o)	((mandatory++)); outdir="$OPTARG/star";;
+			o)	((mandatory++)); outdir="$OPTARG/star"; mkdir -p "$outdir" || return 1;;
 			a)	accuracy=$OPTARG;;
 			p)	nosplitaln=$OPTARG;;
 			i)	insertsize=$OPTARG;;
@@ -320,8 +319,7 @@ alignment::star() {
 	$skip && {
 		commander::printcmd -a cmd1 
 	} || {
-		{	mkdir -p "$outdir" && \
-			commander::runcmd -v -b -t 1 -a cmd1 
+		{	commander::runcmd -v -b -t 1 -a cmd1 
 		} || { 
 			commander::printerr "$funcname failed"
 			return 1
@@ -356,14 +354,14 @@ alignment::postprocess() {
 			t) ((mandatory++)); threads=$OPTARG;;
 			j) ((mandatory++)); job=${OPTARG,,*};;
 			r) ((mandatory++)); _mapper_process=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
-	local instances ithreads m i outbase tdir newbam
+	local instances ithreads m i outbase newbam
 	for m in "${_mapper_process[@]}"; do
 		declare -n _bams_process=$m
 		((instances+=${#_bams_process[@]}))
@@ -375,8 +373,7 @@ alignment::postprocess() {
 	declare -a cmd1 cmd2 tdirs
 	for m in "${_mapper_process[@]}"; do
 		declare -n _bams_process=$m
-		tdir="$tmpdir/$m"
-		mkdir -p "$outdir/$m" "$tdir"
+		mkdir -p "$outdir/$m"
 		for i in "${!_bams_process[@]}"; do
 			outbase=$outdir/$m/$(basename "${_bams_process[$i]}")
 			outbase="${outbase%.*}"
@@ -394,7 +391,7 @@ alignment::postprocess() {
 				;;
 				sort)
 					instances=1
-					tdirs+=("$(mktemp -d -p "$tdir" cleanup.XXXXXXXXXX)")
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)")
 					alignment::_sort \
 						-1 cmd1 \
 						-t $threads \
@@ -488,10 +485,10 @@ alignment::_uniqify() {
 
 	# infer SE or PE filter
 	local params=''
-	[[ $(samtools view -F 4 -h "$sambam" | head -10000 | samtools view -c -f 1) -gt 0 ]] && params+='-f 2 '
+	[[ $(samtools view -F 4 "$sambam" | head -10000 | cat <(samtools view -H "$sambam") - | samtools view -c -f 1) -gt 0 ]] && params+='-f 2 '
 
 	if [[ "$m" =~ bwa || "$m" =~ bowtie || "$m" =~ tophat || "$m" =~ hisat || "$m" =~ star || \
-		$(samtools view -F 4 -h "$sambam" | head -10000 | grep -cE '\s+NH:i:[0-9]+\s+' ) -eq 0 ]]; then
+		$(samtools view -F 4 "$sambam" | head -10000 | grep -cE '\s+NH:i:[0-9]+\s+' ) -eq 0 ]]; then
 
 		#extract uniques just by MAPQ
 		[[ "$m" == "star" ]] && params+='-q 60' || params+='-q 1'
@@ -617,12 +614,12 @@ alignment::_inferexperiment() {
 			-2 <cmds1>    | array of
 			-i <bam>      | alignment file
 			-g <gtf>      | annotation file
-			-p <tmpdir>   | path to
+			-p <tmpfile>  | path to
 		EOF
 		return 0
 	}
 
-	local OPTIND arg mandatory bam gtf tmpdir
+	local OPTIND arg mandatory bam gtf tmp
 	declare -n _cmds1_inferexperiment _cmds2_inferexperiment
 	while getopts '1:2:t:i:g:p:' arg; do
 		case $arg in
@@ -630,7 +627,7 @@ alignment::_inferexperiment() {
 			2) ((mandatory++)); _cmds2_inferexperiment=$OPTARG;;
 			i) ((mandatory++)); bam="$OPTARG";;
 			g) ((mandatory++)); gtf="$OPTARG";;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
+			p) ((mandatory++)); tmp="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done
@@ -650,7 +647,7 @@ alignment::_inferexperiment() {
 			exit if $plus>2000 && $minus>2000;
 		'
 	CMD
-		"$gtf" > "$tmpdir/$(basename $bam).bed"
+		"$gtf" > "$tmp"
 	CMD
 
 	# 0 - unstranded
@@ -661,7 +658,7 @@ alignment::_inferexperiment() {
 			infer_experiment.py
 			-q 0 
 			-i "$bam"
-			-r "$tmpdir/$(basename $bam).bed"; 
+			-r "$tmp"; 
 		}
 	CMD
 		perl -lane '
@@ -707,7 +704,7 @@ alignment::slice(){
 			m) ((mandatory++)); memory=$OPTARG;;
 			r) ((mandatory++)); _mapper_slice=$OPTARG;;
 			c) ((mandatory++)); _bamslices_slice=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -724,7 +721,7 @@ alignment::slice(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	declare -n _bams_slice=${_mapper_slice[0]}
-	local chrinfo="$(mktemp -p "$tmpdir" --suffix=".chrinfo" cleanup.XXXXXXXXXX)"
+	local chrinfo="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.chrinfo)"
 	samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t0\t\2/p}' > "$chrinfo"
 
 	local tdir f i bed o
@@ -772,7 +769,7 @@ alignment::slice(){
 	for m in "${_mapper_slice[@]}"; do # do never ever skip this - pipeline rely on _bamslices_slice
 		declare -n _bams_slice=$m
 		tdir="$tmpdir/$m"
-		mkdir -p "$tdir"
+		mkdir -p "$tdir" # do not use mktemp for cleaup, since slices might be reused later
 		for f in "${_bams_slice[@]}"; do
 			o="$tdir"/$(basename "$f")
 			o="${o%.*}"
@@ -846,8 +843,8 @@ alignment::rmduplicates(){
 			x) regex="$OPTARG";;
 			r) ((mandatory++)); _mapper_rmduplicates=$OPTARG;;
 			c) ((mandatory++)); _bamslices_rmduplicates=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -965,7 +962,7 @@ alignment::clipmateoverlaps() {
 			m) ((mandatory++)); memory=$OPTARG;;
 			r) ((mandatory++)); _mapper_clipmateoverlaps=$OPTARG;;
 			c) ((mandatory++)); _bamslices_clipmateoverlaps=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -1081,8 +1078,8 @@ alignment::reorder() {
 			g) ((mandatory++)); genome="$OPTARG";;
 			r) ((mandatory++)); _mapper_reorder=$OPTARG;;
 			c) ((mandatory++)); _bamslices_reorder=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -1224,7 +1221,7 @@ alignment::bamstats(){
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
 			r) ((mandatory++)); _mapper_bamstats=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done

@@ -33,10 +33,10 @@ cluster::coexpression(){
 			m) ((mandatory++)); memory=$OPTARG;;
 			c) ((mandatory++)); _cmpfiles_coexpression=$OPTARG;;
 			r) ((mandatory++)); _mapper_coexpression=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			i) ((mandatory++)); countsdir="$OPTARG";;
 			j) ((mandatory++)); deseqdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			z) ((mandatory++)); _idfiles_coexpression=$OPTARG;;
 			*) _usage; return 1;;
 		esac
@@ -47,14 +47,13 @@ cluster::coexpression(){
 
 	declare -a mapdata cmd1
 	declare -A visited
-	local m f i j c t e tdir odir cdir ddir params tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX)"
+	local m f i j c t e odir cdir ddir params tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
 	for m in "${_mapper_coexpression[@]}"; do
 		odir="$outdir/$m"
-		tdir="$tmpdir/$m"
 		cdir="$countsdir/$m"
 		ddir="$deseqdir/$m"
-		mkdir -p "$odir" "$tdir"
+		mkdir -p "$odir"
 		visited=()
 
 		rm -f $joined

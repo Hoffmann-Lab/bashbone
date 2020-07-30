@@ -16,10 +16,10 @@ configure::environment(){
 	local OPTIND arg mandatory insdir_tools insdir_bashbone activate_conda=true
 	while getopts 'i:b:c:' arg; do
 		case $arg in
-			i)	((mandatory++)); insdir_tools="$OPTARG";;
-			b)	((mandatory++)); insdir_bashbone="$OPTARG";;
-			c)	activate_conda="$OPTARG";;
-			*)	_usage; return 1;;
+			i) ((mandatory++)); insdir_tools="$OPTARG";;
+			b) ((mandatory++)); insdir_bashbone="$OPTARG";;
+			c) activate_conda="$OPTARG";;
+			*) _usage; return 1;;
 		esac
 	done
 	[[ $mandatory -lt 2 ]] && _usage && return 1
@@ -59,10 +59,10 @@ configure::instances_by_threads(){
 	local OPTIND arg mandatory instances ithreads maxthreads
 	while getopts 'i:t:T:m:' arg; do
 		case $arg in
-			i)	((mandatory++)); instances=$OPTARG;;
-			t)	((mandatory++)); ithreads=$OPTARG;;
-			T)	((mandatory++)); maxthreads=$OPTARG;;
-			*)	_usage; return 1;;
+			i) ((mandatory++)); instances=$OPTARG;;
+			t) ((mandatory++)); ithreads=$OPTARG;;
+			T) ((mandatory++)); maxthreads=$OPTARG;;
+			*) _usage; return 1;;
 		esac
 	done
 	[[ $mandatory -lt 3 ]] && _usage && return 1
@@ -89,9 +89,9 @@ configure::instances_by_memory(){
 	local OPTIND arg mandatory threads memory
 	while getopts 'i:t:T:m:' arg; do
 		case $arg in
-			t)	((mandatory++)); threads=$OPTARG;;
-			m)	((mandatory++)); memory=$OPTARG;;
-			*)	_usage; return 1;;
+			t) ((mandatory++)); threads=$OPTARG;;
+			m) ((mandatory++)); memory=$OPTARG;;
+			*) _usage; return 1;;
 		esac
 	done
 	[[ $mandatory -lt 2 ]] && _usage && return 1

@@ -159,7 +159,7 @@ commander::runcmd(){
 						trap 'exit $?' ERR INT TERM
 						tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 						for i in "${!_cmds_runcmd[@]}"; do
-							sh="$(mktemp -p "$tmpdir" --suffix=".sh" job.XXXXXXXXXX)"
+							sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
 							echo "#!/usr/bin/env bash" > "$sh"
 							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 							echo "$sh"
@@ -172,7 +172,7 @@ commander::runcmd(){
 						trap 'exit $?' ERR INT TERM
 						tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 						for i in "${!_cmds_runcmd[@]}"; do
-							sh="$(mktemp -p "$tmpdir" --suffix=".sh" job.XXXXXXXXXX)"
+							sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
 							echo "#!/usr/bin/env bash" > "$sh"
 							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 							echo "$sh"
@@ -236,7 +236,7 @@ commander::qsubcmd(){
 					jobname="X${jobname#*.}" # ensure first character to be a letter
 					[[ $log ]] && ex="$(dirname "$log")"/$jobname.exitcodes || ex="$tmpdir/exitcodes"
 					for i in "${!_cmds_qsubcmd[@]}"; do
-						sh="$(mktemp -p "$tmpdir" --suffix=".$i.sh" job.XXXXXXXXXX)"
+						sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.$i.sh)"
 						[[ ! $log ]] && log="${sh%.*}.out"
 
 						echo "#!/usr/bin/env bash" > "$sh"

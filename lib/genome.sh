@@ -41,7 +41,7 @@ genome::mkdict() {
 		read -r instances ithreads jmem jgct jcgct < <(configure::jvm -T $threads)
 		declare -a cmd1 cmd2
 
-		local dict="$(mktemp -p "$tmpdir" --suffix=".dict" cleanup.XXXXXXXXXX)"
+		local dict="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.dict)"
 		commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
 			picard
 				-Xmx${jmem}m

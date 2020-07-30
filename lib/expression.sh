@@ -34,8 +34,8 @@ expression::diego() {
 			c) ((mandatory++)); _cmpfiles_diego=$OPTARG;;
 			i) ((mandatory++)); countsdir="$OPTARG";;
 			j) ((mandatory++)); mappeddir="$OPTARG";;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -47,7 +47,7 @@ expression::diego() {
 		commander::warn "skip checking md5 sums and thus annotation preparation"
 	} || {
 		commander::print "checking md5 sums"
-		local thismd5gtf
+		local thismd5gtf tmp
 		declare -a cmdprep
 		[[ -s "$gtf" ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
 		if [[ ! -s ${gtf%.*}.diego.bed ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
@@ -59,16 +59,14 @@ expression::diego() {
 
 		if [[ ! -s "${gtf%.*}.aggregated.gtf" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::print "preparing annotation for exon_id tag based quantification"
-			tmp=$(mktemp -p "$tmpdir" --suffix=".gtf" cleanup.XXXXXXXXXX)
-			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			tmp=$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.gtf)
+			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				dexseq_prepare_annotation2.py
 					-r no
 					-f "$tmp"
 					"$gtf" "${gtf%.*}.dexseq.gtf"
 			CMD
 				sed -r 's/(.+gene_id\s+")([^"]+)(.+exon_number\s+")([^"]+)(.+)/\1\2\3\4\5; exon_id "\2:\4"/' "$tmp" > "${gtf%.*}.aggregated.gtf"
-			CMD
-				rm -f "$tmpdir/tmp.gtf"
 			CMD
 		fi
 
@@ -99,7 +97,7 @@ expression::diego() {
 	}
 
 	declare -a cmd1 cmd2 mapdata tdirs
-	local m f i c t odir tdir sjfile countfile min sample condition library replicate factors
+	local m f i c t odir sjfile countfile min sample condition library replicate factors
 	for m in "${_mapper_diego[@]}"; do
 		for f in "${_cmpfiles_diego[@]}"; do
 			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
@@ -107,8 +105,7 @@ expression::diego() {
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do 
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					odir="$outdir/$m/$c-vs-$t"
-					tdir="$tmpdir/$m"
-					mkdir -p "$odir" "$tdir"
+					mkdir -p "$odir"
 					rm -f "$odir/groups.tsv" "$odir/list.sj.tsv" "$odir/list.ex.tsv"
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
@@ -122,7 +119,7 @@ expression::diego() {
 					min=$(cut -d $'\t' -f 1 "$odir/groups.tsv" | sort | uniq -c | column -t | cut -d ' ' -f 1 | sort -k1,1 | head -1)
 					if [[ -s "$odir/list.sj.tsv" ]]; then
 						if [[ $m == "segemehl" ]]; then
-							tdirs+=("$(mktemp -d -p "$tdir" cleanup.XXXXXXXXXX)")
+							tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.diego)")
 							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 								cd "${tdirs[-1]}"
 							CMD
@@ -134,7 +131,7 @@ expression::diego() {
 								mv input.sj.tsv "$odir/input.sj.tsv"
 							CMD
 						elif [[ $m == "star" ]]; then
-							tdirs+=("$(mktemp -d -p "$tdir" cleanup.XXXXXXXXXX)")
+							tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.diego)")
 							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 								cd "${tdirs[-1]}"
 							CMD
@@ -164,7 +161,7 @@ expression::diego() {
 						CMD
 					fi
 
-					tdirs+=("$(mktemp -d -p "$tdir" cleanup.XXXXXXXXXX)")
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.diego)")
 					commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 						cd "${tdirs[-1]}"
 					CMD
@@ -241,7 +238,7 @@ expression::deseq() {
 			g) gtf="$OPTARG";;
 			c) ((mandatory++)); _cmpfiles_deseq=$OPTARG;;
 			i) ((mandatory++)); countsdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -386,12 +383,12 @@ expression::joincounts() {
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			r) ((mandatory++)); _mapper_join=$OPTARG;;
 			c) ((mandatory++)); _cmpfiles_join=$OPTARG;;
 			i) ((mandatory++)); countsdir="$OPTARG";;
 			j) ((mandatory++)); deseqdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -400,12 +397,11 @@ expression::joincounts() {
 	commander::print "joining count values plus zscore calculation"
 
 	declare -a cmd1 cmd2 mapdata
-	local m f x i c t h mh sample condition library replicate factors cf e tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX)"
+	local m f x i c t h mh sample condition library replicate factors cf e tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
 	for m in "${_mapper_join[@]}"; do
 		odir="$outdir/$m"
-		tdir="$tmpdir/$m"
-		mkdir -p "$odir" "$tdir"
+		mkdir -p "$odir"
 		declare -A countfiles
 		declare -a header meanheader
 		x=0

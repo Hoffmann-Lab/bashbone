@@ -16,42 +16,48 @@ preprocess::fastqc() {
 		return 0
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir
+	local OPTIND arg mandatory skip=false threads outdir tmpdir
 	declare -n _fq1_fastqc _fq2_fastqc
-	while getopts 'S:s:t:o:1:2:' arg; do
+	while getopts 'S:s:t:p:o:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			1) ((mandatory++)); _fq1_fastqc=$OPTARG;;
 			2) ((mandatory++)); _fq2_fastqc=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage && return 1
 
 	commander::print "calculating qualities"
 
-	declare -a cmd1
+	declare -a cmd1 tdirs
 	local f
 	for f in {"${_fq1_fastqc[@]}","${_fq2_fastqc[@]}"}; do
+		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fastqc)")
 		commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-			fastqc -outdir "$outdir" "$f"
+			fastqc
+			-d "${tdirs[-1]}"
+			-outdir "$outdir"
+			"$f"
 		CMD
 	done
 
 	$skip && {
 		commander::printcmd -a cmd1 
 	} || {
-		{	mkdir -p "$outdir" && \
-			commander::runcmd -v -b -t $threads -a cmd1 
-		} || { 
+		{	commander::runcmd -v -b -t $threads -a cmd1 
+		} || {
+			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
 
+	rm -rf "${tdirs[@]}"
 	return 0
 }
 
@@ -81,7 +87,7 @@ preprocess::cutadapt() {
 			a) ((mandatory++)); _adaptera_cutadapt=$OPTARG;;
 			A) ((mandatory++)); _adapterA_cutadapt=$OPTARG;;
 			t) ((mandatory++)); threads=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			1) ((mandatory++)); _fq1_cutadapt=$OPTARG;;
 			2) ((mandatory++)); _fq2_cutadapt=$OPTARG;;
 			*) _usage; return 1;;
@@ -135,8 +141,7 @@ preprocess::cutadapt() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	mkdir -p "$outdir" && \
-			conda activate py3 && \
+		{	conda activate py3 && \
 			commander::runcmd -v -b -t $instances -a cmd1 && \
 			conda activate py2 && \
 			commander::runcmd -v -b -t $instances -a cmd2
@@ -173,8 +178,8 @@ preprocess::trimmomatic() {
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG";;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			m) ((mandatory++)); memory=$OPTARG;;
 			1) ((mandatory++)); _fq1_trimmomatic=$OPTARG;;
 			2) ((mandatory++)); _fq2_trimmomatic=$OPTARG;;
@@ -291,8 +296,7 @@ preprocess::trimmomatic() {
 	$skip && {
 		commander::printcmd -a cmd2
 	} || {
-		{	mkdir -p "$outdir" && \
-			commander::runcmd -v -b -t $instances -a cmd2
+		{	commander::runcmd -v -b -t $instances -a cmd2
 		} || {
 			commander::printerr "$funcname failed"
 			return 1
@@ -325,8 +329,8 @@ preprocess::rcorrector() {
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG";;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			1) ((mandatory++)); _fq1_rcorrector=$OPTARG;;
 			2) ((mandatory++)); _fq2_rcorrector=$OPTARG;;
 			*) _usage; return 1;;
@@ -336,19 +340,20 @@ preprocess::rcorrector() {
 
 	commander::print "correcting read errors"
 
-	declare -a cmd1 cmd2
+	declare -a cmd1 cmd2 tdirs
 	local i o1 b1 e1 o2 b2 e2
 	for i in "${!_fq1_rcorrector[@]}"; do
 		o1="$outdir"/$(basename "${_fq1_rcorrector[$i]}")
 		helper::basename -f "${_fq1_rcorrector[$i]}" -o b1 -e e1
 		b1="$outdir"/"$b1"
+		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rcorrector)")
 		if [[ ${_fq2_rcorrector[$i]} ]]; then
 			o2="$outdir"/$(basename "${_fq2_rcorrector[$i]}")
 			helper::basename -f "${_fq2_rcorrector[$i]}" -o b2 -e e2
 			b2="$outdir"/"$b2"
 
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-				cd "$tmpdir"
+				cd "${tdirs[-1]}"
 			CMD
 				run_rcorrector.pl
 				-1 "${_fq1_rcorrector[$i]}"
@@ -366,7 +371,7 @@ preprocess::rcorrector() {
 			_fq2_rcorrector[$i]="$o2"
 		else
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-				cd "$tmpdir"
+				cd "${tdirs[-1]}"
 			CMD
 				run_rcorrector.pl 
 				-s "${_fq1_rcorrector[$i]}" 
@@ -385,15 +390,16 @@ preprocess::rcorrector() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	mkdir -p "$outdir" && \
-			commander::runcmd -v -b -t 1 -a cmd1 && \
+		{	commander::runcmd -v -b -t 1 -a cmd1 && \
 			commander::runcmd -v -b -t 1 -a cmd2
-		} || { 
+		} || {
+			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
 
+	rm -rf "${tdirs[@]}"
 	return 0
 }
 
@@ -424,8 +430,8 @@ preprocess::sortmerna() {
 			t) ((mandatory++)); threads=$OPTARG;;
 			m) ((mandatory++)); memory=$OPTARG;;
 			i) ((mandatory++)); insdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG";;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			1) ((mandatory++)); _fq1_sortmerna=$OPTARG;;
 			2) ((mandatory++)); _fq2_sortmerna=$OPTARG;;
 			*) _usage; return 1;;
@@ -437,22 +443,24 @@ preprocess::sortmerna() {
 
 	local sortmernaref=$(for i in $(ls -vdr $insdir/sortmerna-*/ | head -1)rRNA_databases/*.fasta; do echo $i,$(ls -vdr $insdir/sortmerna-*/ | head -1)index/$(basename $i .fasta)-L18; done | xargs -echo | sed 's/ /:/g')
 
-	declare -a cmd1 cmd2 cmd3
+	declare -a cmd1 cmd2 cmd3 tdirs
 	local i catcmd tmp o1 o2 or1 or2 b1 b2 e1 e2 instances=$threads
 	for i in "${!_fq1_sortmerna[@]}"; do
 		helper::basename -f "${_fq1_sortmerna[$i]}" -o b1 -e e1
 		helper::basename -f "${_fq2_sortmerna[$i]}" -o b2 -e e2 &> /dev/null
-		e1=${e1%%.*} # trim potential compressing extension
-		e2=${e1%%.*}
+		e1=${e1%.*} # trim potential compressing extension
+		e2=${e2%.*}
 
-		tmp="$tmpdir"/merged."$b1".$e1
-		tmpo="$tmpdir"/"$b1"
-		tmpr="$tmpdir"/rRNA."$b1"
+		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sortmerna)")
+
+		tmp="${tdirs[-1]}/tmp.$b1.$e1"
+		tmpo="${tdirs[-1]}/$b1"
+		tmpr="${tdirs[-1]}/rRNA.$b1"
 		
-		o1="$outdir"/"$b1".$e1.gz
-		o2="$outdir"/"$b2".$e2.gz
-		or1="$outdir"/rRNA."$b1".$e1.gz
-		or2="$outdir"/rRNA."$b2".$e2.gz
+		o1="$outdir/$b1.$e1.gz"
+		o2="$outdir/$b2.$e2.gz"
+		or1="$outdir/rRNA.$b1.$e1.gz"
+		or2="$outdir/rRNA.$b2.$e2.gz"
 
 		# sortmerna v2.1 input must not be compressed (v.3.* creates empty files)
 		# outfile gets extension from input file
@@ -463,7 +471,7 @@ preprocess::sortmerna() {
 				mergefq.sh
 				-t $threads
 				-m ${memory}M
-				-d "$tmpdir"
+				-d "${tdirs[-1]}"
 				-i "${_fq1_sortmerna[$i]}"
 				-j "${_fq2_sortmerna[$i]}"
 				-o "$tmp"
@@ -490,7 +498,7 @@ preprocess::sortmerna() {
 				mergefq.sh
 				-t $threads
 				-u 2
-				-i "$tmpo".$e1
+				-i "$tmpo".$e2
 				-z
 				-o "$o2"
 			CMD
@@ -506,7 +514,7 @@ preprocess::sortmerna() {
 				mergefq.sh
 				-t $threads
 				-u 2
-				-i "$tmpr".$e1
+				-i "$tmpr".$e2
 				-z
 				-o "$or2"
 			CMD
@@ -554,16 +562,17 @@ preprocess::sortmerna() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	} || {
-		{	mkdir -p "$outdir" && \
-			commander::runcmd -v -b -t $instances -a cmd1 && \
+		{	commander::runcmd -v -b -t $instances -a cmd1 && \
 			commander::runcmd -v -b -t 1 -a cmd2 && \
 			commander::runcmd -v -b -t 1 -a cmd3
-		} || { 
+		} || {
+			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
 
+	rm -rf "${tdirs[@]}"
 	return 0
 }
 
@@ -591,8 +600,8 @@ preprocess::qcstats(){
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			i) ((mandatory++)); _qualdirs_qcstats=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG";;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			1) ((mandatory++)); _fq1_qcstats=$OPTARG;;
 			2) ((mandatory++)); _fq2_qcstats=$OPTARG;;
 			*) _usage; return 1;;
@@ -602,8 +611,7 @@ preprocess::qcstats(){
 
 	commander::print "summarizing preprocessing stats"
 
-	local i o b e c multiplier qdir tool
-	mkdir -p "$outdir" "$tmpdir"
+	local i o b e c multiplier qdir tool tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.tsv)"
 	declare -a counts
 	echo -e "sample\ttype\tcount" > "$outdir/preprocessing.barplot.tsv"
 	for i in "${!_fq1_qcstats[@]}"; do
@@ -618,9 +626,10 @@ preprocess::qcstats(){
 			counts+=($c)
 			echo -e "$b\t$tool reads\t$c" >> $o
 			perl -sle 'print join"\t",("$sample ($all)","$tool reads",(100*$c/$all))' -- -all=${counts[$((i*${#_qualdirs_qcstats[@]}))]} -c=$c -sample=$b -tool=$tool
-		done > "$tmpdir/tmp.tsv" # strange!!! if piped directly into tac - tac's awk implementation fails - not a shournal raceexception bug!
-		tac "$tmpdir/tmp.tsv" | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$outdir/preprocessing.barplot.tsv"
+		done > "$tmp" # strange!!! if piped directly into tac - tac's awk implementation fails - not a shournal raceexception bug!
+		tac "$tmp" | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$outdir/preprocessing.barplot.tsv"
 	done
+	rm -f "$tmp"
 
 	declare -a cmd1
 	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
@@ -653,7 +662,7 @@ preprocess::qcstats(){
 		{	conda activate py2r && \
 			commander::runcmd -v -b -a cmd1 && \
 			conda activate py2
-		} || { 
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}

@@ -4,14 +4,12 @@ trap '
 	sleep 1
 	pids=($(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
 	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null
-	printf "\r "
+	printf "\r"
 ' EXIT
 trap 'die "killed by sigint or sigterm"' INT TERM
 
 die() {
-	echo -ne "\e[0;31m"
-	echo -e "\r:ERROR: $*" >&2
-	echo -ne "\e[m"
+	echo ":ERROR: $*" >&2
 	exit 1
 }
 
