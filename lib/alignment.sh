@@ -757,19 +757,24 @@ alignment::slice(){
 		$minstances "$chrinfo"
 	CMD
 
-	# do never ever skip this - pipeline rely on _bamslices_slice
-	conda activate py2r
-	commander::runcmd -v -b -t $threads -a cmd1 || {
-		rm -f "$chrinfo"*
-		commander::printerr "$funcname failed"
-		return 1
+	$skip && {
+		commander::printcmd -a cmd1
+	} || {
+		{	conda activate py2r && \
+			commander::runcmd -v -b -t $threads -a cmd1 && \
+			conda activate py2
+		} || {
+			rm -f "$chrinfo"*
+			commander::printerr "$funcname failed"
+			return 1
+		}
 	}
-	conda activate py2
+	rm -f "$chrinfo"*
 
-	for m in "${_mapper_slice[@]}"; do # do never ever skip this - pipeline rely on _bamslices_slice
+	for m in "${_mapper_slice[@]}"; do
 		declare -n _bams_slice=$m
 		tdir="$tmpdir/$m"
-		mkdir -p "$tdir" # do not use mktemp for cleaup, since slices might be reused later
+		mkdir -p "$tdir" # do not use mktemp which triggers cleanup, since slices might be reused later
 		for f in "${_bams_slice[@]}"; do
 			o="$tdir"/$(basename "$f")
 			o="${o%.*}"
@@ -810,7 +815,6 @@ alignment::slice(){
 		}
 	}
 
-	rm -f "$chrinfo"*
 	return 0
 }
 

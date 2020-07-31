@@ -6,7 +6,7 @@ trap '
 	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null
 	printf "\r"
 ' EXIT
-trap 'die "killed by sigint or sigterm"' INT TERM
+trap 'die "killed"' INT TERM
 
 die() {
 	echo ":ERROR: $*" >&2
