@@ -36,7 +36,7 @@ configure::environment(){
 	}
 
 	local tp=$(readlink -e $insdir_tools/latest)
-	# better stay off to avoid conflicts with conda openjdk and pre-compiled jars requesting specific versions (e.g. IncompatibleClassChangeError)
+	# better stay off custom java path to avoid conflicts with conda openjdk and pre-compiled jars requesting specific versions (IncompatibleClassChangeError)
 	# [[ $tp && -e $tp/java ]] && export JAVA_HOME=$(dirname $(readlink -e $tp/java))
 	[[ $tp ]] && export PATH=$(readlink -e $tp/!(java) | xargs -echo | sed 's/ /:/g'):$PATH
 	export PATH=$(readlink -e $insdir_bashbone/scripts | xargs -echo | sed 's/ /:/g'):$PATH

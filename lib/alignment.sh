@@ -721,18 +721,19 @@ alignment::slice(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	declare -n _bams_slice=${_mapper_slice[0]}
-	local chrinfo="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.chrinfo)"
-	samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t0\t\2/p}' > "$chrinfo"
-
 	local tdir f i bed o
 	declare -a mapdata cmd1 cmd2 cmd3 cmd4
 
+	mkdir -p "$tmpdir/genome"
+	samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t0\t\2/p}' > $tmpdir/genome/chr.bed
+	# do not use process substitution as Rscript argument - sometimes R swallows parts
 	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
 			suppressMessages(library("knapsack"));
 			args <- commandArgs(TRUE);
 			slices <- as.numeric(args[1]);
-			df <- read.table(args[2], header=F, sep="\t", stringsAsFactors=F);
+			odir <- args[2];
+			df <- read.table(args[3], header=F, sep="\t", stringsAsFactors=F);
 
 			len <- as.integer(df[,3]/10+1);
 			srt <- sort(len,decreasing=T,index.return=1);
@@ -750,26 +751,25 @@ alignment::slice(){
 				bins <- b$xbins;
 			};
 			for (j in 1:n){
-				write.table(df[bins %in% j,], row.names = F, col.names = F, file=paste(args[2],"knapsack",j,"bed",sep="."), quote=F, sep="\t");
+				write.table(df[bins %in% j,], row.names = F, col.names = F, file=file.path(odir,paste("slice",j,"bed",sep=".")), quote=F, sep="\t");
 			};
 		'
 	CMD
-		$minstances "$chrinfo"
+		$minstances "$tmpdir/genome" "$tmpdir/genome/chr.bed"
 	CMD
 
 	$skip && {
 		commander::printcmd -a cmd1
 	} || {
-		{	conda activate py2r && \
+		{	rm -f "$tmpdir/genome/slice".*.bed && \
+			conda activate py2r && \
 			commander::runcmd -v -b -t $threads -a cmd1 && \
 			conda activate py2
 		} || {
-			rm -f "$chrinfo"*
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
-	rm -f "$chrinfo"*
 
 	for m in "${_mapper_slice[@]}"; do
 		declare -n _bams_slice=$m
@@ -783,10 +783,9 @@ alignment::slice(){
 			alignment::_index -1 cmd2 -t $ithreads -i "$f"
 
 			rm -f "$o.slices.info"
-			i=0
-			for bed in "$chrinfo.knapsack".*.bed; do
-				((++i))
-				echo "$o.slice$i.bam" >> "$o.slices.info"
+			for bed in "$tmpdir/genome/slice".*.bed; do
+				i=$(basename "$bed" .bed | rev | cut -d '.' -f 1 | rev)
+				echo "$o.slice.$i.bam" >> "$o.slices.info"
 				commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					samtools view 
 						-@ $ithreads
@@ -794,9 +793,9 @@ alignment::slice(){
 						-M
 						-b
 						"$f"
-						> "$o.slice$i.bam"
+						> "$o.slice.$i.bam"
 				CMD
-					samtools index -@ $ithreads "$o.slice$i.bam" "$o.slice$i.bai"
+					samtools index -@ $ithreads "$o.slice.$i.bam" "$o.slice.$i.bai"
 				CMD
 			done
 		done
@@ -809,7 +808,6 @@ alignment::slice(){
 		{	commander::runcmd -v -b -t $instances -a cmd2 && \
 			commander::runcmd -v -b -t $instances -a cmd3
 		} || {
-			rm -f "$chrinfo"*
 			commander::printerr "$funcname failed"
 			return 1
 		}
