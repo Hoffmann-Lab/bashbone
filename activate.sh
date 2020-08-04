@@ -2,16 +2,16 @@
 # (c) Konstantin Riege
 
 [[ "$(ps -p $$ -o command= | cut -d ' ' -f 1)" =~ bash ]] && {
-	[[ "${BASH_SOURCE[0]}" == "${0}" ]] && {
-		echo ":ERROR: script needs to be sourced" >&2
-		echo ":ERROR: do source $(readlink -e $0)" >&2
+	[[ "${BASH_SOURCE[0]}" == "$0" ]] && {
+		echo ":ERROR: script needs to be sourced. do" >&2
+		echo ":ERROR: source $0" >&2
 		exit 1
 	} || {
 		[[ ! $OSTYPE =~ linux ]] && echo "unsupported operating system" || {
 			if [[ ${BASH_VERSINFO[0]} -gt 4 ]] || [[ ${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 4 ]]; then
 				insdir_bashbone="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
 				insdir_tools_bashbone="$(dirname "$insdir_bashbone")"
-				activate_conda_bashbone=true
+				activate_conda_bashbone=false
 				unset OPTIND
 				while getopts :i:c: ARG; do
 					case $ARG in
@@ -25,18 +25,21 @@
 					source "$f"
 				done && {
 					unset IFS
-					configure::environment -i "$insdir_tools_bashbone" -b "$insdir_bashbone" -c $activate_conda_bashbone || {
-						unset IFS
-						echo ":ERROR: bashbone activation failed" >&2
-						echo ":ERROR: installation directory was not found to setup environment" >&2
-						echo ":ERROR: please use or check parameter -i <path/to/install/dir>" >&2
-						echo ":ERROR: OR" >&2
-						echo ":ERROR: disable tools and conda activation by using parameter -c false" >&2
-						echo ":ERROR: the latter will heavily limitate bashbone functionality" >&2
+					configure::environment -i "$insdir_tools_bashbone" -b "$insdir_bashbone" -c $activate_conda_bashbone && {
+						$activate_conda_bashbone || {
+							echo ":INFO: to activate conda environment do"
+							echo ":INFO: source ${BASH_SOURCE[0]} -c true"
+						}
+						INSDIR="$insdir_bashbone"
+						bashbone() {
+							declare -f | grep -P '::.+\(\)' | grep -vF -e compile:: -e helper::_ -e progress:: -e commander::_ | sort -V | sed -r 's/\s+\(\)\s+$//'
+						}
+					} || {
+						echo ":ERROR: bashbone environment setup failed! do" >&2
+						echo ":ERROR: source ${BASH_SOURCE[0]} -i <path/to/install/dir>" >&2
+						echo ":ERROR: or to disable tools and conda activation do" >&2
+						echo ":ERROR: source ${BASH_SOURCE[0]} -c false" >&2
 						return 1
-					}
-					bashbone() {
-						declare -f | grep -P '::.+\(\)' | grep -vF -e compile:: -e helper::_ -e progress:: -e commander::_ | sort -V | sed -r 's/\s+\(\)\s+$//'
 					}
 				} || {
 					echo ":ERROR: bashbone activation failed" >&2

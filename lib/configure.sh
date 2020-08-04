@@ -24,14 +24,13 @@ configure::environment(){
 	done
 	[[ $mandatory -lt 2 ]] && _usage && return 1
 
-	commander::print "setting up environment"
-
 	shopt -s extglob
 	shopt -s expand_aliases
 	ulimit -n $(ulimit -Hn)
 	export MALLOC_ARENA_MAX=4
 
 	$activate_conda && {
+		commander::print "setting up environment"
 		source $insdir_tools/conda/bin/activate py2 &> /dev/null || return 1
 	}
 
