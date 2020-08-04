@@ -4,7 +4,7 @@
 [[ "$(ps -p $$ -o command= | cut -d ' ' -f 1)" =~ bash ]] && {
 	[[ "${BASH_SOURCE[0]}" == "$0" ]] && {
 		echo ":ERROR: script needs to be sourced. do" >&2
-		echo ":ERROR: source $0" >&2
+		echo ":ERROR: source $(basename "$0")" >&2
 		exit 1
 	} || {
 		[[ ! $OSTYPE =~ linux ]] && echo "unsupported operating system" || {
@@ -28,7 +28,7 @@
 					configure::environment -i "$insdir_tools_bashbone" -b "$insdir_bashbone" -c $activate_conda_bashbone && {
 						$activate_conda_bashbone || {
 							echo ":INFO: to activate conda environment do"
-							echo ":INFO: source ${BASH_SOURCE[0]} -c true"
+							echo ":INFO: source $(basename "${BASH_SOURCE[0]}") -c true"
 						}
 						INSDIR="$insdir_bashbone"
 						bashbone() {
@@ -36,9 +36,9 @@
 						}
 					} || {
 						echo ":ERROR: bashbone environment setup failed! do" >&2
-						echo ":ERROR: source ${BASH_SOURCE[0]} -i <path/to/install/dir>" >&2
+						echo ":ERROR: source $(basename "${BASH_SOURCE[0]}") -i <path/to/install/dir>" >&2
 						echo ":ERROR: or to disable tools and conda activation do" >&2
-						echo ":ERROR: source ${BASH_SOURCE[0]} -c false" >&2
+						echo ":ERROR: source $(basename "${BASH_SOURCE[0]}") -c false" >&2
 						return 1
 					}
 				} || {
