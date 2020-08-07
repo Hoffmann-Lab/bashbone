@@ -4,7 +4,7 @@
 helper::makezipcmd(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-a <cmds>    | array of
 			-t <threads> | number of
@@ -47,7 +47,7 @@ helper::makezipcmd(){
 helper::makecatcmd(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-c <var>  | cmd
 			-f <file> | to ascii
@@ -76,7 +76,7 @@ helper::makecatcmd(){
 helper::basename(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-f <file> | path to
 			-o <var>  | basename
@@ -114,7 +114,7 @@ helper::basename(){
 helper::addmemberfunctions(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-v <var> | variable
 		EOF

@@ -1,10 +1,42 @@
 #!/usr/bin/env bash
 # (c) Konstantin Riege
 
+configure::exit(){
+	local funcname=${FUNCNAME[0]}
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			$funcname usage:
+			-p <pid>      | process id
+			-f <function> | to call
+		EOF
+		return 0
+	}
+
+	local OPTIND arg mandatory pid function
+	while getopts 'p:f:' arg; do
+		case $arg in
+			p) ((mandatory++)); pid=$OPTARG;;
+			f) function=$OPTARG;;
+			*) _usage; return 1;;
+		esac
+	done
+	[[ $mandatory -lt 1 ]] && _usage && return 1
+
+	shift $((OPTIND-1))
+	$(declare -F $function &> /dev/null) && $function "$@"
+
+	sleep 1 # to get very last entry of logifle by tail -f before being killed
+	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
+	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null
+	printf "\r"
+
+	return 0
+}
+
 configure::environment(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-i <insdir> | root path to tools
 			-b <insdir> | root path to bashbone
@@ -46,7 +78,7 @@ configure::environment(){
 configure::instances_by_threads(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-i <instances> | number of all
 			-t <threads>   | per instance targeted
@@ -79,7 +111,7 @@ configure::instances_by_threads(){
 configure::instances_by_memory(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-t <threads> | available
 			-m <memory>  | per instance maximum
@@ -110,7 +142,7 @@ configure::instances_by_memory(){
 configure::jvm(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-i <instances> | number of all
 			-t <threads>   | per instance targeted

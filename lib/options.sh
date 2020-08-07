@@ -2,12 +2,12 @@
 # (c) Konstantin Riege
 
 options::usage(){
-	cat <<- EOF
+	commander::print {COMMANDER[0]}<<- EOF
 		DESCRIPTION
 		setup routine
 
 		SYNOPSIS
-		$(basename $0) -i [all|upgrade|[<tool>,..]] -d [path]
+		setup.sh -i [all|upgrade|[<tool>,..]] -d [path]
 
 		OPTIONS
 		-i | --install [all|upgrade] : install into given directory
@@ -36,7 +36,17 @@ options::checkopt(){
 		-d | --directory) arg=true; INSDIR="$2";;
 		-t | --threads) arg=true; THREADS=$2;;
 		-l | --log) arg=true; LOG=$2;;
-		-s | --source) arg=true; mapfile -t -d ',' TOSOURCE < <(printf '%s' "$2");;
+		-s | --source)
+			arg=true
+			declare -a mapdata
+			mapfile -t -d ',' mapdata < <(printf '%s' "$2")
+			for f in "${mapdata[@]}"; do
+				source $f || {
+					commander::printerr "unexpected error in source code - please contact developer"
+					return 1
+				}
+			done
+		;;
 		-i | --install) arg=true; mapfile -t -d ',' INSTALL < <(printf '%s' "$2");;
 		-*) commander::printerr "illegal option $1"; return 1;; 
 		*) commander::printerr "illegal option $2"; return 1;;

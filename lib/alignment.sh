@@ -4,7 +4,7 @@
 alignment::segemehl() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
@@ -134,7 +134,7 @@ alignment::segemehl() {
 alignment::star() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-S <hardskip>     | true/false return
 			-s <softskip>     | true/false only print commands
@@ -332,7 +332,7 @@ alignment::star() {
 alignment::postprocess() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
@@ -432,7 +432,7 @@ alignment::postprocess() {
 alignment::_uniqify() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-1 <cmds1>    | array of
 			-2 <cmds2>    | array of
@@ -528,7 +528,7 @@ alignment::_uniqify() {
 alignment::_sort() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-1 <cmds1>    | array of
 			-t <threads>  | number of
@@ -574,7 +574,7 @@ alignment::_sort() {
 alignment::_index() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-1 <cmds1>    | array of
 			-t <threads>  | number of
@@ -608,7 +608,7 @@ alignment::_index() {
 alignment::_inferexperiment() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-1 <cmds1>    | array of
 			-2 <cmds1>    | array of
@@ -681,7 +681,7 @@ alignment::_inferexperiment() {
 alignment::slice(){
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
@@ -820,7 +820,7 @@ alignment::slice(){
 alignment::rmduplicates(){
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
@@ -940,7 +940,7 @@ alignment::clipmateoverlaps() {
 # adjusted poolsize will consume ~15gb memory
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
@@ -1053,7 +1053,7 @@ alignment::clipmateoverlaps() {
 alignment::reorder() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
@@ -1167,7 +1167,7 @@ alignment::reorder() {
 alignment::add4stats(){
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-r <mapper>    | array of bams within array of
 		EOF
@@ -1204,7 +1204,7 @@ alignment::add4stats(){
 alignment::bamstats(){
 	local funcname=${FUNCNAME[0]}
 	_usage() {
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage: 
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands

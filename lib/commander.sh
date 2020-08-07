@@ -60,7 +60,7 @@ commander::printerr(){
 commander::makecmd(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-a <cmds>      | array of 
 			-s <seperator> | string for
@@ -111,7 +111,7 @@ commander::makecmd(){
 commander::printcmd(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-a <cmds> | array of
 		EOF
@@ -135,7 +135,7 @@ commander::printcmd(){
 commander::runcmd(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-v           | verbose on
 			-b           | benchmark on
@@ -203,7 +203,7 @@ commander::runcmd(){
 commander::qsubcmd(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
-		commander::printerr {COMMANDER[0]}<<- EOF
+		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-v           | verbose on
 			-b           | benchmark on

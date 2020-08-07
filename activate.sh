@@ -11,8 +11,7 @@
 			if [[ ${BASH_VERSINFO[0]} -gt 4 ]] || [[ ${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 4 ]]; then
 				insdir_bashbone="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
 				insdir_tools_bashbone="$(dirname "$insdir_bashbone")"
-				activate_conda_bashbone=false
-				unset OPTIND
+				unset OPTIND activate_conda_bashbone
 				while getopts :i:c: ARG; do
 					case $ARG in
 						i) insdir_tools_bashbone="$OPTARG";;
@@ -25,8 +24,8 @@
 					source "$f"
 				done && {
 					unset IFS
-					configure::environment -i "$insdir_tools_bashbone" -b "$insdir_bashbone" -c $activate_conda_bashbone && {
-						$activate_conda_bashbone || {
+					configure::environment -i "$insdir_tools_bashbone" -b "$insdir_bashbone" -c ${activate_conda_bashbone:-false} && {
+						[[ $activate_conda_bashbone ]] || {
 							echo ":INFO: to activate conda environment do"
 							echo ":INFO: source $(basename "${BASH_SOURCE[0]}") -c true"
 						}
