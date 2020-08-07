@@ -162,7 +162,6 @@ preprocess::trimmomatic() {
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
-			-m <memory>   | amount of
 			-o <outdir>   | path to
 			-p <tmpdir>   | path to
 			-1 <fastq1>   | array of
@@ -171,7 +170,7 @@ preprocess::trimmomatic() {
 		return 0
 	}
 
-	local OPTIND arg mandatory skip=false threads memory outdir tmpdir
+	local OPTIND arg mandatory skip=false threads outdir tmpdir
 	declare -n _fq1_trimmomatic _fq2_trimmomatic
 	while getopts 'S:s:t:m:o:p:1:2:' arg; do
 		case $arg in
@@ -180,13 +179,12 @@ preprocess::trimmomatic() {
 			t) ((mandatory++)); threads=$OPTARG;;
 			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			m) ((mandatory++)); memory=$OPTARG;;
 			1) ((mandatory++)); _fq1_trimmomatic=$OPTARG;;
 			2) ((mandatory++)); _fq2_trimmomatic=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage && return 1
 
 	commander::printinfo "trimming"
 
@@ -240,7 +238,7 @@ preprocess::trimmomatic() {
 	done
 
 	local instances ithreads jmem jgct jcgct
-	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i ${#_fq1_trimmomatic[@]} -t 8 -T $threads)
+	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i ${#_fq1_trimmomatic[@]} -T $threads)
 
 	# trimmomatic bottleneck are number of used compression threads (4) - thus use pigz
 	declare -a cmd2 cmd3
@@ -421,7 +419,7 @@ preprocess::sortmerna() {
 		return 0
 	}
 
-	local OPTIND arg mandatory skip=false threads memory outdir tmpdir insdir
+	local OPTIND arg mandatory skip=false threads memory outdir tmpdir
 	declare -n _fq1_sortmerna _fq2_sortmerna
 	while getopts 'S:s:t:m:i:o:p:1:2:' arg; do
 		case $arg in
@@ -429,7 +427,6 @@ preprocess::sortmerna() {
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
 			m) ((mandatory++)); memory=$OPTARG;;
-			i) ((mandatory++)); insdir="$OPTARG";;
 			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			1) ((mandatory++)); _fq1_sortmerna=$OPTARG;;
@@ -437,11 +434,12 @@ preprocess::sortmerna() {
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage && return 1
+	[[ $mandatory -lt 6 ]] && _usage && return 1
 
 	commander::printinfo "filtering rRNA fragments"
 
-	local sortmernaref=$(for i in $(ls -vdr $insdir/sortmerna-*/ | head -1)rRNA_databases/*.fasta; do echo $i,$(ls -vdr $insdir/sortmerna-*/ | head -1)index/$(basename $i .fasta)-L18; done | xargs -echo | sed 's/ /:/g')
+	local insdir=$(dirname $(dirname $(which sortmerna)))/rRNA_databases
+	local sortmernaref=$(for i in $insdir/rRNA_databases/*.fasta; do echo $i,$insdir/index/$(basename $i .fasta)-L18; done | xargs -echo | sed 's/ /:/g')
 
 	declare -a cmd1 cmd2 cmd3 tdirs
 	local i catcmd tmp o1 o2 or1 or2 b1 b2 e1 e2 instances=$threads
