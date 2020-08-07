@@ -43,7 +43,7 @@ cluster::coexpression(){
 	done
 	[[ $mandatory -lt 9 ]] && _usage && return 1
 
-	commander::print "inferring coexpression"
+	commander::printinfo "inferring coexpression"
 
 	declare -a mapdata cmd1
 	declare -A visited

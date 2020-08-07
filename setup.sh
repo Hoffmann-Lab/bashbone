@@ -40,7 +40,7 @@ INSDIR=$(readlink -e $INSDIR)
 
 printf '' > $LOG || die "cannot access $LOG"
 progress::log -v $VERBOSITY -o $LOG
-commander::print "installation started. please be patient." >> $LOG
+commander::printinfo "installation started. please be patient." >> $LOG
 
 # solve duplicate entries by reverting order of writeout: function >> $LOG 2> >(tee -a $LOG >&2) to function 2> >(tee -a $LOG >&2) >> $LOG
 # slove sigpipe due to proken pipe by sigint by protecting tee's process with either trap '' INT or use tee -i to ignore termination signals
@@ -48,5 +48,5 @@ for i in "${INSTALL[@]}"; do
 	compile::$i -i $INSDIR -t $THREADS 2> >(tee -ai $LOG >&2) >> $LOG || die
 done
 
-commander::print "success" >> $LOG
+commander::printinfo "success" >> $LOG
 exit 0

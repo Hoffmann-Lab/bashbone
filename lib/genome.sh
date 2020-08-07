@@ -30,12 +30,12 @@ genome::mkdict() {
 	done
 	[[ $mandatory -lt 3 ]] && _usage && return 1
 
-	commander::print "creating genome dictionary"
+	commander::printinfo "creating genome dictionary"
 
 	$skipmd5 && {
 		commander::warn "skip checking md5 sums and genome dictionary creation respectively"
 	} || {
-		commander::print "checking md5 sums"
+		commander::printinfo "checking md5 sums"
 
 		local instances ithreads jmem jgct jcgct
 		read -r instances ithreads jmem jgct jcgct < <(configure::jvm -T $threads)

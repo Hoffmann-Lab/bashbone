@@ -39,7 +39,7 @@ quantify::featurecounts() {
 
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
-	commander::print "inferring library preparation method and quantifying reads"
+	commander::printinfo "inferring library preparation method and quantifying reads"
 
 	declare -a cmd1 cmd2 tfiles
 	local m f
@@ -225,7 +225,7 @@ quantify::tpm() {
 	done
 	[[ $mandatory -lt 4 ]] && _usage && return 1
 
-	commander::print "calculating transcripts per million"
+	commander::printinfo "calculating transcripts per million"
 
 	local m f countfile
 	declare -a cmd1

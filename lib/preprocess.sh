@@ -32,7 +32,7 @@ preprocess::fastqc() {
 	done
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
-	commander::print "calculating qualities"
+	commander::printinfo "calculating qualities"
 
 	declare -a cmd1 tdirs
 	local f
@@ -95,7 +95,7 @@ preprocess::cutadapt() {
 	done
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
-	commander::print "adapter clipping"
+	commander::printinfo "adapter clipping"
 
 	local instances ithreads
 	# parallelized cutadapt is faster on parallel data than max threads -> use max 10 per instance
@@ -188,7 +188,7 @@ preprocess::trimmomatic() {
 	done
 	[[ $mandatory -lt 6 ]] && _usage && return 1
 
-	commander::print "trimming"
+	commander::printinfo "trimming"
 
 	#offset 64: ASCII 64 to 106 (solexa: 59 to 106)
 	#offset 33: ASCII 33 to 75
@@ -338,7 +338,7 @@ preprocess::rcorrector() {
 	done
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
-	commander::print "correcting read errors"
+	commander::printinfo "correcting read errors"
 
 	declare -a cmd1 cmd2 tdirs
 	local i o1 b1 e1 o2 b2 e2
@@ -439,7 +439,7 @@ preprocess::sortmerna() {
 	done
 	[[ $mandatory -lt 7 ]] && _usage && return 1
 
-	commander::print "filtering rRNA fragments"
+	commander::printinfo "filtering rRNA fragments"
 
 	local sortmernaref=$(for i in $(ls -vdr $insdir/sortmerna-*/ | head -1)rRNA_databases/*.fasta; do echo $i,$(ls -vdr $insdir/sortmerna-*/ | head -1)index/$(basename $i .fasta)-L18; done | xargs -echo | sed 's/ /:/g')
 
@@ -609,7 +609,7 @@ preprocess::qcstats(){
 	done
 	[[ $mandatory -lt 4 ]] && _usage && return 1
 
-	commander::print "summarizing preprocessing stats"
+	commander::printinfo "summarizing preprocessing stats"
 
 	local i o b e c multiplier qdir tool tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.tsv)"
 	declare -a counts

@@ -41,24 +41,24 @@ expression::diego() {
 	done
 	[[ $mandatory -lt 8 ]] && _usage && return 1
 
-	commander::print "differential splice junction analyses"
+	commander::printinfo "differential splice junction analyses"
 
 	$skipmd5 && {
 		commander::warn "skip checking md5 sums and thus annotation preparation"
 	} || {
-		commander::print "checking md5 sums"
+		commander::printinfo "checking md5 sums"
 		local thismd5gtf tmp
 		declare -a cmdprep
 		[[ -s "$gtf" ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
 		if [[ ! -s ${gtf%.*}.diego.bed ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
-			commander::print "preparing annotation for differential splice junction analyses"
+			commander::printinfo "preparing annotation for differential splice junction analyses"
 			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD
 				gfftoDIEGObed.pl -g "$gtf" -o "${gtf%.*}.diego.bed"
 			CMD
 		fi
 
 		if [[ ! -s "${gtf%.*}.aggregated.gtf" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
-			commander::print "preparing annotation for exon_id tag based quantification"
+			commander::printinfo "preparing annotation for exon_id tag based quantification"
 			tmp=$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.gtf)
 			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				dexseq_prepare_annotation2.py
@@ -244,7 +244,7 @@ expression::deseq() {
 	done
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
-	commander::print "principal component and differential gene expression analyses"
+	commander::printinfo "principal component and differential gene expression analyses"
 
 	local instances=${#_mapper_deseq[@]} ithreads m
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 64 -T $threads)
@@ -394,7 +394,7 @@ expression::joincounts() {
 	done
 	[[ $mandatory -lt 7 ]] && _usage && return 1
 
-	commander::print "joining count values plus zscore calculation"
+	commander::printinfo "joining count values plus zscore calculation"
 
 	declare -a cmd1 cmd2 mapdata
 	local m f x i c t h mh sample condition library replicate factors cf e tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"

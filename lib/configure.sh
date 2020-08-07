@@ -30,7 +30,7 @@ configure::environment(){
 	export MALLOC_ARENA_MAX=4
 
 	$activate_conda && {
-		commander::print "setting up environment"
+		commander::printinfo "setting up environment"
 		source $insdir_tools/conda/bin/activate py2 &> /dev/null || return 1
 	}
 
@@ -55,19 +55,21 @@ configure::instances_by_threads(){
 		return 0
 	}
 
-	local OPTIND arg mandatory instances ithreads maxthreads
+	local OPTIND arg mandatory instances ithreads=1 maxthreads
 	while getopts 'i:t:T:m:' arg; do
 		case $arg in
 			i) ((mandatory++)); instances=$OPTARG;;
-			t) ((mandatory++)); ithreads=$OPTARG;;
+			t) ithreads=$OPTARG;;
 			T) ((mandatory++)); maxthreads=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 3 ]] && _usage && return 1
+	[[ $mandatory -lt 2 ]] && _usage && return 1
 
-	[[ $ithreads -gt $maxthreads ]] && ithreads=$maxthreads
-	[[ $instances -gt $((maxthreads/ithreads)) ]] && instances=$((maxthreads/ithreads))
+	local maxinstances=$maxthreads
+	[[ $maxinstances -gt $(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) ]] && maxinstances=$(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) #+10 for better approximation
+	[[ $instances -gt $maxthreads ]] && instances=$maxthreads
+	[[ $instances -gt $maxinstances ]] && instances=$maxinstances
 	ithreads=$((maxthreads/instances))
 
 	echo "$instances $ithreads"
@@ -96,6 +98,7 @@ configure::instances_by_memory(){
 	[[ $mandatory -lt 2 ]] && _usage && return 1
 
 	local maxmemory=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
+	[[ $memory -gt $maxmemory ]] && memory=$maxmemory
 	local instances=$((maxmemory/memory))
 	[[ $instances -gt $threads ]] && instances=$threads
 	local ithreads=$((threads/instances))
@@ -132,11 +135,11 @@ configure::jvm(){
 
 	local jmem jgct jcgct maxmemory=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
 	local maxinstances=$((maxmemory/memory))
-	[[ $maxinstances -gt $((maxthreads/ithreads)) ]] && maxinstances=$((maxthreads/ithreads))
+	[[ $maxinstances -gt $(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) ]] && maxinstances=$(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) #+10 for better approximation
 	[[ $instances -gt $maxthreads ]] && instances=$maxthreads
 	[[ $instances -gt $maxinstances ]] && instances=$maxinstances
-
 	ithreads=$((maxthreads/instances))
+
 	jmem=$((maxmemory/instances))
 	[[ $memory -gt 1 ]] && [[ $jmem -gt $memory ]] && jmem=$memory
 	jgct=$(((3+5*ithreads/8)/instances))

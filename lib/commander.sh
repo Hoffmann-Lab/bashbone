@@ -9,10 +9,22 @@ commander::print(){
 	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
 		mapfile -u $fd -t mapdata
-		printf ':INFO: %s\n' "${mapdata[@]}"
+		printf '%s\n' "${mapdata[@]}"
 		# while read -u $fd -r tmp; do
 		# 	echo ":INFO: $tmp"
 		# done
+	done
+	COMMANDER=()
+	return 0
+}
+
+commander::printinfo(){
+	[[ $* ]] && echo ":INFO: $*"
+	local fd
+	declare -a mapdata
+	for fd in "${COMMANDER[@]}"; do
+		mapfile -u $fd -t mapdata
+		printf ':INFO: %s\n' "${mapdata[@]}"
 	done
 	COMMANDER=()
 	return 0
@@ -146,7 +158,7 @@ commander::runcmd(){
 			a)	_cmds_runcmd=$OPTARG
 				[[ $_cmds_runcmd ]] || return 0
 				$verbose && {
-					commander::print "running commands of array ${!_cmds_runcmd}"
+					commander::printinfo "running commands of array ${!_cmds_runcmd}"
 					commander::printcmd -a _cmds_runcmd
 				}
 				local i sh tmpdir
@@ -222,7 +234,7 @@ commander::qsubcmd(){
 			a)	_cmds_qsubcmd=$OPTARG
 				[[ $_cmds_qsubcmd ]] || return 0
 				$verbose && {
-					commander::print "running commands of array ${!_cmds_qsubcmd}"
+					commander::printinfo "running commands of array ${!_cmds_qsubcmd}"
 					commander::printcmd -a _cmds_qsubcmd
 				}
 				[[ $penv ]] && penv+=" $threads"

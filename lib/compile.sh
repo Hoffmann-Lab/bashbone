@@ -54,7 +54,7 @@ compile::bashbone() {
 	local version 
 	source $src/lib/version.sh
 
-	commander::print "installing bashbone"
+	commander::printinfo "installing bashbone"
 	{	rm -rf "$insdir/bashbone-$version" && \
 		mkdir -p "$insdir/bashbone-$version" && \
 		cp -r "$src"/* "$insdir/bashbone-$version" && \
@@ -75,7 +75,7 @@ compile::conda() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
-	commander::print "installing conda and tools"
+	commander::printinfo "installing conda and tools"
 	{	url='https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh' && \
 		wget -q -O $insdir/miniconda.sh $url && \
 		version=$(bash $insdir/miniconda.sh -h | grep -F Installs | cut -d ' ' -f 3) && \
@@ -136,7 +136,7 @@ compile::java() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
-	commander::print "installing java"
+	commander::printinfo "installing java"
 	{	url="https://download.oracle.com/otn-pub/java/jdk/13.0.2+8/d4173c853231432d94f001e99d882ca7/jdk-13.0.2_linux-x64_bin.tar.gz" && \
 		wget -q --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O $insdir/java.tar.gz $url && \
 		version=$(echo $url | perl -lane '$_=~/jdk-([^-_]+)/; print $1') && \
@@ -178,7 +178,7 @@ compile::trimmomatic(){
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
-	commander::print "installing trimmomatic"
+	commander::printinfo "installing trimmomatic"
 	{	source $insdir/conda/bin/activate py2 && \
 		url='http://www.usadellab.org/cms/uploads/supplementary/Trimmomatic/Trimmomatic-0.39.zip' && \
 		wget -q $url -O $insdir/trimmomatic.zip && \
@@ -195,7 +195,7 @@ compile::sortmerna() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
-	commander::print "installing sortmerna"
+	commander::printinfo "installing sortmerna"
 	{	source $insdir/conda/bin/activate py2 && \
 		url='https://github.com/biocore/sortmerna/archive/2.1.tar.gz' && \
 		wget -q $url -O $insdir/sortmerna.tar.gz && \
@@ -222,7 +222,7 @@ compile::sortmerna_new_buggy() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
-	commander::print "installing sortmerna"
+	commander::printinfo "installing sortmerna"
 	{	source $insdir/conda/bin/activate py2 && \
 		url='https://github.com/biocore/sortmerna/archive/v3.0.3.tar.gz' && \
 		wget -q $url -O $insdir/sortmerna.tar.gz && \
@@ -248,7 +248,7 @@ compile::segemehl() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
-	commander::print "installing segemehl"
+	commander::printinfo "installing segemehl"
 	{	source $insdir/conda/bin/activate py2 && \
 		url='http://www.bioinf.uni-leipzig.de/Software/segemehl/downloads/segemehl-0.3.4.tar.gz' && \
 		wget -q $url -O $insdir/segemehl.tar.gz && \
@@ -288,7 +288,7 @@ compile::dexseq() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
-	commander::print "installing dexseq"
+	commander::printinfo "installing dexseq"
 	{	source $insdir/conda/bin/activate py2 && \
 		#cat <(echo '#!/usr/bin/env python') $insdir/conda/envs/py2r/lib/R/library/DEXSeq/python_scripts/dexseq_prepare_annotation.py > $insdir/conda/envs/py2/bin/dexseq_prepare_annotation.py && \
 		rm -f $insdir/conda/envs/py2r/lib/R/library/DEXSeq/python_scripts/dexseq_prepare_annotation.py && \
@@ -310,7 +310,7 @@ compile::wgcna() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
-	commander::print "installing wgcna"
+	commander::printinfo "installing wgcna"
 	{	source $insdir/conda/bin/activate py2r && \
 		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); library('devtools'); install_github('cran/WGCNA', threads=$threads, force=T)"
 	} || return 1
@@ -322,7 +322,7 @@ compile::dgca() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
-	commander::print "installing dgca"
+	commander::printinfo "installing dgca"
 	{	source $insdir/conda/bin/activate py2r && \
 		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); library('devtools'); install_github('andymckenzie/DGCA', threads=$threads, force=T)"
 	} || return 1
@@ -334,7 +334,7 @@ compile::revigo() {
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
-	commander::print "installing revigo"
+	commander::printinfo "installing revigo"
 	{	source $insdir/conda/bin/activate py2 && \
 		cd $insdir && \
         rm -rf revigo && \
@@ -350,7 +350,7 @@ compile::knapsack(){
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 
-	commander::print "installing knapsack"
+	commander::printinfo "installing knapsack"
 	{	source $insdir/conda/bin/activate py2r && \
 		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); install.packages('knapsack', repos='http://R-Forge.R-project.org')"
 	} || return 1

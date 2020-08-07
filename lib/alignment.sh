@@ -49,17 +49,17 @@ alignment::segemehl() {
 	done
 	[[ $mandatory -lt 6 ]] && _usage && return 1
 
-	commander::print "mapping segemehl"
+	commander::printinfo "mapping segemehl"
 
 	$skipmd5 && {
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	} || {
-		commander::print "checking md5 sums"
+		commander::printinfo "checking md5 sums"
 		local thismd5genome thismd5segemehl
 		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 		[[ -s "$genomeidx" ]] && thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
 		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5segemehl" || "$thismd5segemehl" != "$md5segemehl" ]]; then
-			commander::print "indexing genome for segemehl"
+			commander::printinfo "indexing genome for segemehl"
 			declare -a cmdidx
 			commander::makecmd -a cmdidx -s '|' -c {COMMANDER[0]}<<- CMD
 				segemehl -x "$genomeidx" -d "$genome"
@@ -180,18 +180,18 @@ alignment::star() {
 		esac
 	done
 	[[ $mandatory -lt 6 ]] && _usage && return 1
-	commander::print "mapping star"
+	commander::printinfo "mapping star"
 
 	$skipmd5 && {
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	} || {
-		commander::print "checking md5 sums"
+		commander::printinfo "checking md5 sums"
 		local thismd5genome thismd5star thismd5gtf
 		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 		[[ -s "$genomeidxdir/SA" ]] && thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
 		[[ -s $gtf ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
 		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5star" || "$thismd5star" != "$md5star" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
-			commander::print "indexing genome for star"
+			commander::printinfo "indexing genome for star"
 			local params=''
 			#100 = assumend usual read length
 			[[ "$thismd5gtf" ]] && params+=" --sjdbGTFfile '$gtf' --sjdbOverhang 100"
@@ -368,7 +368,7 @@ alignment::postprocess() {
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	commander::print "$job alignments"
+	commander::printinfo "$job alignments"
 
 	declare -a cmd1 cmd2 tdirs
 	for m in "${_mapper_process[@]}"; do
@@ -710,7 +710,7 @@ alignment::slice(){
 	done
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
-	commander::print "slicing alignments"
+	commander::printinfo "slicing alignments"
 
 	local minstances instances mthreads ithreads m
 	read -r minstances mthreads < <(configure::instances_by_memory -t $threads -m $memory)
@@ -852,7 +852,7 @@ alignment::rmduplicates(){
 	done
 	[[ $mandatory -lt 6 ]] && _usage && return 1
 
-	commander::print "removing duplicates"
+	commander::printinfo "removing duplicates"
 
 	local minstances mthreads ithreads jmem jgct jcgct 
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
@@ -970,7 +970,7 @@ alignment::clipmateoverlaps() {
 	done
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
-	commander::print "clipping ends of overlapping mate pairs"
+	commander::printinfo "clipping ends of overlapping mate pairs"
 
 	local m i o slice odir instances ithreads minstances mthreads
 	read -r minstances mthreads < <(configure::instances_by_memory -t $threads -m $memory)
@@ -1087,7 +1087,7 @@ alignment::reorder() {
 	done
 	[[ $mandatory -lt 7 ]] && _usage && return 1
 
-	commander::print "reordering alignments"
+	commander::printinfo "reordering alignments"
 
 	local minstances mthreads jmem jgct jcgct 
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
@@ -1229,7 +1229,7 @@ alignment::bamstats(){
 	done
 	[[ $mandatory -lt 3 ]] && _usage && return 1
 
-	commander::print "summarizing mapping stats"
+	commander::printinfo "summarizing mapping stats"
 
 	local m instances ithreads
 	for m in "${_mapper_bamstats[@]}"; do

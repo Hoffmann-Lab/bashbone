@@ -285,7 +285,7 @@ enrichment::go(){
 	done
 	( [[ $mandatory -lt 2 ]] || ( [[ ! $_idfiles_go ]] && [[ ! "$deseqdir" || ! $_cmpfiles_go ]] ) ) && _usage && return 1
 
-	commander::print "calculating go enrichment"
+	commander::printinfo "calculating go enrichment"
 
 	# https://www.bioconductor.org/help/course-materials/2017/BioC2017/Day1/Workshops/OmicsData/doc/enrichOmics.html
 	# ORA tests the overlap between DE genes (typically DE p-value < 0.05) and genes in a gene set based on the hypergeometric distribution.
