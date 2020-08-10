@@ -37,11 +37,13 @@ compile::all(){
 		compile::trimmomatic -i "$insdir" -t $threads && \
 		compile::sortmerna -i "$insdir" -t $threads && \
 		compile::segemehl -i "$insdir" -t $threads && \
+		compile::knapsack -i "$insdir" -t $threads && \
 		compile::dexseq -i "$insdir" -t $threads && \
 		compile::wgcna -i "$insdir" -t $threads && \
 		compile::dgca -i "$insdir" -t $threads && \
 		compile::revigo -i "$insdir" -t $threads && \
-		compile::knapsack -i "$insdir" -t $threads
+		compile::gem -i "$insdir" -t $threads && \
+		compile::idr -i "$insdir" -t $threads
 	} || return 1
 
 	return 0
@@ -100,10 +102,14 @@ compile::conda() {
 			numpy scipy pysam cython matplotlib \
 			datamash \
 			fastqc rcorrector \
-			star star-fusion bwa hisat2 \
-			samtools picard bamutil \
+			star star-fusion bwa hisat2 macs2 \
+			samtools picard bamutil bedtools \
+			ucsc-facount khmer \
+			bcftools gatk4 freebayes varscan platypus-variant vardict vardict-java \
+			vcflib vt snpeff snpsift
 		chmod 755 $insdir/conda/envs/py2/bin/run_rcorrector.pl && \
-		conda list -n py2 -f "fastqc|rcorrector|star|star-fusion|bwa|hisat2|samtols|picard|bamutil" | grep -v '^#' > $insdir/condatools.txt && \
+		conda list -n py2 -f "fastqc|rcorrector|star|star-fusion|bwa|hisat2|macs2|samtools|picard|bamutil|bedtools|ucsc-facount|khmer" | grep -v '^#' > $insdir/condatools.txt && \
+		conda list -n py2 -f "bcftools|gatk4|freebayes|varscan|platypus-variant|vardict|vardict-java|vcflib|vt|snpeff|snpsift" | grep -v '^#' >> $insdir/condatools.txt && \
 
 		conda install -n py3 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
@@ -127,6 +133,7 @@ compile::conda() {
 
 ## HELP for manual R package installation
 # from github:
+# sometimes INSTALL_opts = '--no-lock' is required, too
 # Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); library('devtools'); install_github('cran/WebGestaltR', threads=$threads)"
 # from src as linked at bioconductor.org
 # wget -O ~/src.tar.gz http://master.bioconductor.org/packages/release/bioc/src/contrib/EnrichmentBrowser_2.14.0.tar.gz
@@ -213,32 +220,6 @@ compile::sortmerna() {
 	for i in rRNA_databases/*.fasta; do
 		o=index/$(basename $i .fasta)-L18
 		echo -ne "bin/indexdb_rna --ref $i,$o -m 4096 -L 18\0"
-	done | xargs -0 -P $threads -I {} bash -c {} || return 1
-
-	return 0
-}
-
-compile::sortmerna_new_buggy() {
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
-
-	commander::printinfo "installing sortmerna"
-	{	source $insdir/conda/bin/activate py2 && \
-		url='https://github.com/biocore/sortmerna/archive/v3.0.3.tar.gz' && \
-		wget -q $url -O $insdir/sortmerna.tar.gz && \
-		tar -xzf $insdir/sortmerna.tar.gz -C $insdir && \
-		rm $insdir/sortmerna.tar.gz && \
-		cd $(ls -dv $insdir/sortmerna-*/ | tail -1) && \
-		url='https://github.com/biocore/sortmerna/releases/download/v3.0.3/sortmerna-3.0.3-Linux_U16.sh' && \
-		wget -q $url -O install.sh && \
-		bash install.sh --prefix=$PWD --skip-license && \
-		mkdir -p $insdir/latest && \
-		ln -sfn $PWD/bin $insdir/latest/sortmerna
-	} || return 1
-
-	for i in rRNA_databases/*.fasta; do
-		o=index/$(basename $i .fasta)-L18
-		echo -ne "bin/indexdb --ref $i,$o -m $memory -L 18\0"
 	done | xargs -0 -P $threads -I {} bash -c {} || return 1
 
 	return 0
@@ -353,6 +334,236 @@ compile::knapsack(){
 	commander::printinfo "installing knapsack"
 	{	source $insdir/conda/bin/activate py2r && \
 		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); install.packages('knapsack', repos='http://R-Forge.R-project.org')"
+	} || return 1
+
+	return 0
+}
+
+compile::gem() {
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
+
+	commander::printinfo "installing gem"
+	{	source $insdir/conda/bin/activate py2 && \
+		url='https://groups.csail.mit.edu/cgs/gem/download/gem.v3.4.tar.gz' && \
+		version=$(basename $url | sed -E 's/.+v([0-9]+.+).tar.gz/\1/') && \
+		wget -q $url -O $insdir/gem.tar.gz && \
+		tar -xzf $insdir/gem.tar.gz -C $insdir && \
+		mv $insdir/gem $insdir/gem-$version
+		rm $insdir/gem.tar.gz && \
+		cd $insdir/gem-$version && \
+		mkdir -p bin && \
+		wget -q -O bin/Read_Distribution_default.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_default.txt && \
+		wget -q -O bin/Read_Distribution_CLIP.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_CLIP.txt && \
+		compile::_javawrapper bin/gem $(readlink -e gem.jar) $insdir/latest/java/java && \
+		mkdir -p $insdir/latest && \
+		ln -sfn $PWD/bin $insdir/latest/gem
+	} || return 1
+
+	return 0
+}
+
+compile::idr() {
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
+
+	commander::printinfo "installing idr"
+	{	source $insdir/conda/bin/activate py3 && \
+		url='https://github.com/kundajelab/idr/archive/2.0.4.2.tar.gz' && \
+		wget -q $url -O $insdir/idr.tar.gz && \
+		tar -xzf $insdir/idr.tar.gz -C $insdir && \
+		rm $insdir/idr.tar.gz && \
+		cd $(ls -vd $insdir/idr*/ | tail -1) && \
+		pip install numpy matplotlib && \
+		python setup.py install && \
+		mkdir -p $insdir/latest && \
+		ln -sfn $PWD/bin $insdir/latest/idr
+	} || return 1
+
+	return 0
+}
+
+### OLD STUFF
+
+compile::annovar() {
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@" || return 1
+
+	commander::printinfo "installing annovar"
+	{	url="http://www.openbioinformatics.org/annovar/download/0wgxR2rIVP/annovar.latest.tar.gz" && \
+		wget -q $url -O $insdir/annovar.tar.gz && \
+		tar -xzf $insdir/annovar.tar.gz -C $insdir && \
+		rm $insdir/annovar.tar.gz && \
+		cd $insdir/annovar && \
+		url='http://www.openbioinformatics.org/annovar/download/table_annovar.pl' && \
+		wget -q $url -O table_annovar.pl && \
+		chmod 755 table_annovar.pl && \
+		mkdir -p $insdir/latest && \
+		ln -sfn $PWD/bin $insdir/latest/annovar
+	} || return 1
+
+	return 0
+}
+
+compile::_setup_annovar() {
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@" || return 1
+
+	commander::printinfo "configuring annovar databases"
+	{	source $insdir/conda/bin/activate py2 && \
+		cd -P $insdir/latest/annovar && \
+		#refSeq
+		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar refGene humandb/ && \
+		# ./annotate_variation.pl -buildver hg19 -downdb ensGene humandb/ #UCSC - needs seq to get mRNA
+		# ./annotate_variation.pl -buildver hg19 -downdb knownGene humandb/ #UCSC - needs seq to get mRNA
+		# ./annotate_variation.pl -buildver hg19 -downdb seq humandb/hg19_seq
+		# ./retrieve_seq_from_fasta.pl humandb/hg19_ensGene.txt -seqdir humandb/hg19_seq -format ensGene -outfile humandb/hg19_ensGeneMrna.fa
+		# ./retrieve_seq_from_fasta.pl humandb/hg19_knownGene.txt -seqdir humandb/hg19_seq -format knownGene -outfile humandb/hg19_knownGeneMrna.fa
+		url='http://hgdownload.soe.ucsc.edu/goldenPath/hg19/database/ensemblToGeneName.txt.gz' && \
+		wget -q $url -O humandb/ensemblToGeneName.txt.gz && \
+		gzip -d humandb/ensemblToGeneName.txt.gz  && \
+		# ./annotate_variation.pl -buildver hg19 -downdb cytoBand humandb/
+		# ./annotate_variation.pl -buildver hg19 -downdb genomicSuperDups humandb/ 
+		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar esp6500siv2_all humandb/ && \
+		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar 1000g2015aug humandb/ && \
+		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar exac03 humandb/ && \
+		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar avsnp147 humandb/ && \
+		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar dbnsfp33a humandb/ && \
+		# ./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar snp142 humandb
+		./annotate_variation.pl -buildver hg19 -downdb tfbsConsSites humandb/ && \
+		./annotate_variation.pl -buildver hg19 -downdb targetScanS humandb/ && \
+		./annotate_variation.pl -buildver hg19 -downdb wgRna humandb/ && \
+		./annotate_variation.pl -buildver hg19 -downdb gwasCatalog humandb/ && \
+		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar clinvar_20170130 humandb/
+	} || return 1
+
+	return 0
+}
+
+compile::_setup_snpeff() {
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@" || return 1
+
+	commander::printinfo "configuring snpeff databases"
+	{	source $insdir/conda/bin/activate py2 && \
+		java -jar snpEff.jar download -v GRCh37.75 && \
+		#java -jar snpEff.jar download -v hg19 #hg19: UCSC, hg19kg: UCSC knownGenes, GRCh37.75: Ensembl 
+		url='http://ftp.ebi.ac.uk/pub/databases/ensembl/encode/integration_data_jan2011/byDataType/openchrom/jan2011/promoter_predictions/master_known.bed' && \
+		wget -q $url -O data/promoter.bed && \
+		url='http://ftp.ebi.ac.uk/pub/databases/ensembl/encode/integration_data_jan2011/byDataType/openchrom/jan2011/mirna_tss/miRNA_promoters_hg19_edited_data.bed' && \
+		wget -q $url -O data/miRNApromoter.bed && \
+		url='ftp://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh37/clinvar.vcf.gz' && \
+		wget -q $url -O data/clinvar.vcf.gz && \
+		url='ftp://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh37/clinvar.vcf.gz.tbi' && \
+		wget -q $url -O data/clinvar.vcf.gz.tbi && \
+		url='ftp://ftp.broadinstitute.org/pub/ExAC_release/release1/ExAC.r1.sites.vep.vcf.gz' && \
+		wget -q $url -O data/exac.vcf.gz && \
+		url='ftp://ftp.broadinstitute.org/pub/ExAC_release/release1/ExAC.r1.sites.vep.vcf.gz.tbi' && \
+		wget -q $url -O data/exac.vcf.gz.tbi && \
+		# url='https://drive.google.com/open?id=0B60wROKy6OqceTNZRkZnaERWREk'
+		#(see https://sites.google.com/site/jpopgen/dbNSFP)
+		url='ftp://dbnsfp:dbnsfp@dbnsfp.softgenetics.com/dbNSFPv2.9.3.zip' && \
+		wget -q $url -O data/dbnsfp.zip && \
+		unzip -q -o -d data dbnsfp.zip && \
+		rm data/dbnsfp.zip && \
+		head -n 1 data/dbNSFP*_variant.chr1 > data/dbNSFP.txt && \
+		cat dbNSFP*_variant.chr* | grep -v "^#" >> data/dbNSFP.txt && \
+		rm dbNSFP*_variant.chr* && \
+		$MUVAC/bin/samtools/bgzip -f -@ $threads < data/dbNSFP.txt > data/dbNSFP.txt.gz && \
+		$MUVAC/bin/samtools/tabix -f -s 1 -b 2 -e 2 data/dbNSFP.txt.gz && \
+		# url='http://www.genome.gov/admin/gwascatalog.txt'
+		url='ftp://ftp.ebi.ac.uk/pub/databases/gwas/releases/latest/gwas-catalog-associations.tsv' && \
+		wget -q $url -O data/gwas.txt
+	} || return 1
+
+	return 0
+}
+
+compile::m6aviewer() {
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
+
+	commander::printinfo "installing m6aviewer"
+	{	source $insdir/conda/bin/activate py2 && \
+		url='http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar' && \
+		mkdir -p $insdir/m6aViewer/bin && \
+		wget -q $url -O $insdir/m6aViewer/m6aViewer_1_6_1.jar && \
+		cd $insdir/m6aViewer && \
+		compile::_javawrapper $PWD/bin/m6aViewer $(readlink -e m6aViewer_1_6_1.jar) $insdir/latest/java/java && \
+		mkdir -p $insdir/latest && \
+		ln -sfn $PWD/bin $insdir/latest/m6aViewer
+	} || return 1
+
+	return 0
+}
+
+compile::metpeak() {
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
+
+	commander::printinfo "installing metpeak"
+	{	source $insdir/conda/bin/activate py2r && \
+		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); library('devtools'); install_github('compgenomics/MeTPeak', build_opts = c('--no-resave-data', '--no-manual'), threads=$threads, force=T)"
+	} || return 1
+
+	return 0
+}
+
+compile::zerone() {
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
+
+	commander::printinfo "installing zerone"
+	{	source $insdir/conda/bin/activate py2 && \
+		cd $insdir && \
+		rm -rf zerone && \
+		git clone https://github.com/nanakiksc/zerone.git && \
+		cd zerone && \
+		make clean; true && \
+		make -j $threads && \
+		mkdir bin && \
+		mv zerone bin && \
+		mkdir -p $insdir/latest && \
+		ln -sfn $PWD/bin $insdir/latest/zerone
+	} || return 1
+
+	return 0
+}
+
+compile::dpgpc() {
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
+
+	commander::printinfo "installing dp_gp_cluster"
+	{	source $insdir/conda/bin/activate py2 && \
+		cd $insdir && \
+		rm -rf DP_GP_cluster && \
+		git clone https://github.com/PrincetonUniversity/DP_GP_cluster.git && \
+		cd DP_GP_cluster && \
+		sed -i -r '18,19{s/^#\s*//}' bin/DP_GP_cluster.py && \
+		pip install GPy pandas numpy scipy matplotlib cython sklearn && \
+		python setup.py install && \
+		touch bin/DP_GP_cluster && \
+		chmod 755 bin/* && \
+		mkdir -p $insdir/latest && \
+		ln -sfn $PWD/bin $insdir/latest/DP_GP_cluster
+	} || return 1
+
+	cat <<- 'EOF' > $insdir/latest/DP_GP_cluster/DP_GP_cluster || return 1
+		#!/usr/bin/env bash
+		export PYTHONPATH=$CONDA_PREFIX/lib/python2.7/site-packages/:$PYTHONPATH
+		$(cd $(dirname \$0) && echo $PWD)/DP_GP_cluster.py $*
+	EOF
+	return 0
+}
+
+compile::webgestalt() {
+	local insdir threads
+	compile::_parse -r insdir -s threads "$@"
+
+	commander::printinfo "installing webgestalt"
+	{	source $insdir/conda/bin/activate py2r && \
+		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); library('devtools'); install_github('cran/WebGestaltR', threads=$threads, force=T)"
 	} || return 1
 
 	return 0

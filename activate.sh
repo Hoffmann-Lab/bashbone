@@ -12,8 +12,8 @@
 				insdir_bashbone="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
 				insdir_tools_bashbone="$(dirname "$insdir_bashbone")"
 				unset OPTIND activate_conda_bashbone
-				while getopts :i:c: ARG; do
-					case $ARG in
+				while getopts :i:c: arg; do
+					case $arg in
 						i) insdir_tools_bashbone="$OPTARG";;
 						c) activate_conda_bashbone="$OPTARG";;
 						:) echo ":ERROR: argument missing" >&2 ; return 1;;
@@ -31,7 +31,34 @@
 						}
 						INSDIR="$insdir_bashbone"
 						bashbone() {
-							declare -f | grep -P '::.+\(\)' | grep -vF -e compile:: -e helper::_ -e progress:: -e commander::_ | sort -V | sed -r 's/\s+\(\)\s+$//'
+							_usage(){
+								commander::print {COMMANDER[0]}<<- EOF
+									Bashbone
+
+									A bash library for workflow and pipeline design within but not restricted to the scope of Next Generation Sequencing (NGS) data analyses.
+
+									Usage:
+									-h | help
+									-l | list functions for users
+									-e | list functions for experienced users
+									-d | list functions for developers
+									-a | list all, including non-standalone, functions
+								EOF
+								return 0
+							}
+							local OPTIND arg
+							while getopts 'hleda' arg; do
+								case $arg in
+								h) _usage; return 0;;
+								l) declare -F | grep -oE '\S+::\S+' | grep -vF -e ::_ -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
+								e) declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
+								d) declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper::_ | grep -F -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
+								a) declare -F | grep -oE '\S+::\S+' | sort -t ':' -k1,1 -k3,3V; return 0;;
+								*) _usage; return 1;;
+								esac
+							done
+							_usage
+							return 0
 						}
 					} || {
 						echo ":ERROR: bashbone environment setup failed! do" >&2

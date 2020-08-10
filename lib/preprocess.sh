@@ -438,6 +438,9 @@ preprocess::sortmerna() {
 
 	commander::printinfo "filtering rRNA fragments"
 
+	local instances ithreads
+	read -r instances ithreads < <(configure::instances_by_memory -i $threads -m $memory)
+
 	local insdir=$(dirname $(dirname $(which sortmerna)))/rRNA_databases
 	local sortmernaref=$(for i in $insdir/rRNA_databases/*.fasta; do echo $i,$insdir/index/$(basename $i .fasta)-L18; done | xargs -echo | sed 's/ /:/g')
 
@@ -464,10 +467,9 @@ preprocess::sortmerna() {
 		# outfile gets extension from input file
 		# in.fq.bz2 > in.fq + rRNA.out|out -> rRNA.out.fq|out.fq -> rRNA.out.fq.gz|out.fq.gz
 		if [[ ${_fq2_sortmerna[$i]} ]]; then
-			instances=1
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				mergefq.sh
-				-t $threads
+				-t $ithreads
 				-m ${memory}M
 				-d "${tdirs[-1]}"
 				-i "${_fq1_sortmerna[$i]}"
@@ -519,6 +521,8 @@ preprocess::sortmerna() {
 			_fq1_sortmerna[$i]="$o1"
 			_fq2_sortmerna[$i]="$o2"
 		else
+			instances=$threads
+
 			helper::makecatcmd -c catcmd -f "${_fq1_sortmerna[$i]}"
 			[[ $catcmd == "cat" ]] && {
 				tmp="${_fq1_sortmerna[$i]}"
