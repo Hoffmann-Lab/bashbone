@@ -18,12 +18,12 @@ callvariants::vcfzip() {
 
 	local OPTIND arg mandatory skip=false threads
 	declare -a tozip_vcfzip
-	while getopts 'S:s:t:v:' arg; do
+	while getopts 'S:s:t:z:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
-			v) ((mandatory++)); tozip_vcfzip+=("$OPTARG");;
+			z) ((mandatory++)); tozip_vcfzip+=("$OPTARG");;
 			*) _usage; return 1;;
 		esac
 	done
