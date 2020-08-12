@@ -9,32 +9,42 @@ callvariants::vcfzip() {
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
-			-i <vcf>      | path to
+			-z <var>      | of path to file
+			example: 
+			$funcname -t 4 -v f1 -v f2
 		EOF
 		return 0
 	}
 
-	local OPTIND arg mandatory skip=false threads vcf
-	while getopts 'S:s:t:i:' arg; do
+	local OPTIND arg mandatory skip=false threads
+	declare -a tozip_vcfzip
+	while getopts 'S:s:t:v:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((mandatory++)); threads=$OPTARG;;
-			i) ((mandatory++)); vcf="$OPTARG";;
+			v) ((mandatory++)); tozip_vcfzip+=("$OPTARG");;
 			*) _usage; return 1;;
 		esac
 	done
 	[[ $mandatory -lt 2 ]] && _usage && return 1
 
-	commander::printinfo "compressing vcf"
+	commander::printinfo "compressing and indexing vcf"
 
 	declare -a cmd1 cmd2
-	readlink -e "$vcf" | file -f - | grep -Eo 'gzip' &&	commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-		bgzip -f -@ $threads < "$vcf" > "$vcf.gz"
-	CMD
-	commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-		tabix -f -p vcf "$vcf.gz"
-	CMD
+	local f
+	for f in "${tozip_vcfzip[@]}"; do
+		declare -n _f_vcfzip=$f
+		readlink -e "$_f_vcfzip" | file -f - | grep -qF 'compressed' || {
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				bgzip -f -@ $threads < "$_f_vcfzip" > "$_f_vcfzip.gz"
+			CMD
+			_f_vcfzip="$_f_vcfzip.gz"
+		}
+		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			tabix -f -p vcf "$_f_vcfzip"
+		CMD
+	done
 
 	$skip && {
 		commander::printcmd -a cmd1
