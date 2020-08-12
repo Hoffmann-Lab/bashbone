@@ -1,5 +1,5 @@
 #! /usr/bin/env Rscript
-# (c) Konstantin Riege, Arne Sahm
+# (c) Konstantin Riege
 suppressMessages(library("httr"))
 
 args = commandArgs(TRUE)

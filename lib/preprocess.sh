@@ -248,10 +248,10 @@ preprocess::trimmomatic() {
 		helper::basename -f "${_fq1_trimmomatic[$i]}" -o o2 -e e2
 		e1=$(echo $e1 | cut -d '.' -f 1)
 		e2=$(echo $e2 | cut -d '.' -f 1)
-		o1="$outdir/$o1.$e1.gz"
-		o2="$outdir/$o2.$e2.gz"
 		os1="$outdir/singletons.$o1.$e1.gz"
 		os2="$outdir/singletons.$o2.$e2.gz"
+		o1="$outdir/$o1.$e1.gz"
+		o2="$outdir/$o2.$e2.gz"
 		if [[ ${_fq2_trimmomatic[$i]} ]]; then
 			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
 				trimmomatic

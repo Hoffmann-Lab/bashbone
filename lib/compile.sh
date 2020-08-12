@@ -132,10 +132,12 @@ compile::conda() {
 }
 
 ## HELP for manual R package installation
+# from mirror:
+# Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); install.packages('stringi', repos='http://cloud.r-project.org')"
 # from github:
 # sometimes INSTALL_opts = '--no-lock' is required, too
 # Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); library('devtools'); install_github('cran/WebGestaltR', threads=$threads)"
-# from src as linked at bioconductor.org
+# from src as linked e.g. at bioconductor.org:
 # wget -O ~/src.tar.gz http://master.bioconductor.org/packages/release/bioc/src/contrib/EnrichmentBrowser_2.14.0.tar.gz
 # Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); install.packages('~/src.tar.gz', repos = NULL, type = 'source')"
 

@@ -211,51 +211,55 @@ expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o resul
 # Third-party software
 ---
 
-## Production
-| Tool        | Source                                              | doi/pmid |
-| --- | --- | --- |
-| segemehl    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| STAR    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| Trimmomatic    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| SortMeRNA    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| Rcorrector    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| DEXSeq    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| WGCNA    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| DGCA    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| REVIGO    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| GEM    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| IDR    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| Macs2    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| fastqc    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| khmer    | <https://khmer.readthedocs.io/en/v2.1.1/index.html> | 10.12688/f1000research.6924.1 |
-| bcftools    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| GATK    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| vcflib    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| vt    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| bamutil    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| bedtools    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| Picard    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| featureCounts    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| DESeq2    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| Cutadapt    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| ReSeqC    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| HTSeq    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| DIEGO    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| rngtools    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| gseabase    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| clusterprofiler    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
+## In production
 
-## To implement
-| Tool        | Source                                              | doi/pmid |
-| --- | --- | --- |
-| STAR-Fusion    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| BWA    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| Hisat2    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| Freebayes    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| Varscan    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| Platypus    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| VarDict    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
-| snpeff    | <http://www.bioinf.uni-leipzig.de/Software/segemehl/> | 19750212, 24512684 |
+| Tool | Source | DOI |
+| ---  | ---    | --- |
+| BamUtil       | <https://genome.sph.umich.edu/wiki/BamUtil>                         | 10.1101/gr.176552.114 |
+| BCFtools      | <http://www.htslib.org/doc/bcftools.html>                           | 10.1093/bioinformatics/btr509 |
+| BEDTools      | <https://bedtools.readthedocs.io>                                   | 10.1093/bioinformatics/btq033 |
+| Cutadapt      | <https://cutadapt.readthedocs.io/en/stable>                         | 10.14806/ej.17.1.200 |
+| DESeq2        | <https://bioconductor.org/packages/release/bioc/html/DESeq2.html>   | 10.1186/s13059-014-0550-8 |
+| DEXSeq        | <https://bioconductor.org/packages/release/bioc/html/DEXSeq.html>   | 10.1101/gr.133744.111 |
+| DIEGO         | <http://www.bioinf.uni-leipzig.de/Software/DIEGO>                   | 10.1093/bioinformatics/btx690 |
+| DGCA          | <https://github.com/andymckenzie/DGCA>                              | 10.1186/s12918-016-0349-1 |
+| fastqc        | <https://www.bioinformatics.babraham.ac.uk/projects/fastqc>         | NA |
+| featureCounts | <http://subread.sourceforge.net>                                    | 10.1093/bioinformatics/btt656  |
+| GATK          | <https://github.com/broadinstitute/gatk>                            | 10.1101/gr.107524.110 <br> 10.1038/ng.806 |
+| GEM           | <https://groups.csail.mit.edu/cgs/gem>                              | 10.1371/journal.pcbi.1002638 |
+| GSEABase      | <https://bioconductor.org/packages/release/bioc/html/GSEABase.html> | NA |
+| HTSeq         | <https://htseq.readthedocs.io>                                      | 10.1093/bioinformatics/btu638 |
+| IDR           | <https://github.com/kundajelab/idr>                                 | 10.1214/11-AOAS466 |
+| khmer         | <https://khmer.readthedocs.io>                                      | 10.12688/f1000research.6924.1 |
+| Macs2         | <https://github.com/macs3-project/MACS>                             | 10.1186/gb-2008-9-9-r137 |
+| Picard        | <http://broadinstitute.github.io/picard>                            | NA |
+| Rcorrector    | <https://github.com/mourisl/Rcorrector>                             | 10.1186/s13742-015-0089-y |
+| ReSeqC        | <http://rseqc.sourceforge.net>                                      | 10.1093/bioinformatics/bts356 |
+| REVIGO        | <https://code.google.com/archive/p/revigo-standalone>               | 10.1371/journal.pone.0021800 |
+| segemehl      | <http://www.bioinf.uni-leipzig.de/Software/segemehl>                | 10.1186/gb-2014-15-2-r34 <br> 10.1371/journal.pcbi.1000502 |
+| SortMeRNA     | <https://bioinfo.lifl.fr/RNA/sortmerna>                             | 10.1093/bioinformatics/bts611 |
+| STAR          | <https://github.com/alexdobin/STAR>                                 | 10.1093/bioinformatics/bts635 |
+| Trimmomatic   | <http://www.usadellab.org/cms/?page=trimmomatic>                    | 10.1093/bioinformatics/btu170 |
+| vcflib        | <https://github.com/vcflib/vcflib>                                  | NA |
+| Vt            | <https://genome.sph.umich.edu/wiki/Vt>                              | 10.1093/bioinformatics/btv112 |
+| WGCNA         | <https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA> | 10.1186/1471-2105-9-559 |
+
+
+## In preparation
+
+| Tool | Source | DOI |
+| ---  | ---    | --- |
+| BWA             | <https://github.com/lh3/bwa>                               | 10.1093/bioinformatics/btp324 |
+| clusterProfiler | <https://guangchuangyu.github.io/software/clusterProfiler> | NA |
+| freebayes       | <https://github.com/ekg/freebayes>                         | arXiv:1207.3907 |
+| HISAT2          | <https://daehwankimlab.github.io/hisat2>                   | 10.1038/nmeth.3317 |
+| Platypus        | <https://rahmanteamdevelopment.github.io/Platypus>         | 10.1038/ng.3036 |
+| SnpEff          | <https://pcingola.github.io/SnpEff>                        | 10.4161/fly.19695 |
+| STAR-Fusion     | <https://github.com/STAR-Fusion/STAR-Fusion/wiki>          | 10.1101/120295 |
+| VarDict         | <https://github.com/AstraZeneca-NGS/VarDict>               | 10.1093/nar/gkw227 |
+| VarScan         | <http://dkoboldt.github.io/varscan>                        | 10.1101/gr.129684.111 |
+
+
 
 
 
