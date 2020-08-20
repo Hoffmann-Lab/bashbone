@@ -101,15 +101,16 @@ alignment::slice(){
 		for f in "${_bams_slice[@]}"; do
 			o="$tdir"/$(basename "$f")
 			o="${o%.*}"
-			
+
+			$skip || {
+				_bamslices_slice["$f"]="$o.slices.info"
+				ls -v "$tmpdir/genome/slice".*.bed | sed -E "s@.+([0-9]+)\.bed@$o.slice.\1.bam@" > "$o.slices.info"
+			}
+
 			alignment::_index -1 cmd2 -t $ithreads -i "$f"
 
-			_bamslices_slice["$f"]="$o.slices.info"
-			rm -f "$o.slices.info"
-			
-			for bed in "$tmpdir/genome/slice".*.bed; do
+			for bed in $(ls -v "$tmpdir/genome/slice".*.bed); do
 				i=$(basename "$bed" .bed | rev | cut -d '.' -f 1 | rev)
-				echo "$o.slice.$i.bam" >> "$o.slices.info"
 				commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					samtools view 
 						-@ $ithreads
@@ -341,7 +342,7 @@ alignment::clipmateoverlaps() {
 			o="${o%.*}.mateclipped.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
