@@ -9,7 +9,7 @@ helper::makezipcmd(){
 			-a <cmds>    | array of
 			-t <threads> | number of
 			-c <file>    | compress if not compressed
-			-z <var>     | to compress file
+			-z <var>     | of path to file
 			example: 
 			$funcname -a cmds -c f1.txt -c f2.txt -z o1 -z o2
 		EOF

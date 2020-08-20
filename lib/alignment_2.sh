@@ -101,11 +101,12 @@ alignment::slice(){
 		for f in "${_bams_slice[@]}"; do
 			o="$tdir"/$(basename "$f")
 			o="${o%.*}"
-			_bamslices_slice["$f"]="$o.slices.info"
-
+			
 			alignment::_index -1 cmd2 -t $ithreads -i "$f"
 
+			_bamslices_slice["$f"]="$o.slices.info"
 			rm -f "$o.slices.info"
+			
 			for bed in "$tmpdir/genome/slice".*.bed; do
 				i=$(basename "$bed" .bed | rev | cut -d '.' -f 1 | rev)
 				echo "$o.slice.$i.bam" >> "$o.slices.info"
