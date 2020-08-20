@@ -81,17 +81,13 @@ alignment::slice(){
 		$minstances "$tmpdir/genome" "$tmpdir/genome/chr.bed"
 	CMD
 
-	$skip && {
-		commander::printcmd -a cmd1
+	{	rm -f "$tmpdir/genome/slice".*.bed && \
+		conda activate py2r && \
+		commander::runcmd -v -b -t $threads -a cmd1 && \
+		conda activate py2
 	} || {
-		{	rm -f "$tmpdir/genome/slice".*.bed && \
-			conda activate py2r && \
-			commander::runcmd -v -b -t $threads -a cmd1 && \
-			conda activate py2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
+		commander::printerr "$funcname failed"
+		return 1
 	}
 
 	for m in "${_mapper_slice[@]}"; do
@@ -102,10 +98,8 @@ alignment::slice(){
 			o="$tdir"/$(basename "$f")
 			o="${o%.*}"
 
-			$skip || {
-				_bamslices_slice["$f"]="$o.slices.info"
-				ls -v "$tmpdir/genome/slice".*.bed | sed -E "s@.+([0-9]+)\.bed@$o.slice.\1.bam@" > "$o.slices.info"
-			}
+			_bamslices_slice["$f"]="$o.slices.info"
+			ls -v "$tmpdir/genome/slice".*.bed | sed -E "s@.+([0-9]+)\.bed@$o.slice.\1.bam@" > "$o.slices.info"
 
 			alignment::_index -1 cmd2 -t $ithreads -i "$f"
 
