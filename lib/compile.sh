@@ -74,7 +74,7 @@ compile::upgrade(){
 }
 
 compile::conda() {
-	local insdir threads
+	local insdir threads url version
 	compile::_parse -r insdir -s threads "$@"
 
 	commander::printinfo "installing conda and tools"
@@ -149,11 +149,11 @@ compile::conda() {
 # Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('cran/WebGestaltR', Ncpus=$threads, upgrade='never', force=T)"
 
 compile::java() {
-	local insdir threads
+	local insdir threads url version
 	compile::_parse -r insdir -s threads "$@"
 
 	commander::printinfo "installing java"
-	{	url="https://download.oracle.com/otn-pub/java/jdk/13.0.2+8/d4173c853231432d94f001e99d882ca7/jdk-13.0.2_linux-x64_bin.tar.gz" && \
+	{	url="https://download.oracle.com/otn-pub/java/jdk/14.0.2+12/205943a0976c4ed48cb16f1043c5c647/jdk-14.0.2_linux-x64_bin.tar.gz" && \
 		wget -q --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O $insdir/java.tar.gz $url && \
 		version=$(echo $url | perl -lane '$_=~/jdk-([^-_]+)/; print $1') && \
 		tar -xzf $insdir/java.tar.gz -C $insdir && \
@@ -191,12 +191,13 @@ compile::_javawrapper() {
 
 compile::trimmomatic(){
 	# conda trimmomatic wrapper is written in python and thus cannot handle process substitutions
-	local insdir threads
+	local insdir threads url
 	compile::_parse -r insdir -s threads "$@"
 
 	commander::printinfo "installing trimmomatic"
 	{	source $insdir/conda/bin/activate py2 && \
-		url='http://www.usadellab.org/cms/uploads/supplementary/Trimmomatic/Trimmomatic-0.39.zip' && \
+		url='http://www.usadellab.org/cms/?page=trimmomatic' && \
+		url='http://www.usadellab.org/cms/'$(curl -s $url | grep Version | grep -oE '[^"]+Trimmomatic-[0-9]+\.[0-9]+\.zip' | sort -Vr | head -1) && \
 		wget -q $url -O $insdir/trimmomatic.zip && \
 		unzip -o -d $insdir $insdir/trimmomatic.zip && \
 		rm $insdir/trimmomatic.zip && \
@@ -235,16 +236,17 @@ compile::sortmerna() {
 }
 
 compile::segemehl() {
-	local insdir threads
+	local insdir threads url
 	compile::_parse -r insdir -s threads "$@"
 
 	commander::printinfo "installing segemehl"
 	{	source $insdir/conda/bin/activate py2 && \
-		url='http://www.bioinf.uni-leipzig.de/Software/segemehl/downloads/segemehl-0.3.4.tar.gz' && \
+		url='http://www.bioinf.uni-leipzig.de/Software/segemehl/downloads/' && \
+		url="$url"$(curl -s $url | grep -oE 'segemehl-[0-9\.]+\.tar\.gz' | sort -Vr | head -1) && \
 		wget -q $url -O $insdir/segemehl.tar.gz && \
 		tar -xzf $insdir/segemehl.tar.gz -C $insdir && \
 		rm $insdir/segemehl.tar.gz && \
-        cd $insdir/segemehl-0.3.4 && \
+		cd $(ls -dv $insdir/segemehl-*/ | tail -1) && \
         export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig && \
 		make clean; true && \
 		make -j $threads all && \
@@ -349,16 +351,17 @@ compile::knapsack(){
 }
 
 compile::gem() {
-	local insdir threads
+	local insdir threads url version
 	compile::_parse -r insdir -s threads "$@"
 
 	commander::printinfo "installing gem"
 	{	source $insdir/conda/bin/activate py2 && \
-		url='https://groups.csail.mit.edu/cgs/gem/download/gem.v3.4.tar.gz' && \
-		version=$(basename $url | sed -E 's/.+v([0-9]+.+).tar.gz/\1/') && \
+		url='https://groups.csail.mit.edu/cgs/gem/download/' && \
+		url="$url"$(curl -s $url | grep -oE "gem.v[0-9\.]+\.tar\.gz" | sort -Vr | head -1) && \
+		version=$(basename $url | sed -E 's/gem.v([0-9\.]+)\.tar\.gz/\1/') && \
 		wget -q $url -O $insdir/gem.tar.gz && \
 		tar -xzf $insdir/gem.tar.gz -C $insdir && \
-		mv $insdir/gem $insdir/gem-$version
+		mv $insdir/gem $insdir/gem-$version && \
 		rm $insdir/gem.tar.gz && \
 		cd $insdir/gem-$version && \
 		mkdir -p bin && \
@@ -373,16 +376,17 @@ compile::gem() {
 }
 
 compile::idr() {
-	local insdir threads
+	local insdir threads url
 	compile::_parse -r insdir -s threads "$@"
 
 	commander::printinfo "installing idr"
 	{	source $insdir/conda/bin/activate py3 && \
-		url='https://github.com/kundajelab/idr/archive/2.0.4.2.tar.gz' && \
+		url=https://github.com/kundajelab/idr && \
+		url="$url/"$(curl -s $url/tags | grep -oE "archive\/[0-9\.]+\.tar\.gz" | sort -Vr | head -1) && \
 		wget -q $url -O $insdir/idr.tar.gz && \
 		tar -xzf $insdir/idr.tar.gz -C $insdir && \
 		rm $insdir/idr.tar.gz && \
-		cd $(ls -vd $insdir/idr*/ | tail -1) && \
+		cd $(ls -vd $insdir/idr-*/ | tail -1) && \
 		pip install numpy matplotlib && \
 		python setup.py install && \
 		mkdir -p $insdir/latest && \
@@ -394,12 +398,12 @@ compile::idr() {
 
 ### OLD STUFF
 
-compile::annovar() {
-	local insdir threads
+compile::_annovar() {
+	local insdir threads url
 	compile::_parse -r insdir -s threads "$@" || return 1
 
 	commander::printinfo "installing annovar"
-	{	url="http://www.openbioinformatics.org/annovar/download/0wgxR2rIVP/annovar.latest.tar.gz" && \
+	{	url="http://www.openbioinformatics.org/annovar/download/xxxxxxxx/annovar.latest.tar.gz" && \
 		wget -q $url -O $insdir/annovar.tar.gz && \
 		tar -xzf $insdir/annovar.tar.gz -C $insdir && \
 		rm $insdir/annovar.tar.gz && \

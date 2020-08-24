@@ -61,7 +61,15 @@ Load the library and list available functions. Each function comes with a usage.
 
 ```bash
 source activate.sh
-bashbone
+bashbone -h
+```
+
+Check out stand-alone scripts to retrieve genomes or SRA datasets
+
+```bash
+cd scripts
+./dlgenome.sh -h
+./sra-dump.sh -h
 ```
 
 ## Developers centerpiece
@@ -78,7 +86,7 @@ commander::qsubcmd
 
 ### Example
 
-Example using the builtin file descriptors array `COMMANDER` with seperator (`-s '|'`) based concatenation of interpreted and non-interpreted Here-Documents. Each concatenation will be stored as a single command in a de-referenced array (`-a cmds`) Optionally, an output file can be defined (`-o <path/to/file>`).
+Example using the builtin file descriptors array `COMMANDER` with separator (`-s '|'`) based concatenation of interpreted and non-interpreted Here-Documents. Each concatenation will be stored as a single command in a de-referenced array (`-a cmds`) Optionally, an output file can be defined (`-o <path/to/file>`).
 
 ```bash
 declare -a cmds
@@ -100,6 +108,8 @@ commander::runcmd -v -b -t $threads -a cmds
 
 ### OOP bash
 
+A small excerpt of possible member functions. See `bashbone -a` helper underscore functions for a full list.
+
 ```bash
 declare -a x
 helper::addmemberfunctions -v x
@@ -119,18 +129,32 @@ x.print
 # Installation
 ---
 
+## Full installation
+
 ```bash
 setup -i all -d <path/to/installation>
 source <path/of/installation/activate.sh>
-bashbone
+bashbone -h
 ```
 
-## Update to a newer release
+## Upgrade to a newer release
 
 ```bash
 setup -i upgrade -d <path/of/installation>
 source <path/of/installation/activate.sh>
-bashbone
+bashbone -h
+```
+
+## Update a specific tool
+
+Bashbone supports downloading latest sources of Trimmomatic, segemehl and/or GEM as comma separated list.
+
+```bash
+setup -i trimmomatic,segemehl,gem -d <path/of/installation>
+source <path/of/installation/activate.sh> -c true
+trimmomatic -version
+segemehl -h
+gem --help
 ```
 
 # Usage
