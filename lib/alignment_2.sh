@@ -1014,13 +1014,13 @@ alignment::bqsr() {
 			commander::runcmd -v -b -t $instances -a cmd3
 		} || {
 			rm -rf "${tdirs[@]}"
-			rm -f "$dbsnp"
+			[[ $(basename "$dbsnp") =~ ^cleanup ]] && rm -f "$dbsnp"
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
 
 	rm -rf "${tdirs[@]}"
-	rm -f "$dbsnp"
+	[[ $(basename "$dbsnp") =~ ^cleanup ]] && rm -f "$dbsnp"
 	return 0
 }

@@ -51,7 +51,7 @@ callvariants::vcfzip() {
 		commander::printcmd -a cmd2
 	} || {
 		{	commander::runcmd -v -b -t 1 -a cmd1 && \
-			commander::runcmd -v -b -t $threads -a cmd1
+			commander::runcmd -v -b -t $threads -a cmd2
 		} || {
 			commander::printerr "$funcname failed"
 			return 1

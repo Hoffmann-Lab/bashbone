@@ -1,19 +1,25 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 shopt -s extglob
-trap 'die' INT TERM
-#trap 'kill -PIPE 0' EXIT # kills parental processes as well - shlog conflict
-#trap 'kill -PIPE -- -$$' EXIT # kill all childs - works only if $$ is process group leader
-trap 'kill -PIPE $(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+") &> /dev/null' EXIT # parse pstree
-# AVOID DOUBLE FORKS -> run(){cmd &}; run & -> i.e. cmd gets new process group and cannot be killed
 
 die(){
-	rm -rf $outdir/tmp
-	echo -ne "\e[0;31m"
-	echo ":ERROR: $*" | tee -a $log >&2
-	echo -ne "\e[m"
+	echo ":ERROR: $*"
 	exit 1
 }
+
+cleanup(){
+	[[ $outdir && -e "$outdir/tmp" ]] && rm -rf "$outdir/tmp"
+}
+
+trap 'die "killed"' INT TERM
+
+trap '
+	cleanup
+	sleep 1
+	declare -a pids=($(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
+	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null
+	printf "\r"
+' EXIT
 
 usage(){
 cat <<- EOF
@@ -21,7 +27,7 @@ cat <<- EOF
 	$(basename $0) downloads most recent human or mouse genome and annotation including gene ontology and optionally dbSNP
 
 	VERSION
-	0.3.1
+	0.3.2
 
 	SYNOPSIS
 	$(basename $0) -g [hg19|hg38|mm10] -s -d
@@ -433,8 +439,7 @@ checkopt() {
 		-s | --s | -dbsnp | --dbsnp) release='ensembl';;
 		-n | --n | -ncbi | --ncbi) release='ncbi';;
 		-d | --d | -descriptions | --descriptions) go=1;;
-		-v | --v | -verbose | --verbose) v=1;;
-
+		-v | --v | -verbose | --verbose) v=true;;
 		-o | --o | -out | --out) arg=true; outdir=$2;;
 		-g | --g | -genome | --genome) arg=true; g=$2;;
 		-t | --t | -threads | --threads) arg=true; threads=$2;;
@@ -481,16 +486,17 @@ touch $log || {
 	exit 1
 }
 
-if [[ $v ]]; then
-	dlgenome::$g$release 2>&1 | tee -a $log
+${v:=false} && {
+	dlgenome::$g$release 2>&1 | tee -ai $log
 	[[ ${PIPESTATUS[0]} -gt 0 ]] && die
-else
+	echo ":INFO: success" | tee -ai $log
+} || {
 	echo ":INFO: check log by executing: tail -f $log"
 	progressbar &
 	progresslog $log &
 	dlgenome::$g$release &> $log
 	[[ $? -gt 0 ]] && die
-fi
+	echo ":INFO: success" >> $log
+}
 
-echo ":INFO: success" | tee -a $log
 exit 0

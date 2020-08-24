@@ -1,11 +1,15 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
-trap 'cleanup; kill -PIPE $(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+") &> /dev/null' EXIT
-trap 'exit $?' INT TERM
-trap 'exit 1' USR1
+shopt -s extglob
+
+die(){
+	#in contrast to exit, kill works also if triggered within a subshell - $(sratoolkit [..])
+	echo -e "$*" >&2
+	kill -USR1 $$
+}
 
 cleanup(){
-	[[ "$tmp" ]] && {
+	[[ $tmp && -e "$tmp" ]] && {
 		rm -rf "$tmp"
 		[[ "$cfg" ]] && {
 			sed -i -r "s@/repository/user/main/public/root\s*=.+@$cfg@" "$HOME/.ncbi/user-settings.mkfg"
@@ -15,39 +19,52 @@ cleanup(){
 	}
 }
 
-die(){
-	#in contrast to exit, kill works also if triggered within a subshell - $(sratoolkit [..])
-	echo -e "$*" >&2
-	kill -USR1 $$
-}
+trap 'exit $?' INT TERM
+trap 'exit 1' USR1
+
+trap '
+	cleanup
+	sleep 1
+	declare -a pids=($(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
+	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null
+	printf "\r"
+' EXIT
 
 usage(){
 	cat <<- EOF
-		SYNOPSIS
-		  $(basename "$0") retrieves fastq data from ncbi sra based on GSM, SRR or SRX accession numbers
+		DESCRIPTION
+		$(basename "$0") retrieves fastq data from ncbi sra based on GSM, SRR or SRX accession numbers
 		  - initially, information for given accession numbers will be printed to stderr
 		  - downloads will be saved to current working directory ("$PWD")
 		  - support for parallel download instances
 		  - if installed, sra-toolkit via ncbi gov resource is priorized over retrieval via ebi uk mirror
 		  - ebi uk mirror is used as fallback upon fastq-dump errors (not true for fasterq-dump)
+
+		VERSION
+		0.1.1
+
 		REQUIREMENTS
 		  - esearch (from eutilities https://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/)
 		  - fastq-dump/fasterq-dump (optional, from stra-toolkit https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/)
 		  - wget
-		USAGE
-		  $(basename "$0") [OPTIONS] [GSM|SRR|SRX|SRP] [GSM|SRR|SRX|SRP] [..]
+
+		SYNOPSIS
+		$(basename "$0") [OPTIONS] [GSM|SRR|SRX|SRP] [GSM|SRR|SRX|SRP] [..]
+
 		OPTIONS
-		  -s        : optional, show received information for given accession numbers and exit
-		  -o [file] : optional, additionally print information for given accession numbers to file
-		  -p [num]  : optional, number of maximum parallel download instances (2)
-		  -t [path] : optional, path to temporary directory ("$PWD")
-		  -e        : optional, switch to ebi uk mirror utilizing wget
-		  -f        : optional, switch to fasterq-dump 
-		              NOTE: not yet recommended!
-		                - uncompressed output
-		                - misconfigured read deflines
+		-s        : optional, show received information for given accession numbers and exit
+		-o [file] : optional, additionally print information for given accession numbers to file
+		-p [num]  : optional, number of maximum parallel download instances (2)
+		-t [path] : optional, path to temporary directory ("$PWD")
+		-e        : optional, switch to ebi uk mirror utilizing wget
+		-f        : optional, switch to fasterq-dump 
+		            NOTE: not yet recommended!
+		              - uncompressed output
+		              - misconfigured read deflines
+
 		EXAMPLE
 		  $(basename "$0") -p 4 -t /dev/shm GSM1446883 SRR1528586 SRX663213
+
 		REFERENCES
 		(c) Konstantin Riege
 		konstantin.riege{a}leibniz-fli{.}de

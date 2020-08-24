@@ -1,22 +1,37 @@
 #!/usr/bin/env bash
 # (c) Konstantin Riege
-usage() {	
-	echo "merge paired fastq(.gz|.bz2) files:"
-	echo "$(basename $0) -[tmd] <value> -i <fastq1> -j <fastq2> -o <fastq>"
-	echo "unmerge:"
-	echo "$(basename $0) -u 1 -i <fastq> -o <fastq1>"
-	echo "$(basename $0) -u 2 -i <fastq> -o <fastq2>"
-	echo "options:"
-	echo "-t [value]  | threads ($t)"
-	echo "-m [string] | amount of memory to use eg. 64000M (available: $m)"
-	echo "-d [path]   | tmpdir with size eq -m ($PWD)"
-	echo "-i [path]   | input fastq_R1 (see -j) or merged fastq (see -u)"
-	echo "-j [path]   | input fastq_R2 - triggers merge mode"
-	echo "-o [path]   | out fastq"
-	echo "-z          | compress output using pigz with $t threads (fallback: gzip)"
-	echo "-u [1|2]    | unmerge fastq (see -i) to fastq_R1 or fastq_R2 (see -o)"
-	echo "-h          | this help"
-	exit 1
+
+usage(){
+cat <<- EOF
+	DESCRIPTION
+	$(basename $0) merges or unmerges paired fastq(.gz|.bz2) files
+
+	VERSION
+	0.1.0
+
+	SYNOPSIS MERGE
+	$(basename $0) -[tmd] <value> -i <fastq1> -j <fastq2> -o <fastq>
+
+	SYNOPSIS UNMERGE
+	$(basename $0) -u 1 -i <fastq> -o <fastq1>
+	$(basename $0) -u 2 -i <fastq> -o <fastq2>
+
+	OPTIONS
+	-t [value]  | threads ($t)
+	-m [string] | amount of memory to use eg. 64000M (available: $m)
+	-d [path]   | tmpdir with size eq -m ($PWD)
+	-i [path]   | input fastq_R1 (see -j) or merged fastq (see -u)
+	-j [path]   | input fastq_R2 - triggers merge mode
+	-o [path]   | out fastq
+	-z          | compress output using pigz with $t threads (fallback: gzip)
+	-u [1|2]    | unmerge fastq (see -i) to fastq_R1 or fastq_R2 (see -o)
+	-h          | this help
+
+	REFERENCES
+	(c) Konstantin Riege
+	konstantin.riege{a}leibniz-fli{.}de
+	EOF
+	exit 0
 }
 
 i=''

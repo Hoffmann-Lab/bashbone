@@ -119,7 +119,7 @@ x.print
 # Installation
 ---
 
-```
+```bash
 setup -i all -d <path/to/installation>
 source <path/of/installation/activate.sh>
 bashbone
@@ -127,7 +127,7 @@ bashbone
 
 ## Update to a newer release
 
-```
+```bash
 setup -i upgrade -d <path/of/installation>
 source <path/of/installation/activate.sh>
 bashbone
@@ -135,6 +135,24 @@ bashbone
 
 # Usage
 ---
+
+## Retrieve SRA datasets
+
+Use the enclosed script to fetch sequencing data from SRA
+
+```bash
+source <path/of/installation/activate.sh> -c true
+sra-dump.sh -h
+```
+
+## Retrieve genomes
+
+Use the enclosed script to fetch human hg19/hg38 or mouse mm9/mm10 genomes and annotations.
+
+```bash
+source <path/of/installation/activate.sh> -c true
+dlgenome.sh -h
+```
 
 ## Sample info file
 
@@ -258,9 +276,3 @@ expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o resul
 | STAR-Fusion     | <https://github.com/STAR-Fusion/STAR-Fusion/wiki>          | 10.1101/120295 |
 | VarDict         | <https://github.com/AstraZeneca-NGS/VarDict>               | 10.1093/nar/gkw227 |
 | VarScan         | <http://dkoboldt.github.io/varscan>                        | 10.1101/gr.129684.111 |
-
-
-
-
-
-
