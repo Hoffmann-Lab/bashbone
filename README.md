@@ -286,7 +286,6 @@ expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o resul
 | Vt            | <https://genome.sph.umich.edu/wiki/Vt>                              | 10.1093/bioinformatics/btv112 |
 | WGCNA         | <https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA> | 10.1186/1471-2105-9-559 |
 
-
 ## In preparation
 
 | Tool | Source | DOI |

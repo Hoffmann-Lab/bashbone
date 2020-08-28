@@ -120,7 +120,7 @@ configure::instances_by_memory(){
 	}
 
 	local OPTIND arg mandatory threads memory
-	while getopts 'i:t:T:m:' arg; do
+	while getopts 't:m:' arg; do
 		case $arg in
 			t) ((mandatory++)); threads=$OPTARG;;
 			m) ((mandatory++)); memory=$OPTARG;;

@@ -245,14 +245,16 @@ preprocess::trimmomatic() {
 	local i o1 o2 e1 e2
 	for i in "${!_fq1_trimmomatic[@]}"; do
 		helper::basename -f "${_fq1_trimmomatic[$i]}" -o o1 -e e1
-		helper::basename -f "${_fq2_trimmomatic[$i]}" -o o2 -e e2
 		e1=$(echo $e1 | cut -d '.' -f 1)
-		e2=$(echo $e2 | cut -d '.' -f 1)
 		os1="$outdir/singletons.$o1.$e1.gz"
-		os2="$outdir/singletons.$o2.$e2.gz"
 		o1="$outdir/$o1.$e1.gz"
-		o2="$outdir/$o2.$e2.gz"
+
 		if [[ ${_fq2_trimmomatic[$i]} ]]; then
+			helper::basename -f "${_fq2_trimmomatic[$i]}" -o o2 -e e2
+			e2=$(echo $e2 | cut -d '.' -f 1)
+			os2="$outdir/singletons.$o2.$e2.gz"
+			o2="$outdir/$o2.$e2.gz"
+
 			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
 				trimmomatic
 				-Xmx${jmem}m
@@ -439,9 +441,9 @@ preprocess::sortmerna() {
 	commander::printinfo "filtering rRNA fragments"
 
 	local instances ithreads
-	read -r instances ithreads < <(configure::instances_by_memory -i $threads -m $memory)
+	read -r instances ithreads < <(configure::instances_by_memory -t $threads -m $memory)
 
-	local insdir=$(dirname $(dirname $(which sortmerna)))/rRNA_databases
+	local insdir=$(dirname $(dirname $(which sortmerna)))
 	local sortmernaref=$(for i in $insdir/rRNA_databases/*.fasta; do echo $i,$insdir/index/$(basename $i .fasta)-L18; done | xargs -echo | sed 's/ /:/g')
 
 	declare -a cmd1 cmd2 cmd3 tdirs

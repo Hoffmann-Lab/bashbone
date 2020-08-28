@@ -127,10 +127,10 @@ callpeak::macs() {
 
 	[[ $buffer -lt 100000 ]] && {
 		params="--buffer-size $buffer"
-		read -r instances ithreads < <(configure::instances_by_memory -i $threads -m $memory)
+		read -r instances ithreads < <(configure::instances_by_memory -t $threads -m $memory)
 	} || {
 		params=''
-		read -r instances ithreads < <(configure::instances_by_memory -i $threads -m $(( (numchr*buffer*mult)/1024/1024 )))
+		read -r instances ithreads < <(configure::instances_by_memory -t $threads -m $(( (numchr*buffer*mult)/1024/1024 )))
 	}
 
 	local m i f o odir nf nrf tf rf x pff nff params2
