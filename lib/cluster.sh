@@ -140,10 +140,12 @@ cluster::coexpression_deseq(){
 			commander::runcmd -v -b -t $threads -a cmd1 && \
 			conda activate py2
 		} || {
+			rm -f "$tmp"*
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
+	rm -f "$tmp"*
 
 	declare -a cmd2
 	local m e i type wdir cdir wdir odir
@@ -320,13 +322,13 @@ cluster::coexpression(){
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 9 ]] && _usage && return 1
+	[[ $mandatory -lt 7 ]] && _usage && return 1
 	[[ $biotype && ! $gtf ]] && _usage && return 1
 
 	commander::printinfo "inferring coexpression"
 
 	declare -a cmd1
-	local m f cdir odir suff header sample countfile params tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
+	local m f cdir odir suff header sample countfile tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
 
 	for m in "${_mapper_coexpression[@]}"; do
@@ -335,11 +337,11 @@ cluster::coexpression(){
 		mkdir -p "$odir"
 
 		declare -n _bams_coexpression=$m
-		suff=$(cat <(echo -e "${_bams_coexpression[0]}\n${_bams_coexpression[1]}") | rev | paste - - | sed -E 's/(.+)\..+\t\1.+/\1/' | rev)
+		suff=$(cat <(echo -e "${_bams_coexpression[0]}\n${_bams_coexpression[1]}") | rev | paste - - | sed -E 's/(.+\.).+\t\1.+/\1/' | rev)
 		header='id'
 		rm -f $joined
 
-		for f in "${_bams_rmduplicates[@]}"; do
+		for f in "${_bams_coexpression[@]}"; do
 			sample=$(basename $f $suff)
 			countfile=$(readlink -e "$countsdir/$m/$sample"*.tpm | head -1)
 			header+="\t$sample"
@@ -355,31 +357,21 @@ cluster::coexpression(){
 
 		echo -e "$header" > "$odir/experiments.tpm"
 		cat "$joined" >> "$odir/experiments.tpm"
-		awk '{print $1}' "$joined" > "$odir/experiments.filtered.genes"
 
-		[[ $biotype ]] && {
-			perl -lane -F'\t' '{
-				if($#F==3){
-					print $F[0] if $F[2]==$cb;
-				} else {
-					next unless $F[2]=="gene";
-					$F[-1]=~/gene_biotype\s+"([^"]+)/;
-					if ($1 eq $cb && $F[-1]=~/gene_id\s+"([^"]+)/){
-						print $1;
-					}
-				}
-			}' -- -cb=$biotype "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
-			grep -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
-			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
-		}
-
-		head -1 "$odir/experiments.tpm" > "$odir/expeiments.filtered.tpm"
-		grep -f "$odir/experiments.filtered.genes" "$odir/experiments.tpm" >> "$odir/experiments.filtered.tpm"
-
-		params=FALSE
-		[[ $clusterfilter =~ 2 ]] && params=TRUE
-		commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-			wgcna.R $((memory/1024/2)) TPM $params "$odir/experiments.filtered.tpm" "$odir/$e"
+		commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+			Rscript - <<< '
+				args <- commandArgs(TRUE);
+				intsv <- args[1];
+				outf <- args[2];
+				df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names = F);
+				df <- log(df+1);
+				df <- df-rowMeans(df);
+				df <- df/apply(df,1,sd);
+				df[is.na(df)] <- 0;
+				write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
+			' 
+		CMD
+			"$odir/experiments.tpm" "$odir/experiments.tpm.zscores"
 		CMD
 	done
 
@@ -390,12 +382,64 @@ cluster::coexpression(){
 			commander::runcmd -v -b -t $threads -a cmd1 && \
 			conda activate py2
 		} || {
+			rm -f "$tmp"*
+			commander::printerr "$funcname failed"
+			return 1
+		}
+	}
+	rm -f "$tmp"*
+
+	declare -a cmd2
+	local m odir params
+	for m in "${_mapper_coexpression[@]}"; do
+		odir="$outdir/$m"
+		mkdir -p "$odir"
+
+		[[ $clusterfilter =~ 2 ]] && {
+			awk '{i=2; ok=0; while(i<NF){if($i>=5){ok=1} i=i+1} if(ok){print $1}}' "$odir/experiments.tpm" > "$odir/experiments.filtered.genes"
+		} || {
+			awk '{print $1}' "$odir/experiments.tpm" > "$odir/experiments.filtered.genes"
+		}
+
+		[[ $biotype ]] && {
+			perl -F'\t' -slane '{
+				if($#F==3){
+					print $F[0] if $F[2] eq $cb;
+				} else {
+					next unless $F[2] eq "gene";
+					$F[-1]=~/gene_biotype\s+"([^"]+)/;
+					if ($1 eq $cb && $F[-1]=~/gene_id\s+"([^"]+)/){
+						print $1;
+					}
+				}
+			}' -- -cb=$biotype "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
+			grep -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
+			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
+		}
+
+		head -1 "$odir/experiments.tpm" > "$odir/experiments.filtered.tpm"
+		grep -f "$odir/experiments.filtered.genes" "$odir/experiments.tpm" >> "$odir/experiments.filtered.tpm"
+
+		params=FALSE
+		[[ $clusterfilter =~ 2 ]] && params=TRUE
+		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			wgcna.R $((memory/1024/2)) TPM $params "$odir/experiments.filtered.tpm" "$odir"
+		CMD
+	done
+
+	$skip && {
+		commander::printcmd -a cmd2
+	} || {
+		{	conda activate py2r && \
+			commander::runcmd -v -b -t $threads -a cmd2 && \
+			conda activate py2
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
 
-	declare -a cmd2
+	declare -a cmd3
 	local m e i j wdir odir type
 	for m in "${_mapper_coexpression[@]}"; do
 		wdir="$outdir/$m"
@@ -420,26 +464,24 @@ cluster::coexpression(){
 				grep -f "$odir/genes.list" "$wdir/experiments.$e" | sed "s/$/\t$type/" | tee -a "$wdir/modules.$e" >> "$odir/experiments.$e"
 				grep -f "$odir/genes.list" "$wdir/experiments.$e.zscores" | sed "s/$/\t$type/" | tee -a "$wdir/modules.$e.zscores" >> "$odir/experiments.$e.zscores"
 
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 					vizco.R Module ${e^^*} "$odir/experiments.$e" "$odir/experiments.$e"
 				CMD
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 					vizco.R Module Z-Score "$odir/experiments.$e.zscores" "$odir/experiments.$e.zscores"
 				CMD
 			done
 
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 				vizco.R Modules ${e^^*} "$wdir/modules.$e" "$wdir/modules.$e"
 			CMD
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 				vizco.R Modules Z-Score "$wdir/modules.$e.zscores" "$wdir/modules.$e.zscores"
 			CMD
 
 			# work on cluster
 			echo "$(head -1 $wdir/experiments.$e) type" | tr ' ' '\t' > "$wdir/cluster.$e"
-
 			cp "$wdir/cluster.$e" "$wdir/cluster.$e.zscores"
-			cp "$wdir/cluster.mean.$e" "$wdir/cluster.mean.$e.zscores"
 
 			for i in $(seq 0 $(cut -d ' ' -f 1 "$wdir/wgcna.cluster2modules" | sort -n | tail -1)); do
 				type="Cluster.$(printf '%03d' $i)"
@@ -463,18 +505,18 @@ cluster::coexpression(){
 				done
 
 				# Modules as legend title is correct here
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 					vizco.R Modules ${e^^*} "$odir/experiments.$e" "$odir/experiments.$e"
 				CMD
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 					vizco.R Modules Z-Score "$odir/experiments.$e.zscores" "$odir/experiments.$e.zscores"
 				CMD
 			done
 
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 				vizco.R Cluster ${e^^*} "$wdir/cluster.$e" "$wdir/cluster.$e"
 			CMD
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 				vizco.R Cluster Z-Score "$wdir/cluster.$e.zscores" "$wdir/cluster.$e.zscores"
 			CMD
 
@@ -482,10 +524,10 @@ cluster::coexpression(){
 	done
 
 	$skip && {
-		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	} || {
 		{	conda activate py2r && \
-			commander::runcmd -v -b -t $threads -a cmd2 && \
+			commander::runcmd -v -b -t $threads -a cmd3 && \
 			conda activate py2
 		} || {
 			commander::printerr "$funcname failed"

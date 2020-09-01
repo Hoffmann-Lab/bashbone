@@ -30,7 +30,6 @@ if (filter) {
     counts = counts_raw
 }
 if (datatype == "TPM") counts = log2(counts+1)
-pdf(file.path(outdir, "wgcna.histogram.pdf"))
 ggplot(counts[1], aes(x=counts[,1])) + 
   geom_histogram(binwidth = 0.05, aes(fill=..count..)) + 
   theme_bw() + 
@@ -38,7 +37,7 @@ ggplot(counts[1], aes(x=counts[,1])) +
   ggtitle(paste('log2',datatype,"Histogram",sep=" ")) + 
   xlab(datatype) + 
   ylab('#Genes')
-graphics.off()
+suppressMessages(ggsave(file.path(outdir, "wgcna.histogram.pdf")))
 
 # enableWGCNAThreads(threads)
 

@@ -105,4 +105,4 @@ ggplot(molt, aes(x = variable, y = value, group = id, color = mean_pw_ch_log)) +
 	scale_color_gradient(low = "blue", high = "red") +
 	scale_linetype_discrete(name = paste("Median",labeldatatype, sep=" ")) +
 	facet_wrap( ~ type , ncol = (as.integer(sqrt(cluster_count)+1)))
-ggsave(paste(outbase, "trajectories.pdf", sep="."))
+suppressMessages(ggsave(paste(outbase, "trajectories.pdf", sep=".")))
