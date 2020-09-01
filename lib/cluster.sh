@@ -85,7 +85,7 @@ cluster::coexpression_deseq(){
 			$okfc=0;
 			$okpval=0;
 			for (my $i=1; $i<$#F; $i+=3){
-				$okmean=1 if $F[$i] > 5;
+				$okmean=1 if $F[$i] >= 5;
 				$okfc=1 if exists $F[$i+4] && abs(abs($F[$i+1])-abs($F[$i+4]))>=0.5;
 				$okpval=1 if $F[$i+2] > 0 && $F[$i+2] <= 0.05;
 			}
