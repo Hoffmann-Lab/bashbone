@@ -105,13 +105,13 @@ cluster::coexpression_deseq(){
 
 		[[ $biotype ]] && {
 			perl -lane -F'\t' '{
-				if($#F==3){
+				if($#F<5){
 					print $F[0] if $F[2]==$cb;
 				} else {
-					next unless $F[2]=="gene";
 					$F[-1]=~/gene_biotype\s+"([^"]+)/;
 					if ($1 eq $cb && $F[-1]=~/gene_id\s+"([^"]+)/){
-						print $1;
+						print $1 unless exists $m{$1};
+						$m{$1}=1;
 					}
 				}
 			}' -- -cb=$biotype "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
@@ -403,13 +403,13 @@ cluster::coexpression(){
 
 		[[ $biotype ]] && {
 			perl -F'\t' -slane '{
-				if($#F==3){
-					print $F[0] if $F[2] eq $cb;
+				if($#F<5){
+					print $F[0] if $F[2]==$cb;
 				} else {
-					next unless $F[2] eq "gene";
 					$F[-1]=~/gene_biotype\s+"([^"]+)/;
 					if ($1 eq $cb && $F[-1]=~/gene_id\s+"([^"]+)/){
-						print $1;
+						print $1 unless exists $m{$1};
+						$m{$1}=1;
 					}
 				}
 			}' -- -cb=$biotype "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
