@@ -5,7 +5,7 @@ expression::diego() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-5 <skip>     | true/false md5sums, gtf prep respectively
@@ -102,7 +102,7 @@ expression::diego() {
 		for f in "${_cmpfiles_diego[@]}"; do
 			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
-			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do 
+			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					odir="$outdir/$m/$c-vs-$t"
 					mkdir -p "$odir"
@@ -144,7 +144,7 @@ expression::diego() {
 						fi
 						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 							diego.py
-								-d $min 
+								-d $min
 								-a "$odir/input.sj.tsv"
 								-b "$odir/groups.tsv"
 								-x $c
@@ -152,7 +152,7 @@ expression::diego() {
 						CMD
 						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 							diego.py
-								-d $min 
+								-d $min
 								-a "$odir/input.sj.tsv"
 								-b "$odir/groups.tsv"
 								-x $c
@@ -171,7 +171,7 @@ expression::diego() {
 					CMD
 					commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 						diego.py
-							-d $min 
+							-d $min
 							-a "$odir/input.ex.tsv"
 							-b "$odir/groups.tsv"
 							-x $c
@@ -179,7 +179,7 @@ expression::diego() {
 					CMD
 					commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 						diego.py
-							-d $min 
+							-d $min
 							-a "$odir/input.ex.tsv"
 							-b "$odir/groups.tsv"
 							-x $c
@@ -214,7 +214,7 @@ expression::deseq() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -262,7 +262,7 @@ expression::deseq() {
 		for f in "${_cmpfiles_deseq[@]}"; do
 			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
-			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do 
+			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					cmps+=("$c $t")
 					unset sample condition library replicate factors
@@ -294,7 +294,7 @@ expression::deseq() {
 			commander::runcmd -v -b -t $instances -a cmd1 && \
 			conda activate py2 && \
 			commander::runcmd -v -b -t $threads -a cmd2
-		} || { 
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}
@@ -307,7 +307,7 @@ expression::_deseq() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-1 <cmds1>   | array of
 			-2 <cmds2>   | array of
 			-t <threads> | number of
@@ -363,7 +363,7 @@ expression::joincounts() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -408,10 +408,10 @@ expression::joincounts() {
 		for f in "${_cmpfiles_join[@]}"; do
 			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
-			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do 
-				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do 
+			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
+				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					vsc="$deseqdir/$m/$c-vs-$t/experiments.vsc"
-					
+
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
 						[[ ${countfiles["$sample.$replicate"]} ]] && continue
@@ -476,7 +476,7 @@ expression::joincounts() {
 					df <- df/apply(df,1,sd);
 					df[is.na(df)] <- 0;
 					write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
-				' 
+				'
 			CMD
 				"$odir/experiments.$e" "$odir/experiments.$e.zscores"
 			CMD
@@ -492,7 +492,7 @@ expression::joincounts() {
 					df <- df/apply(df,1,sd);
 					df[is.na(df)] <- 0;
 					write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
-				' 
+				'
 			CMD
 				"$odir/experiments.mean.$e" "$odir/experiments.mean.$e.zscores"
 			CMD
@@ -507,7 +507,7 @@ expression::joincounts() {
 			commander::runcmd -v -b -t $threads -a cmd2 && \
 			conda activate py2
 		} || {
-			rm -f "$tmp".* 
+			rm -f "$tmp".*
 			commander::printerr "$funcname failed"
 			return 1
 		}

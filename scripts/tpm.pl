@@ -2,14 +2,14 @@
 # (c) Konstantin Riege
 
 # http://www.ensembl.org/Help/Glossary?id=346
-# The canonical transcript is used in the gene tree analysis in Ensembl 
-# and does not necessarily reflect the most biologically relevant transcript 
-# of a gene. For human, the canonical transcript for a gene is set according 
-# to the following hierarchy: 1. Longest CCDS translation with no stop 
-# codons. 2. If no (1), choose the longest Ensembl/Havana merged translation 
-# with no stop codons. 3. If no (2), choose the longest translation with no 
-# stop codons. 4. If no translation, choose the longest non-protein-coding 
-# transcript.	
+# The canonical transcript is used in the gene tree analysis in Ensembl
+# and does not necessarily reflect the most biologically relevant transcript
+# of a gene. For human, the canonical transcript for a gene is set according
+# to the following hierarchy: 1. Longest CCDS translation with no stop
+# codons. 2. If no (1), choose the longest Ensembl/Havana merged translation
+# with no stop codons. 3. If no (2), choose the longest translation with no
+# stop codons. 4. If no translation, choose the longest non-protein-coding
+# transcript.
 
 # 1. grep for 'tag "CCDS"' -> multi transcripts? grep for $2==ensembl_havana -> multi transcripts? get longest
 # 2. grep for $2==ensembl_havana -> multi transcripts? get longest
@@ -42,7 +42,7 @@ while(<F>){
 		$m{$g}{1}{$t} += $l[4]-$l[3];
 	} elsif ($l[2] eq 'ensembl_havana') {
 		$m{$g}{2}{$t} += $l[4]-$l[3];
-	} else{ 
+	} else{
 		$m{$g}{3}{$t} += $l[4]-$l[3];
 	}
 }

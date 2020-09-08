@@ -10,7 +10,7 @@ helper::makezipcmd(){
 			-t <threads> | number of
 			-c <file>    | compress if not compressed
 			-z <var>     | of path to file
-			example: 
+			example:
 			$funcname -a cmds -c f1.txt -c f2.txt -z o1 -z o2
 		EOF
 		return 0
@@ -51,7 +51,7 @@ helper::makecatcmd(){
 			$funcname usage:
 			-c <var>  | cmd
 			-f <file> | to ascii
-			example: 
+			example:
 			$funcname -f [txt|bz2|gz]
 		EOF
 		return 0
@@ -82,7 +82,7 @@ helper::basename(){
 			-o <var>  | basename
 			-e <var>  | extension
 
-			example: 
+			example:
 			$funcname -f foo.txt.gz -o base -e ex
 		EOF
 		return 0

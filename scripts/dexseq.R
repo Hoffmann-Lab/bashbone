@@ -51,7 +51,7 @@ o$transcripts <- ''
 # unless removed, output file format gets corrupted
 # "ENSG00000000001:E001","ENSG00000000001",...,c("ENST00000000001" "ENST00000000002")
 # gets
-# "ENSG00000000001:E001","ENSG00000000001",...,c("ENST00000000001" 
+# "ENSG00000000001:E001","ENSG00000000001",...,c("ENST00000000001"
 # "ENST00000000002")
 write.csv(o, file = csv)
 

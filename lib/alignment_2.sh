@@ -5,7 +5,7 @@ alignment::slice(){
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -106,7 +106,7 @@ alignment::slice(){
 			for bed in $(ls -v "$tmpdir/genome/slice".*.bed); do
 				i=$(basename "$bed" .bed | rev | cut -d '.' -f 1 | rev)
 				commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					samtools view 
+					samtools view
 						-@ $ithreads
 						-L "$bed"
 						-M
@@ -139,7 +139,7 @@ alignment::rmduplicates(){
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -172,7 +172,7 @@ alignment::rmduplicates(){
 
 	commander::printinfo "removing duplicates"
 
-	local minstances mthreads ithreads jmem jgct jcgct 
+	local minstances mthreads ithreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
 	local nfh=$(($(ulimit -n)/minstances))
 	[[ ! $nfh ]] || [[ $nfh -le 1 ]] && nfh=$((1024/minstances))
@@ -242,7 +242,7 @@ alignment::rmduplicates(){
 	} || {
 		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2
-		} || { 
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}
@@ -259,7 +259,7 @@ alignment::clipmateoverlaps() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -359,7 +359,7 @@ alignment::clipmateoverlaps() {
 		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2 && \
 			commander::runcmd -v -b -t $instances -a cmd3
-		} || { 
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}
@@ -372,7 +372,7 @@ alignment::reorder() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -407,7 +407,7 @@ alignment::reorder() {
 
 	commander::printinfo "reordering alignments"
 
-	local minstances mthreads jmem jgct jcgct 
+	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
 
 	local m i o slice odir instances ithreads
@@ -473,7 +473,7 @@ alignment::reorder() {
 	} || {
 		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2
-		} || { 
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}
@@ -486,7 +486,7 @@ alignment::addreadgroup() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -538,7 +538,7 @@ alignment::addreadgroup() {
 
 	commander::printinfo "replacing read group tags"
 
-	local minstances mthreads jmem jgct jcgct 
+	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
 
 	local m i o rgprefix slice instances ithreads odir
@@ -609,7 +609,7 @@ alignment::addreadgroup() {
 	} || {
 		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2
-		} || { 
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}
@@ -622,7 +622,7 @@ alignment::splitncigar() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -657,7 +657,7 @@ alignment::splitncigar() {
 
 	commander::printinfo "splitting N-cigar alignments"
 
-	local minstances mthreads jmem jgct jcgct 
+	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
 
 	local m i o slice instances ithreads odir
@@ -748,7 +748,7 @@ alignment::leftalign() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -867,7 +867,7 @@ alignment::bqsr() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -910,7 +910,7 @@ alignment::bqsr() {
 	fi
 	commander::printinfo "base quality score recalibration"
 
-	local minstances mthreads jmem jgct jcgct 
+	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
 
 	local m i o slice odir instances ithreads
@@ -942,7 +942,7 @@ alignment::bqsr() {
 				# ApplyBQSRSpark fails as of v4.1.2.0
 				# -> i.e. also true for BQSRPipelineSpark which does both steps in one
 				# GatherBQSRReports - Gathers scattered BQSR recalibration reports into a single file
-				# 
+				#
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 					gatk

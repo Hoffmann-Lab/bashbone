@@ -57,7 +57,7 @@ usage(){
 		-p [num]  : optional, number of maximum parallel download instances (2)
 		-t [path] : optional, path to temporary directory ("$PWD")
 		-e        : optional, switch to ebi uk mirror utilizing wget
-		-f        : optional, switch to fasterq-dump 
+		-f        : optional, switch to fasterq-dump
 		            NOTE: not yet recommended!
 		              - uncompressed output
 		              - misconfigured read deflines

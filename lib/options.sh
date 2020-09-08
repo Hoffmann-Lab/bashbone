@@ -11,7 +11,7 @@ options::usage(){
 
 		OPTIONS
 		-i | --install [all|upgrade] : install into given directory
-		-d | --directory [path]      : installation path 
+		-d | --directory [path]      : installation path
 		-t | --threads [value]       : threads - predicted default: $THREADS
 		-l | --log [path]            : log file - default: [-d]/install.log
 		-v | --verbose               : enable verbose mode
@@ -48,7 +48,7 @@ options::checkopt(){
 			done
 		;;
 		-i | --install) arg=true; mapfile -t -d ',' INSTALL < <(printf '%s' "$2");;
-		-*) commander::printerr "illegal option $1"; return 1;; 
+		-*) commander::printerr "illegal option $1"; return 1;;
 		*) commander::printerr "illegal option $2"; return 1;;
 	esac
 	$arg && {
@@ -68,7 +68,7 @@ options::parse(){
 		if [[ ${!i} =~ ^- ]]; then
 			j=$((i+1))
 			options::checkopt "${!i}" "${!j}" || return 1
-		else 
+		else
 			((++i))
 		fi
 	done

@@ -5,7 +5,7 @@ quantify::featurecounts() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-5 <skip>     | true/false md5sums, gtf prep respectively
@@ -133,12 +133,12 @@ quantify::_featurecounts() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-1 <cmds1>      | array of
 			-t <threads>    | number of
 			-s <strandness> | [0|1|2]
-			                  (0) unstranded, 
-			                  (1) FR stranded, 
+			                  (0) unstranded,
+			                  (1) FR stranded,
 			                  (2) FR reversely stranded
 			-i <bam>        | path to
 			-g <gtf>        | path to
@@ -199,7 +199,7 @@ quantify::tpm() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -258,7 +258,7 @@ quantify::_tpm() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-1 <cmds1>     | array of
 			-g <gtf>       | path to
 			-i <countfile> | path to

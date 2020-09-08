@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-fusions::star(){
+fusions::starfusion(){
 	odir=fusions
 
 	#as of v1.8 and still true for v1.9, STAR 2.7.2b is requiered

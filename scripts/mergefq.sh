@@ -57,7 +57,7 @@ while getopts i:j:o:u:d:t:m:zh ARG; do
 	esac
 done
 
-if [[ $# -eq 0 ]] || [[ $h ]] || [[ ! $i ]] || [[ ! $o ]] || [[ $u -gt 2 ]]; then 
+if [[ $# -eq 0 ]] || [[ $h ]] || [[ ! $i ]] || [[ ! $o ]] || [[ $u -gt 2 ]]; then
 	usage
 fi
 
@@ -72,7 +72,7 @@ open=$(readlink -e "$i" | file -f - | grep -Eo '(gzip|bzip)' && echo -cd || echo
 if [[ $u -gt 0 ]]; then
 	if [[ $u -eq 2 ]]; then
 		exec $open "$i" | sed -r '/^\s*$/d' | paste - - - - | sed -n '2~2p' | tr '\t' '\n' | $z > "$o"
-	else 
+	else
 		exec $open "$i" | sed -r '/^\s*$/d' | paste - - - - | sed -n '1~2p' | tr '\t' '\n' | $z > "$o"
 	fi
 else

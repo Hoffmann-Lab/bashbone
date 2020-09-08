@@ -5,12 +5,12 @@ callvariants::vcfzip() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-z <var>      | of path to file
-			example: 
+			example:
 			$funcname -t 4 -v f1 -v f2
 		EOF
 		return 0
@@ -65,7 +65,7 @@ callvariants::haplotypecaller() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -109,7 +109,7 @@ callvariants::haplotypecaller() {
 
 	commander::printinfo "calling variants haplotypecaller"
 
-	local minstances mthreads jmem jgct jcgct 
+	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
 
 	local m i o t e slice odir instances ithreads odir tdir
@@ -128,7 +128,7 @@ callvariants::haplotypecaller() {
 
 		for i in "${!_bams_haplotypecaller[@]}"; do
 			tomerge=()
-            
+
 			while read -r slice; do
 				# all alt Phredscaled Likelihoods ordering:
 				# reference homozygous (0/0)
@@ -235,13 +235,13 @@ callvariants::haplotypecaller() {
 }
 
 callvariants::panelofnormals() {
-# The panel of normals not only represents common germline variant sites, 
-# it presents commonly noisy sites in sequencing data, e.g. mapping artifacts or 
+# The panel of normals not only represents common germline variant sites,
+# it presents commonly noisy sites in sequencing data, e.g. mapping artifacts or
 # other somewhat random but systematic artifacts of sequencing.
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -275,7 +275,7 @@ callvariants::panelofnormals() {
 
 	commander::printinfo "calling panel of normals"
 
-	local minstances mthreads jmem jgct jcgct 
+	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
 
 	local m i o t e slice odir tdir
@@ -320,7 +320,7 @@ callvariants::panelofnormals() {
 			o="$(basename "${_bams_panelofnormals[$i]}")"
 			t="$tdir/${o%.*}"
 			o="$odir/${o%.*}"
-			
+
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 			#DO NOT PIPE - DATALOSS!
 			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -337,7 +337,7 @@ callvariants::panelofnormals() {
 	} || {
 		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $threads -a cmd2
-		} || { 
+		} || {
 			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
 			return 1
@@ -352,7 +352,7 @@ callvariants::makepondb() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -382,7 +382,7 @@ callvariants::makepondb() {
 
 	commander::printinfo "calling panel of normals"
 
-	local minstances mthreads jmem jgct jcgct 
+	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m 4000)
 
 	local m i o odir params instances ithreads
@@ -440,7 +440,7 @@ callvariants::makepondb() {
 				--verbosity INFO
 				--tmp-dir "${tdirs[-1]}"
 		CMD
-		#rm pondb becase this does not work yet: --overwrite-existing-genomicsdb-workspace true 
+		#rm pondb becase this does not work yet: --overwrite-existing-genomicsdb-workspace true
 
 		[[ -s "$genome.af_only_gnomad.vcf.gz" ]] && params=" --germline-resource '$genome.af_only_gnomad.vcf.gz'" || params=''
 		commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
@@ -482,15 +482,15 @@ callvariants::makepondb() {
 }
 
 callvariants::mutect() {
-# You do not need to make you own panel of normals (unless you have a huge number of samples, 
-# it may even be counterproductive than our generic public panel). 
+# You do not need to make you own panel of normals (unless you have a huge number of samples,
+# it may even be counterproductive than our generic public panel).
 # Instead you may use gs://gatk-best-practices/somatic-b37/Mutect2-exome-panel.vcf.
 # For the -germline-resource you should use gs://gatk-best-practices/somatic-b37/af-only-gnomad.raw.sites.vcf.
 # -> this seems to be replacing old dbSNP input, which does not have AF info field
 # For the -V and -L arguments to GetPileupSummaries you may use gs://gatk-best-practices/somatic-b37/small_exac_common_3.vcf.
 # -> can this be used? ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606_b151_GRCh38p7/VCF/GATK/00-common_all.vcf.gz
 # -> cam this be used? ftp://ftp.ensembl.org/pub/current_variation/vcf/homo_sapiens/homo_sapiens_somatic.vcf.gz
-# BUT b37 => HG19 ... 
+# BUT b37 => HG19 ...
 # https://software.broadinstitute.org/gatk/download/bundle
 # https://console.cloud.google.com/storage/browser/gatk-best-practices/somatic-hg38/
 # BUT this is b37 (similar to hg19) liftovered data (picard LiftoverVCF ? ENSEMBL/NCBI remap?)
@@ -500,7 +500,7 @@ callvariants::mutect() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -540,7 +540,7 @@ callvariants::mutect() {
 
 	commander::printinfo "calling variants mutect"
 
-	local minstances mthreads jmem jgct jcgct minstances2 mthreads2 jmem2 jgct2 jcgct2 
+	local minstances mthreads jmem jgct jcgct minstances2 mthreads2 jmem2 jgct2 jcgct2
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
 	read -r minstances2 mthreads2 jmem2 jgct2 jcgct2 < <(configure::jvm -T $threads -m 4000)
 
@@ -555,7 +555,7 @@ callvariants::mutect() {
 		mkdir -p "$odir" "$tdir"
 
 		$mypon && {
-			# TODO later on the fly ? needs to be completed by pon calling, 
+			# TODO later on the fly ? needs to be completed by pon calling,
 			# but sice pon creation is germline calling i'd like to keep things seperated
 			# {	callvariants::makepondb \
 			# 		-s $skip \
@@ -610,7 +610,7 @@ callvariants::mutect() {
 						--max-mnp-distance 0
 				CMD
 				# --max-mnp-distance 0
-				# default:1 - set to 0 to list adjacent SNPs as single entries rather than an MNP 
+				# default:1 - set to 0 to list adjacent SNPs as single entries rather than an MNP
 				# useful for my SNP based genotype tree inference
 
 				if [[ -s "$genome.somatic_common.vcf.gz" ]]; then

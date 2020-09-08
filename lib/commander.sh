@@ -62,13 +62,13 @@ commander::makecmd(){
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
-			-a <cmds>      | array of 
+			-a <cmds>      | array of
 			-s <seperator> | string for
 			-o <outfile>   | stdout redirection to
 			-c <cmd|fd3..> | ALWAYS LAST OPTION
 			                 command line string(s) and or
 			                 file descriptor(s) starting from 3
-			example: 
+			example:
 			$funcname -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 			    perl -sl - -y=$x <<< '
 			        print "$x";
@@ -210,7 +210,7 @@ commander::qsubcmd(){
 			-h <hosts>   | sge digestable list of
 			-l <logfile> | sge nodes shared path to
 			-t <threads> | number of
-			-p <env>     | name of parallel 
+			-p <env>     | name of parallel
 			-a <cmds>    | ALWAYS LAST OPTION
 			               array of
 			example:

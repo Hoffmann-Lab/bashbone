@@ -5,7 +5,7 @@ preprocess::fastqc() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -47,9 +47,9 @@ preprocess::fastqc() {
 	done
 
 	$skip && {
-		commander::printcmd -a cmd1 
+		commander::printcmd -a cmd1
 	} || {
-		{	commander::runcmd -v -b -t $threads -a cmd1 
+		{	commander::runcmd -v -b -t $threads -a cmd1
 		} || {
 			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
@@ -65,7 +65,7 @@ preprocess::cutadapt() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-a <adapter1> | array of
@@ -101,7 +101,7 @@ preprocess::cutadapt() {
 	# parallelized cutadapt is faster on parallel data than max threads -> use max 10 per instance
 	# cutadapt cannot handle more than 64 threads
 	read -r instances ithreads < <(configure::instances_by_threads -i ${#_fq1_cutadapt[@]} -t 10 -T $threads)
-	
+
 	declare -a cmd1 cmd2
 	local i o1 o2
 	for i in "${!_fq1_cutadapt[@]}"; do
@@ -134,7 +134,7 @@ preprocess::cutadapt() {
 			CMD
 			helper::makezipcmd -a cmd2 -t $threads -c "${_fq1_cutadapt[$i]}" -z o1
 			_fq1_cutadapt[$i]="$o1"
-		fi			
+		fi
 	done
 
 	$skip && {
@@ -145,7 +145,7 @@ preprocess::cutadapt() {
 			commander::runcmd -v -b -t $instances -a cmd1 && \
 			conda activate py2 && \
 			commander::runcmd -v -b -t $instances -a cmd2
-		} || { 
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}
@@ -158,7 +158,7 @@ preprocess::trimmomatic() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -310,7 +310,7 @@ preprocess::rcorrector() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -373,10 +373,10 @@ preprocess::rcorrector() {
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				cd "${tdirs[-1]}"
 			CMD
-				run_rcorrector.pl 
-				-s "${_fq1_rcorrector[$i]}" 
-				-od "$outdir" 
-				-t $threads 
+				run_rcorrector.pl
+				-s "${_fq1_rcorrector[$i]}"
+				-od "$outdir"
+				-t $threads
 			CMD
 				mv "$b1".cor.fq* "$o1"
 			CMD
@@ -407,7 +407,7 @@ preprocess::sortmerna() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -459,7 +459,7 @@ preprocess::sortmerna() {
 		tmp="${tdirs[-1]}/tmp.$b1.$e1"
 		tmpo="${tdirs[-1]}/$b1"
 		tmpr="${tdirs[-1]}/rRNA.$b1"
-		
+
 		o1="$outdir/$b1.$e1.gz"
 		o2="$outdir/$b2.$e2.gz"
 		or1="$outdir/rRNA.$b1.$e1.gz"
@@ -544,14 +544,14 @@ preprocess::sortmerna() {
 				-a $threads
 			CMD
 			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
-				pigz 
+				pigz
 				-p $threads
 				-k
 				-c
 				"$tmpr".$e1 > "$or1"
 			CMD
 			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
-				pigz 
+				pigz
 				-p $threads
 				-k
 				-c
@@ -584,7 +584,7 @@ preprocess::qcstats(){
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-i <qualdirs> | array of

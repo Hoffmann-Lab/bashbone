@@ -48,6 +48,6 @@ progress::log() {
 		2)	{ tail -f $log 2>&1; } &;;
 		*)	_usage;	return 1;;
 	esac
-	
+
 	return 0
 }

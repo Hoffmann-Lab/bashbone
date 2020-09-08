@@ -47,9 +47,9 @@ PARAMETER
 -o | --outdir    path to output directory
 
 REQUIREMENTS
-input gtf needs to be sorted this way: 
+input gtf needs to be sorted this way:
   sort -k3,3r -k1,1 -k4,4n -k5,5n
-gtf features: 
+gtf features:
   transcript
   exon (at least one per transcript, even for ncRNAs)
   CDS (optional)

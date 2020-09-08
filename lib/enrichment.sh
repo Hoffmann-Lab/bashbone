@@ -50,7 +50,7 @@ enrichment::_ora(){
 			gmt <- args[1];
 			idsfile <- args[2];
 			odir <- args[3];
-			
+
 			genes <- scan(idsfile, character(), quote = "", quiet = T);
 			ora <- data.frame(matrix(ncol = 4, nrow = 0));
 			if(length(genes)>0){
@@ -183,13 +183,13 @@ enrichment::_revigo(){
 		revigo <(awk 'NR>1 && \$NF<=0.05 {print \$1"\t"\$NF}' $orafile) --stdout
 	CMD
 		perl -lane '
-			next if $.<3; 
+			next if $.<3;
 			if($.>3){
 				$F[2]=~s/(^[\W_]+|[\W_]+$)//g;
 				$F[2]=~s/([^\w,.;:=+-\\(\)\\[\]\\{\}]|_)+/ /g;
 				$F[2]=~s/\s+/ /g;
-			} 
-			shift @F; 
+			}
+			shift @F;
 			print join("\t",@F);
 		'
 	CMD
@@ -249,7 +249,7 @@ enrichment::go(){
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -263,7 +263,7 @@ enrichment::go(){
 			-i <deseqdir> | for gsea (logfc>=1 filtered) path to
 			-c <cmpfiles> | array of
 			-l <idfiles>  | for ora array of (does not require -i -c -o)
-			
+
 		EOF
 		return 0
 	}
@@ -306,13 +306,13 @@ enrichment::go(){
 			enrichmentfiles+=("$odir/goenrichment.tsv")
 		done
 	done
-		
+
 	for m in "${_mapper_go[@]}"; do
 		for f in "${_cmpfiles_go[@]}"; do
 			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
-			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do 
-				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do 
+			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
+				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					deseqtsv="$deseqdir/$m/$c-vs-$t/deseq.tsv"
 					for domain in biological_process cellular_component molecular_function; do
 						odir="$deseqdir/$m/$c-vs-$t/$domain"
@@ -333,7 +333,7 @@ enrichment::go(){
 			conda activate py2r && \
 			commander::runcmd -v -b -t $threads -a cmd2 && \
 			conda activate py2
-		} || { 
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}
@@ -355,7 +355,7 @@ enrichment::go(){
 			conda activate py2r && \
 			commander::runcmd -v -b -t $threads -a cmd4 && \
 			conda activate py2
-		} || { 
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}

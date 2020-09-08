@@ -8,7 +8,7 @@ if ($#ARGV < 2){
 	say "usage: annotate.pl [gtf.descr|0] [gtf|0] [bed|deseq.tsv|heatmap.ps| ..]";
 	say "0 or gtf.descr => 4 tab seperated columns: geneID geneName biotype description";
 	say "0 or gtf => parsed for gene_id gene_name gene_biotype";
-	exit 1;	
+	exit 1;
 }
 
 my %m;

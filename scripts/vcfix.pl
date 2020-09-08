@@ -16,7 +16,7 @@ die "option -i|--in is missing" if $#ARGV == -1;
 #!!! Number=G dont work for bcftools < v1.9 - better use . instead?
 my %format = (
     GQ => '##FORMAT=<ID=GQ,Number=A,Type=Float,Description="Phred-scaled genotype quality">',
-    PL => '##FORMAT=<ID=PL,Number=G,Type=Float,Description="List of Phred-scaled genotype likelihoods">', 
+    PL => '##FORMAT=<ID=PL,Number=G,Type=Float,Description="List of Phred-scaled genotype likelihoods">',
     GL => '##FORMAT=<ID=GL,Number=G,Type=Float,Description="List of genotype likelihoods">',
     MAF => '##FORMAT=<ID=MAF,Number=1,Type=Float,Description="Minor allele frequence">',
     COV => '##FORMAT=<ID=COV,Number=1,Type=Integer,Description="Position read coverage">',
@@ -103,8 +103,8 @@ my $caller='';
                         splice @v, 1, 0, join(",",@dp4);
                     }
                 }
-                
-                ($i) = indexes { /^AD$/ } @t;                
+
+                ($i) = indexes { /^AD$/ } @t;
                 if (defined $i && $v[$i]!~/,/){ #varscanfix (only correct for 1 or 2 alleles)
                     if (my ($j) = indexes { /^RD$/ } @t){
                         my @alleles = split /,/,$l[4];
@@ -145,12 +145,12 @@ my $caller='';
                 my $gq=0;
                 if(($i) = indexes { $_ =~ /^PL$/ } @t){
                     my @q = sort {$a <=> $b} split /,/,$v[$i];
-                    $gq = sprintf("%.4f",$q[1] - $q[0]); 
+                    $gq = sprintf("%.4f",$q[1] - $q[0]);
                 } elsif(($i) = indexes { $_ =~ /^GL$/ } @t){
                     my @pl = split /,/,$v[$i];
                     $_ = ($_*-1)/10 for @pl;
                     my @q = sort {$a <=> $b} @pl;
-                } elsif($l[7]=~/[\s;]TLOD=([^\s;]+)/){ #gatk mutect2 fix - INFO splitted by bcftools 
+                } elsif($l[7]=~/[\s;]TLOD=([^\s;]+)/){ #gatk mutect2 fix - INFO splitted by bcftools
                     $gq = $1;
                 } elsif (($i) = indexes { $_ =~ /^GQ$/ } @t){
                     $gq = $v[$i];
@@ -159,7 +159,7 @@ my $caller='';
                 for(@gq){
                     $_ = sprintf("%.4f",$_); #fix for vt normalize which cannot handle E-10 like representation
                     $_ =~ s/0+$//g; # trim trailing zeros
-                    $_ =~ s/\.$//g;    
+                    $_ =~ s/\.$//g;
                 }
                 $gq = join ',' , @gq;
                 ($i) = indexes { $_ =~ /^GQ$/ } @t; # replace after recalculated from bcftools splittet PL fields
@@ -175,7 +175,7 @@ my $caller='';
                 my ($j) = indexes { /^DP4$/ } @t;
                 my @dp4 = split/,/,$v[$j];
                 ($j) = indexes { /^AD$/ } @t;
-                my @ad = split /,/,$v[$j]; 
+                my @ad = split /,/,$v[$j];
 
                 $v[$i] = min(sum(@ad), $v[$i]); #varscan, vardict and freebayes fix DP >= sum(AD|DP4) - (== total COV, not filtered depth), whereas AD values are based on filtered reads
                 my $cov = max(sum(@ad), sum(@dp4), $v[$i]); #try to find real COV

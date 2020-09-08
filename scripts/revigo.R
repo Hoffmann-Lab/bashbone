@@ -13,32 +13,32 @@ revigo = function(GOtable,destFolder,cutoff="0.70",isPValue="yes",whatIsBetter="
 	if (x$status_code == 200){
 
 		# in case of webgestalt gmt database contains all three domains fetch table 1 to 3
-		# if (domain == "biological_process"){ 
-			treemap_R = content(GET("http://revigo.irb.hr/toR_treemap.jsp?table=1"),"text")	
+		# if (domain == "biological_process"){
+			treemap_R = content(GET("http://revigo.irb.hr/toR_treemap.jsp?table=1"),"text")
 			write(content(GET("http://revigo.irb.hr/export_treemap.jsp?table=1"),"text"),paste(sep="",outprefix,".treemap.csv"))
 			scatter_R = content(GET("http://revigo.irb.hr/toR.jsp?table=1"),"text")
 			write(content(GET("http://revigo.irb.hr/export.jsp?table=1"),"text"),paste(sep="",outprefix,".scatterplot.csv"))
 		# } else if (domain == "cellular_component") {
-		# 	treemap_R = content(GET("http://revigo.irb.hr/toR_treemap.jsp?table=2"),"text")	
+		# 	treemap_R = content(GET("http://revigo.irb.hr/toR_treemap.jsp?table=2"),"text")
 		# 	write(content(GET("http://revigo.irb.hr/export_treemap.jsp?table=2"),"text"),paste(sep="",outprefix,".treemap.csv"))
 		# 	scatter_R = content(GET("http://revigo.irb.hr/toR.jsp?table=2"),"text")
 		# 	write(content(GET("http://revigo.irb.hr/export.jsp?table=2"),"text"),paste(sep="",outprefix,".scatterplot.csv"))
 		# } else {
-		# 	treemap_R = content(GET("http://revigo.irb.hr/toR_treemap.jsp?table=3"),"text")	
+		# 	treemap_R = content(GET("http://revigo.irb.hr/toR_treemap.jsp?table=3"),"text")
 		# 	write(content(GET("http://revigo.irb.hr/export_treemap.jsp?table=3"),"text"),paste(sep="",outprefix,".treemap.csv"))
 		# 	scatter_R = content(GET("http://revigo.irb.hr/toR.jsp?table=3"),"text")
 		# 	write(content(GET("http://revigo.irb.hr/export.jsp?table=3"),"text"),paste(sep="",outprefix,".scatterplot.csv"))
 		# }
-		
+
 		treemap_R = gsub("\r","",treemap_R)
 		treemap_R = gsub("REVIGO Gene Ontology treemap",title,treemap_R)
 		treemap_R = gsub("file=[^,]+",paste(sep="","file='",outprefix,".treemap.pdf'"),treemap_R)
 		save(treemap_R, file=paste(sep="",outprefix,".treemap.Rdata"))
 		eval(parse(text=treemap_R))
-		
+
 		scatter_R = gsub("\r","",scatter_R)
 		save(scatter_R, file=paste(sep="",outprefix,".scatterplot.Rdata"))
-		eval(parse(text=paste0(scatter_R,paste(sep="","\nggsave(\"",outprefix,".scatterplot.pdf\")"))))	
+		eval(parse(text=paste0(scatter_R,paste(sep="","\nggsave(\"",outprefix,".scatterplot.pdf\")"))))
 	} else {
 		stop()
 	}

@@ -195,7 +195,7 @@ And this desired output (N=2 vs N=2 each):
 
 - wt_vs_A
 - wt_vs_b
-- A_vs_B 
+- A_vs_B
 
 Then the info file should consist of:
 
@@ -233,7 +233,7 @@ preprocess::fastqc -t $threads -o results/qualities/trimmed -p /tmp -1 fastqs
 preprocess::cutadapt -t $threads -o results/clipped -a adapters -1 fastqs
 preprocess::fastqc -t $threads -o results/qualities/clipped -p /tmp -1 fastqs
 preprocess::rcorrector -t $threads -o results/corrected -p /tmp -1 fastqs
-preprocess::sortmerna -t $threads -m $memoryPerInstance -o results/rrnafiltered -p /tmp 
+preprocess::sortmerna -t $threads -m $memoryPerInstance -o results/rrnafiltered -p /tmp
 preprocess::fastqc -t $threads -o results/qualities/rrnafiltered -p /tmp -1 fastqs
 qualdirs=($(ls -d results/qualities/*/))
 preprocess::qcstats -i qualdirs -o results/stats -p /tmp -1 fastqs

@@ -2,7 +2,7 @@
 # (c) Konstantin Riege
 
 compile::_usage(){
-	cat <<- EOF 
+	cat <<- EOF
 		usage:
 			-i <path>    | installation base
 			-t <threads> | number of
@@ -53,7 +53,7 @@ compile::bashbone() {
 	local insdir threads src=$(dirname $(readlink -e $0))
 	compile::_parse -r insdir -s threads "$@"
 
-	local version 
+	local version
 	source $src/lib/version.sh
 
 	commander::printinfo "installing bashbone"
@@ -92,7 +92,7 @@ compile::conda() {
 		conda create -y -n py2 python=2 && \
 		conda create -y -n py2r python=2 && \
 		conda create -y -n py3 python=3 && \
-		
+
 		# tophat2/hisat2 and some R stuff needs python2 whereas cutadapt,idr,rseqc need python3 env
 		# star-fusion needs perl-set-intervaltree perl-db-file perl-set-intervaltree perl-uri perl-io-gzip
 		#   installation might be fixed manually via perl-app-cpanminus and execution of cpanm Set::IntervalTree URI ...
@@ -185,7 +185,7 @@ compile::_javawrapper() {
 		exec "\$java" "\${jvm_mem_args[@]}" "\${jvm_prop_args[@]}" -jar "$2" "\${pass_args[@]}"
 	EOF
 	chmod 755 "$1" || return 1
-	
+
 	return 0
 }
 
@@ -436,7 +436,7 @@ compile::_setup_annovar() {
 		wget -q $url -O humandb/ensemblToGeneName.txt.gz && \
 		gzip -d humandb/ensemblToGeneName.txt.gz  && \
 		# ./annotate_variation.pl -buildver hg19 -downdb cytoBand humandb/
-		# ./annotate_variation.pl -buildver hg19 -downdb genomicSuperDups humandb/ 
+		# ./annotate_variation.pl -buildver hg19 -downdb genomicSuperDups humandb/
 		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar esp6500siv2_all humandb/ && \
 		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar 1000g2015aug humandb/ && \
 		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar exac03 humandb/ && \
@@ -460,7 +460,7 @@ compile::_setup_snpeff() {
 	commander::printinfo "configuring snpeff databases"
 	{	source $insdir/conda/bin/activate py2 && \
 		java -jar snpEff.jar download -v GRCh37.75 && \
-		#java -jar snpEff.jar download -v hg19 #hg19: UCSC, hg19kg: UCSC knownGenes, GRCh37.75: Ensembl 
+		#java -jar snpEff.jar download -v hg19 #hg19: UCSC, hg19kg: UCSC knownGenes, GRCh37.75: Ensembl
 		url='http://ftp.ebi.ac.uk/pub/databases/ensembl/encode/integration_data_jan2011/byDataType/openchrom/jan2011/promoter_predictions/master_known.bed' && \
 		wget -q $url -O data/promoter.bed && \
 		url='http://ftp.ebi.ac.uk/pub/databases/ensembl/encode/integration_data_jan2011/byDataType/openchrom/jan2011/mirna_tss/miRNA_promoters_hg19_edited_data.bed' && \

@@ -73,7 +73,7 @@ for (method in c("log","vsd","rld")){
 	pca = prcomp(t(normed[topidx, ]), scale = F)
 	percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
 	data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], PC4 = pca$x[,4], replicate = df$replicate, condition = df$condition)
-	write.table(data.frame(id=rownames(data),data), row.names = F, 
+	write.table(data.frame(id=rownames(data),data), row.names = F,
 		file=file.path(outdir,paste("pca_12_",method,".tsv",sep="")), quote=F, sep="\t"
 	)
 
@@ -81,7 +81,7 @@ for (method in c("log","vsd","rld")){
 		ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
 			ggtitle("PCA plot - PC1 vs PC2") +
 			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			coord_fixed() + 
+			coord_fixed() +
 			theme_bw() +
 			theme(legend.box = "horizontal") +
 			geom_point(size = 3) +
@@ -93,7 +93,7 @@ for (method in c("log","vsd","rld")){
 		ggplot(data, aes(PC1, PC3, color = condition, group = condition, shape = replicate)) +
 			ggtitle("PCA plot - PC1 vs PC3") +
 			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			coord_fixed() + 
+			coord_fixed() +
 			theme_bw() +
 			theme(legend.box = "horizontal") +
 			geom_point(size = 3) +
@@ -105,7 +105,7 @@ for (method in c("log","vsd","rld")){
 		ggplot(data, aes(PC2, PC3, color = condition, group = condition, shape = replicate)) +
 			ggtitle("PCA plot - PC2 vs PC3") +
 			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			coord_fixed() + 
+			coord_fixed() +
 			theme_bw() +
 			theme(legend.box = "horizontal") +
 			geom_point(size = 3) +
@@ -122,7 +122,7 @@ get_table = function(dds){
 	ddsr = results(dds, contrast=c("condition",treat[i],ctr[i]), parallel = TRUE, BPPARAM = BPPARAM)
 
 	ddsr = ddsr[order(ddsr$padj) , ]
-	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F, 
+	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
 		file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
 	);
 
@@ -130,12 +130,12 @@ get_table = function(dds){
 	ddsr = ddsr[!is.na(ddsr$padj) , ]
 	ddsr = ddsr[ddsr$baseMean > 0 , ]
 	ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ];
-	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F, 
+	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
 		file=file.path(odir,"deseq.noNA.tsv"), quote=F, sep="\t"
 	)
 
 	ddsr = ddsr[ddsr$padj <= 0.05 , ]
-	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F, 
+	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
 		file=file.path(odir,"deseq.tsv"), quote=F, sep="\t"
 	)
 
@@ -147,7 +147,7 @@ get_table = function(dds){
 
 	rldr = rld[,rld$condition %in% c(ctr[i],treat[i])]
 	data = plotPCA(rldr, intgroup = c("condition", "replicate"), returnData = T)
-	write.table(data.frame(id=rownames(data),data), row.names = F, 
+	write.table(data.frame(id=rownames(data),data), row.names = F,
 		file=file.path(odir,"pca.tsv"), quote=F, sep="\t"
 	)
 	percentVar = round(100 * attr(data, "percentVar"))
@@ -156,7 +156,7 @@ get_table = function(dds){
 		ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
 			ggtitle(paste("PC1 vs PC2: ", length(rownames(rldr)), " genes")) +
 			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			coord_fixed() + 
+			coord_fixed() +
 			theme_bw() +
 			theme(legend.box = "horizontal") +
 			geom_point(size = 3) +
@@ -169,14 +169,14 @@ get_table = function(dds){
 	vsdr = vsd[,vsd$condition %in% c(ctr[i],treat[i])];
 
 	vsc = as.data.frame(assay(vsdr))
-	write.table(data.frame(id=rownames(vsc),vsc), row.names = F, 
+	write.table(data.frame(id=rownames(vsc),vsc), row.names = F,
 		file=file.path(odir,"experiments.vsc"), quote=F, sep="\t"
 	);
 	zscores = log(vsc+1)
 	zscores = zscores-rowMeans(zscores)
 	zscores = zscores/apply(zscores,1,sd)
 	zscores[is.na(zscores)] = 0
-	write.table(data.frame(id=rownames(zscores),zscores), row.names = F, 
+	write.table(data.frame(id=rownames(zscores),zscores), row.names = F,
 		file=file.path(odir,"experiments.vsc.zscores"), quote=F, sep="\t"
 	)
 
@@ -185,14 +185,14 @@ get_table = function(dds){
 	meanvsc = t(apply(vsc, 1, function(x) tapply(x, colnames(vsc), mean)))
 	meanvsc = meanvsc[,c(ctr[i],treat[i])]
 	colnames(vsc) = colnamesvsc
-	write.table(data.frame(id=rownames(meanvsc),meanvsc), row.names = F, 
+	write.table(data.frame(id=rownames(meanvsc),meanvsc), row.names = F,
 		file = file.path(odir,"experiments.mean.vsc"), quote=F, sep="\t"
 	)
 	meanzscores = log(meanvsc+1)
 	meanzscores = meanzscores-rowMeans(meanzscores)
 	meanzscores = meanzscores/apply(meanzscores,1,sd)
 	meanzscores[is.na(meanzscores)] = 0
-	write.table(data.frame(id=rownames(meanzscores),meanzscores), row.names = F, 
+	write.table(data.frame(id=rownames(meanzscores),meanzscores), row.names = F,
 		file=file.path(odir,"experiments.mean.vsc.zscores"), quote=F, sep="\t"
 	)
 
@@ -201,7 +201,7 @@ get_table = function(dds){
 		topids = rownames(ddsr)[1:min(50,nrow(ddsr))]
 
 		vsc = vsc[rownames(vsc) %in% topids , ]
-		write.table(data.frame(id=rownames(vsc),vsc), row.names = F, 
+		write.table(data.frame(id=rownames(vsc),vsc), row.names = F,
 			file=file.path(odir,"heatmap.vsc"), quote=F, sep="\t"
 		)
 		postscript(file.path(odir,"heatmap.vsc.ps"))
@@ -213,7 +213,7 @@ get_table = function(dds){
 		graphics.off()
 
 		zscores = zscores[rownames(zscores) %in% topids , ]
-		write.table(data.frame(id=rownames(zscores),zscores), row.names = F, 
+		write.table(data.frame(id=rownames(zscores),zscores), row.names = F,
 			file=file.path(odir,"heatmap.vsc.zscores"), quote=F, sep="\t"
 		)
 		postscript(file.path(odir,"heatmap.vsc.zscores.ps"))
@@ -225,7 +225,7 @@ get_table = function(dds){
 		graphics.off()
 
 		meanvsc = meanvsc[rownames(meanvsc) %in% topids , ]
-		write.table(data.frame(id=rownames(meanvsc),meanvsc), row.names = F, 
+		write.table(data.frame(id=rownames(meanvsc),meanvsc), row.names = F,
 			file = file.path(odir,"heatmap.mean.vsc"), quote=F, sep="\t"
 		)
 		postscript(file.path(odir,"heatmap.mean.vsc.ps"))
@@ -237,7 +237,7 @@ get_table = function(dds){
 		graphics.off()
 
 		meanzscores = meanzscores[rownames(meanzscores) %in% topids , ]
-		write.table(data.frame(id=rownames(meanzscores),meanzscores), row.names = F, 
+		write.table(data.frame(id=rownames(meanzscores),meanzscores), row.names = F,
 			file = file.path(odir,"heatmap.mean.vsc.zscores"), quote=F, sep="\t"
 		);
 		postscript(file.path(odir,"heatmap.mean.vsc.zscores.ps"))

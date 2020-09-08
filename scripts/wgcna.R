@@ -30,12 +30,12 @@ if (filter) {
     counts = counts_raw
 }
 if (datatype == "TPM") counts = log2(counts+1)
-ggplot(counts[1], aes(x=counts[,1])) + 
-  geom_histogram(binwidth = 0.05, aes(fill=..count..)) + 
-  theme_bw() + 
-  theme(legend.box = "horizontal", plot.title = element_text(hjust = 0.5)) + 
-  ggtitle(paste('log2',datatype,"Histogram",sep=" ")) + 
-  xlab(datatype) + 
+ggplot(counts[1], aes(x=counts[,1])) +
+  geom_histogram(binwidth = 0.05, aes(fill=..count..)) +
+  theme_bw() +
+  theme(legend.box = "horizontal", plot.title = element_text(hjust = 0.5)) +
+  ggtitle(paste('log2',datatype,"Histogram",sep=" ")) +
+  xlab(datatype) +
   ylab('#Genes')
 suppressMessages(ggsave(file.path(outdir, "wgcna.histogram.pdf")))
 
@@ -69,7 +69,7 @@ graphics.off()
 
 x = -sign(sftThreshold$fitIndices[,3])*sftThreshold$fitIndices[,2]
 power = which(x>=0.9)[1]
-power = ifelse(!is.na(power),power,ifelse(ncol(counts)<20,18,ifelse(ncol(counts)<31,16,ifelse(ncol(counts)<41,14,12)))) 
+power = ifelse(!is.na(power),power,ifelse(ncol(counts)<20,18,ifelse(ncol(counts)<31,16,ifelse(ncol(counts)<41,14,12))))
 
 #~10k blocksize returns different results but is 10 times faster (blocksize -> parallel blocks is memory dependent)
 wgcnar = blockwiseModules(
