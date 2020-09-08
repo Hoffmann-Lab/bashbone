@@ -27,7 +27,7 @@ cat <<- EOF
 	$(basename $0) downloads most recent human or mouse genome and annotation including gene ontology and optionally dbSNP
 
 	VERSION
-	0.3.2
+	0.3.3
 
 	SYNOPSIS
 	$(basename $0) -g [hg19|hg38|mm10] -s -d
@@ -35,9 +35,10 @@ cat <<- EOF
 	INPUT OPTIONS
 	-o | --out [path]              : output directory
 	-g | --genome [hg19|hg38|mm10] : choose GRCh37/hg19 or GRCh38/hg38 or GRCm38/mm10
-	-s | --dbsnp                   : additionally download Ensembl dbSNP (very large files)
-	-n | --ncbi                    : download NCBI dbSNP instead of Ensembl dbSNP
-	-d | --descriptions            : additionally download gene description and ontology information
+	-c | --ctat                    : get CTAT genome libs for, but not restricted to fusion detection (~30GB)
+	-s | --dbsnp                   : additionally download Ensembl dbSNP (not available for ctat genome libs, see -c)
+	-n | --ncbi                    : download NCBI dbSNP instead of Ensembl dbSNP (see -s)
+	-d | --descriptions            : additionally download gene description and ontology information (requires R in PATH)
 	-t | --threads [value]         : threads - predicted default: $threads
 	-v | --verbose                 : enable verbose mode
 	-h | --help                    : prints this message
@@ -87,7 +88,6 @@ dlgenome::go(){
 	dataset="hsapiens_gene_ensembl"
 	[[ $g == "mm10" ]] && dataset="mmusculus_gene_ensembl"
 
-	R --version | head -1 | awk '$3<3.5{print "jo"}'
 	[[ $(R --version | head -1 | awk '$3<3.5{print 1}') ]] && {
 		cat <<- EOF > $outdir/tmp/download.R || return 1
 			if (!requireNamespace("biomaRt", quietly = TRUE)) {
@@ -107,7 +107,7 @@ dlgenome::go(){
 		cat <<- EOF > $outdir/tmp/download.R || return 1
 			if (!requireNamespace("biomaRt", quietly = TRUE)) {
 				if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager", repos="http://cran.us.r-project.org")
-				library("BiocManager")		
+				library("BiocManager")
 				BiocManager::install(c("biomaRt"))
 			}
 			library("biomaRt")
@@ -134,7 +134,8 @@ dlgenome::go(){
 dlgenome::hg38() {
 	cd $outdir || return 1
 
-	genome=$(curl -s https://www.ensembl.org/info/website/archives/assembly.html | grep -oP 'GRCh38.p[0-9]+' | sort -V | tail -1)
+	#genome=$(curl -s https://www.ensembl.org/info/website/archives/assembly.html | grep -oP 'GRCh38.p[0-9]+' | sort -V | tail -1)
+	genome=GRCh38
 
 	echo ":INFO: downloading $genome genome"
 	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.chromosome.*.fa.gz
@@ -152,7 +153,7 @@ dlgenome::hg38() {
 	echo ":INFO: downloading annotation"
 	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_gtf/homo_sapiens/Homo_sapiens.GRCh38.*.chr.gtf.gz
 	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'Homo_sapiens\.GRCh38\..+\.chr\.gtf\.gz' ftp://ftp.ensembl.org/pub/current_gtf/homo_sapiens/
-	
+
 	echo ":INFO: extracting annotation"
 	gzip -dc Homo_sapiens.GRCh38.*.chr.gtf.gz | perl -F'\t' -lane 'next unless $F[0]=~/^(\d+|X|Y|MT)$/; $F[0]="M" if $F[0] eq "MT"; $F[0]="chr$F[0]"; unless($f eq $F[0]){close O; $f=$F[0]; open O,">$f.gtf";} print O join("\t",@F); END{close O};'
 	[[ $((${PIPESTATUS[@]/%/+}0)) -gt 0 ]] && return 1
@@ -172,7 +173,7 @@ dlgenome::hg38() {
 		ftp://ftp.ensembl.org/pub/current_fasta/fasta/homo_sapiens/dna/
 		ftp://ftp.ensembl.org/pub/current_gtf/homo_sapiens/
 	EOF
-	
+
 	rm -f Homo_sapiens.GRCh38.*.chr.gtf.gz
 	rm -f Homo_sapiens.GRCh38.dna.chromosome.*.fa.gz
 	rm -f chr*.gtf
@@ -184,7 +185,7 @@ dlgenome::hg38() {
 
 dlgenome::hg38ensembl() {
 	dlgenome::hg38 || return 1
-	
+
 	echo ":INFO: downloading dbSNP"
 	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_variation/vcf/homo_sapiens/homo_sapiens-chr*.vcf.gz
 	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'homo_sapiens-chr.+\.vcf\.gz' ftp://ftp.ensembl.org/pub/current_variation/vcf/homo_sapiens/
@@ -211,7 +212,7 @@ dlgenome::hg38ensembl() {
 
 dlgenome::hg38ncbi() {
 	dlgenome::hg38 || return 1
-	
+
 	echo ":INFO: downloading dbSNP"
 	url=$(curl -s ftp://ftp.ncbi.nih.gov/snp/organisms/ | grep -oE 'human_[0-9]+_b[0-9]+_GRCh38p7' | sort -V | tail -1)
 	wget -q --show-progress  --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N ftp://ftp.ncbi.nih.gov/snp/organisms/$url/VCF/00-common_all.vcf.gz
@@ -231,13 +232,37 @@ dlgenome::hg38ncbi() {
 	return 0
 }
 
+dlgenome::hg38ctat() {
+	cd $outdir || return 1
+	genome='GRCh38'
+	echo ":INFO: downloading $genome genome and annotation"
+
+	url='https://data.broadinstitute.org/Trinity/CTAT_RESOURCE_LIB/'
+	file=$(curl -s $url | grep -oE 'GRCh38[^\"]+\.plug-n-play\.tar\.gz' | sort -Vr | head -1)
+	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused "$url$file"
+	tar -xzf $file || return 1
+	rm -f $file
+	mv $(basename $file .tar.gz) ${genome}_CTAT_genome_lib
+
+	cd ${genome}_CTAT_genome_lib
+	cat <<- EOF >> $genome.README || return 1
+		$(date)
+		$(basename $file .plug-n-play.tar.gz)
+		$url
+	EOF
+
+	dlgenome::go ref_annot.gtf || return 1
+
+	return 0
+}
+
 ##########
 #  hg19  #
 ##########
 
 dlgenome::hg19() {
 	cd $outdir || return 1
-	genome='GRCh37.p13'
+	genome='GRCh37'
 
 	echo ":INFO: downloading $genome genome"
 	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/grch37/current/fasta/homo_sapiens/dna/Homo_sapiens.GRCh37.dna.chromosome.*.fa.gz
@@ -255,7 +280,7 @@ dlgenome::hg19() {
 	echo ":INFO: downloading annotation"
 	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/grch37/current/gtf/homo_sapiens/Homo_sapiens.GRCh37.*.chr.gtf.gz
 	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'Homo_sapiens\.GRCh37\..+\.chr\.gtf\.gz' ftp://ftp.ensembl.org/pub/grch37/current/gtf/homo_sapiens/
-	
+
 	echo ":INFO: extracting annotation"
 	gzip -dc Homo_sapiens.GRCh37.*.chr.gtf.gz | perl -F'\t' -lane 'next unless $F[0]=~/^(\d+|X|Y|MT)$/; $F[0]="M" if $F[0] eq "MT"; $F[0]="chr$F[0]"; unless($f eq $F[0]){close O; $f=$F[0]; open O,">$f.gtf";} print O join("\t",@F); END{close O};'
 	[[ $((${PIPESTATUS[@]/%/+}0)) -gt 0 ]] && return 1
@@ -275,7 +300,7 @@ dlgenome::hg19() {
 		ftp://ftp.ensembl.org/pub/grch37/current/fasta/homo_sapiens/dna/
 		ftp://ftp.ensembl.org/pub/grch37/current/gtf/homo_sapiens/
 	EOF
-	
+
 	rm -f Homo_sapiens.GRCh37.dna.chromosome.*.fa.gz
 	rm -f Homo_sapiens.GRCh37.*.chr.gtf.gz
 	rm -f chr*.gtf
@@ -291,7 +316,7 @@ dlgenome::hg19ensembl() {
 	echo ":INFO: downloading dbSNP"
 	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/grch37/current/variation/vcf/homo_sapiens/homo_sapiens-chr*.vcf.gz
 	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'homo_sapiens-chr.+\.vcf\.gz' ftp://ftp.ensembl.org/pub/grch37/current/variation/vcf/homo_sapiens/
-	
+
 	echo ":INFO: extracting chrM"
 	gzip -dc homo_sapiens-chrMT.vcf.gz | awk '$1~/^#/ || $NF~/^dbSNP/ {OFS="\t"; if($1!~/^#/){if($1=="MT"){$1="chrM"}else{$1="chr"$1}} print}' > $genome.fa.vcf
 	[[ $((${PIPESTATUS[@]/%/+}0)) -gt 0 ]] && return 1
@@ -314,7 +339,7 @@ dlgenome::hg19ensembl() {
 
 dlgenome::hg19ncbi() {
 	dlgenome::hg19 || return 1
-	
+
 	echo ":INFO: downloading dbSNP"
 	url=$(curl -s ftp://ftp.ncbi.nih.gov/snp/organisms/ | grep -oE 'human_[0-9]+_b[0-9]+_GRCh37p13' | sort -V | tail -1)
 	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N ftp://ftp.ncbi.nih.gov/snp/organisms/$url/VCF/00-common_all.vcf.gz
@@ -334,15 +359,65 @@ dlgenome::hg19ncbi() {
 	return 0
 }
 
+dlgenome::hg19ctat() {
+	cd $outdir || return 1
+	genome='GRCh37'
+	echo ":INFO: downloading $genome genome and annotation"
+
+	url='https://data.broadinstitute.org/Trinity/CTAT_RESOURCE_LIB/'
+	file=$(curl -s $url | grep -oE 'GRCh37[^\"]+\.plug-n-play\.tar\.gz' | sort -Vr | head -1)
+	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused "$url$file"
+	tar -xzf $file || return 1
+	rm -f $file
+	mv $(basename $file .tar.gz) ${genome}_CTAT_genome_lib
+
+	cd ${genome}_CTAT_genome_lib
+	cat <<- EOF >> $genome.README || return 1
+		$(date)
+		$(basename $file .plug-n-play.tar.gz)
+		$url
+	EOF
+
+	dlgenome::go ref_annot.gtf || return 1
+
+	return 0
+}
+
 ##########
 #  mm10  #
 ##########
 
+
+dlgenome::mm10ctat() {
+	cd $outdir || return 1
+	genome='GRCm38'
+	echo ":INFO: downloading $genome genome and annotation"
+
+	url='https://data.broadinstitute.org/Trinity/CTAT_RESOURCE_LIB/'
+	file=$(curl -s $url | grep -oE 'Mouse[^\"]+\.plug-n-play\.tar\.gz' | sort -Vr | head -1)
+	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused "$url$file"
+	tar -xzf $file || return 1
+	rm -f $file
+	mv $(basename $file .tar.gz) ${genome}_CTAT_genome_lib
+
+	cd ${genome}_CTAT_genome_lib
+	cat <<- EOF >> $genome.README || return 1
+		$(date)
+		$(basename $file .plug-n-play.tar.gz)
+		$url
+	EOF
+
+	dlgenome::go ref_annot.gtf || return 1
+
+	return 0
+}
+
 dlgenome::mm10() {
 	cd $outdir || return 1
-	genome=$(curl -s https://www.ensembl.org/info/website/archives/assembly.html | grep -oP 'GRCm38.p[0-9]+' | sort -V | tail -1)
+	#genome=$(curl -s https://www.ensembl.org/info/website/archives/assembly.html | grep -oP 'GRCm38.p[0-9]+' | sort -V | tail -1)
+	genome='GRCm38'
 
-	echo ":INFO: downloading $genome genome" 
+	echo ":INFO: downloading $genome genome"
 	#wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.ensembl.org/pub/current_fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.chromosome.*.fa.gz
 	wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex 'Mus_musculus\.GRCm38\.dna\.chromosome\..+\.fa\.gz' ftp://ftp.ensembl.org/pub/current_fasta/mus_musculus/dna/
 
@@ -378,7 +453,7 @@ dlgenome::mm10() {
 		ftp://ftp.ensembl.org/pub/current_fasta/mus_musculus/dna/
 		ftp://ftp.ensembl.org/pub/current_gtf/mus_musculus/
 	EOF
-	
+
 	rm -f Mus_musculus.GRCm38.dna.chromosome.*.fa.gz
 	rm -f Mus_musculus.GRCm38.*.chr.gtf.gz
 	rm -f chr*.gtf
@@ -403,7 +478,7 @@ dlgenome::mm10ensembl() {
 		$(grep -m 1 -Eo 'dbSNP_[0-9]+' $genome.fa.vcf | sed 's/_/ v\./')
 		ftp://ftp.ensembl.org/pub/current_variation/vcf/mus_musculus/
 	EOF
-	
+
 	rm -f mus_musculus.vcf.gz
 
 	return 0
@@ -424,7 +499,7 @@ dlgenome::mm10ncbi() {
 		$(grep -m 1 -F dbSNP_BUILD_ID $genome.fa.vcf | sed -r 's/.+ID=(.+)/dbSNP v\.\1/')
 		ftp://ftp.ncbi.nih.gov/snp/organisms/archive/mouse_10090/VCF/
 	EOF
-	
+
 	rm -f 00-All.vcf.gz
 
 	return 0
@@ -437,13 +512,14 @@ checkopt() {
 	case $1 in
 		-h | --h | -help | --help) usage;;
 		-s | --s | -dbsnp | --dbsnp) release='ensembl';;
+		-c | --c | -ctat | --ctat) release='ctat';;
 		-n | --n | -ncbi | --ncbi) release='ncbi';;
 		-d | --d | -descriptions | --descriptions) go=1;;
 		-v | --v | -verbose | --verbose) v=true;;
 		-o | --o | -out | --out) arg=true; outdir=$2;;
 		-g | --g | -genome | --genome) arg=true; g=$2;;
 		-t | --t | -threads | --threads) arg=true; threads=$2;;
-		-*) echo ":ERROR: illegal option $1"; return 1;; 
+		-*) echo ":ERROR: illegal option $1"; return 1;;
 		*) echo ":ERROR: illegal option $2"; return 1;;
 	esac
 	$arg && {
@@ -468,7 +544,7 @@ for i in $(seq 1 $#); do
 	if [[ ${!i} =~ ^- ]]; then
 		j=$((i+1))
 		checkopt "${!i}" "${!j}" || exit 1
-	else 
+	else
 		((++i))
 	fi
 done

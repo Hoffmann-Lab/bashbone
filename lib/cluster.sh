@@ -108,8 +108,8 @@ cluster::coexpression_deseq(){
 				if($#F<5){
 					print $F[0] if $F[2]==$cb;
 				} else {
-					$F[-1]=~/gene_biotype\s+"([^"]+)/;
-					if ($1 eq $cb && $F[-1]=~/gene_id\s+"([^"]+)/){
+					$F[-1]=~/gene_(bio)?type\s+"([^"]+)/;
+					if ($2 eq $cb && $F[-1]=~/gene_id\s+"([^"]+)/){
 						print $1 unless exists $m{$1};
 						$m{$1}=1;
 					}
@@ -369,7 +369,7 @@ cluster::coexpression(){
 				df <- df/apply(df,1,sd);
 				df[is.na(df)] <- 0;
 				write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
-			' 
+			'
 		CMD
 			"$odir/experiments.tpm" "$odir/experiments.tpm.zscores"
 		CMD
@@ -406,8 +406,8 @@ cluster::coexpression(){
 				if($#F<5){
 					print $F[0] if $F[2]==$cb;
 				} else {
-					$F[-1]=~/gene_biotype\s+"([^"]+)/;
-					if ($1 eq $cb && $F[-1]=~/gene_id\s+"([^"]+)/){
+					$F[-1]=~/gene_(bio)?type\s+"([^"]+)/;
+					if ($2 eq $cb && $F[-1]=~/gene_id\s+"([^"]+)/){
 						print $1 unless exists $m{$1};
 						$m{$1}=1;
 					}

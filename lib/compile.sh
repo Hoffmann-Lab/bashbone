@@ -140,13 +140,13 @@ compile::conda() {
 # Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); install.packages('~/src.tar.gz', repos = NULL, type = 'source', Ncpus=$threads, clean=T)"
 
 # from bioconductor R < 3.5
-# Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); source('https://bioconductor.org/biocLite.R'); BiocInstaller::biocLite(c('BiocParallel','genefilter','DESeq2','TCGAutils','TCGAbiolinks'), ask=F)"
+# Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); source('https://bioconductor.org/biocLite.R'); BiocInstaller::biocLite(c('BiocParallel','genefilter','DESeq2','TCGAutils','TCGAbiolinks'), ask=F, Ncpus=$threads, clean=T)"
 # from bioconductor R >= 3.5
-# Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); BiocManager::install(c('BiocParallel','genefilter','DESeq2','TCGAutils','TCGAbiolinks'), ask=F)"
+# Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); BiocManager::install(c('BiocParallel','genefilter','DESeq2','TCGAutils','TCGAbiolinks'), ask=F, Ncpus=$threads, clean=T)"
 
 # from github:
 # sometimes INSTALL_opts = '--no-lock' is required, too
-# Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('cran/WebGestaltR', Ncpus=$threads, upgrade='never', force=T)"
+# Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('cran/WebGestaltR', upgrade='never', force=T, clean=T)"
 
 compile::java() {
 	local insdir threads url version
@@ -304,7 +304,7 @@ compile::wgcna() {
 
 	commander::printinfo "installing wgcna"
 	{	source $insdir/conda/bin/activate py2r && \
-		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('cran/WGCNA', Ncpus=$threads, force=T)"
+		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('cran/WGCNA', upgrade='never', force=T, clean=T)"
 	} || return 1
 
 	return 0
@@ -316,7 +316,7 @@ compile::dgca() {
 
 	commander::printinfo "installing dgca"
 	{	source $insdir/conda/bin/activate py2r && \
-		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('andymckenzie/DGCA', Ncpus=$threads, force=T)"
+		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('andymckenzie/DGCA', upgrade='never', force=T, clean=T)"
 	} || return 1
 
 	return 0
@@ -516,7 +516,7 @@ compile::metpeak() {
 
 	commander::printinfo "installing metpeak"
 	{	source $insdir/conda/bin/activate py2r && \
-		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('compgenomics/MeTPeak', build_opts = c('--no-resave-data', '--no-manual'), Ncpus=$threads, force=T)"
+		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('compgenomics/MeTPeak', build_opts = c('--no-resave-data', '--no-manual'), upgrade='never', force=T, clean=T)"
 	} || return 1
 
 	return 0
@@ -576,7 +576,7 @@ compile::webgestalt() {
 
 	commander::printinfo "installing webgestalt"
 	{	source $insdir/conda/bin/activate py2r && \
-		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('cran/WebGestaltR', Ncpus=$threads, force=T)"
+		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('cran/WebGestaltR', upgrade='never', force=T, clean=T)"
 	} || return 1
 
 	return 0

@@ -5,7 +5,7 @@ alignment::segemehl() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-5 <skip>       | true/false md5sums, indexing respectively
@@ -15,7 +15,7 @@ alignment::segemehl() {
 			-r <mapper>     | array of bams within array of
 			-g <genome>     | path to
 			-x <genomeidx>  | path to
-			-p <nosplit>    | optional: true/false
+			-n <nosplit>    | optional: true/false
 			-o <outdir>     | path to
 			-1 <fastq1>     | array of
 			-2 <fastq2>     | array of
@@ -25,7 +25,7 @@ alignment::segemehl() {
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads genome genomeidx outdir accuracy insertsize nosplitaln=false
 	declare -n _fq1_segemehl _fq2_segemehl _segemehl
-	while getopts 'S:s:5:t:g:x:a:p:i:r:o:1:2:' arg; do
+	while getopts 'S:s:5:t:g:x:a:n:i:r:o:1:2:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -35,7 +35,7 @@ alignment::segemehl() {
 			x)	((mandatory++)); genomeidx="$OPTARG";;
 			o)	((mandatory++)); outdir="$OPTARG/segemehl"; mkdir -p "$outdir" || return 1;;
 			a)	accuracy=$OPTARG;;
-			p)	nosplitaln=$OPTARG;;
+			n)	nosplitaln=$OPTARG;;
 			i)	insertsize=$OPTARG;;
 			r)	((mandatory++))
 				declare -n _mapper_segemehl=$OPTARG
@@ -119,10 +119,10 @@ alignment::segemehl() {
 	done
 
 	$skip && {
-		commander::printcmd -a cmd1 
+		commander::printcmd -a cmd1
 	} || {
-		{	commander::runcmd -v -b -t 1 -a cmd1 
-		} || { 
+		{	commander::runcmd -v -b -t 1 -a cmd1
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}
@@ -135,7 +135,7 @@ alignment::star() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>     | true/false return
 			-s <softskip>     | true/false only print commands
 			-5 <skip>         | true/false md5sums, indexing respectively
@@ -146,8 +146,9 @@ alignment::star() {
 			-g <genome>       | path to
 			-f <gtf>          | path to
 			-x <genomeidxdir> | path to
-			-p <nosplit>      | optional: true/false
+			-n <nosplit>      | optional: true/false
 			-o <outdir>       | path to
+			-p <tmpdir>       | path to
 			-1 <fastq1>       | array of
 			-2 <fastq2>       | array of
 		EOF
@@ -156,7 +157,7 @@ alignment::star() {
 
  	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false
 	declare -n _fq1_star _fq2_star _star
-	while getopts 'S:s:5:t:g:f:x:a:p:i:r:o:1:2:' arg; do
+	while getopts 'S:s:5:t:g:f:x:a:n:i:r:o:p:1:2:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -166,8 +167,9 @@ alignment::star() {
 			f)	gtf="$OPTARG";;
 			x)	((mandatory++)); genomeidxdir="$OPTARG";;
 			o)	((mandatory++)); outdir="$OPTARG/star"; mkdir -p "$outdir" || return 1;;
+			p)	((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			a)	accuracy=$OPTARG;;
-			p)	nosplitaln=$OPTARG;;
+			n)	nosplitaln=$OPTARG;;
 			i)	insertsize=$OPTARG;;
 			r)	((mandatory++))
 				declare -n _mapper_star=$OPTARG
@@ -179,7 +181,7 @@ alignment::star() {
 			*)	_usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 7 ]] && _usage && return 1
 	commander::printinfo "mapping star"
 
 	$skipmd5 && {
@@ -194,20 +196,20 @@ alignment::star() {
 			commander::printinfo "indexing genome for star"
 			local params=''
 			#100 = assumend usual read length
-			[[ "$thismd5gtf" ]] && params+=" --sjdbGTFfile '$gtf' --sjdbOverhang 100"
+			[[ "$thismd5gtf" ]] && params+=" --sjdbGTFfile '$gtf' --sjdbOverhang 200"
 			local genomesize=$(du -sb "$genome" | cut -f 1)
-			[[ $(echo $genomesize | awk '{printf("%d",$1/1024/1024)'}) -lt 10 ]] && params+=' --genomeSAindexNbases '$(echo $genomesize | perl -M'List::Util qw(min)' -lane 'printf("%d",min(14, log($_)/2 - 1))')
+			params+=' --genomeSAindexNbases '$(echo $genomesize | perl -M'List::Util qw(min)' -lane 'printf("%d",min(14, log($_)/log(2)/2 - 1))')
 			genomeseqs=$(grep -c '^>' "$genome")
-			[[ $genomeseqs -gt 5000 ]] && params+=' --genomeChrBinNbits '$(echo "$genomesize $genomeseqs" | perl -M'List::Util qw(min)' -lane 'printf("%d",min(18, log($F[0]/$F[1]))')
-				
+			[[ $genomeseqs -gt 5000 ]] && params+=' --genomeChrBinNbits '$(echo "$genomesize $genomeseqs" | perl -M'List::Util qw(min)' -lane 'printf("%d",min(18, log($F[0]/$F[1])/log(2)))')
+
 			declare -a cmdidx
 			commander::makecmd -a cmdidx -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				mkdir -p "$genomeidxdir"
 			CMD
 				STAR
+				--runMode genomeGenerate
 				$params
 				--runThreadN $threads
-				--runMode genomeGenerate
 				--genomeDir "$genomeidxdir"
 				--genomeFastaFiles "$genome"
 				--outFileNamePrefix "$genomeidxdir/$(basename "$genome")."
@@ -222,29 +224,33 @@ alignment::star() {
 		fi
 	}
 
-	declare -a cmd1
+	declare -a cmd1 tdirs
 	local a o e params extractcmd
 	for i in "${!_fq1_star[@]}"; do
 		helper::basename -f "${_fq1_star[$i]}" -o o -e e
 		o="$outdir/$o"
+		tdirs+=("$(mktemp -u -d -p "$tmpdir" cleanup.XXXXXXXXXX.star)")
 
 		params='--outSAMmapqUnique 60' #use 60 instead of default 255 - necessary for gatk implemented MappingQualityAvailableReadFilter
 		helper::makecatcmd -c extractcmd -f "${_fq1_star[$i]}"
 		[[ $extractcmd != "cat" ]] && params+=" --readFilesCommand '$extractcmd'"
 		[[ $accuracy ]] && params+=' --outFilterMismatchNoverReadLmax '$(echo $accuracy | awk '{print $1/100}')
-		
+
 		if [[ ${_fq2_star[$i]} ]]; then
 			$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999' || {
 				[[ $insertsize ]] || insertsize=100000
 				params+=" --alignMatesGapMax $insertsize --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
 			}
-			# from towopassmode option on, params are taken from star-fusion wiki
+			# from RG option on, params are taken from STAR-Fusion wiki
+			# alignSplicedMateMapLmin is minimum mapping bases of original read (..OverLmate as fraction of original read <- 0.66 is default)
+			# STAR-Fusion alters this to 30 (0)
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				STAR
+				--runMode alignReads
 				$params
 				--runThreadN $threads
-				--runMode alignReads
 				--genomeDir "$genomeidxdir"
+				--outTmpDir "${tdirs[-1]}"
 				--readFilesIn "${_fq1_star[$i]}" "${_fq2_star[$i]}"
 				--outFileNamePrefix "$o."
 				--runRNGseed 12345
@@ -255,20 +261,23 @@ alignment::star() {
 				--outSAMunmapped Within
 				--twopassMode Basic
 				--outSAMstrandField intronMotif
+				--alignInsertionFlush Right
+				--outSAMattrRGline ID:A1 SM:sample1 LB:library1 PU:unit1 PL:illumina
+				--chimOutType Junctions SeparateSAMold
+				--chimOutJunctionFormat 1
+				--chimScoreMin 1
+				--chimScoreSeparation 1
 				--chimSegmentMin 12
 				--chimJunctionOverhangMin 8
-				--chimOutJunctionFormat 1
-				--alignSJstitchMismatchNmax 5 -1 5 5
-				--chimMultimapScoreRange 3
-				--chimScoreJunctionNonGTAG -4
 				--chimMultimapNmax 20
 				--chimNonchimScoreDropMin 10
+				--alignSJstitchMismatchNmax 5 -1 5 5
 				--peOverlapNbasesMin 12
 				--peOverlapMMp 0.1
-				--alignInsertionFlush Right
-				--alignSplicedMateMapLminOverLmate 0
-				--alignSplicedMateMapLmin 30
-				--outSAMattrRGline ID:A1 SM:sample1 LB:library1 PU:unit1 PL:illumina
+				--chimScoreJunctionNonGTAG -4
+				--chimMultimapScoreRange 3
+				--chimScoreDropMax 30
+				--chimSegmentReadGapMax 3
 			CMD
 				mv $o.Aligned.out.bam $o.bam
 			CMD
@@ -281,10 +290,11 @@ alignment::star() {
 			}
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				STAR
+				--runMode alignReads
 				$params
 				--runThreadN $threads
-				--runMode alignReads
 				--genomeDir "$genomeidxdir"
+				--outTmpDir "${tdirs[-1]}"
 				--readFilesIn "${_fq1_star[$i]}"
 				--outFileNamePrefix "$o."
 				--runRNGseed 12345
@@ -295,19 +305,23 @@ alignment::star() {
 				--outSAMunmapped Within
 				--twopassMode Basic
 				--outSAMstrandField intronMotif
+				--alignInsertionFlush Right
+				--outSAMattrRGline ID:A1 SM:sample1 LB:library1 PU:unit1 PL:illumina
+				--chimOutType Junctions SeparateSAMold
+				--chimOutJunctionFormat 1
+				--chimScoreMin 1
+				--chimScoreSeparation 1
 				--chimSegmentMin 12
 				--chimJunctionOverhangMin 8
-				--chimOutJunctionFormat 1
-				--alignSJDBoverhangMin 10
-				--alignSJstitchMismatchNmax 5 -1 5 5
-				--outSAMattrRGline ID:GRPundef
-				--chimMultimapScoreRange 3
-				--chimScoreJunctionNonGTAG -4
 				--chimMultimapNmax 20
 				--chimNonchimScoreDropMin 10
+				--alignSJstitchMismatchNmax 5 -1 5 5
 				--peOverlapNbasesMin 12
 				--peOverlapMMp 0.1
-				--alignInsertionFlush Right
+				--chimScoreJunctionNonGTAG -4
+				--chimMultimapScoreRange 3
+				--chimScoreDropMax 30
+				--chimSegmentReadGapMax 3
 			CMD
 				mv $o.Aligned.out.bam $o.bam
 			CMD
@@ -318,15 +332,17 @@ alignment::star() {
 	done
 
 	$skip && {
-		commander::printcmd -a cmd1 
+		commander::printcmd -a cmd1
 	} || {
-		{	commander::runcmd -v -b -t 1 -a cmd1 
-		} || { 
+		{	commander::runcmd -v -b -t 1 -a cmd1
+		} || {
+			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
 			return 1
 		}
 	}
 
+	rm -rf "${tdirs[@]}"
  	return 0
 }
 
@@ -334,7 +350,7 @@ alignment::postprocess() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-j <job>      | [uniqify|sort|index]
@@ -378,7 +394,7 @@ alignment::postprocess() {
 		for i in "${!_bams_process[@]}"; do
 			outbase=$outdir/$m/$(basename "${_bams_process[$i]}")
 			outbase="${outbase%.*}"
-			case $job in 
+			case $job in
 				uniqify)
 					alignment::_uniqify \
 						-1 cmd1 \
@@ -434,7 +450,7 @@ alignment::_uniqify() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-1 <cmds1>    | array of
 			-2 <cmds2>    | array of
 			-t <threads>  | number of
@@ -510,7 +526,7 @@ alignment::_uniqify() {
 				$params
 				-h
 				-@ $ithreads
-				-F 4 
+				-F 4
 				-F 256
 				"$sambam"
 		CMD
@@ -530,7 +546,7 @@ alignment::_sort() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-1 <cmds1>    | array of
 			-t <threads>  | number of
 			-i <bam>      | binary alignment file
@@ -576,7 +592,7 @@ alignment::_index() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-1 <cmds1>    | array of
 			-t <threads>  | number of
 			-i <bam>      | sorted alignment file
@@ -600,7 +616,7 @@ alignment::_index() {
 		samtools index
 			-@ $threads
 			"$bam"
-			"${bam%.*}.bai"			
+			"${bam%.*}.bai"
 	CMD
 
 	return 0
@@ -610,7 +626,7 @@ alignment::_inferexperiment() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-1 <cmds1>    | array of
 			-2 <cmds1>    | array of
 			-i <bam>      | alignment file
@@ -657,9 +673,9 @@ alignment::_inferexperiment() {
 	commander::makecmd -a _cmds2_inferexperiment -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 		{ echo "$bam" &&
 			infer_experiment.py
-			-q 0 
+			-q 0
 			-i "$bam"
-			-r "$tmp"; 
+			-r "$tmp";
 		}
 	CMD
 		perl -lane '
@@ -683,7 +699,7 @@ alignment::add4stats(){
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-r <mapper>    | array of bams within array of
 		EOF
 		return 0
@@ -703,7 +719,7 @@ alignment::add4stats(){
 	for m in "${_mapper_add4stats[@]}"; do
 		declare -n _bams_add4stats=$m
 		for i in "${!_bams_add4stats[@]}"; do
-            declare -g -a $m$i #optional (see below), declare can be used with $var! but then without assignment 
+            declare -g -a $m$i #optional (see below), declare can be used with $var! but then without assignment
 			declare -n _mi_add4stats=$m$i # non existing reference (here $m$i) will be always globally declared ("declare -g $m$i")
 			_mi_add4stats+=("${_bams_add4stats[$i]}")
 		done
@@ -720,7 +736,7 @@ alignment::bamstats(){
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -777,7 +793,7 @@ alignment::bamstats(){
 		commander::printcmd -a cmd1
 	} || {
 		{	commander::runcmd -v -b -t $instances -a cmd1
-		} || { 
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}
@@ -846,7 +862,7 @@ alignment::bamstats(){
 		{	conda activate py2r && \
 			commander::runcmd -v -b -t $threads -a cmd2 && \
 			conda activate py2
-		} || { 
+		} || {
 			commander::printerr "$funcname failed"
 			return 1
 		}

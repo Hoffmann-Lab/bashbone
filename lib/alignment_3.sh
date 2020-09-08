@@ -5,7 +5,7 @@ alignment::mkreplicates() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -50,10 +50,10 @@ alignment::mkreplicates() {
 		read -r instances1 ithreads1 < <(configure::instances_by_threads -i $instances1 -t 10 -T $threads)
 		read -r instances2 ithreads2 < <(configure::instances_by_threads -i $instances2 -t 10 -T $threads)
 
-		# pool replicates: 
+		# pool replicates:
 		# m[N1 N2 T1 T2 R1 R2] -> m[N1 N2 T1 T2 R1 R2 PP1 PP2]
 		# n   1 2
-		# nr  
+		# nr
 		# t   3 4
 		# r   5 6
 		# p   7 8
@@ -67,7 +67,7 @@ alignment::mkreplicates() {
 			for i in "${!_nidx_mkreplicates[@]}"; do
 				tf=${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}
 				rf=${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}
-				o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(.+)\t(.+)\1/-\2.pseudopool.bam/')
+				o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(.+)\t(.+)\.\1/-\2.pseudopool.\1/')
 
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 					samtools view -@ $ithreads1 -b -s 0.5 $tf > "${tdirs[-1]}/$(basename "$tf")"
@@ -111,8 +111,8 @@ alignment::mkreplicates() {
 				for i in "${!_nridx_mkreplicates[@]}"; do
 					nf=${_bams_mkreplicates[${_nidx_mkreplicates[$i]}]}
 					nrf=${_bams_mkreplicates[${_nridx_mkreplicates[$i]}]}
-					o=$odir/$(echo -e "$(basename $nf)\t$(basename $nrf)" | sed -E 's/(.+)\t(.+)\1/-\2.fullpool.bam/')
-					
+					o=$odir/$(echo -e "$(basename $nf)\t$(basename $nrf)" | sed -E 's/(.+)\t(.+)\.\1/-\2.fullpool.\1/')
+
 					commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
 						samtools merge -f -@ $ithreads1 $o $nf $nrf
 					CMD
@@ -121,7 +121,7 @@ alignment::mkreplicates() {
 
 					tf=${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}
 					rf=${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}
-					o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(.+)\t(.+)\1/-\2.fullpool.bam/')
+					o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(.+)\t(.+)\.\1/-\2.fullpool.\1/')
 					commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
 						samtools merge -f -@ $ithreads1 $o $tf $rf
 					CMD
@@ -135,11 +135,11 @@ alignment::mkreplicates() {
 		commander::printinfo "generating pseudo-replicates"
 		instances1=$((${#_mapper_mkreplicates[@]} * ${#_nidx_mkreplicates[@]}))
 		read -r instances1 ithreads1 < <(configure::instances_by_threads -i $instances1 -t 10 -T $threads)
-		# make pseudo-replicates from pseudo-pool: 
+		# make pseudo-replicates from pseudo-pool:
 		# m[N1 N2 P1 P2] -> m[N1 N2 P1 P2 T1 R1 T2 R2]
 		# cmp 1 2
 		# n   1 2
-		# nr  
+		# nr
 		# t   5 7
 		# r   6 8
 		# p   3 4
@@ -192,7 +192,7 @@ alignment::mkreplicates() {
 	} || {
 		{	commander::runcmd -v -b -t $instances1 -a cmd1 && \
 			commander::runcmd -v -b -t $instances2 -a cmd2
-		} || { 
+		} || {
 			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
 			return 1

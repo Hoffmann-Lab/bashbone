@@ -5,7 +5,7 @@ callpeak::_idr() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-1 <cmds1>    | array of
 			-2 <cmds2>    | array of
 			-t <file>     | normal vs treatment peaks path to
@@ -57,7 +57,7 @@ callpeak::macs() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -217,7 +217,7 @@ callpeak::macs() {
 				-p "${toidr[2]}" \
 				-o "${toidr[2]%.*}.trp_idr"
 		done
-		for i in "${!_nridx_macs[@]}"; do 
+		for i in "${!_nridx_macs[@]}"; do
 			# if a normal replicate is given, then run idr on: n-pp (1/9) + nr-pp (3/9) vs nfp-fp (11/12)
 			#                                           1  2   3   4  5  6  7  8  9   10   11  12   13  14
 			# m[N1 N2 NR1 NR2 T1 T2 R1 R2 PP1 PP2] -> m[N1 N2 NR1 NR2 T1 T2 R1 R2 PP1 PP2 NFP1 FP1 NFP2 FP2]
@@ -275,7 +275,7 @@ callpeak::gem() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage: 
+			$funcname usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -483,7 +483,7 @@ callpeak::gem() {
 				-p "${toidr[2]}" \
 				-o "${toidr[2]%.*}.trp_idr"
 		done
-		for i in "${!_nridx_gem[@]}"; do 
+		for i in "${!_nridx_gem[@]}"; do
 			# if a normal replicate is given, then run idr on: n-pp (1/9) + nr-pp (3/9) vs nfp-fp (11/12)
 			#                                           1  2   3   4  5  6  7  8  9   10   11  12   13  14
 			# m[N1 N2 NR1 NR2 T1 T2 R1 R2 PP1 PP2] -> m[N1 N2 NR1 NR2 T1 T2 R1 R2 PP1 PP2 NFP1 FP1 NFP2 FP2]
