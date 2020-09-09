@@ -11,7 +11,7 @@ alignment::slice(){
 			-t <threads>   | number of
 			-m <memory>    | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
-			-c <sliceinfo> | array of
+			-c <slicesinfo>| hash per bam of
 			-p <tmpdir>    | path to
 		EOF
 		return 0

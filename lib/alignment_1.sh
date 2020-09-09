@@ -151,13 +151,14 @@ alignment::star() {
 			-p <tmpdir>       | path to
 			-1 <fastq1>       | array of
 			-2 <fastq2>       | array of
+			-c <opts>         | passed to star
 		EOF
 		return 0
 	}
 
- 	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false params=''
 	declare -n _fq1_star _fq2_star _star
-	while getopts 'S:s:5:t:g:f:x:a:n:i:r:o:p:1:2:' arg; do
+	while getopts 'S:s:5:t:g:f:x:a:n:i:r:o:p:1:2:c:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -178,6 +179,7 @@ alignment::star() {
 			;;
 			1)	((mandatory++)); _fq1_star=$OPTARG;;
 			2)	_fq2_star=$OPTARG;;
+			c)	params="$OPTARG";;
 			*)	_usage; return 1;;
 		esac
 	done
@@ -194,7 +196,6 @@ alignment::star() {
 		[[ -s $gtf ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
 		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5star" || "$thismd5star" != "$md5star" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::printinfo "indexing genome for star"
-			local params=''
 			#100 = assumend usual read length
 			[[ "$thismd5gtf" ]] && params+=" --sjdbGTFfile '$gtf' --sjdbOverhang 200"
 			local genomesize=$(du -sb "$genome" | cut -f 1)
@@ -225,25 +226,22 @@ alignment::star() {
 	}
 
 	declare -a cmd1 tdirs
-	local a o e params extractcmd
+	local a o e extractcmd
 	for i in "${!_fq1_star[@]}"; do
 		helper::basename -f "${_fq1_star[$i]}" -o o -e e
 		o="$outdir/$o"
 		tdirs+=("$(mktemp -u -d -p "$tmpdir" cleanup.XXXXXXXXXX.star)")
 
-		params='--outSAMmapqUnique 60' #use 60 instead of default 255 - necessary for gatk implemented MappingQualityAvailableReadFilter
+		params+=' --outSAMmapqUnique 60' #use 60 instead of default 255 - necessary for gatk implemented MappingQualityAvailableReadFilter
 		helper::makecatcmd -c extractcmd -f "${_fq1_star[$i]}"
 		[[ $extractcmd != "cat" ]] && params+=" --readFilesCommand '$extractcmd'"
 		[[ $accuracy ]] && params+=' --outFilterMismatchNoverReadLmax '$(echo $accuracy | awk '{print $1/100}')
 
 		if [[ ${_fq2_star[$i]} ]]; then
 			$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999' || {
-				[[ $insertsize ]] || insertsize=100000
+				[[ $insertsize ]] || insertsize=200000
 				params+=" --alignMatesGapMax $insertsize --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
 			}
-			# from RG option on, params are taken from STAR-Fusion wiki
-			# alignSplicedMateMapLmin is minimum mapping bases of original read (..OverLmate as fraction of original read <- 0.66 is default)
-			# STAR-Fusion alters this to 30 (0)
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				STAR
 				--runMode alignReads
@@ -263,21 +261,6 @@ alignment::star() {
 				--outSAMstrandField intronMotif
 				--alignInsertionFlush Right
 				--outSAMattrRGline ID:A1 SM:sample1 LB:library1 PU:unit1 PL:illumina
-				--chimOutType Junctions SeparateSAMold
-				--chimOutJunctionFormat 1
-				--chimScoreMin 1
-				--chimScoreSeparation 1
-				--chimSegmentMin 12
-				--chimJunctionOverhangMin 8
-				--chimMultimapNmax 20
-				--chimNonchimScoreDropMin 10
-				--alignSJstitchMismatchNmax 5 -1 5 5
-				--peOverlapNbasesMin 12
-				--peOverlapMMp 0.1
-				--chimScoreJunctionNonGTAG -4
-				--chimMultimapScoreRange 3
-				--chimScoreDropMax 30
-				--chimSegmentReadGapMax 3
 			CMD
 				mv $o.Aligned.out.bam $o.bam
 			CMD
@@ -285,7 +268,7 @@ alignment::star() {
 			CMD
 		else
 			$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999' || {
-				[[ $insertsize ]] || insertsize=100000
+				[[ $insertsize ]] || insertsize=200000
 				params+=" --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
 			}
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -307,21 +290,6 @@ alignment::star() {
 				--outSAMstrandField intronMotif
 				--alignInsertionFlush Right
 				--outSAMattrRGline ID:A1 SM:sample1 LB:library1 PU:unit1 PL:illumina
-				--chimOutType Junctions SeparateSAMold
-				--chimOutJunctionFormat 1
-				--chimScoreMin 1
-				--chimScoreSeparation 1
-				--chimSegmentMin 12
-				--chimJunctionOverhangMin 8
-				--chimMultimapNmax 20
-				--chimNonchimScoreDropMin 10
-				--alignSJstitchMismatchNmax 5 -1 5 5
-				--peOverlapNbasesMin 12
-				--peOverlapMMp 0.1
-				--chimScoreJunctionNonGTAG -4
-				--chimMultimapScoreRange 3
-				--chimScoreDropMax 30
-				--chimSegmentReadGapMax 3
 			CMD
 				mv $o.Aligned.out.bam $o.bam
 			CMD
@@ -622,76 +590,118 @@ alignment::_index() {
 	return 0
 }
 
-alignment::_inferexperiment() {
+alignment::inferstrandness(){
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
-			-1 <cmds1>    | array of
-			-2 <cmds1>    | array of
-			-i <bam>      | alignment file
-			-g <gtf>      | annotation file
-			-p <tmpfile>  | path to
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-t <threads>    | number of
+			-r <mapper>     | array of bams within array of
+			-x <strandness> | hash per bam of
+			-g <gtf>        | path to
+			-p <tmpdir>     | path to
 		EOF
 		return 0
 	}
 
-	local OPTIND arg mandatory bam gtf tmp
-	declare -n _cmds1_inferexperiment _cmds2_inferexperiment
-	while getopts '1:2:t:i:g:p:' arg; do
+	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf level="exon" featuretag="gene_id"
+	declare -n _mapper_inferstrandness _strandness_inferstrandness
+	while getopts 'S:s:t:r:x:g:l:f:p:o:' arg; do
 		case $arg in
-			1) ((mandatory++)); _cmds1_inferexperiment=$OPTARG;;
-			2) ((mandatory++)); _cmds2_inferexperiment=$OPTARG;;
-			i) ((mandatory++)); bam="$OPTARG";;
+			S) $OPTARG && return 0;;
+			s) $OPTARG && skip=true;;
+			t) ((mandatory++)); threads=$OPTARG;;
+			r) ((mandatory++)); _mapper_inferstrandness=$OPTARG;;
+			x) ((mandatory++)); _strandness_inferstrandness=$OPTARG;;
 			g) ((mandatory++)); gtf="$OPTARG";;
-			p) ((mandatory++)); tmp="$OPTARG";;
+			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
+
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 
-	commander::makecmd -a _cmds1_inferexperiment -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-		perl -lane '
-			next if $F[0] =~ /^(MT|chrM)/i;
-			next unless $F[2] eq "exon";
-			if($F[6] eq "+"){
-				$plus++;
-				print join"\t",($F[0],$F[3],$F[4],$F[1],0,$F[6]);
-			} else {
-				$minus++;
-				print join"\t",($F[0],$F[3],$F[4],$F[1],0,$F[6]);
-			}
-			exit if $plus>2000 && $minus>2000;
-		'
-	CMD
-		"$gtf" > "$tmp"
-	CMD
+	commander::printinfo "inferring library preparation method"
 
-	# 0 - unstranded
-	# 1 - dUTP ++,-+ (FR stranded)
-	# 2 - dUTP +-,++ (FR, reversely stranded)
-	commander::makecmd -a _cmds2_inferexperiment -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-		{ echo "$bam" &&
-			infer_experiment.py
-			-q 0
-			-i "$bam"
-			-r "$tmp";
+	declare -a cmd1 cmd2 tfiles
+	local m f
+	for m in "${_mapper_inferstrandness[@]}"; do
+		declare -n _bams_inferstrandness=$m
+		for f in "${_bams_inferstrandness[@]}"; do
+			tfiles+=("$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
+
+			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				perl -lane '
+					next if $F[0] =~ /^(MT|chrM)/i;
+					next unless $F[2] eq "exon";
+					if($F[6] eq "+"){
+						$plus++;
+						print join"\t",($F[0],$F[3],$F[4],$F[1],0,$F[6]);
+					} else {
+						$minus++;
+						print join"\t",($F[0],$F[3],$F[4],$F[1],0,$F[6]);
+					}
+					exit if $plus>2000 && $minus>2000;
+				'
+			CMD
+				"$gtf" > "${tfiles[-1]}"
+			CMD
+			# 0 - unstranded
+			# 1 - dUTP ++,-+ (FR stranded)
+			# 2 - dUTP +-,++ (FR, reversely stranded)
+			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+				{ echo "$f" &&
+					infer_experiment.py
+					-q 0
+					-i "$f"
+					-r "${tfiles[-1]}";
+				}
+			CMD
+				perl -lane '
+					BEGIN{
+						$p=1;
+					}
+					$f=$_ if $.==1;
+					$p=0 if /SingleEnd/i;
+					$s1=$F[-1] if $F[-2]=~/^\"\d?\+\+/;
+					$s2=$F[-1] if $F[-2]=~/^\"\d?\+-/;
+					END{
+						print $s1 > 0.7 ? "1 $f" : $s2 > 0.7 ? "2 $f" : "0 $f";
+					}
+				'
+			CMD
+
+			# skip case
+			_strandness_inferstrandness["$f"]="?"
+		done
+	done
+
+	$skip && {
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+	} || {
+		{	local l
+			declare -a a mapdata
+			commander::runcmd -v -b -t $threads -a cmd1 && \
+			echo ":INFO: running commands of array cmd2" && \
+			commander::printcmd -a cmd2 && \
+			conda activate py3 && \
+			mapfile -t mapdata < <(commander::runcmd -t $threads -a cmd2)
+			for l in "${mapdata[@]}"; do
+				a=($l)
+				_strandness_inferstrandness["${a[@]:1}"]="${a[0]}"
+			done
+			conda activate py2
+		} || {
+			rm -f "${tfiles[@]}"
+			commander::printerr "$funcname failed"
+			return 1
 		}
-	CMD
-		perl -lane '
-			BEGIN{
-				$p=1;
-			}
-			$f=$_ if $.==1;
-			$p=0 if /SingleEnd/i;
-			$s1=$F[-1] if $F[-2]=~/^\"\d?\+\+/;
-			$s2=$F[-1] if $F[-2]=~/^\"\d?\+-/;
-			END{
-				print $s1 > 0.7 ? "1 $f" : $s2 > 0.7 ? "2 $f" : "0 $f";
-			}
-		'
-	CMD
+	}
 
+	rm -f "${tfiles[@]}"
 	return 0
 }
 
@@ -719,7 +729,7 @@ alignment::add4stats(){
 	for m in "${_mapper_add4stats[@]}"; do
 		declare -n _bams_add4stats=$m
 		for i in "${!_bams_add4stats[@]}"; do
-            declare -g -a $m$i #optional (see below), declare can be used with $var! but then without assignment
+			declare -g -a $m$i #optional (see below), declare can be used with $var! but then without assignment
 			declare -n _mi_add4stats=$m$i # non existing reference (here $m$i) will be always globally declared ("declare -g $m$i")
 			_mi_add4stats+=("${_bams_add4stats[$i]}")
 		done

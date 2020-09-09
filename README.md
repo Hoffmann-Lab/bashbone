@@ -222,9 +222,9 @@ source <path/of/installation/activate.sh> -c true
 genome=<path/to/fasta>
 genomeidx=<path/to/segemhl.idx>
 gtf=<path/to/gtf>
-comparisons=($(ls <path/to/sample-info/files*>))
-fastqs=($(ls <path/to/fastq-gz/files*>))
-adapters=(AGATCGGAAGAGC)
+declare -a comparisons=($(ls <path/to/sample-info/files*>))
+declare -a fastqs=($(ls <path/to/fastq-gz/files*>))
+declare -a adapters=(AGATCGGAAGAGC)
 threads=4
 memoryPerInstance=2000
 preprocess::fastqc -t $threads -o results/qualities/raw -p /tmp -1 fastqs
@@ -237,7 +237,7 @@ preprocess::sortmerna -t $threads -m $memoryPerInstance -o results/rrnafiltered 
 preprocess::fastqc -t $threads -o results/qualities/rrnafiltered -p /tmp -1 fastqs
 qualdirs=($(ls -d results/qualities/*/))
 preprocess::qcstats -i qualdirs -o results/stats -p /tmp -1 fastqs
-mapped=()
+declare -a mapped
 alignment::segemehl -t $threads -g $genome -x $genomeidx -o results/mapped -1 fastqs -r mapped
 alignment::add4stats -r mapper
 alignment::postprocess -j uniqify -t $threads -p /tmp -o results/mapped -r mapped
@@ -245,7 +245,9 @@ alignment::add4stats -r mapper
 alignment::postprocess -r sort -t $threads -p /tmp -o results/mapped -r mapped
 alignment::postprocess -r index -t $threads -p /tmp -o results/mapped -r mapped
 alignment::bamstats -t $threads -o results/stats -r mapped
-quantify::featurecounts -t $threads -p /tmp -g $gtf -o results/counted -r mapped
+declare -A strandness
+alignment::inferstrandness -t $threads -g $gtf -p /tmp -r mapped -x strandness
+quantify::featurecounts -t $threads -p /tmp -g $gtf -o results/counted -r mapped -x strandness
 quantify::tpm -t $threads -g $gtf -o results/counted -r mapped
 expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o results/deseq -r mapped
 ```

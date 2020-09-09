@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-callvariants::vcfzip() {
+variants::vcfzip() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
@@ -61,7 +61,7 @@ callvariants::vcfzip() {
 	return 0
 }
 
-callvariants::haplotypecaller() {
+variants::haplotypecaller() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
@@ -234,7 +234,7 @@ callvariants::haplotypecaller() {
 	return 0
 }
 
-callvariants::panelofnormals() {
+variants::panelofnormals() {
 # The panel of normals not only represents common germline variant sites,
 # it presents commonly noisy sites in sequencing data, e.g. mapping artifacts or
 # other somewhat random but systematic artifacts of sequencing.
@@ -348,7 +348,7 @@ callvariants::panelofnormals() {
 	return 0
 }
 
-callvariants::makepondb() {
+variants::makepondb() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
@@ -481,7 +481,7 @@ callvariants::makepondb() {
 	return 0
 }
 
-callvariants::mutect() {
+variants::mutect() {
 # You do not need to make you own panel of normals (unless you have a huge number of samples,
 # it may even be counterproductive than our generic public panel).
 # Instead you may use gs://gatk-best-practices/somatic-b37/Mutect2-exome-panel.vcf.
@@ -557,7 +557,7 @@ callvariants::mutect() {
 		$mypon && {
 			# TODO later on the fly ? needs to be completed by pon calling,
 			# but sice pon creation is germline calling i'd like to keep things seperated
-			# {	callvariants::makepondb \
+			# {	variants::makepondb \
 			# 		-s $skip \
 			# 		-t $threads \
 			# 		-g "$genome" \

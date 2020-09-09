@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-callpeak::_idr() {
+peaks::_idr() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
@@ -53,7 +53,7 @@ callpeak::_idr() {
 	return 0
 }
 
-callpeak::macs() {
+peaks::macs() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
@@ -209,7 +209,7 @@ callpeak::macs() {
 				toidr+=("$odir/$o.narrowPeak")
 			done
 
-			callpeak::_idr \
+			peaks::_idr \
 				-1 cmd3 \
 				-2 cmd4 \
 				-t "${toidr[0]}" \
@@ -238,7 +238,7 @@ callpeak::macs() {
 			toidr+=( $odir/$(echo -e "$(basename $nrf)\t$(basename $pf)" | sed -E 's/(.+)\t(.+)\1/-\2.narrowPeak/') )
 			toidr+=( $odir/$(echo -e "$(basename $nff)\t$(basename $pff)" | sed -E 's/(.+)\t(.+)\1/-\2.narrowPeak/') )
 
-			callpeak::_idr \
+			peaks::_idr \
 				-1 cmd3 \
 				-2 cmd4 \
 				-t "${toidr[0]}" \
@@ -271,7 +271,7 @@ callpeak::macs() {
 	return 0
 }
 
-callpeak::gem() {
+peaks::gem() {
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
@@ -283,6 +283,7 @@ callpeak::gem() {
 			-f <gtf>        | path to
 			-q <ripseq>     | true/false
 			-r <mapper>     | array of sorted bams within array of
+			-x <strandness> | hash per bam of
 			-a <nidx>       | array of normal bam idices within -r
 			-b <nridx>      | array of normal repl bam idices within -r
 			-i <tidx>       | no treat repl ? array to store new pseudorepl bam : array of treat bam idices within -r
@@ -295,8 +296,8 @@ callpeak::gem() {
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false ripseq=false threads genome gtf outdir tmpdir
-	declare -n _mapper_gem _gem _nidx_gem _nridx_gem _tidx_gem _ridx_gem _pidx_gem
-	while getopts 'S:s:t:g:f:q:r:c:a:b:i:j:k:o:p:' arg; do
+	declare -n _mapper_gem _strandness_gem _gem _nidx_gem _nridx_gem _tidx_gem _ridx_gem _pidx_gem
+	while getopts 'S:s:t:g:f:q:r:x:c:a:b:i:j:k:o:p:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -304,6 +305,7 @@ callpeak::gem() {
 			g) ((mandatory++)); genome="$OPTARG";;
 			f) ((mandatory++)); gtf="$OPTARG";;
 			r) ((mandatory++)); _mapper_gem=$OPTARG;;
+			x) ((mandatory++)); _strandness_gem=$OPTARG;;
 			q) ripseq=$OPTARG;;
 			c) ((mandatory++))
 				declare -n _caller_gem=$OPTARG
@@ -320,7 +322,7 @@ callpeak::gem() {
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 11 ]] && _usage && return 1
+	[[ $mandatory -lt 12 ]] && _usage && return 1
 
 	commander::printinfo "peak calling gem"
 	commander::printinfo "preparing genome"
@@ -328,10 +330,24 @@ callpeak::gem() {
 	local instances ithreads jmem jgct jcgct
 	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -t 20 -T $threads)
 
+	declare -n _bams_gem=${_mapper_gem[0]}
+	local params nf="${_bams_gem[${_nidx_macs[0]}]}"
+	local strandness=0
+	$ripseq && {
+		# --strand_type 1 disables search for asymmetry between sense and antisense mapped reads. instead leads to strand specific peak calls based on read orientation
+		# if data is paired end, mates will be analyzed individually as single end reads
+		# in case of PE this leads to duplicated peaks on both strands since orientation is not inferred from first in pair read
+		# -> use this parameter only in case of strand specific SE reads
+		[[ $(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 1) -eq 0 ]] && strandness=${_strandness_gem["$nf"]}
+		params='--relax --d $(dirname $(which gem))/Read_Distribution_CLIP.txt'
+	} || {
+		params="--d $(dirname $(which gem))/Read_Distribution_default.txt"
+	}
+	[[ $strandness -ne 0 ]] && params+=" --strand_type 1"
+
 	# get effective genome size
 	# if multimapped reads: genome minus Ns , else genome minus Ns minus repetetive Elements
-	declare -n _bams_gem=${_mapper_gem[0]}
-	local params genomesize nf=${_bams_gem[${_nidx_macs[0]}]}
+	local genomesize
 	if [[ $(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 256) -gt 0 ]]; then
 		genomesize=$(faCount $genome | tail -1 | awk '{print $3+$4+$5+$6}')
 	else
@@ -363,48 +379,6 @@ callpeak::gem() {
 			return 1
 		}
 	}
-
-	local strandness=0
-	$ripseq && {
-		# --strand_type 1 disables search for asymmetry between sense and antisense mapped reads. instead leads to strand specific peak calls based on read orientation
-		# if data is paired end, mates will be analyzed individually as single end reads
-		# in case of PE this leads to duplicated peaks on both strands since orientation is not inferred from first in pair read
-		# -> use this parameter only in case of strand specific SE reads
-		[[ $(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 1) -eq 0 ]] && {
-			commander::printinfo "inferring library preparation method"
-
-			local f tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)"
-			declare -a cmdi1 cmdi2
-			alignment::_inferexperiment \
-				-1 cmdi1 \
-				-2 cmdi2 \
-				-p "$tmp" \
-				-i "$nf" \
-				-g "$gtf"
-
-			$skip && {
-				commander::printcmd -a cmdi1
-				commander::printcmd -a cmdi2
-			} || {
-				{	commander::runcmd -v -b -t $threads -a cmdi1 && \
-					echo ":INFO: running commands of array cmdi2" && \
-					commander::printcmd -a cmdi2 && \
-					conda activate py3 && \
-					read -r strandness f < <(commander::runcmd -t $threads -a cmdi2) && \
-					conda activate py2
-				} || {
-					rm -f "$tmp"
-					commander::printerr "$funcname failed"
-					return 1
-				}
-			}
-			rm -f "$tmp"
-		}
-		params='--relax --d $(dirname $(which gem))/Read_Distribution_CLIP.txt'
-	} || {
-		params="--d $(dirname $(which gem))/Read_Distribution_default.txt"
-	}
-	[[ $strandness -ne 0 ]] && params+=" --strand_type 1"
 
 	local m i f o tdir odir nf nrf tf rf x pff nff
 	declare -a cmd1 cmd2 cmd3 cmd4 toidr
@@ -475,7 +449,7 @@ callpeak::gem() {
 				toidr+=("$odir/$o.narrowPeak")
 			done
 
-			callpeak::_idr \
+			peaks::_idr \
 				-1 cmd3 \
 				-2 cmd4 \
 				-t "${toidr[0]}" \
@@ -504,7 +478,7 @@ callpeak::gem() {
 			toidr+=( $odir/$(echo -e "$(basename $nrf)\t$(basename $pf)" | sed -E 's/(.+)\t(.+)\1/-\2.narrowPeak/') )
 			toidr+=( $odir/$(echo -e "$(basename $nff)\t$(basename $pff)" | sed -E 's/(.+)\t(.+)\1/-\2.narrowPeak/') )
 
-			callpeak::_idr \
+			peaks::_idr \
 				-1 cmd2 \
 				-2 cmd3 \
 				-t "${toidr[0]}" \

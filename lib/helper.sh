@@ -111,6 +111,58 @@ helper::basename(){
 	return 0
 }
 
+helper::ishash(){
+	local funcname=${FUNCNAME[0]}
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			$funcname usage:
+			-v <var> | variable
+		EOF
+		return 0
+	}
+	local OPTIND arg mandatory var
+	declare -a vars
+	while getopts 'v:' arg; do
+		case $arg in
+			v)	((mandatory++)); vars+=("$(printf '%q' "$OPTARG")")
+				{	declare -p "$OPTARG" &> /dev/null && \
+					declare -n __="$OPTARG"
+					[[ "$(declare -p ${!__})" =~ ^declare\ \-[Ab-z]+ ]]
+				} || return 1
+			;;
+			*)	_usage; return 1;;
+		esac
+	done
+
+	return 0
+}
+
+helper::isarray(){
+	local funcname=${FUNCNAME[0]}
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			$funcname usage:
+			-v <var> | variable
+		EOF
+		return 0
+	}
+	local OPTIND arg mandatory var
+	declare -a vars
+	while getopts 'v:' arg; do
+		case $arg in
+			v)	((mandatory++)); vars+=("$(printf '%q' "$OPTARG")")
+				{	declare -p "$OPTARG" &> /dev/null && \
+					declare -n __="$OPTARG"
+					[[ "$(declare -p ${!__})" =~ ^declare\ \-[a-zB-Z]+ ]]
+				} || return 1
+			;;
+			*)	_usage; return 1;;
+		esac
+	done
+
+	return 0
+}
+
 helper::addmemberfunctions(){
 	local funcname=${FUNCNAME[0]}
 	_usage(){
