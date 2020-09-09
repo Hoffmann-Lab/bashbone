@@ -158,7 +158,9 @@ fusions::arriba(){
 	# hence. As a workaround, these tools recommend reducing the value of the parameter --alignIntronMax. But this impairs the quality of alignment,
 	# because it reduces the scope that STAR searches to find a spliced alignment.
 
-	declare -a mapper
+	# star array is implicitly defined globally in alignment::star function
+	# to be able to use a temporary star array here, declare it explicitly i.e. locally
+	declare -a mapper star
 	declare -A strandness
 	local params=""
 	params+=" --outFilterMultimapNmax 1"
@@ -189,9 +191,27 @@ fusions::arriba(){
 			-r mapper \
 			-c "$params" && \
 
+		alignment::postprocess \
+			-S ${nosort:=false} \
+			-s ${Ssort:=false} \
+			-j sort \
+			-t $threads \
+			-p $tmpdir \
+			-o $outdir \
+			-r mapper && \
+
+		alignment::postprocess \
+			-S ${noidx:=false} \
+			-s ${Sidx:=false} \
+			-j index \
+			-t $threads \
+			-p $tmpdir \
+			-o $outdir \
+			-r mapper && \
+
 		alignment::inferstrandness \
 			-S false \
-			-s skip \
+			-s $skip \
 			-t $threads \
 			-r mapper \
 			-x strandness \
@@ -201,24 +221,21 @@ fusions::arriba(){
 
 	local m f o
 	declare -a cmd3
-	for m in "${mapper[@]}"; do
-		declare -n _bams_arriba=$m
-		for f in "${_bams_arriba[@]}"; do
-			o=outdir/$(basename $f .bam)
-			commander::makecmd -a cmd -s '&&' -c {COMMANDER[0]}<<- CMD
-				arriba
-					-a "$genome"
-					-g "$gtf"
-					-b "\$CONDA_PREFIX/var/lib/arriba/blacklist_hg38_GRCh38_2018-11-04.tsv.gz"
-					-x "$f"
-					-o $o.fusions.tsv
-					-O $o.fusions.discarded.tsv
-					-s $(case ${strandness["$f"]} in 0) echo "no";; 1) echo "yes";; 2) echo "reverse";; *) echo "?";; esac)
-					-F $fragmentsize
-					-T
-					-P
-			CMD
-		done
+	for f in "${star[@]}"; do
+		o=outdir/$(basename $f .bam)
+		commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
+			arriba
+				-a "$genome"
+				-g "$gtf"
+				-b "\$CONDA_PREFIX/var/lib/arriba/blacklist_hg38_GRCh38_2018-11-04.tsv.gz"
+				-x "$f"
+				-o $o.fusions.tsv
+				-O $o.fusions.discarded.tsv
+				-s $(case ${strandness["$f"]} in 0) echo "no";; 1) echo "yes";; 2) echo "reverse";; *) echo "?";; esac)
+				-F $fragmentsize
+				-T
+				-P
+		CMD
 	done
 
 	$skip && {

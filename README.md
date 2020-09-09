@@ -25,6 +25,7 @@ A bash library for workflow and pipeline design within but not restricted to the
 
 - For paired-end and single-end derived raw sequencing or prior mapped read data
 - Data preprocessing (quality check, adapter clipping, quality trimming, error correction, artificial rRNA depletion)
+- Gene fusion detection
 - Read alignment and post-processing
   - knapsack problem based slicing of alignment files for parallel task execution
   - sorting, filtering, unique alignment extraction, removal of optical duplicates
@@ -215,7 +216,7 @@ Then the info file should consist of:
 
 ## Example
 
-Tiny example pipeline to perform differential gene expression analysis
+Tiny example pipeline to perform gene fusion detection and differential gene expression analysis
 
 ```bash
 source <path/of/installation/activate.sh> -c true
@@ -225,6 +226,7 @@ gtf=<path/to/gtf>
 declare -a comparisons=($(ls <path/to/sample-info/files*>))
 declare -a fastqs=($(ls <path/to/fastq-gz/files*>))
 declare -a adapters=(AGATCGGAAGAGC)
+fragmentsize=200
 threads=4
 memoryPerInstance=2000
 preprocess::fastqc -t $threads -o results/qualities/raw -p /tmp -1 fastqs
@@ -235,8 +237,10 @@ preprocess::fastqc -t $threads -o results/qualities/clipped -p /tmp -1 fastqs
 preprocess::rcorrector -t $threads -o results/corrected -p /tmp -1 fastqs
 preprocess::sortmerna -t $threads -m $memoryPerInstance -o results/rrnafiltered -p /tmp
 preprocess::fastqc -t $threads -o results/qualities/rrnafiltered -p /tmp -1 fastqs
-qualdirs=($(ls -d results/qualities/*/))
+declare -a qualdirs=($(ls -d results/qualities/*/))
 preprocess::qcstats -i qualdirs -o results/stats -p /tmp -1 fastqs
+fusions::arriba -t $threads -g $genome -a $gtf -o results/fusions -p /tmp -f $fragmentsize -1 fastqs
+fusions::starfusion -t $threads -g $genome -g $gtf -o results/fusions -1 fastqs
 declare -a mapped
 alignment::segemehl -t $threads -g $genome -x $genomeidx -o results/mapped -1 fastqs -r mapped
 alignment::add4stats -r mapper
@@ -259,6 +263,7 @@ expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o resul
 
 | Tool | Source | DOI |
 | ---  | ---    | --- |
+| Arriba        | <https://github.com/suhrig/arriba/>                                 | NA |
 | BamUtil       | <https://genome.sph.umich.edu/wiki/BamUtil>                         | 10.1101/gr.176552.114 |
 | BCFtools      | <http://www.htslib.org/doc/bcftools.html>                           | 10.1093/bioinformatics/btr509 |
 | BEDTools      | <https://bedtools.readthedocs.io>                                   | 10.1093/bioinformatics/btq033 |
@@ -283,6 +288,7 @@ expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o resul
 | segemehl      | <http://www.bioinf.uni-leipzig.de/Software/segemehl>                | 10.1186/gb-2014-15-2-r34 <br> 10.1371/journal.pcbi.1000502 |
 | SortMeRNA     | <https://bioinfo.lifl.fr/RNA/sortmerna>                             | 10.1093/bioinformatics/bts611 |
 | STAR          | <https://github.com/alexdobin/STAR>                                 | 10.1093/bioinformatics/bts635 |
+| STAR-Fusion   | <https://github.com/STAR-Fusion/STAR-Fusion/wiki>                   | 10.1101/120295 |
 | Trimmomatic   | <http://www.usadellab.org/cms/?page=trimmomatic>                    | 10.1093/bioinformatics/btu170 |
 | vcflib        | <https://github.com/vcflib/vcflib>                                  | NA |
 | Vt            | <https://genome.sph.umich.edu/wiki/Vt>                              | 10.1093/bioinformatics/btv112 |
@@ -298,6 +304,5 @@ expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o resul
 | HISAT2          | <https://daehwankimlab.github.io/hisat2>                   | 10.1038/nmeth.3317 |
 | Platypus        | <https://rahmanteamdevelopment.github.io/Platypus>         | 10.1038/ng.3036 |
 | SnpEff          | <https://pcingola.github.io/SnpEff>                        | 10.4161/fly.19695 |
-| STAR-Fusion     | <https://github.com/STAR-Fusion/STAR-Fusion/wiki>          | 10.1101/120295 |
 | VarDict         | <https://github.com/AstraZeneca-NGS/VarDict>               | 10.1093/nar/gkw227 |
 | VarScan         | <http://dkoboldt.github.io/varscan>                        | 10.1101/gr.129684.111 |

@@ -24,7 +24,8 @@ alignment::segemehl() {
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads genome genomeidx outdir accuracy insertsize nosplitaln=false
-	declare -n _fq1_segemehl _fq2_segemehl _segemehl
+	declare -n _fq1_segemehl _fq2_segemehl
+	declare -g -a segemehl=()
 	while getopts 'S:s:5:t:g:x:a:n:i:r:o:1:2:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
@@ -40,7 +41,6 @@ alignment::segemehl() {
 			r)	((mandatory++))
 				declare -n _mapper_segemehl=$OPTARG
 				_mapper_segemehl+=(segemehl)
-				_segemehl=segemehl
 			;;
 			1)	((mandatory++)); _fq1_segemehl=$OPTARG;;
 			2)	_fq2_segemehl=$OPTARG;;
@@ -115,7 +115,7 @@ alignment::segemehl() {
 				ln -sfnr $o.sngl.bed $o.sj
 			CMD
 		fi
-		_segemehl+=("$o.bam")
+		segemehl+=("$o.bam")
 	done
 
 	$skip && {
@@ -157,7 +157,8 @@ alignment::star() {
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false params=''
-	declare -n _fq1_star _fq2_star _star
+	declare -n _fq1_star _fq2_star _mapper_star
+	declare -g -a star=()
 	while getopts 'S:s:5:t:g:f:x:a:n:i:r:o:p:1:2:c:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
@@ -173,9 +174,8 @@ alignment::star() {
 			n)	nosplitaln=$OPTARG;;
 			i)	insertsize=$OPTARG;;
 			r)	((mandatory++))
-				declare -n _mapper_star=$OPTARG
+				_mapper_star=$OPTARG
 				_mapper_star+=(star)
-				_star=star
 			;;
 			1)	((mandatory++)); _fq1_star=$OPTARG;;
 			2)	_fq2_star=$OPTARG;;
@@ -296,7 +296,7 @@ alignment::star() {
 				ln -sfnr $o.SJ.out.tab $o.sj
 			CMD
 		fi
-		_star+=("$o.bam")
+		star+=("$o.bam")
 	done
 
 	$skip && {
@@ -598,7 +598,7 @@ alignment::inferstrandness(){
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
-			-r <mapper>     | array of bams within array of
+			-r <mapper>     | array of sorted, indexed bams within array of
 			-x <strandness> | hash per bam of
 			-g <gtf>        | path to
 			-p <tmpdir>     | path to
@@ -648,6 +648,7 @@ alignment::inferstrandness(){
 			CMD
 				"$gtf" > "${tfiles[-1]}"
 			CMD
+			# requires, sorted, indexed bam
 			# 0 - unstranded
 			# 1 - dUTP ++,-+ (FR stranded)
 			# 2 - dUTP +-,++ (FR, reversely stranded)
@@ -655,6 +656,7 @@ alignment::inferstrandness(){
 				{ echo "$f" &&
 					infer_experiment.py
 					-q 0
+					-s 100000
 					-i "$f"
 					-r "${tfiles[-1]}";
 				}
