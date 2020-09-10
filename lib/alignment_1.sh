@@ -24,7 +24,7 @@ alignment::segemehl() {
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads genome genomeidx outdir accuracy insertsize nosplitaln=false
-	declare -n _fq1_segemehl _fq2_segemehl
+	declare -n _fq1_segemehl _fq2_segemehl _mapper_segemehl
 	declare -g -a segemehl=()
 	while getopts 'S:s:5:t:g:x:a:n:i:r:o:1:2:' arg; do
 		case $arg in
@@ -39,7 +39,7 @@ alignment::segemehl() {
 			n)	nosplitaln=$OPTARG;;
 			i)	insertsize=$OPTARG;;
 			r)	((mandatory++))
-				declare -n _mapper_segemehl=$OPTARG
+				_mapper_segemehl=$OPTARG
 				_mapper_segemehl+=(segemehl)
 			;;
 			1)	((mandatory++)); _fq1_segemehl=$OPTARG;;
@@ -311,7 +311,186 @@ alignment::star() {
 	}
 
 	rm -rf "${tdirs[@]}"
- 	return 0
+	return 0
+}
+
+alignment::bwa() {
+	local funcname=${FUNCNAME[0]}
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			$funcname usage:
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-5 <skip>       | true/false md5sums, indexing respectively
+			-t <threads>    | number of
+			-a <accuracy>   | optional: 80 to 100
+			-r <mapper>     | array of bams within array of
+			-g <genome>     | path to
+			-x <idxprefix>  | path to
+			-f <memalog>    | true/false force mem algorithm independend of readlength
+			-o <outdir>     | path to
+			-1 <fastq1>     | array of
+			-2 <fastq2>     | array of
+		EOF
+		return 0
+	}
+
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome idxprefix outdir accuracy forcemem=true
+	declare -n _fq1_bwa _fq2_bwa _mapper_bwa
+	declare -g -a bwa=()
+	while getopts 'S:s:5:t:g:x:a:f:i:r:o:1:2:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			5)	$OPTARG && skipmd5=true;;
+			t)	((mandatory++)); threads=$OPTARG;;
+			g)	((mandatory++)); genome="$OPTARG";;
+			x)	((mandatory++)); idxprefix="$OPTARG";;
+			o)	((mandatory++)); outdir="$OPTARG/bwa"; mkdir -p "$outdir" || return 1;;
+			a)	accuracy=$((100-$OPTARG));;
+			f)	forcemem=$OPTARG;;
+			r)	((mandatory++))
+				_mapper_bwa=$OPTARG
+				_mapper_bwa+=(bwa)
+			;;
+			1)	((mandatory++)); _fq1_bwa=$OPTARG;;
+			2)	_fq2_bwa=$OPTARG;;
+			*)	_usage; return 1;;
+		esac
+	done
+	[[ $mandatory -lt 6 ]] && _usage && return 1
+
+	commander::printinfo "mapping bwa"
+
+	$skipmd5 && {
+		commander::warn "skip checking md5 sums and genome indexing respectively"
+	} || {
+		commander::printinfo "checking md5 sums"
+		local thismd5genome thismd5bwa
+		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
+		[[ -s "$idxprefix.bwt" ]] && thismd5bwa=$(md5sum "$idxprefix.bwt" | cut -d ' ' -f 1)
+		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5bwa" || "$thismd5bwa" != "$md5bwa" ]]; then
+			commander::printinfo "indexing genome for bwa"
+			declare -a cmdidx
+			commander::makecmd -a cmdidx -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				mkdir -p "$(dirname "$idxprefix")"
+			CMD
+				bwa index -p "$idxprefix" "$genome"
+			CMD
+			commander::runcmd -v -b -t $threads -a cmdidx || {
+				commander::printerr "$funcname failed at indexing"
+				return 1
+			}
+			thismd5bwa=$(md5sum "$idxprefix.bwt" | cut -d ' ' -f 1)
+			sed -i "s/md5bwa=.*/md5bwa=$thismd5bwa/" $genome.md5.sh
+		fi
+	}
+
+	local instances=${#_fq1_bwa[@]} ithreads
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
+
+	declare -a cmd1 cmd2
+	local i o1 e1 o2 e2 readlength catcmd params
+	for i in "${!_fq1_bwa[@]}"; do
+
+		helper::basename -f "${_fq1_bwa[$i]}" -o o1 -e e1
+		helper::basename -f "${_fq2_bwa[$i]}" -o o2 -e e2
+		o1="$outdir/$o1"
+		o2="$outdir/$o2"
+
+		helper::makecatcmd -c catcmd -f ${_fq1_bwa[$i]}
+		readlength=$($catcmd $f | head -800 | awk 'NR%4==2{l+=length($0)}END{printf("%d",l/(NR/4))}')
+
+		if $forcemem || [[ $readlength -gt 70 ]]; then
+			# minOUTscore:30 @ MM/indelpenalty:4/6 -> (100-30)/4=~17% errors -> increase minOUTscore
+			# solve (readlength-x)/5=accuracy -> r/5 - x/5 = a -> x/5 = r/5 - a -> x = (r/5-a)*5
+			# => minOUTscore = $(( readlength - (readlength/5-accuracy)*5 ))
+			[[ $accuracy ]] && params="-T $(( readlength - (readlength/5-accuracy)*5 ))"
+			if [[ ${_fq2_bwa[$i]} ]]; then
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bwa mem
+						$params
+						-R '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
+						-a
+						-t $threads
+						"$idxprefix"
+						${_fq1_bwa[$i]} ${_fq2_bwa[$i]}
+				CMD
+					samtools view -@ $threads -b > $o1.bam
+				CMD
+			else
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bwa mem
+						$params
+						-R '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
+						-a
+						-t $threads
+						"$idxprefix"
+						${_fq1_bwa[$i]}
+				CMD
+					samtools view -@ $threads -b > $o1.bam
+				CMD
+			fi
+		else
+			if [[ ${_fq2_bwa[$i]} ]]; then
+				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bwa	aln
+						-t $threads
+						"$idxprefix"
+						${_fq1_bwa[$i]}
+					> $o1.sai
+				CMD
+					bwa	aln
+						-t $threads
+						"$idxprefix"
+						${_fq2_bwa[$i]}
+					> $o2.sai
+				CMD
+				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bwa sampe
+						-r '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
+						"$idxprefix"
+						$o1.sai $o2.sai
+						${fastq1[$i]} ${fastq2[$i]}
+				CMD
+					samtools view -@ $ithreads -b > $o1.bam
+				CMD
+			else
+				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+					bwa	aln
+						-t $threads
+						"$idxprefix"
+						${_fq1_bwa[$i]}
+					> $o1.sai
+				CMD
+				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bwa samse
+						-r '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
+						"$idxprefix"
+						$o1.sai
+						${fastq1[$i]}
+				CMD
+					samtools view -@ $ithreads -b > $o1.bam
+				CMD
+			fi
+		fi
+		bwa+=("$o1.bam")
+	done
+
+
+	$skip && {
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+	} || {
+		{	commander::runcmd -v -b -t 1 -a cmd1 && \
+			commander::runcmd -v -b -t $instances -a cmd2
+		} || {
+			commander::printerr "$funcname failed"
+			return 1
+		}
+	}
+
+	return 0
 }
 
 alignment::postprocess() {

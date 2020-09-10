@@ -26,11 +26,11 @@ preprocess::fastqc() {
 			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			1) ((mandatory++)); _fq1_fastqc=$OPTARG;;
-			2) ((mandatory++)); _fq2_fastqc=$OPTARG;;
+			2) _fq2_fastqc=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage && return 1
 
 	commander::printinfo "calculating qualities"
 
@@ -61,7 +61,62 @@ preprocess::fastqc() {
 	return 0
 }
 
-preprocess::cutadapt() {
+preprocess::rmpolynt(){
+	local funcname=${FUNCNAME[0]}
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			$funcname usage:
+			-S <hardskip> | true/false return
+			-s <softskip> | true/false only print commands
+			-t <threads>  | number of
+			-o <outdir>   | path to
+			-1 <fastq1>   | array of
+			-2 <fastq2>   | array of
+		EOF
+		return 0
+	}
+
+	local OPTIND arg mandatory skip=false threads outdir
+	declare -n _fq1_rmpolynuc _fq2_rmpolynuc
+	while getopts 'S:s:a:A:t:o:1:2:' arg; do
+		case $arg in
+			S) $OPTARG && return 0;;
+			s) $OPTARG && skip=true;;
+			t) ((mandatory++)); threads=$OPTARG;;
+			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			1) ((mandatory++)); _fq1_rmpolynuc=$OPTARG;;
+			2) _fq2_rmpolynuc=$OPTARG;;
+			*) _usage; return 1;;
+		esac
+	done
+	[[ $mandatory -lt 3 ]] && _usage && return 1
+
+	commander::printinfo "clipping poly N-, mono- and di-nucleotide ends"
+
+	declare -a poly
+	local i
+	for i in A C G T; do
+		poly+=($(printf "$i%.0s" {1..100}))
+	done
+	for i in AB CD GH TV; do #iupac
+		poly+=($(printf "$i%.0s" {1..100}))
+	done
+
+	{	preprocess::cutadapt \
+			-S false \
+			-s $skip \
+			-a poly \
+			-A poly \
+			-t $threads \
+			-o "$outdir" \
+			-1 _fq1_rmpolynuc \
+			-2 _fq2_rmpolynuc
+	} || return 1
+
+	return 0
+}
+
+preprocess::cutadapt(){
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
@@ -85,15 +140,15 @@ preprocess::cutadapt() {
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			a) ((mandatory++)); _adaptera_cutadapt=$OPTARG;;
-			A) ((mandatory++)); _adapterA_cutadapt=$OPTARG;;
+			A) _adapterA_cutadapt=$OPTARG;;
 			t) ((mandatory++)); threads=$OPTARG;;
 			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			1) ((mandatory++)); _fq1_cutadapt=$OPTARG;;
-			2) ((mandatory++)); _fq2_cutadapt=$OPTARG;;
+			2) _fq2_cutadapt=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage && return 1
 
 	commander::printinfo "adapter clipping"
 
@@ -103,7 +158,8 @@ preprocess::cutadapt() {
 	read -r instances ithreads < <(configure::instances_by_threads -i ${#_fq1_cutadapt[@]} -t 10 -T $threads)
 
 	declare -a cmd1 cmd2
-	local i o1 o2
+	local i o1 o2 n=$((${_adaptera_cutadapt[@]}+1))
+	[[ $n -gt 2 ]] && n=2 # since only the best matching adapter is removed, run cutadapt twice
 	for i in "${!_fq1_cutadapt[@]}"; do
 		o1="$outdir"/$(basename "${_fq1_cutadapt[$i]}")
 		o2="$outdir"/$(basename "${_fq2_cutadapt[$i]}")
@@ -112,6 +168,8 @@ preprocess::cutadapt() {
 				cutadapt
 				${_adaptera_cutadapt[@]/#/-a }
 				${_adapterA_cutadapt[@]/#/-A }
+				-n $n
+				--trim-n
 				-j $ithreads
 				-m 18
 				-O 5
@@ -126,6 +184,8 @@ preprocess::cutadapt() {
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				cutadapt
 				${_adaptera_cutadapt[@]/#/-a }
+				-n $n
+				--trim-n
 				-j $threads
 				-m 18
 				-O 5
@@ -180,11 +240,11 @@ preprocess::trimmomatic() {
 			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			1) ((mandatory++)); _fq1_trimmomatic=$OPTARG;;
-			2) ((mandatory++)); _fq2_trimmomatic=$OPTARG;;
+			2) _fq2_trimmomatic=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage && return 1
 
 	commander::printinfo "trimming"
 
@@ -332,11 +392,11 @@ preprocess::rcorrector() {
 			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			1) ((mandatory++)); _fq1_rcorrector=$OPTARG;;
-			2) ((mandatory++)); _fq2_rcorrector=$OPTARG;;
+			2) _fq2_rcorrector=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage && return 1
 
 	commander::printinfo "correcting read errors"
 
@@ -432,11 +492,11 @@ preprocess::sortmerna() {
 			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			1) ((mandatory++)); _fq1_sortmerna=$OPTARG;;
-			2) ((mandatory++)); _fq2_sortmerna=$OPTARG;;
+			2) _fq2_sortmerna=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage && return 1
 
 	commander::printinfo "filtering rRNA fragments"
 
@@ -607,7 +667,7 @@ preprocess::qcstats(){
 			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			1) ((mandatory++)); _fq1_qcstats=$OPTARG;;
-			2) ((mandatory++)); _fq2_qcstats=$OPTARG;;
+			2) _fq2_qcstats=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done

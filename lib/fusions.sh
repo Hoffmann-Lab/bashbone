@@ -61,14 +61,14 @@ fusions::starfusion(){
 	# -> apply arriba blacklist filter
 
 	local i odir b e
-	declare -a cmd=()
+	declare -a cmd1=()
 	for i in "${!_fq1_starfusion[@]}"; do
 		helper::basename -f "${_fq1_starfusion[$i]}" -o b -e e
 		odir="$outdir/$b"
 		mkdir -p $odir
 
 		if [[ ${_fq2_starfusion[$i]} ]]; then
-			commander::makecmd -a cmd -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				cd "$odir"
 			CMD
 				STAR-Fusion
@@ -81,7 +81,7 @@ fusions::starfusion(){
 				--examine_coding_effect
 			CMD
 		else
-			commander::makecmd -a cmd -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				cd "$odir"
 			CMD
 				STAR-Fusion
@@ -92,7 +92,6 @@ fusions::starfusion(){
 				--FusionInspector validate
 				--examine_coding_effect
 			CMD
-
 		fi
 	done
 
@@ -118,6 +117,7 @@ fusions::arriba(){
 			$funcname usage:
 			-S <hardskip>     | true/false return
 			-s <softskip>     | true/false only print commands
+			-5 <skip>         | true/false md5sums, indexing respectively
 			-t <threads>      | number of
 			-g <genome>       | path to
 			-a <gtf>          | path to
@@ -130,12 +130,13 @@ fusions::arriba(){
 		return 0
 	}
 
-	local OPTIND arg mandatory skip=false threads genome gtf outdir tmpdir fragmentsize
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf outdir tmpdir fragmentsize
 	declare -n _fq1_arriba _fq2_arriba
-	while getopts 'S:s:t:g:a:o:p:f:1:2:' arg; do
+	while getopts 'S:s:5:t:g:a:o:p:f:1:2:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
+			5)	$OPTARG && skipmd5=true;;
 			t)	((mandatory++)); threads=$OPTARG;;
 			g)	((mandatory++)); genome="$OPTARG";;
 			a)	((mandatory++)); gtf="$OPTARG";;
@@ -180,11 +181,11 @@ fusions::arriba(){
 	{	alignment::star \
 			-S false \
 			-s $skip \
-			-5 true \
+			-5 $skipmd5 \
 			-1 _fq1_arriba \
 			-2 _fq2_arriba \
-			-o $outdir \
-			-p $tmpdir \
+			-o "$outdir" \
+			-p "$tmpdir" \
 			-t $threads \
 			-g "$genome" \
 			-x $genome.star.idx \
@@ -192,21 +193,21 @@ fusions::arriba(){
 			-c "$params" && \
 
 		alignment::postprocess \
-			-S ${nosort:=false} \
-			-s ${Ssort:=false} \
+			-S false \
+			-s $skip \
 			-j sort \
 			-t $threads \
-			-p $tmpdir \
-			-o $outdir \
+			-p "$tmpdir" \
+			-o "$outdir" \
 			-r mapper && \
 
 		alignment::postprocess \
-			-S ${noidx:=false} \
-			-s ${Sidx:=false} \
+			-S false \
+			-s $skip \
 			-j index \
 			-t $threads \
-			-p $tmpdir \
-			-o $outdir \
+			-p "$tmpdir" \
+			-o "$outdir" \
 			-r mapper && \
 
 		alignment::inferstrandness \
@@ -215,22 +216,22 @@ fusions::arriba(){
 			-t $threads \
 			-r mapper \
 			-x strandness \
-			-g $gtf \
-			-p $tmpdir
+			-g "$gtf" \
+			-p "$tmpd"ir
 	} || return 1
 
 	local m f o
 	declare -a cmd3
 	for f in "${star[@]}"; do
-		o=outdir/$(basename $f .bam)
+		o="$outdir/$(basename "$f" .bam)"
 		commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
 			arriba
 				-a "$genome"
 				-g "$gtf"
 				-b "\$CONDA_PREFIX/var/lib/arriba/blacklist_hg38_GRCh38_2018-11-04.tsv.gz"
 				-x "$f"
-				-o $o.fusions.tsv
-				-O $o.fusions.discarded.tsv
+				-o "$o.fusions.tsv"
+				-O "$o.fusions.discarded.tsv"
 				-s $(case ${strandness["$f"]} in 0) echo "no";; 1) echo "yes";; 2) echo "reverse";; *) echo "?";; esac)
 				-F $fragmentsize
 				-T

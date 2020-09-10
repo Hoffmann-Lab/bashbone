@@ -52,7 +52,7 @@ helper::makecatcmd(){
 			-c <var>  | cmd
 			-f <file> | to ascii
 			example:
-			$funcname -f [txt|bz2|gz]
+			$funcname -c cmd -f [txt|bz2|gz]
 		EOF
 		return 0
 	}
