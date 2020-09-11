@@ -55,6 +55,9 @@ alignment::segemehl() {
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	} || {
 		commander::printinfo "checking md5 sums"
+		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
+		source "$genome.md5.sh"
+
 		local thismd5genome thismd5segemehl
 		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 		[[ -s "$genomeidx" ]] && thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
@@ -190,6 +193,9 @@ alignment::star() {
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	} || {
 		commander::printinfo "checking md5 sums"
+		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
+		source "$genome.md5.sh"
+
 		local thismd5genome thismd5star thismd5gtf
 		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 		[[ -s "$genomeidxdir/SA" ]] && thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
@@ -366,6 +372,9 @@ alignment::bwa() {
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	} || {
 		commander::printinfo "checking md5 sums"
+		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
+		source "$genome.md5.sh"
+
 		local thismd5genome thismd5bwa
 		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 		[[ -s "$idxprefix.bwt" ]] && thismd5bwa=$(md5sum "$idxprefix.bwt" | cut -d ' ' -f 1)

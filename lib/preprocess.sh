@@ -93,13 +93,15 @@ preprocess::rmpolynt(){
 
 	commander::printinfo "clipping poly N-, mono- and di-nucleotide ends"
 
+	# -a ADAPTERX : allows partial matches, but disallow internal matches
+	# -a ADAPTER$ : adapter will only be found if it is a true suffix of the read
 	declare -a poly
 	local i
 	for i in A C G T; do
-		poly+=($(printf "$i%.0s" {1..100}))
+		poly+=("$(printf "$i%.0s" {1..100})X")
 	done
 	for i in AB CD GH TV; do #iupac
-		poly+=($(printf "$i%.0s" {1..100}))
+		poly+=("$(printf "$i%.0s" {1..100})X")
 	done
 
 	{	preprocess::cutadapt \

@@ -28,7 +28,10 @@ progress::log -v $VERBOSITY -o $LOG
 commander::printinfo "installation started. please be patient." >> $LOG
 
 for i in "${INSTALL[@]}"; do
-	compile::$i -i $INSDIR -t $THREADS 2> >(tee -ai $LOG >&2) >> $LOG || die
+	compile::$i -i $INSDIR -t $THREADS 2> >(tee -ai $LOG >&2) >> $LOG
+	[[ $? -gt 0 ]] && die
+	# compile::$i || die <- do not use because of inner functions set -e : shell will not exit if command executed in a && or || list
+	# https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html#The-Set-Builtin
 done
 
 commander::printinfo "success" >> $LOG

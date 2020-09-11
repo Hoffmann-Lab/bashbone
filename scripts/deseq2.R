@@ -139,7 +139,7 @@ get_table = function(dds){
 		file=file.path(odir,"deseq.tsv"), quote=F, sep="\t"
 	)
 
-    if(nrow(ddsr)>0){
+	if(nrow(ddsr)>0){
 		pdf(file.path(odir,"ma_plot.pdf"))
 		plotMA(ddsr)
 		graphics.off()
