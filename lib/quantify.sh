@@ -27,14 +27,14 @@ quantify::featurecounts() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			r) ((mandatory++)); _mapper_featurecounts=$OPTARG;;
-			x) ((mandatory++)); _strandness_featurecounts=$OPTARG;;
-			g) ((mandatory++)); gtf="$OPTARG";;
+			t) ((++mandatory)); threads=$OPTARG;;
+			r) ((++mandatory)); _mapper_featurecounts=$OPTARG;;
+			x) ((++mandatory)); _strandness_featurecounts=$OPTARG;;
+			g) ((++mandatory)); gtf="$OPTARG";;
 			l) level=$OPTARG;;
 			f) featuretag=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -120,10 +120,10 @@ quantify::tpm() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			r) ((mandatory++)); _mapper_tpm=$OPTARG;;
-			g) ((mandatory++)); gtf="$OPTARG";;
-			i) ((mandatory++)); countsdir="$OPTARG";;
+			t) ((++mandatory)); threads=$OPTARG;;
+			r) ((++mandatory)); _mapper_tpm=$OPTARG;;
+			g) ((++mandatory)); gtf="$OPTARG";;
+			i) ((++mandatory)); countsdir="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done

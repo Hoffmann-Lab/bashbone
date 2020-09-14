@@ -31,56 +31,57 @@ compile::_parse(){
 }
 
 compile::all(){
+	set -e -o pipefail
 	local insdir threads
-	(	trap 'exit $?' ERR INT TERM
-		set -e -o pipefail
-		compile::_parse -r insdir -s threads "$@"
-		compile::bashbone -i "$insdir" -t $threads
-		compile::conda -i "$insdir" -t $threads
-		compile::conda_tools -i "$insdir" -t $threads
-		compile::java -i "$insdir" -t $threads
-		compile::trimmomatic -i "$insdir" -t $threads
-		compile::sortmerna -i "$insdir" -t $threads
-		compile::segemehl -i "$insdir" -t $threads
-		compile::preparedexseq -i "$insdir" -t $threads
-		compile::revigo -i "$insdir" -t $threads
-		compile::gem -i "$insdir" -t $threads
-		compile::idr -i "$insdir" -t $threads
-	)
+
+	compile::_parse -r insdir -s threads "$@"
+	compile::bashbone -i "$insdir" -t $threads
+	compile::conda -i "$insdir" -t $threads
+	compile::conda_tools -i "$insdir" -t $threads
+	compile::java -i "$insdir" -t $threads
+	compile::trimmomatic -i "$insdir" -t $threads
+	compile::sortmerna -i "$insdir" -t $threads
+	compile::segemehl -i "$insdir" -t $threads
+	compile::preparedexseq -i "$insdir" -t $threads
+	compile::revigo -i "$insdir" -t $threads
+	compile::gem -i "$insdir" -t $threads
+	compile::idr -i "$insdir" -t $threads
+
 	return $?
 }
 
 compile::bashbone() {
+	set -e -o pipefail
 	local insdir threads version src=$(dirname $(readlink -e $0))
-	(	trap 'exit $?' ERR INT TERM
-		set -e -o pipefail
-		commander::printinfo "installing bashbone"
-		compile::_parse -r insdir -s threads "$@"
-		source $src/lib/version.sh
-		rm -rf "$insdir/bashbone-$version"
-		mkdir -p "$insdir/bashbone-$version"
-		cp -r "$src"/* "$insdir/bashbone-$version"
-		mkdir -p "$insdir/latest"
-		ln -sfn "$insdir/bashbone-$version" "$insdir/latest/bashbone"
-	)
+
+	commander::printinfo "installing bashbone"
+	compile::_parse -r insdir -s threads "$@"
+	source $src/lib/version.sh
+	rm -rf "$insdir/bashbone-$version"
+	mkdir -p "$insdir/bashbone-$version"
+	cp -r "$src"/* "$insdir/bashbone-$version"
+	mkdir -p "$insdir/latest"
+	ln -sfn "$insdir/bashbone-$version" "$insdir/latest/bashbone"
+
 	return $?
 }
 
 compile::upgrade(){
+	set -e -o pipefail
 	local insdir threads
-	(	trap 'exit $?' ERR INT TERM
-		set -e -o pipefail
-		compile::_parse -r insdir -s threads "$@"
-		compile::bashbone -i "$insdir" -t $threads
-		compile::conda_tools -i "$insdir" -t $threads -u true
-	)
-	return $?
+
+	compile::_parse -r insdir -s threads "$@"
+	compile::bashbone -i "$insdir" -t $threads
+	compile::conda_tools -i "$insdir" -t $threads -u true
+
+	return 0
 }
 
 compile::conda() {
+	set -e -o pipefail
 	local insdir threads url version tmpdir n bin
+	# to not override possible upstream traps, use a subshell
 	(	trap 'rm -rf "$tmpdir"' EXIT
-		trap 'exit $?' ERR INT TERM
 		set -e -o pipefail
 		commander::printinfo "installing conda"
 		compile::_parse -r insdir -s threads "$@"
@@ -176,108 +177,108 @@ compile::conda() {
 }
 
 compile::conda_tools() {
+	set -e -o pipefail
 	local insdir threads upgrade=false url version tool n bin
 	declare -A envs
-	(	trap 'exit $?' ERR INT TERM
-		set -e -o pipefail
 
-		compile::_parse -r insdir -s threads -c upgrade "$@"
-		source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
-		while read -r tool; do
-			envs[$tool]=true
-		done < <(conda info -e | awk -v prefix="^"$insdir '$NF ~ prefix {print $1}')
+	compile::_parse -r insdir -s threads -c upgrade "$@"
+	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
+	while read -r tool; do
+		envs[$tool]=true
+	done < <(conda info -e | awk -v prefix="^"$insdir '$NF ~ prefix {print $1}')
 
-		# python 3 envs
-		for tool in fastqc cutadapt rcorrector star bwa rseqc subread arriba star-fusion picard bamutil macs2 diego gatk4 freebayes varscan; do
-			n=${tool//[^[:alpha:]]/}
-			$upgrade && ${envs[$n]:=false} && continue
+	# python 3 envs
+	for tool in fastqc cutadapt rcorrector star bwa rseqc subread arriba star-fusion picard bamutil macs2 diego gatk4 freebayes varscan; do
+		n=${tool//[^[:alpha:]]/}
+		$upgrade && ${envs[$n]:=false} && continue
 
-			commander::printinfo "setup conda $tool env"
-			conda create -y -n $n python=3
-			conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
-			# link commonly used base binaries into env
-			for bin in perl samtools bedtools; do
-				[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-			done
+		commander::printinfo "setup conda $tool env"
+		conda create -y -n $n python=3
+		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+		# link commonly used base binaries into env
+		for bin in perl samtools bedtools; do
+			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
-		chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl" # necessary fix
+	done
+	chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl" # necessary fix
 
-		tool=vardict
-		n=${tool//[^[:alpha:]]/}
-		$upgrade && ${envs[$n]:=false} || {
-			commander::printinfo "setup conda $tool env"
-			conda create -y -n $n python=3
-			conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java
-			for bin in perl samtools bedtools; do
-				[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-			done
-		}
+	tool=vardict
+	n=${tool//[^[:alpha:]]/}
+	$upgrade && ${envs[$n]:=false} || {
+		commander::printinfo "setup conda $tool env"
+		conda create -y -n $n python=3
+		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java
+		for bin in perl samtools bedtools; do
+			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
+	}
 
-		tool=snpeff
-		n=${tool//[^[:alpha:]]/}
-		$upgrade && ${envs[$n]:=false} || {
-			commander::printinfo "setup conda $tool env"
-			conda create -y -n $n python=3
-			conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
-			for bin in perl samtools bedtools; do
-				[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-			done
-		}
+	tool=snpeff
+	n=${tool//[^[:alpha:]]/}
+	$upgrade && ${envs[$n]:=false} || {
+		commander::printinfo "setup conda $tool env"
+		conda create -y -n $n python=3
+		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
+		for bin in perl samtools bedtools; do
+			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
+	}
 
 
-		# python 2 envs
-		tool=platypus-variant
-		n=platypus
-		$upgrade && ${envs[$n]:=false} || {
-			commander::printinfo "setup conda $tool env"
-			conda create -y -n $n python=2
-			conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
-			for bin in perl samtools bedtools; do
-				[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-			done
-		}
+	# python 2 envs
+	tool=platypus-variant
+	n=platypus
+	$upgrade && ${envs[$n]:=false} || {
+		commander::printinfo "setup conda $tool env"
+		conda create -y -n $n python=2
+		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+		for bin in perl samtools bedtools; do
+			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
+	}
 
-		# this is a pipeline itself and thus will not be part of bashbone
-		# commander::printinfo "setup conda fusion-catcher env"
-		# tool=fusion-catcher
-		# n=${tool//[^[:alpha:]]/}
-		# conda create -y -n $n python=2
-		# conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
-		# for bin in perl samtools bedtools; do
-		# 	[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		# done
-		# conda activate $n
-		# commander::printinfo "downloading databases"
-		# download-human-db.sh
-		# rm -f $FC_DB_PATH/*.tar.gz* # env varibale
-		# conda deactivate
+	# this is a pipeline itself and thus will not be part of bashbone
+	# commander::printinfo "setup conda fusion-catcher env"
+	# tool=fusion-catcher
+	# n=${tool//[^[:alpha:]]/}
+	# conda create -y -n $n python=2
+	# conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+	# for bin in perl samtools bedtools; do
+	# 	[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	# done
+	# conda activate $n
+	# commander::printinfo "downloading databases"
+	# download-human-db.sh
+	# rm -f $FC_DB_PATH/*.tar.gz* # env varibale
+	# conda deactivate
 
-		commander::printinfo "conda clean up"
-		conda clean -y -a
-		conda deactivate
-	)
-	return $?
+	commander::printinfo "conda clean up"
+	conda clean -y -a
+	conda deactivate
+
+	return 0
 }
 
 compile::java() {
+	set -e -o pipefail
 	local insdir threads url version
-	(	trap 'exit $?' ERR INT TERM
-		set -e -o pipefail
-		commander::printinfo "installing java"
-		compile::_parse -r insdir -s threads "$@"
-		source $insdir/conda/bin/activate base
-		url="https://download.oracle.com/otn-pub/java/jdk/14.0.2+12/205943a0976c4ed48cb16f1043c5c647/jdk-14.0.2_linux-x64_bin.tar.gz"
-		wget -q --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O $insdir/java.tar.gz $url
-		version=$(echo $url | perl -lane '$_=~/jdk-([^-_]+)/; print $1')
-		tar -xzf $insdir/java.tar.gz -C $insdir
-		rm $insdir/java.tar.gz
-		mkdir -p $insdir/latest
-		ln -sfn $(ls -vd $insdir/jdk-*/bin | tail -1) $insdir/latest/java
-	)
-	return $?
+
+	commander::printinfo "installing java"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	url="https://download.oracle.com/otn-pub/java/jdk/14.0.2+12/205943a0976c4ed48cb16f1043c5c647/jdk-14.0.2_linux-x64_bin.tar.gz"
+	wget -q --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O $insdir/java.tar.gz $url
+	version=$(echo $url | perl -lane '$_=~/jdk-([^-_]+)/; print $1')
+	tar -xzf $insdir/java.tar.gz -C $insdir
+	rm $insdir/java.tar.gz
+	mkdir -p $insdir/latest
+	ln -sfn $(ls -vd $insdir/jdk-*/bin | tail -1) $insdir/latest/java
+
+	return 0
 }
 
 compile::_javawrapper() {
+	set -e -o pipefail
 	local java=java
 	[[ $3 ]] && java="$3"
 	cat <<- EOF > "$1" || return 1
@@ -302,177 +303,177 @@ compile::_javawrapper() {
 }
 
 compile::trimmomatic(){
+	set -e -o pipefail
 	# conda trimmomatic wrapper is written in python and thus cannot handle process substitutions
 	local insdir threads url
-	(	trap 'exit $?' ERR INT TERM
-		set -e -o pipefail
-		commander::printinfo "installing trimmomatic"
-		compile::_parse -r insdir -s threads "$@"
-		source $insdir/conda/bin/activate base
-		url='http://www.usadellab.org/cms/?page=trimmomatic'
-		url='http://www.usadellab.org/cms/'$(curl -s $url | grep Version | grep -oE '[^"]+Trimmomatic-[0-9]+\.[0-9]+\.zip' | sort -Vr | head -1)
-		wget -q $url -O $insdir/trimmomatic.zip
-		unzip -o -d $insdir $insdir/trimmomatic.zip
-		rm $insdir/trimmomatic.zip
-		cd $(ls -dv $insdir/Trimmomatic-*/ | tail -1)
-		mkdir -p $insdir/latest bin
-		compile::_javawrapper bin/trimmomatic $(readlink -e trimmomatic-*.jar) $insdir/latest/java/java
-		ln -sfn $PWD/bin $insdir/latest/trimmomatic
-	)
-	return $?
+
+	commander::printinfo "installing trimmomatic"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	url='http://www.usadellab.org/cms/?page=trimmomatic'
+	url='http://www.usadellab.org/cms/'$(curl -s $url | grep Version | grep -oE '[^"]+Trimmomatic-[0-9]+\.[0-9]+\.zip' | sort -Vr | head -1)
+	wget -q $url -O $insdir/trimmomatic.zip
+	unzip -o -d $insdir $insdir/trimmomatic.zip
+	rm $insdir/trimmomatic.zip
+	cd $(ls -dv $insdir/Trimmomatic-*/ | tail -1)
+	mkdir -p $insdir/latest bin
+	compile::_javawrapper bin/trimmomatic $(readlink -e trimmomatic-*.jar) $insdir/latest/java/java
+	ln -sfn $PWD/bin $insdir/latest/trimmomatic
+
+	return 0
 }
 
 compile::sortmerna() {
+	set -e -o pipefail
 	local insdir threads url
-	(	trap 'exit $?' ERR INT TERM
-		set -e -o pipefail
-		commander::printinfo "installing sortmerna"
-		echo $insdir
-		compile::_parse -r insdir -s threads "$@"
-		source $insdir/conda/bin/activate base
-		url='https://github.com/biocore/sortmerna/archive/2.1.tar.gz'
-		wget -q $url -O $insdir/sortmerna.tar.gz
-		tar -xzf $insdir/sortmerna.tar.gz -C $insdir
-		rm $insdir/sortmerna.tar.gz
-		cd $(ls -dv $insdir/sortmerna-*/ | tail -1)
-		make clean || true
-		./configure --prefix=$PWD
-		make -j $threads
-		make install -i
-		mkdir -p $insdir/latest
-		ln -sfn $PWD/bin $insdir/latest/sortmerna
-		commander::printinfo "indexing databases"
-		for i in rRNA_databases/*.fasta; do
-			o=index/$(basename $i .fasta)-L18
-			echo -ne "bin/indexdb_rna --ref $i,$o -m 4096 -L 18\0"
-		done | xargs -0 -P $threads -I {} bash -c {}
-	)
-	return $?
+
+	commander::printinfo "installing sortmerna"
+	echo $insdir
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	url='https://github.com/biocore/sortmerna/archive/2.1.tar.gz'
+	wget -q $url -O $insdir/sortmerna.tar.gz
+	tar -xzf $insdir/sortmerna.tar.gz -C $insdir
+	rm $insdir/sortmerna.tar.gz
+	cd $(ls -dv $insdir/sortmerna-*/ | tail -1)
+	make clean || true
+	./configure --prefix=$PWD
+	make -j $threads
+	make install -i # ignore errors caused by --prefix=$PWD
+	mkdir -p $insdir/latest
+	ln -sfn $PWD/bin $insdir/latest/sortmerna
+	commander::printinfo "indexing databases"
+	for i in rRNA_databases/*.fasta; do
+		o=index/$(basename $i .fasta)-L18
+		echo -ne "bin/indexdb_rna --ref $i,$o -m 4096 -L 18\0"
+	done | xargs -0 -P $threads -I {} bash -c {}
+
+	return 0
 }
 
 compile::segemehl() {
+	set -e -o pipefail
 	local insdir threads url
-	(	trap 'exit $?' ERR INT TERM
-		set -e -o pipefail
-		commander::printinfo "installing segemehl"
-		compile::_parse -r insdir -s threads "$@"
-		source $insdir/conda/bin/activate base
-		url='http://www.bioinf.uni-leipzig.de/Software/segemehl/downloads/'
-		url="$url"$(curl -s $url | grep -oE 'segemehl-[0-9\.]+\.tar\.gz' | sort -Vr | head -1)
-		wget -q $url -O $insdir/segemehl.tar.gz
-		tar -xzf $insdir/segemehl.tar.gz -C $insdir
-		rm $insdir/segemehl.tar.gz
-		cd $(ls -dv $insdir/segemehl-*/ | tail -1)
-		export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig
-		make clean || true
-		make -j $threads all
-		mkdir -p bin
-		mv *.x bin
-		touch bin/segemehl bin/haarz
-		chmod 755 bin/*
-		mkdir -p $insdir/latest
-		ln -sfn $PWD/bin $insdir/latest/segemehl
-		cat <<- 'EOF' > $insdir/latest/segemehl/segemehl
-			#!/usr/bin/env bash
-			[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig
-			l=$(pkg-config --variable=libdir htslib)
-			[[ $l ]] && export LD_LIBRARY_PATH=$l
-			$(cd $(dirname $0) && echo $PWD)/segemehl.x $*
-		EOF
-		echo hier
-		cat <<- 'EOF' > $insdir/latest/segemehl/haarz
-			#!/usr/bin/env bash
-			[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig
-			l=$(pkg-config --variable=libdir htslib)
-			[[ $l ]] && export LD_LIBRARY_PATH=$l
-			$(cd $(dirname $0) && echo $PWD)/haarz.x $*
-		EOF
-	)
-	return $?
+
+	commander::printinfo "installing segemehl"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	url='http://www.bioinf.uni-leipzig.de/Software/segemehl/downloads/'
+	url="$url"$(curl -s $url | grep -oE 'segemehl-[0-9\.]+\.tar\.gz' | sort -Vr | head -1)
+	wget -q $url -O $insdir/segemehl.tar.gz
+	tar -xzf $insdir/segemehl.tar.gz -C $insdir
+	rm $insdir/segemehl.tar.gz
+	cd $(ls -dv $insdir/segemehl-*/ | tail -1)
+	export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig
+	make clean || true
+	make -j $threads all
+	mkdir -p bin
+	mv *.x bin
+	touch bin/segemehl bin/haarz
+	chmod 755 bin/*
+	mkdir -p $insdir/latest
+	ln -sfn $PWD/bin $insdir/latest/segemehl
+	cat <<- 'EOF' > $insdir/latest/segemehl/segemehl
+		#!/usr/bin/env bash
+		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig
+		l=$(pkg-config --variable=libdir htslib)
+		[[ $l ]] && export LD_LIBRARY_PATH=$l
+		$(cd $(dirname $0) && echo $PWD)/segemehl.x $*
+	EOF
+	echo hier
+	cat <<- 'EOF' > $insdir/latest/segemehl/haarz
+		#!/usr/bin/env bash
+		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig
+		l=$(pkg-config --variable=libdir htslib)
+		[[ $l ]] && export LD_LIBRARY_PATH=$l
+		$(cd $(dirname $0) && echo $PWD)/haarz.x $*
+	EOF
+
+	return 0
 }
 
 compile::preparedexseq() {
+	set -e -o pipefail
 	local insdir threads
-	(	trap 'exit $?' ERR INT TERM
-		set -e -o pipefail
-		commander::printinfo "installing dexseq"
-		compile::_parse -r insdir -s threads "$@"
-		source $insdir/conda/bin/activate base
-		cd $insdir
-        rm -rf Subread_to_DEXSeq
-		git clone https://github.com/vivekbhr/Subread_to_DEXSeq
-		cd Subread_to_DEXSeq
-		mkdir -p bin
-		mv *.py bin
-		mkdir -p $insdir/latest
-		ln -sfn $PWD/bin $insdir/latest/preparedexseq
-	)
-	return $?
+
+	commander::printinfo "installing dexseq"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	cd $insdir
+	rm -rf Subread_to_DEXSeq
+	git clone https://github.com/vivekbhr/Subread_to_DEXSeq
+	cd Subread_to_DEXSeq
+	mkdir -p bin
+	mv *.py bin
+	mkdir -p $insdir/latest
+	ln -sfn $PWD/bin $insdir/latest/preparedexseq
+
+	return 0
 }
 
 compile::revigo() {
+	set -e -o pipefail
 	local insdir threads
-	(	trap 'exit $?' ERR INT TERM
-		set -e -o pipefail
-		commander::printinfo "installing revigo"
-		compile::_parse -r insdir -s threads "$@"
-		source $insdir/conda/bin/activate base
-		cd $insdir
-		rm -rf revigo
-		git clone https://gitlab.leibniz-fli.de/kriege/revigo.git
-		cd revigo
-		mkdir bin
-		compile::_javawrapper bin/revigo $(readlink -e RevigoStandalone.jar) $insdir/latest/java/java
-		mkdir -p $insdir/latest
-		ln -sfn $PWD/bin $insdir/latest/revigo
-	)
-	return $?
+
+	commander::printinfo "installing revigo"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	cd $insdir
+	rm -rf revigo
+	git clone https://gitlab.leibniz-fli.de/kriege/revigo.git
+	cd revigo
+	mkdir bin
+	compile::_javawrapper bin/revigo $(readlink -e RevigoStandalone.jar) $insdir/latest/java/java
+	mkdir -p $insdir/latest
+	ln -sfn $PWD/bin $insdir/latest/revigo
+
+	return 0
 }
 
 compile::gem() {
+	set -e -o pipefail
 	local insdir threads url version
-	(	trap 'exit $?' ERR INT TERM
-		set -e -o pipefail
-		commander::printinfo "installing gem"
-		compile::_parse -r insdir -s threads "$@"
-		source $insdir/conda/bin/activate base
-		url='https://groups.csail.mit.edu/cgs/gem/download/'
-		url="$url"$(curl -s $url | grep -oE "gem.v[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
-		version=$(basename $url | sed -E 's/gem.v([0-9\.]+)\.tar\.gz/\1/')
-		wget -q $url -O $insdir/gem.tar.gz
-		tar -xzf $insdir/gem.tar.gz -C $insdir
-		mv $insdir/gem $insdir/gem-$version
-		rm $insdir/gem.tar.gz
-		cd $insdir/gem-$version
-		mkdir -p bin
-		wget -q -O bin/Read_Distribution_default.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_default.txt
-		wget -q -O bin/Read_Distribution_CLIP.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_CLIP.txt
-		compile::_javawrapper bin/gem $(readlink -e gem.jar) $insdir/latest/java/java
-		mkdir -p $insdir/latest
-		ln -sfn $PWD/bin $insdir/latest/gem
-	)
-	return $?
+
+	commander::printinfo "installing gem"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	url='https://groups.csail.mit.edu/cgs/gem/download/'
+	url="$url"$(curl -s $url | grep -oE "gem.v[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
+	version=$(basename $url | sed -E 's/gem.v([0-9\.]+)\.tar\.gz/\1/')
+	wget -q $url -O $insdir/gem.tar.gz
+	tar -xzf $insdir/gem.tar.gz -C $insdir
+	mv $insdir/gem $insdir/gem-$version
+	rm $insdir/gem.tar.gz
+	cd $insdir/gem-$version
+	mkdir -p bin
+	wget -q -O bin/Read_Distribution_default.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_default.txt
+	wget -q -O bin/Read_Distribution_CLIP.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_CLIP.txt
+	compile::_javawrapper bin/gem $(readlink -e gem.jar) $insdir/latest/java/java
+	mkdir -p $insdir/latest
+	ln -sfn $PWD/bin $insdir/latest/gem
+
+	return 0
 }
 
 compile::idr() {
+	set -e -o pipefail
 	local insdir threads url
-	(	trap 'exit $?' ERR INT TERM
-		set -e -o pipefail
-		commander::printinfo "installing idr"
-		compile::_parse -r insdir -s threads "$@"
-		source $insdir/conda/bin/activate base
-		url=https://github.com/kundajelab/idr
-		url="$url/"$(curl -s $url/tags | grep -oE "archive\/[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
-		wget -q $url -O $insdir/idr.tar.gz
-		tar -xzf $insdir/idr.tar.gz -C $insdir
-		rm $insdir/idr.tar.gz
-		cd $(ls -vd $insdir/idr-*/ | tail -1)
-		pip install numpy matplotlib
-		python setup.py install
-		mkdir -p $insdir/latest
-		ln -sfn $PWD/bin $insdir/latest/idr
-	)
-	return $?
+
+	commander::printinfo "installing idr"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	url=https://github.com/kundajelab/idr
+	url="$url/"$(curl -s $url/tags | grep -oE "archive\/[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
+	wget -q $url -O $insdir/idr.tar.gz
+	tar -xzf $insdir/idr.tar.gz -C $insdir
+	rm $insdir/idr.tar.gz
+	cd $(ls -vd $insdir/idr-*/ | tail -1)
+	pip install numpy matplotlib
+	python setup.py install
+	mkdir -p $insdir/latest
+	ln -sfn $PWD/bin $insdir/latest/idr
+
+	return 0
 }
 
 ### OLD STUFF

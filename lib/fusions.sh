@@ -23,10 +23,10 @@ fusions::starfusion(){
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
-			t)	((mandatory++)); threads=$OPTARG;;
-			g)	((mandatory++)); genome="$OPTARG";;
-			o)	((mandatory++)); outdir="$OPTARG/starfusion"; mkdir -p "$outdir" || return 1;;
-			1)	((mandatory++)); _fq1_starfusion=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG/starfusion"; mkdir -p "$outdir" || return 1;;
+			1)	((++mandatory)); _fq1_starfusion=$OPTARG;;
 			2)	_fq2_starfusion=$OPTARG;;
 			*)	_usage; return 1;;
 		esac
@@ -135,13 +135,13 @@ fusions::arriba(){
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			5)	$OPTARG && skipmd5=true;;
-			t)	((mandatory++)); threads=$OPTARG;;
-			g)	((mandatory++)); genome="$OPTARG";;
-			a)	((mandatory++)); gtf="$OPTARG";;
-			o)	((mandatory++)); outdir="$OPTARG/arriba"; mkdir -p "$outdir" || return 1;;
-			p)	((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			f)	((mandatory++)); fragmentsize=$OPTARG;;
-			1)	((mandatory++)); _fq1_arriba=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			a)	((++mandatory)); gtf="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG/arriba"; mkdir -p "$outdir" || return 1;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			f)	((++mandatory)); fragmentsize=$OPTARG;;
+			1)	((++mandatory)); _fq1_arriba=$OPTARG;;
 			2)	_fq2_arriba=$OPTARG;;
 			*)	_usage; return 1;;
 		esac

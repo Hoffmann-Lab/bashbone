@@ -20,12 +20,12 @@ enrichment::_ora(){
 	declare -n _cmds1_ora _cmds2_ora
 	while getopts '1:2:d:g:i:o:' arg; do
 		case $arg in
-			1) ((mandatory++)); _cmds1_ora=$OPTARG;;
-			2) ((mandatory++)); _cmds2_ora=$OPTARG;;
-			d) ((mandatory++)); domain=$OPTARG;;
-			g) ((mandatory++)); gofile="$OPTARG";;
-			i) ((mandatory++)); idsfile="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			1) ((++mandatory)); _cmds1_ora=$OPTARG;;
+			2) ((++mandatory)); _cmds2_ora=$OPTARG;;
+			d) ((++mandatory)); domain=$OPTARG;;
+			g) ((++mandatory)); gofile="$OPTARG";;
+			i) ((++mandatory)); idsfile="$OPTARG";;
+			o) ((++mandatory)); outdir="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done
@@ -89,12 +89,12 @@ enrichment::_gsea(){
 	declare -n _cmds1_gsea _cmds2_gsea
 	while getopts '1:2:d:g:i:o:' arg; do
 		case $arg in
-			1) ((mandatory++)); _cmds1_gsea=$OPTARG;;
-			2) ((mandatory++)); _cmds2_gsea=$OPTARG;;
-			d) ((mandatory++)); domain=$OPTARG;;
-			g) ((mandatory++)); gofile="$OPTARG";;
-			i) ((mandatory++)); deseqtsv="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			1) ((++mandatory)); _cmds1_gsea=$OPTARG;;
+			2) ((++mandatory)); _cmds2_gsea=$OPTARG;;
+			d) ((++mandatory)); domain=$OPTARG;;
+			g) ((++mandatory)); gofile="$OPTARG";;
+			i) ((++mandatory)); deseqtsv="$OPTARG";;
+			o) ((++mandatory)); outdir="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done
@@ -166,11 +166,11 @@ enrichment::_revigo(){
 	declare -n _cmds1_revigo _cmds2_revigo
 	while getopts '1:2:d:i:o:' arg; do
 		case $arg in
-			1) ((mandatory++)); _cmds1_revigo=$OPTARG;;
-			2) ((mandatory++)); _cmds2_revigo=$OPTARG;;
-			d) ((mandatory++)); domain=$(sed -r 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/' <<< $OPTARG);;
-			i) ((mandatory++)); orafile="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			1) ((++mandatory)); _cmds1_revigo=$OPTARG;;
+			2) ((++mandatory)); _cmds2_revigo=$OPTARG;;
+			d) ((++mandatory)); domain=$(sed -r 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/' <<< $OPTARG);;
+			i) ((++mandatory)); orafile="$OPTARG";;
+			o) ((++mandatory)); outdir="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done
@@ -274,10 +274,10 @@ enrichment::go(){
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
 			r) _mapper_go=$OPTARG;;
 			c) _cmpfiles_go=$OPTARG;;
-			g) ((mandatory++)); gofile="$OPTARG";;
+			g) ((++mandatory)); gofile="$OPTARG";;
 			l) _idfiles_go="$OPTARG";;
 			i) deseqdir="$OPTARG";;
 			*) _usage; return 1;;

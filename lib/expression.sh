@@ -28,14 +28,14 @@ expression::diego() {
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			5) $OPTARG && skipmd5=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			r) ((mandatory++)); _mapper_diego=$OPTARG;;
-			g) ((mandatory++)); gtf="$OPTARG";;
-			c) ((mandatory++)); _cmpfiles_diego=$OPTARG;;
-			i) ((mandatory++)); countsdir="$OPTARG";;
-			j) ((mandatory++)); mappeddir="$OPTARG";;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			r) ((++mandatory)); _mapper_diego=$OPTARG;;
+			g) ((++mandatory)); gtf="$OPTARG";;
+			c) ((++mandatory)); _cmpfiles_diego=$OPTARG;;
+			i) ((++mandatory)); countsdir="$OPTARG";;
+			j) ((++mandatory)); mappeddir="$OPTARG";;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -229,12 +229,12 @@ expression::deseq() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			r) ((mandatory++)); _mapper_deseq=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			r) ((++mandatory)); _mapper_deseq=$OPTARG;;
 			g) gtf="$OPTARG";;
-			c) ((mandatory++)); _cmpfiles_deseq=$OPTARG;;
-			i) ((mandatory++)); countsdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			c) ((++mandatory)); _cmpfiles_deseq=$OPTARG;;
+			i) ((++mandatory)); countsdir="$OPTARG";;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -318,13 +318,13 @@ expression::_deseq() {
 	declare -a cmppairs
 	while getopts '1:2:t:i:g:c:o:' arg; do
 		case $arg in
-			1) ((mandatory++)); _cmds1_deseq=$OPTARG;;
-			2) ((mandatory++)); _cmds2_deseq=$OPTARG;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			i) ((mandatory++)); csvfile="$OPTARG";;
+			1) ((++mandatory)); _cmds1_deseq=$OPTARG;;
+			2) ((++mandatory)); _cmds2_deseq=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			i) ((++mandatory)); csvfile="$OPTARG";;
 			g) gtf="$OPTARG";;
-			c) ((mandatory++)); mapfile -t -d ' ' cmppairs < <(printf '%s' "$OPTARG");;
-			o) ((mandatory++)); outdir="$OPTARG";;
+			c) ((++mandatory)); mapfile -t -d ' ' cmppairs < <(printf '%s' "$OPTARG");;
+			o) ((++mandatory)); outdir="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done
@@ -376,13 +376,13 @@ expression::joincounts() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			r) ((mandatory++)); _mapper_join=$OPTARG;;
-			c) ((mandatory++)); _cmpfiles_join=$OPTARG;;
-			i) ((mandatory++)); countsdir="$OPTARG";;
-			j) ((mandatory++)); deseqdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			r) ((++mandatory)); _mapper_join=$OPTARG;;
+			c) ((++mandatory)); _cmpfiles_join=$OPTARG;;
+			i) ((++mandatory)); countsdir="$OPTARG";;
+			j) ((++mandatory)); deseqdir="$OPTARG";;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -411,7 +411,7 @@ expression::joincounts() {
 						[[ ${countfiles["$sample.$replicate"]} ]] && continue
 						header[$x]="$sample.$replicate"
 						meanheader[$x]="$condition"
-						((x++))
+						((++x))
 
 						cf=$(readlink -e "$countsdir/$m/$sample"*.tpm | head -1)
 						cf="${cf%.*}"

@@ -23,11 +23,11 @@ alignment::slice(){
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			r) ((mandatory++)); _mapper_slice=$OPTARG;;
-			c) ((mandatory++)); _bamslices_slice=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			r) ((++mandatory)); _mapper_slice=$OPTARG;;
+			c) ((++mandatory)); _bamslices_slice=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -156,13 +156,13 @@ alignment::rmduplicates(){
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
 			x) regex="$OPTARG";;
-			r) ((mandatory++)); _mapper_rmduplicates=$OPTARG;;
-			c) ((mandatory++)); _bamslices_rmduplicates=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			r) ((++mandatory)); _mapper_rmduplicates=$OPTARG;;
+			c) ((++mandatory)); _bamslices_rmduplicates=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -276,11 +276,11 @@ alignment::clipmateoverlaps() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			r) ((mandatory++)); _mapper_clipmateoverlaps=$OPTARG;;
-			c) ((mandatory++)); _bamslices_clipmateoverlaps=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			r) ((++mandatory)); _mapper_clipmateoverlaps=$OPTARG;;
+			c) ((++mandatory)); _bamslices_clipmateoverlaps=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -391,13 +391,13 @@ alignment::reorder() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			g) ((mandatory++)); genome="$OPTARG";;
-			r) ((mandatory++)); _mapper_reorder=$OPTARG;;
-			c) ((mandatory++)); _bamslices_reorder=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			g) ((++mandatory)); genome="$OPTARG";;
+			r) ((++mandatory)); _mapper_reorder=$OPTARG;;
+			c) ((++mandatory)); _bamslices_reorder=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -506,15 +506,15 @@ alignment::addreadgroup() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
 			n) rgprefix=$OPTARG;;
-			r) ((mandatory++)); _mapper_addreadgroup=$OPTARG;;
+			r) ((++mandatory)); _mapper_addreadgroup=$OPTARG;;
 			1) _nidx_addreadgroup=$OPTARG;;
 			2) _tidx_addreadgroup=$OPTARG;;
-			c) ((mandatory++)); _bamslices_addreadgroup=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			c) ((++mandatory)); _bamslices_addreadgroup=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -641,13 +641,13 @@ alignment::splitncigar() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			g) ((mandatory++)); genome="$OPTARG";;
-			r) ((mandatory++)); _mapper_splitncigar=$OPTARG;;
-			c) ((mandatory++)); _bamslices_splitncigar=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			g) ((++mandatory)); genome="$OPTARG";;
+			r) ((++mandatory)); _mapper_splitncigar=$OPTARG;;
+			c) ((++mandatory)); _bamslices_splitncigar=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -767,13 +767,13 @@ alignment::leftalign() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			g) ((mandatory++)); genome="$OPTARG";;
-			r) ((mandatory++)); _mapper_leftalign=$OPTARG;;
-			c) ((mandatory++)); _bamslices_leftalign=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			g) ((++mandatory)); genome="$OPTARG";;
+			r) ((++mandatory)); _mapper_leftalign=$OPTARG;;
+			c) ((++mandatory)); _bamslices_leftalign=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -887,14 +887,14 @@ alignment::bqsr() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			g) ((mandatory++)); genome="$OPTARG";;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			g) ((++mandatory)); genome="$OPTARG";;
 			d) dbsnp="$OPTARG";;
-			r) ((mandatory++)); _mapper_bqsr=$OPTARG;;
-			c) ((mandatory++)); _bamslices_bqsr=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			r) ((++mandatory)); _mapper_bqsr=$OPTARG;;
+			c) ((++mandatory)); _bamslices_bqsr=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done

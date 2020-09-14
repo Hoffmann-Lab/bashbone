@@ -27,15 +27,15 @@ alignment::mkreplicates() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			r) ((mandatory++)); _mapper_mkreplicates=$OPTARG;;
-			n) ((mandatory++)); _nidx_mkreplicates=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			r) ((++mandatory)); _mapper_mkreplicates=$OPTARG;;
+			n) ((++mandatory)); _nidx_mkreplicates=$OPTARG;;
 			m) _nridx_mkreplicates=$OPTARG;;
-			i) ((mandatory++)); _tidx_mkreplicates=$OPTARG;;
-			j) ((mandatory++)); _ridx_mkreplicates=$OPTARG;;
-			k) ((mandatory++)); _pidx_mkreplicates=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			i) ((++mandatory)); _tidx_mkreplicates=$OPTARG;;
+			j) ((++mandatory)); _ridx_mkreplicates=$OPTARG;;
+			k) ((++mandatory)); _pidx_mkreplicates=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done

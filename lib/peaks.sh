@@ -20,12 +20,12 @@ peaks::_idr() {
 	declare -n _cmds1_idr _cmds2_idr
 	while getopts '1:2:t:r:p:o:' arg; do
 		case $arg in
-			1) ((mandatory++)); _cmds1_idr=$OPTARG;;
-			2) ((mandatory++)); _cmds2_idr=$OPTARG;;
-			t) ((mandatory++)); t=$OPTARG;;
-			r) ((mandatory++)); r=$OPTARG;;
-			p) ((mandatory++)); p=$OPTARG;;
-			o) ((mandatory++)); o="$OPTARG";;
+			1) ((++mandatory)); _cmds1_idr=$OPTARG;;
+			2) ((++mandatory)); _cmds2_idr=$OPTARG;;
+			t) ((++mandatory)); t=$OPTARG;;
+			r) ((++mandatory)); r=$OPTARG;;
+			p) ((++mandatory)); p=$OPTARG;;
+			o) ((++mandatory)); o="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done
@@ -83,24 +83,24 @@ peaks::macs() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			g) ((mandatory++)); genome="$OPTARG";;
-			r) ((mandatory++)); _mapper_macs=$OPTARG;;
-			f) ((mandatory++)); fragmentsize=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			g) ((++mandatory)); genome="$OPTARG";;
+			r) ((++mandatory)); _mapper_macs=$OPTARG;;
+			f) ((++mandatory)); fragmentsize=$OPTARG;;
 			q) ripseq=$OPTARG;;
-			c) ((mandatory++))
+			c) ((++mandatory))
 				declare -n _caller_macs=$OPTARG
 				_caller_macs+=(macs)
 				_macs=macs
 				;;
-			a) ((mandatory++)); _nidx_macs=$OPTARG;;
+			a) ((++mandatory)); _nidx_macs=$OPTARG;;
 			b) _nridx_macs=$OPTARG;;
-			i) ((mandatory++)); _tidx_macs=$OPTARG;;
-			j) ((mandatory++)); _ridx_macs=$OPTARG;;
-			k) ((mandatory++)); _pidx_macs=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			i) ((++mandatory)); _tidx_macs=$OPTARG;;
+			j) ((++mandatory)); _ridx_macs=$OPTARG;;
+			k) ((++mandatory)); _pidx_macs=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -299,24 +299,24 @@ peaks::gem() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			g) ((mandatory++)); genome="$OPTARG";;
-			f) ((mandatory++)); gtf="$OPTARG";;
-			r) ((mandatory++)); _mapper_gem=$OPTARG;;
-			x) ((mandatory++)); _strandness_gem=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			g) ((++mandatory)); genome="$OPTARG";;
+			f) ((++mandatory)); gtf="$OPTARG";;
+			r) ((++mandatory)); _mapper_gem=$OPTARG;;
+			x) ((++mandatory)); _strandness_gem=$OPTARG;;
 			q) ripseq=$OPTARG;;
-			c) ((mandatory++))
+			c) ((++mandatory))
 				declare -n _caller_gem=$OPTARG
 				_caller_gem+=(gem)
 				_gem=gem
 				;;
-			a) ((mandatory++)); _nidx_gem=$OPTARG;;
+			a) ((++mandatory)); _nidx_gem=$OPTARG;;
 			b) _nridx_gem=$OPTARG;;
-			i) ((mandatory++)); _tidx_gem=$OPTARG;;
-			j) ((mandatory++)); _ridx_gem=$OPTARG;;
-			k) ((mandatory++)); _pidx_gem=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG";;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
+			i) ((++mandatory)); _tidx_gem=$OPTARG;;
+			j) ((++mandatory)); _ridx_gem=$OPTARG;;
+			k) ((++mandatory)); _pidx_gem=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG";;
+			p) ((++mandatory)); tmpdir="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done

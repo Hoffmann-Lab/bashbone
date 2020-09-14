@@ -22,10 +22,10 @@ preprocess::fastqc() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			1) ((mandatory++)); _fq1_fastqc=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			1) ((++mandatory)); _fq1_fastqc=$OPTARG;;
 			2) _fq2_fastqc=$OPTARG;;
 			*) _usage; return 1;;
 		esac
@@ -82,9 +82,9 @@ preprocess::rmpolynt(){
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			1) ((mandatory++)); _fq1_rmpolynuc=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			1) ((++mandatory)); _fq1_rmpolynuc=$OPTARG;;
 			2) _fq2_rmpolynuc=$OPTARG;;
 			*) _usage; return 1;;
 		esac
@@ -141,11 +141,11 @@ preprocess::cutadapt(){
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			a) ((mandatory++)); _adaptera_cutadapt=$OPTARG;;
+			a) ((++mandatory)); _adaptera_cutadapt=$OPTARG;;
 			A) _adapterA_cutadapt=$OPTARG;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			1) ((mandatory++)); _fq1_cutadapt=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			1) ((++mandatory)); _fq1_cutadapt=$OPTARG;;
 			2) _fq2_cutadapt=$OPTARG;;
 			*) _usage; return 1;;
 		esac
@@ -236,10 +236,10 @@ preprocess::trimmomatic() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			1) ((mandatory++)); _fq1_trimmomatic=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			1) ((++mandatory)); _fq1_trimmomatic=$OPTARG;;
 			2) _fq2_trimmomatic=$OPTARG;;
 			*) _usage; return 1;;
 		esac
@@ -388,10 +388,10 @@ preprocess::rcorrector() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			1) ((mandatory++)); _fq1_rcorrector=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			1) ((++mandatory)); _fq1_rcorrector=$OPTARG;;
 			2) _fq2_rcorrector=$OPTARG;;
 			*) _usage; return 1;;
 		esac
@@ -487,11 +487,11 @@ preprocess::sortmerna() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			1) ((mandatory++)); _fq1_sortmerna=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			1) ((++mandatory)); _fq1_sortmerna=$OPTARG;;
 			2) _fq2_sortmerna=$OPTARG;;
 			*) _usage; return 1;;
 		esac
@@ -663,10 +663,10 @@ preprocess::qcstats(){
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			i) ((mandatory++)); _qualdirs_qcstats=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			1) ((mandatory++)); _fq1_qcstats=$OPTARG;;
+			i) ((++mandatory)); _qualdirs_qcstats=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			1) ((++mandatory)); _fq1_qcstats=$OPTARG;;
 			2) _fq2_qcstats=$OPTARG;;
 			*) _usage; return 1;;
 		esac

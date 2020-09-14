@@ -290,9 +290,9 @@ commander::qsubcmd(){
 }
 
 commander::_test(){
-	local x=${1:-'hello world'} threads=${2:-1} i=3 s
+	local x=${1:-'hello world'} threads=${2:-1} i=2 s
 
-	while read -u $((i++)) -r s 2> /dev/null; do
+	while read -u $((++i)) -r s 2> /dev/null; do
 		echo $s
 	done 3<<< 'foo' 4<<- EOF 5< <(echo baz)
 		bar

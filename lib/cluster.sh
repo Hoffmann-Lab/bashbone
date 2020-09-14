@@ -31,15 +31,15 @@ cluster::coexpression_deseq(){
 			f) clusterfilter=$OPTARG;;
 			b) biotype=$OPTARG;;
 			g) gtf="$OPTARG";;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			c) ((mandatory++)); _cmpfiles_coexpression=$OPTARG;;
-			r) ((mandatory++)); _mapper_coexpression=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			i) ((mandatory++)); countsdir="$OPTARG";;
-			j) ((mandatory++)); deseqdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			l) ((mandatory++)); _idfiles_coexpression=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			c) ((++mandatory)); _cmpfiles_coexpression=$OPTARG;;
+			r) ((++mandatory)); _mapper_coexpression=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			i) ((++mandatory)); countsdir="$OPTARG";;
+			j) ((++mandatory)); deseqdir="$OPTARG";;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			l) ((++mandatory)); _idfiles_coexpression=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -308,13 +308,13 @@ cluster::coexpression(){
 			f) clusterfilter=$OPTARG;;
 			b) biotype=$OPTARG;;
 			g) gtf="$OPTARG";;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			r) ((mandatory++)); _mapper_coexpression=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			i) ((mandatory++)); countsdir="$OPTARG";;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			l) ((mandatory++)); _idfiles_coexpression=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			r) ((++mandatory)); _mapper_coexpression=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			i) ((++mandatory)); countsdir="$OPTARG";;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			l) ((++mandatory)); _idfiles_coexpression=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done

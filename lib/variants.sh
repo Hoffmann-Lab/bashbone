@@ -22,8 +22,8 @@ variants::vcfzip() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			z) ((mandatory++)); tozip_vcfzip+=("$OPTARG");;
+			t) ((++mandatory)); threads=$OPTARG;;
+			z) ((++mandatory)); tozip_vcfzip+=("$OPTARG");;
 			*) _usage; return 1;;
 		esac
 	done
@@ -87,14 +87,14 @@ variants::haplotypecaller() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			g) ((mandatory++)); genome="$OPTARG";;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			g) ((++mandatory)); genome="$OPTARG";;
 			d) dbsnp="$OPTARG";;
-			r) ((mandatory++)); _mapper_haplotypecaller=$OPTARG;;
-			c) ((mandatory++)); _bamslices_haplotypecaller=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			r) ((++mandatory)); _mapper_haplotypecaller=$OPTARG;;
+			c) ((++mandatory)); _bamslices_haplotypecaller=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -261,13 +261,13 @@ variants::panelofnormals() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			g) ((mandatory++)); genome="$OPTARG";;
-			r) ((mandatory++)); _mapper_panelofnormals=$OPTARG;;
-			c) ((mandatory++)); _bamslices_panelofnormals=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			g) ((++mandatory)); genome="$OPTARG";;
+			r) ((++mandatory)); _mapper_panelofnormals=$OPTARG;;
+			c) ((++mandatory)); _bamslices_panelofnormals=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -370,11 +370,11 @@ variants::makepondb() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			g) ((mandatory++)); genome="$OPTARG";;
-			r) ((mandatory++)); _mapper_makepondb=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			g) ((++mandatory)); genome="$OPTARG";;
+			r) ((++mandatory)); _mapper_makepondb=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -523,16 +523,16 @@ variants::mutect() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			m) ((mandatory++)); memory=$OPTARG;;
-			g) ((mandatory++)); genome="$OPTARG";;
-			r) ((mandatory++)); _mapper_mutect=$OPTARG;;
-			c) ((mandatory++)); _bamslices_mutect=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			g) ((++mandatory)); genome="$OPTARG";;
+			r) ((++mandatory)); _mapper_mutect=$OPTARG;;
+			c) ((++mandatory)); _bamslices_mutect=$OPTARG;;
 			d) mypon=$OPTARG;;
-			1) ((mandatory++)); _nidx_mutect=$OPTARG;;
-			2) ((mandatory++)); _tidx_mutect=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			1) ((++mandatory)); _nidx_mutect=$OPTARG;;
+			2) ((++mandatory)); _tidx_mutect=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done

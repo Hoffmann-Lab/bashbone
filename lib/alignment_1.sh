@@ -31,18 +31,18 @@ alignment::segemehl() {
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			5)	$OPTARG && skipmd5=true;;
-			t)	((mandatory++)); threads=$OPTARG;;
-			g)	((mandatory++)); genome="$OPTARG";;
-			x)	((mandatory++)); genomeidx="$OPTARG";;
-			o)	((mandatory++)); outdir="$OPTARG/segemehl"; mkdir -p "$outdir" || return 1;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			x)	((++mandatory)); genomeidx="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG/segemehl"; mkdir -p "$outdir" || return 1;;
 			a)	accuracy=$OPTARG;;
 			n)	nosplitaln=$OPTARG;;
 			i)	insertsize=$OPTARG;;
-			r)	((mandatory++))
+			r)	((++mandatory))
 				_mapper_segemehl=$OPTARG
 				_mapper_segemehl+=(segemehl)
 			;;
-			1)	((mandatory++)); _fq1_segemehl=$OPTARG;;
+			1)	((++mandatory)); _fq1_segemehl=$OPTARG;;
 			2)	_fq2_segemehl=$OPTARG;;
 			*)	_usage; return 1;;
 		esac
@@ -167,20 +167,20 @@ alignment::star() {
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			5)	$OPTARG && skipmd5=true;;
-			t)	((mandatory++)); threads=$OPTARG;;
-			g)	((mandatory++)); genome="$OPTARG";;
+			t)	((++mandatory)); threads=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
 			f)	gtf="$OPTARG";;
-			x)	((mandatory++)); genomeidxdir="$OPTARG";;
-			o)	((mandatory++)); outdir="$OPTARG/star"; mkdir -p "$outdir" || return 1;;
-			p)	((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			x)	((++mandatory)); genomeidxdir="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG/star"; mkdir -p "$outdir" || return 1;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			a)	accuracy=$OPTARG;;
 			n)	nosplitaln=$OPTARG;;
 			i)	insertsize=$OPTARG;;
-			r)	((mandatory++))
+			r)	((++mandatory))
 				_mapper_star=$OPTARG
 				_mapper_star+=(star)
 			;;
-			1)	((mandatory++)); _fq1_star=$OPTARG;;
+			1)	((++mandatory)); _fq1_star=$OPTARG;;
 			2)	_fq2_star=$OPTARG;;
 			c)	params="$OPTARG";;
 			*)	_usage; return 1;;
@@ -349,17 +349,17 @@ alignment::bwa() {
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			5)	$OPTARG && skipmd5=true;;
-			t)	((mandatory++)); threads=$OPTARG;;
-			g)	((mandatory++)); genome="$OPTARG";;
-			x)	((mandatory++)); idxprefix="$OPTARG";;
-			o)	((mandatory++)); outdir="$OPTARG/bwa"; mkdir -p "$outdir" || return 1;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			x)	((++mandatory)); idxprefix="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG/bwa"; mkdir -p "$outdir" || return 1;;
 			a)	accuracy=$((100-$OPTARG));;
 			f)	forcemem=$OPTARG;;
-			r)	((mandatory++))
+			r)	((++mandatory))
 				_mapper_bwa=$OPTARG
 				_mapper_bwa+=(bwa)
 			;;
-			1)	((mandatory++)); _fq1_bwa=$OPTARG;;
+			1)	((++mandatory)); _fq1_bwa=$OPTARG;;
 			2)	_fq2_bwa=$OPTARG;;
 			*)	_usage; return 1;;
 		esac
@@ -524,11 +524,11 @@ alignment::postprocess() {
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			j) ((mandatory++)); job=${OPTARG,,*};;
-			r) ((mandatory++)); _mapper_process=$OPTARG;;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			j) ((++mandatory)); job=${OPTARG,,*};;
+			r) ((++mandatory)); _mapper_process=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -622,12 +622,12 @@ alignment::_uniqify() {
 	declare -n _cmds1_uniqify _cmds2_uniqify _returnfile_uniqify
 	while getopts '1:2:t:i:o:r:m:' arg; do
 		case $arg in
-			1) ((mandatory++)); _cmds1_uniqify=$OPTARG;;
-			2) ((mandatory++)); _cmds2_uniqify=$OPTARG;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			i) ((mandatory++)); sambam="$OPTARG";;
+			1) ((++mandatory)); _cmds1_uniqify=$OPTARG;;
+			2) ((++mandatory)); _cmds2_uniqify=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			i) ((++mandatory)); sambam="$OPTARG";;
 			m) m=${OPTARG,,*};;
-			o) ((mandatory++)); outbase="$OPTARG";;
+			o) ((++mandatory)); outbase="$OPTARG";;
 			r) _returnfile_uniqify=$OPTARG; ;;
 			*) _usage; return 1;;
 		esac
@@ -717,11 +717,11 @@ alignment::_sort() {
 	declare -n _cmds1_sort _returnfile_sort
 	while getopts '1:t:i:o:p:r:' arg; do
 		case $arg in
-			1) ((mandatory++)); _cmds1_sort=$OPTARG;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			i) ((mandatory++)); bam="$OPTARG";;
-			o) ((mandatory++)); outbase="$OPTARG";;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
+			1) ((++mandatory)); _cmds1_sort=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			i) ((++mandatory)); bam="$OPTARG";;
+			o) ((++mandatory)); outbase="$OPTARG";;
+			p) ((++mandatory)); tmpdir="$OPTARG";;
 			r) _returnfile_sort=$OPTARG; ;;
 			*) _usage; return 1;;
 		esac
@@ -760,9 +760,9 @@ alignment::_index() {
 	declare -n _cmds1_index
 	while getopts '1:t:i:' arg; do
 		case $arg in
-			1) ((mandatory++)); _cmds1_index=$OPTARG;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			i) ((mandatory++)); bam="$OPTARG";;
+			1) ((++mandatory)); _cmds1_index=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			i) ((++mandatory)); bam="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done
@@ -800,11 +800,11 @@ alignment::inferstrandness(){
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			r) ((mandatory++)); _mapper_inferstrandness=$OPTARG;;
-			x) ((mandatory++)); _strandness_inferstrandness=$OPTARG;;
-			g) ((mandatory++)); gtf="$OPTARG";;
-			p) ((mandatory++)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			r) ((++mandatory)); _mapper_inferstrandness=$OPTARG;;
+			x) ((++mandatory)); _strandness_inferstrandness=$OPTARG;;
+			g) ((++mandatory)); gtf="$OPTARG";;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -825,10 +825,10 @@ alignment::inferstrandness(){
 					next if $F[0] =~ /^(MT|chrM)/i;
 					next unless $F[2] eq "exon";
 					if($F[6] eq "+"){
-						$plus++;
+						++$plus;
 						print join"\t",($F[0],$F[3],$F[4],$F[1],0,$F[6]);
 					} else {
-						$minus++;
+						++$minus;
 						print join"\t",($F[0],$F[3],$F[4],$F[1],0,$F[6]);
 					}
 					exit if $plus>2000 && $minus>2000;
@@ -907,7 +907,7 @@ alignment::add4stats(){
 	declare -n _mapper_add4stats
 	while getopts 'r:' arg; do
 		case $arg in
-			r) ((mandatory++)); _mapper_add4stats=$OPTARG;;
+			r) ((++mandatory)); _mapper_add4stats=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -950,9 +950,9 @@ alignment::bamstats(){
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			r) ((mandatory++)); _mapper_bamstats=$OPTARG;;
-			o) ((mandatory++)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			r) ((++mandatory)); _mapper_bamstats=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			*) _usage; return 1;;
 		esac
 	done

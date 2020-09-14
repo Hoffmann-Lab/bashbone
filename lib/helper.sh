@@ -21,10 +21,10 @@ helper::makezipcmd(){
 	declare -n _cmds_makezipcmd
 	while getopts 'a:t:c:z:' arg; do
 		case $arg in
-			a) ((mandatory++)); _cmds_makezipcmd=$OPTARG;;
+			a) ((++mandatory)); _cmds_makezipcmd=$OPTARG;;
 			t) threads=$OPTARG;;
-			c) ((mandatory++)); check_makezipcmd+=("$OPTARG");;
-			z) ((mandatory++)); tozip_makezipcmd+=("$OPTARG");;
+			c) ((++mandatory)); check_makezipcmd+=("$OPTARG");;
+			z) ((++mandatory)); tozip_makezipcmd+=("$OPTARG");;
 			*) _usage; return 1;;
 		esac
 	done
@@ -61,8 +61,8 @@ helper::makecatcmd(){
 	declare -n _makecatcmd
 	while getopts 'f:c:' arg; do
 		case $arg in
-			c) ((mandatory++)); _makecatcmd=$OPTARG;;
-			f) ((mandatory++)); f="$OPTARG";;
+			c) ((++mandatory)); _makecatcmd=$OPTARG;;
+			f) ((++mandatory)); f="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done
@@ -92,9 +92,9 @@ helper::basename(){
 	declare -n _basename _basenamex
 	while getopts 'f:o:e:' arg; do
 		case $arg in
-			f) ((mandatory++)); f="$OPTARG";;
-			o) ((mandatory++)); _basename=$OPTARG;;
-			e) ((mandatory++)); _basenamex=$OPTARG;;
+			f) ((++mandatory)); f="$OPTARG";;
+			o) ((++mandatory)); _basename=$OPTARG;;
+			e) ((++mandatory)); _basenamex=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done
@@ -124,7 +124,7 @@ helper::ishash(){
 	declare -a vars
 	while getopts 'v:' arg; do
 		case $arg in
-			v)	((mandatory++)); vars+=("$(printf '%q' "$OPTARG")")
+			v)	((++mandatory)); vars+=("$(printf '%q' "$OPTARG")")
 				{	declare -p "$OPTARG" &> /dev/null && \
 					declare -n __="$OPTARG"
 					[[ "$(declare -p ${!__})" =~ ^declare\ \-[Ab-z]+ ]]
@@ -150,7 +150,7 @@ helper::isarray(){
 	declare -a vars
 	while getopts 'v:' arg; do
 		case $arg in
-			v)	((mandatory++)); vars+=("$(printf '%q' "$OPTARG")")
+			v)	((++mandatory)); vars+=("$(printf '%q' "$OPTARG")")
 				{	declare -p "$OPTARG" &> /dev/null && \
 					declare -n __="$OPTARG"
 					[[ "$(declare -p ${!__})" =~ ^declare\ \-[a-zB-Z]+ ]]
@@ -176,7 +176,7 @@ helper::addmemberfunctions(){
 	declare -a vars
 	while getopts 'v:' arg; do
 		case $arg in
-			v) ((mandatory++)); vars+=("$(printf '%q' "$OPTARG")");;
+			v) ((++mandatory)); vars+=("$(printf '%q' "$OPTARG")");;
 			*) _usage; return 1;;
 		esac
 	done

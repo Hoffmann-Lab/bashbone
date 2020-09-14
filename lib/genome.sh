@@ -22,9 +22,9 @@ genome::mkdict() {
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			5) $OPTARG && skipmd5=true;;
-			t) ((mandatory++)); threads=$OPTARG;;
-			i) ((mandatory++)); genome="$OPTARG";;
-			p) ((mandatory++)); tmpdir="$OPTARG";;
+			t) ((++mandatory)); threads=$OPTARG;;
+			i) ((++mandatory)); genome="$OPTARG";;
+			p) ((++mandatory)); tmpdir="$OPTARG";;
 			*) _usage; return 1;;
 		esac
 	done
