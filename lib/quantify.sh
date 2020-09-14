@@ -49,7 +49,7 @@ quantify::featurecounts() {
 	instances=$((instances*2))
 	read -r instances ithreads < <(configure::instances_by_threads -i $((instances==0?1:instances)) -t 64 -T $threads)
 
-	declare -a cmd3 tdirs
+	declare -a cmd1 tdirs
 	local mf f o params
 	for m in "${_mapper_featurecounts[@]}"; do
 		declare -n _bams_featurecounts=$m
@@ -63,7 +63,7 @@ quantify::featurecounts() {
 			[[ $(samtools view -F 4 "$bam" | head -10000 | cat <(samtools view -H "$bam") - | samtools view -c -f 1) -gt 0 ]] && params+='-p '
 			[[ "$featuretag" != "gene_id" ]] && params+='-f -O '
 
-			commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				featureCounts
 					$params
 					-Q 0
@@ -85,11 +85,9 @@ quantify::featurecounts() {
 	done
 
 	$skip && {
-		commander::printcmd -a cmd3
+		commander::printcmd -a cmd1
 	} || {
-		{	conda activate py2r && \
-			commander::runcmd -v -b -t $instances -a cmd3 && \
-			conda activate py2
+		{	commander::runcmd -c subread -v -b -t $instances -a cmd1
 		} || {
 			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
@@ -140,10 +138,9 @@ quantify::tpm() {
 		for f in "${_bams_tpm[@]}"; do
 			countfile="$countsdir/$m/$(basename $f)"
 			countfile=$(readlink -e "${countfile%.*}"*.+(genecounts|counts).+(reduced|htsc) | head -1)
-			quantify::_tpm \
-				-1 cmd1 \
-				-g $gtf \
-				-i $countfile
+			commander::makecmd -a _cmds1_tpm -s '|' -c {COMMANDER[0]}<<- CMD
+				tpm.pl "$gtf" "$countfile" > "$countfile.tpm"
+			CMD
 		done
 	done
 
@@ -156,37 +153,6 @@ quantify::tpm() {
 			return 1
 		}
 	}
-
-	return 0
-}
-
-quantify::_tpm() {
-	local funcname=${FUNCNAME[0]}
-	_usage() {
-		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
-			-1 <cmds1>     | array of
-			-g <gtf>       | path to
-			-i <countfile> | path to
-		EOF
-		return 0
-	}
-
-	local OPTIND arg mandatory countfile gtf
-	declare -n _cmds1_tpm
-	while getopts '1:i:g:' arg; do
-		case $arg in
-			1) ((mandatory++)); _cmds1_tpm=$OPTARG;;
-			g) ((mandatory++)); gtf="$OPTARG";;
-			i) ((mandatory++)); countfile="$OPTARG";;
-			*) _usage; return 1;;
-		esac
-	done
-	[[ $mandatory -lt 3 ]] && _usage && return 1
-
-	commander::makecmd -a _cmds1_tpm -s '|' -c {COMMANDER[0]}<<- CMD
-		tpm.pl $gtf $countfile > $countfile.tpm
-	CMD
 
 	return 0
 }

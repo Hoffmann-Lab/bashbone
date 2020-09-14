@@ -254,11 +254,9 @@ peaks::macs() {
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	} || {
-		{	commander::runcmd -v -b -t $instances -a cmd1 && \
+		{	commander::runcmd -c macs -v -b -t $instances -a cmd1 && \
 			commander::runcmd -v -b -t $threads -a cmd2 && \
-			conda activate py3 && \
 			commander::runcmd -v -b -t $threads -a cmd3 && \
-			conda activate py2 && \
 			commander::runcmd -v -b -t $threads -a cmd4
 		} || {
 			rm -rf "${tdirs[@]}"
@@ -496,9 +494,7 @@ peaks::gem() {
 	} || {
 		{	commander::runcmd -v -b -t $instances -a cmd1 && \
 			commander::runcmd -v -b -t $threads -a cmd2 && \
-			conda activate py3 && \
 			commander::runcmd -v -b -t $threads -a cmd3 && \
-			conda activate py2 && \
 			commander::runcmd -v -b -t $threads -a cmd4
 		} || {
 			rm -rf "$tdir"

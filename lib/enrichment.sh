@@ -330,9 +330,7 @@ enrichment::go(){
 		commander::printcmd -a cmd2
 	} || {
 		{	commander::runcmd -v -b -t $threads -a cmd1 && \
-			conda activate py2r && \
-			commander::runcmd -v -b -t $threads -a cmd2 && \
-			conda activate py2
+			commander::runcmd -c r -v -b -t $threads -a cmd2
 		} || {
 			commander::printerr "$funcname failed"
 			return 1
@@ -352,9 +350,7 @@ enrichment::go(){
 		commander::printcmd -a cmd4
 	} || {
 		{	commander::runcmd -v -b -t $threads -a cmd3 && \
-			conda activate py2r && \
-			commander::runcmd -v -b -t $threads -a cmd4 && \
-			conda activate py2
+			commander::runcmd -c r -v -b -t $threads -a cmd4
 		} || {
 			commander::printerr "$funcname failed"
 			return 1

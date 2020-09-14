@@ -191,7 +191,8 @@ alignment::mkreplicates() {
 		commander::printcmd -a cmd3
 	} || {
 		{	commander::runcmd -v -b -t $instances1 -a cmd1 && \
-			commander::runcmd -v -b -t $instances2 -a cmd2
+			commander::runcmd -v -b -t $instances2 -a cmd2 && \
+			commander::runcmd -v -b -t $instances1 -a cmd3
 		} || {
 			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"

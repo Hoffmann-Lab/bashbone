@@ -98,9 +98,7 @@ fusions::starfusion(){
 	$skip && {
 		commander::printcmd -a cmd1
 	} || {
-		{	conda activate starfusion && \
-			commander::runcmd -v -b -t 1 -a cmd1 && \
-			conda activate py2
+		{	commander::runcmd -c starfusion -v -b -t 1 -a cmd1
 		} || {
 			commander::printerr "$funcname failed"
 			return 1
@@ -221,10 +219,10 @@ fusions::arriba(){
 	} || return 1
 
 	local m f o
-	declare -a cmd3
+	declare -a cmd1
 	for f in "${star[@]}"; do
 		o="$outdir/$(basename "$f" .bam)"
-		commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
 			arriba
 				-a "$genome"
 				-g "$gtf"
@@ -240,11 +238,9 @@ fusions::arriba(){
 	done
 
 	$skip && {
-		commander::printcmd -a cmd3
+		commander::printcmd -a cmd1
 	} || {
-		{	conda activate arriba && \
-			commander::runcmd -v -b -t $threads -a cmd3 && \
-			conda activate py2
+		{	commander::runcmd -c arriba -v -b -t $threads -a cmd1
 		} || {
 			commander::printerr "$funcname failed"
 			return 1

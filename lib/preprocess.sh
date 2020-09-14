@@ -49,7 +49,7 @@ preprocess::fastqc() {
 	$skip && {
 		commander::printcmd -a cmd1
 	} || {
-		{	commander::runcmd -v -b -t $threads -a cmd1
+		{	commander::runcmd -c fastqc -v -b -t $threads -a cmd1
 		} || {
 			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
@@ -203,9 +203,7 @@ preprocess::cutadapt(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	conda activate py3 && \
-			commander::runcmd -v -b -t $instances -a cmd1 && \
-			conda activate py2 && \
+		{	commander::runcmd -c cutadapt -v -b -t $instances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2
 		} || {
 			commander::printerr "$funcname failed"
@@ -452,7 +450,7 @@ preprocess::rcorrector() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	commander::runcmd -v -b -t 1 -a cmd1 && \
+		{	commander::runcmd -c rcorrector -v -b -t 1 -a cmd1 && \
 			commander::runcmd -v -b -t 1 -a cmd2
 		} || {
 			rm -rf "${tdirs[@]}"
@@ -725,9 +723,7 @@ preprocess::qcstats(){
 	$skip && {
 		commander::printcmd -a cmd1
 	} || {
-		{	conda activate py2r && \
-			commander::runcmd -v -b -a cmd1 && \
-			conda activate py2
+		{	commander::runcmd -c r -v -b -a cmd1
 		} || {
 			commander::printerr "$funcname failed"
 			return 1

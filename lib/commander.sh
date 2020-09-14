@@ -139,6 +139,7 @@ commander::runcmd(){
 			$funcname usage:
 			-v           | verbose on
 			-b           | benchmark on
+			-c <env>     | run with conda
 			-t <threads> | number of
 			-a <cmds>    | ALWAYS LAST OPTION
 			               array of
@@ -148,13 +149,14 @@ commander::runcmd(){
 		return 0
 	}
 
-	local OPTIND arg threads=1 verbose=false benchmark=false
+	local OPTIND arg threads=1 verbose=false benchmark=false conda
 	declare -n _cmds_runcmd # be very careful with circular name reference
-	while getopts 'vbt:a:' arg; do
+	while getopts 'vbt:c:a:' arg; do
 		case $arg in
 			t)	threads=$OPTARG;;
 			v)	verbose=true;;
 			b)	benchmark=true;;
+			c)	conda=$OPTARG;;
 			a)	_cmds_runcmd=$OPTARG
 				[[ $_cmds_runcmd ]] || return 0
 				$verbose && {
@@ -166,26 +168,26 @@ commander::runcmd(){
 				# old: printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $threads -I {} bash -c {}
 				# use a subshell with its own trap, destructed if subshell terminates
 				$benchmark && {
-					(
-						trap 'rm -rf "$tmpdir"' EXIT
-						trap 'exit $?' ERR INT TERM
+					(	trap 'rm -rf "$tmpdir"' EXIT
+						trap 'exit $?' INT TERM
 						tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 						for i in "${!_cmds_runcmd[@]}"; do
 							sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
 							echo "#!/usr/bin/env bash" > "$sh"
+							[[ $conda ]] && echo "conda activate $conda" >> "$sh"
 							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 							echo "$sh"
 						done | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
 						exit $((${PIPESTATUS[@]/%/+}0))
 					)
 				} || {
-					(
-						trap 'rm -rf "$tmpdir"' EXIT
-						trap 'exit $?' ERR INT TERM
+					(	trap 'rm -rf "$tmpdir"' EXIT
+						trap 'exit $?' INT TERM
 						tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 						for i in "${!_cmds_runcmd[@]}"; do
 							sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
 							echo "#!/usr/bin/env bash" > "$sh"
+							[[ $conda ]] && echo "conda activate $conda" >> "$sh"
 							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 							echo "$sh"
 						done | xargs -P $threads -I {} bash {}
@@ -207,6 +209,7 @@ commander::qsubcmd(){
 			$funcname usage:
 			-v           | verbose on
 			-b           | benchmark on
+			-c <env>     | run with conda
 			-h <hosts>   | sge digestable list of
 			-l <logfile> | sge nodes shared path to
 			-t <threads> | number of
@@ -220,13 +223,14 @@ commander::qsubcmd(){
 		return 0
 	}
 
-	local OPTIND arg threads=1 verbose=false benchmark=false penv log hosts
+	local OPTIND arg threads=1 verbose=false benchmark=false conda penv log hosts
 	declare -n _cmds_qsubcmd # be very careful with circular name reference
 	declare -a mapdata
-	while getopts 'vbt:l:h:p:a:' arg; do
+	while getopts 'vbt:l:h:p:c:a:' arg; do
 		case $arg in
 			v)	verbose=true;;
 			b)	benchmark=true;;
+			c)	conda=$OPTARG;;
 			t)	threads=$OPTARG;;
 			l)	log="$OPTARG";;
 			h)	hosts="-l h=$OPTARG";;
@@ -240,9 +244,8 @@ commander::qsubcmd(){
 				[[ $penv ]] && penv+=" $threads"
 				local i sh e tmpdir ex
 				local jobname
-				(
-					trap '[[ $jobname ]] && qdel "$jobname.*"; rm -rf "$tmpdir"; rm -f "$ex"' EXIT
-					trap 'exit $?' ERR INT TERM
+				(	trap '[[ $jobname ]] && qdel "$jobname.*"; rm -rf "$tmpdir"; rm -f "$ex"' EXIT
+					trap 'exit $?' INT TERM
 					tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 					jobname="$(basename "$tmpdir")"
 					jobname="X${jobname#*.}" # ensure first character to be a letter
@@ -252,6 +255,7 @@ commander::qsubcmd(){
 						[[ ! $log ]] && log="${sh%.*}.out"
 
 						echo "#!/usr/bin/env bash" > "$sh"
+						[[ $conda ]] && echo "conda activate $conda" >> "$sh"
 						printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
 						echo "echo \$? >> '$ex'" >> "$sh"
 

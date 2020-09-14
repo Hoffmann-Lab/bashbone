@@ -8,21 +8,24 @@ compile::_parse(){
 		usage:
 			-i <path>    | installation base
 			-t <threads> | number of
+			-u <upgrade> | true/false conda envs
 		EOF
 		return 0
 	}
 	local OPTIND arg mandatory
-	declare -n _insdir_parse _threads_parse
-	while getopts 'r:s:i:t:' arg; do
+	declare -n _insdir_parse _threads_parse _upgrade_parse
+	while getopts 'r:s:c:i:t:u:' arg; do
 		case $arg in
 			r) ((++mandatory)); _insdir_parse="$OPTARG";;
 			s) ((++mandatory)); _threads_parse=$OPTARG;;
+			c) _upgrade_parse=$OPTARG;;
 			i) ((++mandatory)); _insdir_parse="$OPTARG";;
 			t) ((++mandatory)); _threads_parse=$OPTARG;;
+			u) _upgrade_parse=$OPTARG;;
 			*) _usage; return 1;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && echo mist && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage && return 1
 
 	return 0
 }
@@ -34,6 +37,7 @@ compile::all(){
 		compile::_parse -r insdir -s threads "$@"
 		compile::bashbone -i "$insdir" -t $threads
 		compile::conda -i "$insdir" -t $threads
+		compile::conda_tools -i "$insdir" -t $threads
 		compile::java -i "$insdir" -t $threads
 		compile::trimmomatic -i "$insdir" -t $threads
 		compile::sortmerna -i "$insdir" -t $threads
@@ -64,18 +68,21 @@ compile::bashbone() {
 
 compile::upgrade(){
 	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
-	compile::bashbone -i "$insdir" -t $threads || return 1
-	return 0
+	(	trap 'exit $?' ERR INT TERM
+		set -e
+		compile::_parse -r insdir -s threads "$@"
+		compile::bashbone -i "$insdir" -t $threads
+		compile::conda_tools -i "$insdir" -t $threads -u true
+	)
+	return $?
 }
 
 compile::conda() {
-	local insdir threads url version tmpdir
+	local insdir threads url version tmpdir n bin
 	(	trap 'rm -rf "$tmpdir"' EXIT
 		trap 'exit $?' ERR INT TERM
 		set -e
-
-		commander::printinfo "installing conda and tools"
+		commander::printinfo "installing conda"
 		compile::_parse -r insdir -s threads "$@"
 		tmpdir="$insdir/tmp"
 		mkdir -p "$tmpdir"
@@ -94,81 +101,14 @@ compile::conda() {
 		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
 			pkg-config make automake cmake \
-			bzip2 pigz pbzip2 glib htslib \
+			bzip2 pigz pbzip2 \
+			glib htslib \
 			perl-threaded perl-app-cpanminus perl-list-moreutils perl-try-tiny \
 			curl ghostscript dos2unix \
 			ucsc-facount khmer \
 			datamash samtools bedtools \
-			bcftools vcflib vt
+			bgzip tabix bcftools vcflib vt
 		cpanm Switch
-
-
-		# python 3 envs
-		for tool in cutadapt rcorrector segemehl star bwa rseqc arriba star-fusion picard bamutil macs2 diego gatk4 freebayes varscan; do
-			commander::printinfo "setup conda $tool env"
-			n=${tool//[^[:alpha:]]/}
-			conda create -y -n $n python=3
-			conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
-			# link commonly used base binaries into env
-			for bin in perl samtools bedtools; do
-				[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-			done
-		done
-		chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl" # necessary fix
-
-		commander::printinfo "setup conda featurecounts env"
-		tool=subread
-		n=featurecounts
-		conda create -y -n $n python=3
-		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
-		for bin in perl samtools bedtools; do
-			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
-
-		commander::printinfo "setup conda vardict env"
-		tool=vardict
-		n=${tool//[^[:alpha:]]/}
-		conda create -y -n $n python=3
-		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java
-		for bin in perl samtools bedtools; do
-			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
-
-		commander::printinfo "setup conda snpeff env"
-		tool=snpeff
-		n=${tool//[^[:alpha:]]/}
-		conda create -y -n $n python=3
-		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
-		for bin in perl samtools bedtools; do
-			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
-
-
-		# python 2 envs
-		commander::printinfo "setup conda platypus-variant env"
-		tool=platypus-variant
-		n=platypus
-		conda create -y -n $n python=2
-		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
-		for bin in perl samtools bedtools; do
-			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
-
-		# this is a pipeline itself and thus will not be part of bashbone
-		# commander::printinfo "setup conda fusion-catcher env"
-		# tool=fusion-catcher
-		# n=${tool//[^[:alpha:]]/}
-		# conda create -y -n $n python=2
-		# conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
-		# for bin in perl samtools bedtools; do
-		# 	[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		# done
-		# conda activate $n
-		# commander::printinfo "downloading databases"
-		# download-human-db.sh
-		# rm -f $FC_DB_PATH/*.tar.gz* # env varibale
-		# conda deactivate
-
 
 		# setup r env with compilers for r packages
 		# to avoid r downgrades due to modules r built versions, compile them manually (ggpubr requires nlopt)
@@ -178,9 +118,12 @@ compile::conda() {
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
 			pkg-config make automake cmake \
-			bzip2 pigz pbzip2 glib htslib \
+			bzip2 pigz pbzip2 \
+			glib htslib \
 			nlopt r-base
-		conda activate $n
+		for bin in perl samtools bedtools; do
+			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
 		# basics
 		declare -a cmd1
 		commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
@@ -222,11 +165,94 @@ compile::conda() {
 				devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir")"
 			' 2>&1
 		CMD
-		commander::runcmd -t 1 -a cmd1
-		commander::runcmd -t 1 -a cmd2
-		commander::runcmd -t 1 -a cmd3
-		commander::runcmd -t $threads -a cmd4
+		commander::runcmd -c $n -t 1 -a cmd1
+		commander::runcmd -c $n -t 1 -a cmd2
+		commander::runcmd -c $n -t 1 -a cmd3
+		commander::runcmd -c $n -t $threads -a cmd4
 
+		commander::printinfo "conda clean up"
+		conda clean -y -a
+		conda deactivate
+	)
+	return $?
+}
+
+compile::conda_tools() {
+	local insdir threads upgrade=false url version tool n bin
+	declare -A envs
+	(	trap 'exit $?' ERR INT TERM
+		set -e
+
+		compile::_parse -r insdir -s threads -c upgrade "$@"
+		source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
+		while read -r tool; do
+			envs[$tool]=true
+		done < <(conda info -e | awk -v prefix="^"$insdir '$NF ~ prefix {print $1}')
+
+		# python 3 envs
+		for tool in fastqc cutadapt rcorrector star bwa rseqc subread arriba star-fusion picard bamutil macs2 diego gatk4 freebayes varscan; do
+			n=${tool//[^[:alpha:]]/}
+			$upgrade && ${envs[$n]:=false} && continue
+
+			commander::printinfo "setup conda $tool env"
+			conda create -y -n $n python=3
+			conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+			# link commonly used base binaries into env
+			for bin in perl samtools bedtools; do
+				[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+			done
+		done
+		chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl" # necessary fix
+
+		tool=vardict
+		n=${tool//[^[:alpha:]]/}
+		$upgrade && ${envs[$n]:=false} || {
+			commander::printinfo "setup conda $tool env"
+			conda create -y -n $n python=3
+			conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java
+			for bin in perl samtools bedtools; do
+				[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+			done
+		}
+
+		tool=snpeff
+		n=${tool//[^[:alpha:]]/}
+		$upgrade && ${envs[$n]:=false} || {
+			commander::printinfo "setup conda $tool env"
+			conda create -y -n $n python=3
+			conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
+			for bin in perl samtools bedtools; do
+				[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+			done
+		}
+
+
+		# python 2 envs
+		tool=platypus-variant
+		n=platypus
+		$upgrade && ${envs[$n]:=false} || {
+			commander::printinfo "setup conda $tool env"
+			conda create -y -n $n python=2
+			conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+			for bin in perl samtools bedtools; do
+				[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+			done
+		}
+
+		# this is a pipeline itself and thus will not be part of bashbone
+		# commander::printinfo "setup conda fusion-catcher env"
+		# tool=fusion-catcher
+		# n=${tool//[^[:alpha:]]/}
+		# conda create -y -n $n python=2
+		# conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+		# for bin in perl samtools bedtools; do
+		# 	[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		# done
+		# conda activate $n
+		# commander::printinfo "downloading databases"
+		# download-human-db.sh
+		# rm -f $FC_DB_PATH/*.tar.gz* # env varibale
+		# conda deactivate
 
 		commander::printinfo "conda clean up"
 		conda clean -y -a
@@ -396,8 +422,11 @@ compile::revigo() {
 		cd $insdir
 		rm -rf revigo
 		git clone https://gitlab.leibniz-fli.de/kriege/revigo.git
+		cd revigo
+		mkdir bin
+		compile::_javawrapper bin/revigo $(readlink -e RevigoStandalone.jar) $insdir/latest/java/java
 		mkdir -p $insdir/latest
-		ln -sfn $insdir/revigo $insdir/latest/revigo
+		ln -sfn $PWD/bin $insdir/latest/revigo
 	)
 	return $?
 }

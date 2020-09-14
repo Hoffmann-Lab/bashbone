@@ -221,7 +221,7 @@ alignment::star() {
 				--genomeFastaFiles "$genome"
 				--outFileNamePrefix "$genomeidxdir/$(basename "$genome")."
 			CMD
-			commander::runcmd -v -b -t $threads -a cmdidx || {
+			commander::runcmd -c star -v -b -t $threads -a cmdidx || {
 				commander::printerr "$funcname failed at indexing"
 				return 1
 			}
@@ -308,7 +308,7 @@ alignment::star() {
 	$skip && {
 		commander::printcmd -a cmd1
 	} || {
-		{	commander::runcmd -v -b -t 1 -a cmd1
+		{	commander::runcmd -c star -v -b -t 1 -a cmd1
 		} || {
 			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
@@ -386,7 +386,7 @@ alignment::bwa() {
 			CMD
 				bwa index -p "$idxprefix" "$genome"
 			CMD
-			commander::runcmd -v -b -t $threads -a cmdidx || {
+			commander::runcmd -c bwa -v -b -t $threads -a cmdidx || {
 				commander::printerr "$funcname failed at indexing"
 				return 1
 			}
@@ -491,8 +491,8 @@ alignment::bwa() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	commander::runcmd -v -b -t 1 -a cmd1 && \
-			commander::runcmd -v -b -t $instances -a cmd2
+		{	commander::runcmd -c bwa -v -b -t 1 -a cmd1 && \
+			commander::runcmd -c bwa -v -b -t $instances -a cmd2
 		} || {
 			commander::printerr "$funcname failed"
 			return 1
@@ -877,13 +877,11 @@ alignment::inferstrandness(){
 			commander::runcmd -v -b -t $threads -a cmd1 && \
 			echo ":INFO: running commands of array cmd2" && \
 			commander::printcmd -a cmd2 && \
-			conda activate py3 && \
-			mapfile -t mapdata < <(commander::runcmd -t $threads -a cmd2)
+			mapfile -t mapdata < <(commander::runcmd -c rseqc -t $threads -a cmd2)
 			for l in "${mapdata[@]}"; do
 				a=($l)
 				_strandness_inferstrandness["${a[@]:1}"]="${a[0]}"
 			done
-			conda activate py2
 		} || {
 			rm -f "${tfiles[@]}"
 			commander::printerr "$funcname failed"
@@ -1059,9 +1057,7 @@ alignment::bamstats(){
 	$skip && {
 		commander::printcmd -a cmd2
 	} || {
-		{	conda activate py2r && \
-			commander::runcmd -v -b -t $threads -a cmd2 && \
-			conda activate py2
+		{	commander::runcmd -c r -v -b -t $threads -a cmd2
 		} || {
 			commander::printerr "$funcname failed"
 			return 1

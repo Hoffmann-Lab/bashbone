@@ -70,9 +70,7 @@ expression::diego() {
 			CMD
 		fi
 
-		{	conda activate py3 && \
-			commander::runcmd -v -b -t $threads -a cmdprep && \
-			conda activate py2
+		{	commander::runcmd -v -b -t $threads -a cmdprep
 		} || {
 			rm -f $tmp
 			commander::printerr "$funcname failed at annotation preparation"
@@ -195,10 +193,8 @@ expression::diego() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	conda activate py3 && \
-			commander::runcmd -v -b -t $threads -a cmd1 && \
-			commander::runcmd -v -b -t $threads -a cmd2 && \
-			conda activate py2
+		{	commander::runcmd -c diego -v -b -t $threads -a cmd1 && \
+			commander::runcmd -c diego -v -b -t $threads -a cmd2
 		} || {
 			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
@@ -290,9 +286,7 @@ expression::deseq() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	conda activate py2r && \
-			commander::runcmd -v -b -t $instances -a cmd1 && \
-			conda activate py2 && \
+		{	commander::runcmd -c r -v -b -t $instances -a cmd1 && \
 			commander::runcmd -v -b -t $threads -a cmd2
 		} || {
 			commander::printerr "$funcname failed"
@@ -502,10 +496,8 @@ expression::joincounts() {
 	$skip && {
 		commander::printcmd -a cmd1
 	} || {
-		{	conda activate py2r && \
-			commander::runcmd -v -b -t $threads -a cmd1 && \
-			commander::runcmd -v -b -t $threads -a cmd2 && \
-			conda activate py2
+		{	commander::runcmd -c r -v -b -t $threads -a cmd1 && \
+			commander::runcmd -c r -v -b -t $threads -a cmd2
 		} || {
 			rm -f "$tmp".*
 			commander::printerr "$funcname failed"

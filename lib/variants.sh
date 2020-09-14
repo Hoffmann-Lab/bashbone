@@ -217,7 +217,7 @@ variants::haplotypecaller() {
 		commander::printcmd -a cmd5
 		commander::printcmd -a cmd6
 	} || {
-		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
+		{	commander::runcmd -c gatk -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $threads -a cmd2 && \
 			commander::runcmd -v -b -t $threads -a cmd3 && \
 			commander::runcmd -v -b -t $threads -a cmd4 && \
@@ -335,7 +335,7 @@ variants::panelofnormals() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
+		{	commander::runcmd -c gatk -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $threads -a cmd2
 		} || {
 			rm -rf "${tdirs[@]}"
@@ -468,8 +468,8 @@ variants::makepondb() {
 		commander::printcmd -a cmd2
 	} || {
 		{	commander::runcmd -v -b -t $instances -a cmd1 && \
-			commander::runcmd -v -b -t $minstances -a cmd2 && \
-			commander::runcmd -v -b -t $minstances -a cmd3
+			commander::runcmd -c gatk -v -b -t $minstances -a cmd2 && \
+			commander::runcmd -c gatk -v -b -t $minstances -a cmd3
 		} || {
 			rm -rf "${tdirs[@]}"
 			commander::printerr "$funcname failed"
@@ -752,14 +752,14 @@ variants::mutect() {
 		commander::printcmd -a cmd9
 		commander::printcmd -a cmd10
 	} || {
-		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -v -b -t $minstances -a cmd2 && \
-			commander::runcmd -v -b -t $minstances -a cmd3 && \
-			commander::runcmd -v -b -t $minstances -a cmd4 && \
+		{	commander::runcmd -c gatk -v -b -t $minstances -a cmd1 && \
+			commander::runcmd -c gatk -v -b -t $minstances -a cmd2 && \
+			commander::runcmd -c gatk -v -b -t $minstances -a cmd3 && \
+			commander::runcmd -c gatk -v -b -t $minstances -a cmd4 && \
 			commander::runcmd -v -b -t $threads -a cmd5 && \
 			commander::runcmd -v -b -t $threads -a cmd6 && \
 			commander::runcmd -v -b -t $threads -a cmd7 && \
-			commander::runcmd -v -b -t $minstances2 -a cmd8 && \
+			commander::runcmd -c gatk -v -b -t $minstances2 -a cmd8 && \
 			commander::runcmd -v -b -t $instances -a cmd9 && \
 			commander::runcmd -v -b -t $instances -a cmd10
 		} || {

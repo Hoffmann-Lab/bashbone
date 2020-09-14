@@ -82,9 +82,7 @@ alignment::slice(){
 	CMD
 
 	{	rm -f "$tmpdir/genome/slice".*.bed && \
-		conda activate py2r && \
-		commander::runcmd -v -b -t $threads -a cmd1 && \
-		conda activate py2
+		commander::runcmd -c r -v -b -t $threads -a cmd1
 	} || {
 		commander::printerr "$funcname failed"
 		return 1
@@ -240,7 +238,7 @@ alignment::rmduplicates(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
+		{	commander::runcmd -c picard -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2
 		} || {
 			commander::printerr "$funcname failed"
@@ -356,7 +354,7 @@ alignment::clipmateoverlaps() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	} || {
-		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
+		{	commander::runcmd -c bamutil -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2 && \
 			commander::runcmd -v -b -t $instances -a cmd3
 		} || {
@@ -471,7 +469,7 @@ alignment::reorder() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
+		{	commander::runcmd -c picard -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2
 		} || {
 			commander::printerr "$funcname failed"
@@ -607,7 +605,7 @@ alignment::addreadgroup() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
+		{	commander::runcmd -c picard -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2
 		} || {
 			commander::printerr "$funcname failed"
@@ -731,7 +729,7 @@ alignment::splitncigar() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
+		{	commander::runcmd -c gatk -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2
 		} || {
 			rm -rf "${tdirs[@]}"
@@ -850,7 +848,7 @@ alignment::leftalign() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	} || {
-		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
+		{	commander::runcmd -c gatk -v -b -t $minstances -a cmd1 && \
 			commander::runcmd -v -b -t $instances -a cmd2
 		} || {
 			rm -rf "${tdirs[@]}"
@@ -1009,8 +1007,8 @@ alignment::bqsr() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	} || {
-		{	commander::runcmd -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -v -b -t $minstances -a cmd2 && \
+		{	commander::runcmd -c gatk -v -b -t $minstances -a cmd1 && \
+			commander::runcmd -c gatk -v -b -t $minstances -a cmd2 && \
 			commander::runcmd -v -b -t $instances -a cmd3
 		} || {
 			rm -rf "${tdirs[@]}"

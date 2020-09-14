@@ -63,7 +63,7 @@ configure::environment(){
 
 	$activate_conda && {
 		commander::printinfo "setting up environment"
-		source $insdir_tools/conda/bin/activate py2 &> /dev/null || return 1
+		source $insdir_tools/conda/bin/activate base &> /dev/null || return 1
 	}
 
 	local tp=$(readlink -e $insdir_tools/latest)
