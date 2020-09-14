@@ -174,7 +174,7 @@ commander::runcmd(){
 						for i in "${!_cmds_runcmd[@]}"; do
 							sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
 							echo "#!/usr/bin/env bash" > "$sh"
-							[[ $conda ]] && echo "conda activate $conda" >> "$sh"
+							[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 							echo "$sh"
 						done | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
@@ -187,7 +187,7 @@ commander::runcmd(){
 						for i in "${!_cmds_runcmd[@]}"; do
 							sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
 							echo "#!/usr/bin/env bash" > "$sh"
-							[[ $conda ]] && echo "conda activate $conda" >> "$sh"
+							[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 							echo "$sh"
 						done | xargs -P $threads -I {} bash {}
@@ -255,7 +255,7 @@ commander::qsubcmd(){
 						[[ ! $log ]] && log="${sh%.*}.out"
 
 						echo "#!/usr/bin/env bash" > "$sh"
-						[[ $conda ]] && echo "conda activate $conda" >> "$sh"
+						[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 						printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
 						echo "echo \$? >> '$ex'" >> "$sh"
 
