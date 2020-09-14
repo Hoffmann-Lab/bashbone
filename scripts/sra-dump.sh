@@ -69,7 +69,7 @@ usage(){
 		(c) Konstantin Riege
 		konstantin.riege{a}leibniz-fli{.}de
 	EOF
-	exit 0
+	exit 1
 }
 
 unset OPTIND
@@ -81,7 +81,8 @@ while getopts o:p:t:sfeh ARG; do
 		f) faster=true;;
 		e) ebi=true;;
 		s) nodownload=true;;
-		h|*) usage;;
+		h) (usage); exit 0;;
+		*) usage;;
 	esac
 done
 shift $((OPTIND-1))

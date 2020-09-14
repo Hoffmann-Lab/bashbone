@@ -47,7 +47,7 @@ cat <<- EOF
 	(c) Konstantin Riege
 	konstantin.riege{a}leibniz-fli{.}de
 	EOF
-	exit 0
+	exit 1
 }
 
 progressbar() {
@@ -510,7 +510,7 @@ dlgenome::mm10ncbi() {
 checkopt() {
 	local arg=false
 	case $1 in
-		-h | --h | -help | --help) usage;;
+		-h | --h | -help | --help) (usage); exit 0;;
 		-s | --s | -dbsnp | --dbsnp) release='ensembl';;
 		-c | --c | -ctat | --ctat) release='ctat';;
 		-n | --n | -ncbi | --ncbi) release='ncbi';;

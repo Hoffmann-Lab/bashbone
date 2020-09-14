@@ -33,7 +33,7 @@ compile::_parse(){
 compile::all(){
 	local insdir threads
 	(	trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 		compile::_parse -r insdir -s threads "$@"
 		compile::bashbone -i "$insdir" -t $threads
 		compile::conda -i "$insdir" -t $threads
@@ -53,7 +53,7 @@ compile::all(){
 compile::bashbone() {
 	local insdir threads version src=$(dirname $(readlink -e $0))
 	(	trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 		commander::printinfo "installing bashbone"
 		compile::_parse -r insdir -s threads "$@"
 		source $src/lib/version.sh
@@ -69,7 +69,7 @@ compile::bashbone() {
 compile::upgrade(){
 	local insdir threads
 	(	trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 		compile::_parse -r insdir -s threads "$@"
 		compile::bashbone -i "$insdir" -t $threads
 		compile::conda_tools -i "$insdir" -t $threads -u true
@@ -81,7 +81,7 @@ compile::conda() {
 	local insdir threads url version tmpdir n bin
 	(	trap 'rm -rf "$tmpdir"' EXIT
 		trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 		commander::printinfo "installing conda"
 		compile::_parse -r insdir -s threads "$@"
 		tmpdir="$insdir/tmp"
@@ -160,7 +160,7 @@ compile::conda() {
 			Rscript - <<< '
 				options(unzip="$(command -v unzip)");
 				Sys.setenv(TAR="$(command -v tar)");
-				devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir")"
+				devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
 			' 2>&1
 		CMD
 		commander::runcmd -c $n -t 1 -a cmd1
@@ -179,7 +179,7 @@ compile::conda_tools() {
 	local insdir threads upgrade=false url version tool n bin
 	declare -A envs
 	(	trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 
 		compile::_parse -r insdir -s threads -c upgrade "$@"
 		source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
@@ -262,7 +262,7 @@ compile::conda_tools() {
 compile::java() {
 	local insdir threads url version
 	(	trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 		commander::printinfo "installing java"
 		compile::_parse -r insdir -s threads "$@"
 		source $insdir/conda/bin/activate base
@@ -305,7 +305,7 @@ compile::trimmomatic(){
 	# conda trimmomatic wrapper is written in python and thus cannot handle process substitutions
 	local insdir threads url
 	(	trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 		commander::printinfo "installing trimmomatic"
 		compile::_parse -r insdir -s threads "$@"
 		source $insdir/conda/bin/activate base
@@ -325,7 +325,7 @@ compile::trimmomatic(){
 compile::sortmerna() {
 	local insdir threads url
 	(	trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 		commander::printinfo "installing sortmerna"
 		echo $insdir
 		compile::_parse -r insdir -s threads "$@"
@@ -353,7 +353,7 @@ compile::sortmerna() {
 compile::segemehl() {
 	local insdir threads url
 	(	trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 		commander::printinfo "installing segemehl"
 		compile::_parse -r insdir -s threads "$@"
 		source $insdir/conda/bin/activate base
@@ -394,7 +394,7 @@ compile::segemehl() {
 compile::preparedexseq() {
 	local insdir threads
 	(	trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 		commander::printinfo "installing dexseq"
 		compile::_parse -r insdir -s threads "$@"
 		source $insdir/conda/bin/activate base
@@ -413,7 +413,7 @@ compile::preparedexseq() {
 compile::revigo() {
 	local insdir threads
 	(	trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 		commander::printinfo "installing revigo"
 		compile::_parse -r insdir -s threads "$@"
 		source $insdir/conda/bin/activate base
@@ -432,7 +432,7 @@ compile::revigo() {
 compile::gem() {
 	local insdir threads url version
 	(	trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 		commander::printinfo "installing gem"
 		compile::_parse -r insdir -s threads "$@"
 		source $insdir/conda/bin/activate base
@@ -457,7 +457,7 @@ compile::gem() {
 compile::idr() {
 	local insdir threads url
 	(	trap 'exit $?' ERR INT TERM
-		set -e
+		set -e -o pipefail
 		commander::printinfo "installing idr"
 		compile::_parse -r insdir -s threads "$@"
 		source $insdir/conda/bin/activate base

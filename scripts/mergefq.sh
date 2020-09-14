@@ -31,7 +31,7 @@ cat <<- EOF
 	(c) Konstantin Riege
 	konstantin.riege{a}leibniz-fli{.}de
 	EOF
-	exit 0
+	exit 1
 }
 
 i=''
@@ -53,7 +53,8 @@ while getopts i:j:o:u:d:t:m:zh ARG; do
 		t) t=$OPTARG;;
 		m) m=$OPTARG;;
 		z) z=1;;
-		h) h=1;;
+		h) (usage); exit 0;;
+		*) usage;
 	esac
 done
 

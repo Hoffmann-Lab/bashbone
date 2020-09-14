@@ -169,29 +169,31 @@ commander::runcmd(){
 				# use a subshell with its own trap, destructed if subshell terminates
 				$benchmark && {
 					(	trap 'rm -rf "$tmpdir"' EXIT
-						trap 'exit $?' INT TERM
+						trap 'exit $?' ERR INT TERM
+						set -e -o pipefail
 						tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 						for i in "${!_cmds_runcmd[@]}"; do
 							sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
 							echo "#!/usr/bin/env bash" > "$sh"
+							echo "set -e -o pipefail" >> "$sh"
 							[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 							echo "$sh"
 						done | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
-						exit $((${PIPESTATUS[@]/%/+}0))
 					)
 				} || {
 					(	trap 'rm -rf "$tmpdir"' EXIT
-						trap 'exit $?' INT TERM
+						trap 'exit $?' ERR INT TERM
+						set -e -o pipefail
 						tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 						for i in "${!_cmds_runcmd[@]}"; do
 							sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
 							echo "#!/usr/bin/env bash" > "$sh"
+							echo "set -e -o pipefail" >> "$sh"
 							[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 							echo "$sh"
 						done | xargs -P $threads -I {} bash {}
-						exit $((${PIPESTATUS[@]/%/+}0))
 					)
 				}
 				return $?;;
@@ -245,7 +247,8 @@ commander::qsubcmd(){
 				local i sh e tmpdir ex
 				local jobname
 				(	trap '[[ $jobname ]] && qdel "$jobname.*"; rm -rf "$tmpdir"; rm -f "$ex"' EXIT
-					trap 'exit $?' INT TERM
+					trap 'exit $?' ERR INT TERM
+					set -e -o pipefail
 					tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 					jobname="$(basename "$tmpdir")"
 					jobname="X${jobname#*.}" # ensure first character to be a letter
@@ -255,6 +258,7 @@ commander::qsubcmd(){
 						[[ ! $log ]] && log="${sh%.*}.out"
 
 						echo "#!/usr/bin/env bash" > "$sh"
+						echo "set -e -o pipefail" >> "$sh"
 						[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 						printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
 						echo "echo \$? >> '$ex'" >> "$sh"
