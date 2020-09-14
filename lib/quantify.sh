@@ -60,7 +60,7 @@ quantify::featurecounts() {
 
 			# infer SE or PE
 			params=''
-			[[ $(samtools view -F 4 "$bam" | head -10000 | cat <(samtools view -H "$bam") - | samtools view -c -f 1) -gt 0 ]] && params+='-p '
+			[[ $(samtools view -F 4 "$f" | head -10000 | cat <(samtools view -H "$f") - | samtools view -c -f 1) -gt 0 ]] && params+='-p '
 			[[ "$featuretag" != "gene_id" ]] && params+='-f -O '
 
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD

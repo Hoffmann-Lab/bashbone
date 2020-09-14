@@ -260,9 +260,9 @@ enrichment::go(){
 			                ENSG00000199065 GO:1903231 molecular_function
 			                ENSG00000199065 GO:0035195 biological_process
 			                ..
-			-i <deseqdir> | for gsea (logfc>=1 filtered) path to
+			-i <deseqdir> | for gsea path to
 			-c <cmpfiles> | array of
-			-l <idfiles>  | for ora array of (does not require -i -c -o)
+			-l <idfiles>  | for ora array of (does not require -i -c)
 
 		EOF
 		return 0
@@ -283,7 +283,7 @@ enrichment::go(){
 			*) _usage; return 1;;
 		esac
 	done
-	( [[ $mandatory -lt 2 ]] || ( [[ ! $_idfiles_go ]] && [[ ! "$deseqdir" || ! $_cmpfiles_go ]] ) ) && _usage && return 1
+	[[ $mandatory -lt 2 ]] && _usage && return 1
 
 	commander::printinfo "calculating go enrichment"
 
