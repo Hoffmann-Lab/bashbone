@@ -100,14 +100,13 @@ compile::conda() {
 		commander::printinfo "setup conda base env"
 		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
-			pkg-config make automake cmake \
+			glib pkg-config make automake cmake \
 			bzip2 pigz pbzip2 \
-			glib htslib \
 			perl-threaded perl-app-cpanminus perl-list-moreutils perl-try-tiny \
 			curl ghostscript dos2unix \
 			ucsc-facount khmer \
 			datamash samtools bedtools \
-			bgzip tabix bcftools vcflib vt
+			htslib bcftools vcflib vt
 		cpanm Switch
 
 		# setup r env with compilers for r packages
@@ -117,10 +116,9 @@ compile::conda() {
 		conda create -y -n $n python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
-			pkg-config make automake cmake \
+			glib pkg-config make automake cmake \
 			bzip2 pigz pbzip2 \
-			glib htslib \
-			nlopt r-base
+			htslib nlopt r-base
 		for bin in perl samtools bedtools; do
 			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
