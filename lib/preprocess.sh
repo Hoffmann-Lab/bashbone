@@ -160,7 +160,7 @@ preprocess::cutadapt(){
 	read -r instances ithreads < <(configure::instances_by_threads -i ${#_fq1_cutadapt[@]} -t 10 -T $threads)
 
 	declare -a cmd1 cmd2
-	local i o1 o2 n=$((${#_adaptera_cutadapt[@]}+1))
+	local i o1 o2 n=$((${#_adaptera_cutadapt[@]}))
 	[[ $n -gt 2 ]] && n=2 # since only the best matching adapter is removed, run cutadapt twice
 	for i in "${!_fq1_cutadapt[@]}"; do
 		o1="$outdir"/$(basename "${_fq1_cutadapt[$i]}")

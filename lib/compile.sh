@@ -121,7 +121,7 @@ compile::conda() {
 			bzip2 pigz pbzip2 \
 			htslib nlopt r-base
 		for bin in perl samtools bedtools; do
-			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 		# basics
 		declare -a cmd1
@@ -197,7 +197,7 @@ compile::conda_tools() {
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
 		# link commonly used base binaries into env
 		for bin in perl samtools bedtools; do
-			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	done
 	chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl" # necessary fix
@@ -209,7 +209,7 @@ compile::conda_tools() {
 		conda create -y -n $n python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java
 		for bin in perl samtools bedtools; do
-			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
 
@@ -220,7 +220,7 @@ compile::conda_tools() {
 		conda create -y -n $n python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
 		for bin in perl samtools bedtools; do
-			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
 
@@ -233,23 +233,23 @@ compile::conda_tools() {
 		conda create -y -n $n python=2
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
 		for bin in perl samtools bedtools; do
-			[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
 
 	# this is a pipeline itself and thus will not be part of bashbone
 	# commander::printinfo "setup conda fusion-catcher env"
-	# tool=fusion-catcher
+	# tool=fusioncatcher
 	# n=${tool//[^[:alpha:]]/}
 	# conda create -y -n $n python=2
 	# conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
 	# for bin in perl samtools bedtools; do
-	# 	[[ $(conda list -n $n -f $bin) ]] && ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	# 	conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 	# done
 	# conda activate $n
 	# commander::printinfo "downloading databases"
 	# download-human-db.sh
-	# rm -f $FC_DB_PATH/*.tar.gz* # env varibale
+	# rm -f $FC_DB_PATH/*.tar.gz* # env variable
 	# conda deactivate
 
 	commander::printinfo "conda clean up"
