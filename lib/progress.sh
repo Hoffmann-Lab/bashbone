@@ -38,14 +38,15 @@ progress::log() {
 	done
 	[[ $mandatory -lt 2 ]] && { _usage; return 1; }
 
+	# do not grep :ERROR: since this goes to stderr and will be printed anyways
 	case $verbosity in
 		0)	progress::_bar &
-			{ tail -f $log 2>&1 | grep -E --line-buffered '^\s*(:INFO:|:ERROR:|:BENCHMARK:|:WARNING:)'; } &
+			{ tail -f $log | grep -E --line-buffered '^\s*(:INFO:|:BENCHMARK:|:WARNING:)'; } &
 			;;
 		1)	progress::_bar &
-			{ tail -f $log 2>&1 | grep -E --line-buffered '^\s*(:INFO:|:CMD:|:ERROR:|:BENCHMARK:|:WARNING:)'; } &
+			{ tail -f $log | grep -E --line-buffered '^\s*(:INFO:|:CMD:|:BENCHMARK:|:WARNING:)'; } &
 			;;
-		2)	{ tail -f $log 2>&1; } &;;
+		2)	{ tail -f $log | grep -v -E --line-buffered '^\s*:ERROR:'; } &;;
 		*)	_usage;	return 1;;
 	esac
 

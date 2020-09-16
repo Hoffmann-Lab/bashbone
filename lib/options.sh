@@ -4,10 +4,10 @@
 options::usage(){
 	commander::print {COMMANDER[0]}<<- EOF
 		DESCRIPTION
-		setup routine
+		Bashbone setup routine
 
 		SYNOPSIS
-		setup.sh -i [all|upgrade|[<tool>,..]] -d [path]
+		setup.sh -i [all|upgrade] -d [path]
 
 		OPTIONS
 		-i | --install [all|upgrade] : install into given directory

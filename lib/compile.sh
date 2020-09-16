@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 compile::_parse(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 		usage:
@@ -10,8 +14,9 @@ compile::_parse(){
 			-t <threads> | number of
 			-u <upgrade> | true/false conda envs
 		EOF
-		return 0
+		return 1
 	}
+
 	local OPTIND arg mandatory
 	declare -n _insdir_parse _threads_parse _upgrade_parse
 	while getopts 'r:s:c:i:t:u:' arg; do
@@ -22,18 +27,21 @@ compile::_parse(){
 			i) ((++mandatory)); _insdir_parse="$OPTARG";;
 			t) ((++mandatory)); _threads_parse=$OPTARG;;
 			u) _upgrade_parse=$OPTARG;;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage
 
 	return 0
 }
 
 compile::all(){
-	set -e -o pipefail
-	local insdir threads
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
 
+	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 	compile::bashbone -i "$insdir" -t $threads
 	compile::conda -i "$insdir" -t $threads
@@ -47,13 +55,16 @@ compile::all(){
 	compile::gem -i "$insdir" -t $threads
 	compile::idr -i "$insdir" -t $threads
 
-	return $?
+	return 0
 }
 
 compile::bashbone() {
-	set -e -o pipefail
-	local insdir threads version src=$(dirname $(readlink -e $0))
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
 
+	local insdir threads version src=$(dirname $(readlink -e $0))
 	commander::printinfo "installing bashbone"
 	compile::_parse -r insdir -s threads "$@"
 	source $src/lib/version.sh
@@ -67,9 +78,12 @@ compile::bashbone() {
 }
 
 compile::upgrade(){
-	set -e -o pipefail
-	local insdir threads
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
 
+	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 	compile::bashbone -i "$insdir" -t $threads
 	compile::conda_tools -i "$insdir" -t $threads -u true
@@ -78,106 +92,112 @@ compile::upgrade(){
 }
 
 compile::conda() {
-	set -e -o pipefail
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "$tmpdir"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local insdir threads url version tmpdir n bin
-	# to not override possible upstream traps, use a subshell
-	(	trap 'rm -rf "$tmpdir"' EXIT
-		set -e -o pipefail
-		commander::printinfo "installing conda"
-		compile::_parse -r insdir -s threads "$@"
-		tmpdir="$insdir/tmp"
-		mkdir -p "$tmpdir"
 
-		url="https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh"
-		wget -q -O "$insdir/miniconda.sh" "$url"
-		mkdir -p "$insdir/conda"
-		bash "$insdir/miniconda.sh" -b -u -f -p "$insdir/conda" 2>&1
-		rm -f "$insdir/miniconda.sh"
+	commander::printinfo "installing conda"
+	compile::_parse -r insdir -s threads "$@"
+	tmpdir="$insdir/tmp"
+	mkdir -p "$tmpdir"
 
-		source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
-		conda update -y conda
+	url="https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh"
+	wget -q -O "$insdir/miniconda.sh" "$url"
+	mkdir -p "$insdir/conda"
+	bash "$insdir/miniconda.sh" -b -u -f -p "$insdir/conda"
+	rm -f "$insdir/miniconda.sh"
 
-		# base env: install tools used on the fly and compilers for perl modules
-		commander::printinfo "setup conda base env"
-		conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
-			gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
-			glib pkg-config make automake cmake \
-			bzip2 pigz pbzip2 \
-			perl-threaded perl-app-cpanminus perl-list-moreutils perl-try-tiny \
-			curl ghostscript dos2unix \
-			ucsc-facount khmer \
-			datamash samtools bedtools \
-			htslib bcftools vcflib vt
-		cpanm Switch
+	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
+	conda update -y conda
 
-		# setup r env with compilers for r packages
-		# to avoid r downgrades due to modules r built versions, compile them manually (ggpubr requires nlopt)
-		commander::printinfo "setup conda r env for deseq, dexseq, survival, wgcna, ggpubr, pheatmap, dplyr, knapsack"
-		n=r
-		conda create -y -n $n python=3
-		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
-			gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
-			glib pkg-config make automake cmake \
-			bzip2 pigz pbzip2 \
-			htslib nlopt r-base
-		for bin in perl samtools bedtools; do
-			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
-		# basics
-		declare -a cmd1
-		commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
-			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
-				install.packages(c("BiocManager","devtools","codetools"),
-					repos="http://cloud.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
-			' 2>&1
-		CMD
-		# bioconductor
-		declare -a cmd2
-		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
-			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
-				BiocManager::install(c("BiocParallel","genefilter","DESeq2","DEXSeq","TCGAutils","TCGAbiolinks","impute","preprocessCore","GO.db","AnnotationDbi"),
-					ask=F, Ncpus=$threads, clean=T, destdir="$tmpdir");
-			' 2>&1
-		CMD
-		# cran - needs to be last since WGCNA depends on bioconductor packages impute,...
-		# R-Forge.r does not complaine about knapsack not being compatible with R>=4
-		declare -a cmd3
-		commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
-			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
-				install.packages(c("knapsack","WGCNA","dplyr","tidyverse","ggpubr","ggplot2","gplots","RColorBrewer","svglite","pheatmap","data.table"),
-					repos="http://cloud.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
-				install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
-			' 2>&1
-		CMD
-		# github
-		declare -a cmd4
-		commander::makecmd -a cmd4 -s '&&' -c {COMMANDER[0]}<<- CMD
-			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
-				devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
-			' 2>&1
-		CMD
-		commander::runcmd -c $n -t 1 -a cmd1
-		commander::runcmd -c $n -t 1 -a cmd2
-		commander::runcmd -c $n -t 1 -a cmd3
-		commander::runcmd -c $n -t $threads -a cmd4
+	# base env: install tools used on the fly and compilers for perl modules
+	commander::printinfo "setup conda base env"
+	conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+		gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
+		glib pkg-config make automake cmake \
+		bzip2 pigz pbzip2 \
+		perl-threaded perl-app-cpanminus perl-list-moreutils perl-try-tiny \
+		curl ghostscript dos2unix \
+		ucsc-facount khmer \
+		datamash samtools bedtools \
+		htslib bcftools vcflib vt
+	cpanm Switch
 
-		commander::printinfo "conda clean up"
-		conda clean -y -a
-		conda deactivate
-	)
-	return $?
+	# setup r env with compilers for r packages
+	# to avoid r downgrades due to modules r built versions, compile them manually (ggpubr requires nlopt)
+	commander::printinfo "setup conda r env for deseq, dexseq, survival, wgcna, ggpubr, pheatmap, dplyr, knapsack"
+	n=r
+	conda create -y -n $n python=3
+	conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+		gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
+		glib pkg-config make automake cmake \
+		bzip2 pigz pbzip2 \
+		htslib nlopt r-base
+	for bin in perl samtools bedtools; do
+		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	done
+	# basics
+	declare -a cmd1
+	commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+		Rscript - <<< '
+			options(unzip="$(command -v unzip)");
+			Sys.setenv(TAR="$(command -v tar)");
+			install.packages(c("BiocManager","devtools","codetools"),
+				repos="http://cloud.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
+		'
+	CMD
+	# bioconductor
+	declare -a cmd2
+	commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+		Rscript - <<< '
+			options(unzip="$(command -v unzip)");
+			Sys.setenv(TAR="$(command -v tar)");
+			BiocManager::install(c("BiocParallel","genefilter","DESeq2","DEXSeq","TCGAutils","TCGAbiolinks","impute","preprocessCore","GO.db","AnnotationDbi"),
+				ask=F, Ncpus=$threads, clean=T, destdir="$tmpdir");
+		'
+	CMD
+	# cran - needs to be last since WGCNA depends on bioconductor packages impute,...
+	# R-Forge.r does not complaine about knapsack not being compatible with R>=4
+	declare -a cmd3
+	commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
+		Rscript - <<< '
+			options(unzip="$(command -v unzip)");
+			Sys.setenv(TAR="$(command -v tar)");
+			install.packages(c("knapsack","WGCNA","dplyr","tidyverse","ggpubr","ggplot2","gplots","RColorBrewer","svglite","pheatmap","data.table"),
+				repos="http://cloud.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
+			install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
+		'
+	CMD
+	# github
+	declare -a cmd4
+	commander::makecmd -a cmd4 -s '&&' -c {COMMANDER[0]}<<- CMD
+		Rscript - <<< '
+			options(unzip="$(command -v unzip)");
+			Sys.setenv(TAR="$(command -v tar)");
+			devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
+		'
+	CMD
+	commander::runcmd -c $n -t 1 -a cmd1
+	commander::runcmd -c $n -t 1 -a cmd2
+	commander::runcmd -c $n -t 1 -a cmd3
+	commander::runcmd -c $n -t $threads -a cmd4
+
+	commander::printinfo "conda clean up"
+	conda clean -y -a
+	conda deactivate
+
+	return 0
 }
 
 compile::conda_tools() {
-	set -e -o pipefail
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local insdir threads upgrade=false url version tool n bin
 	declare -A envs
 
@@ -260,7 +280,11 @@ compile::conda_tools() {
 }
 
 compile::java() {
-	set -e -o pipefail
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local insdir threads url version
 
 	commander::printinfo "installing java"
@@ -278,7 +302,11 @@ compile::java() {
 }
 
 compile::_javawrapper() {
-	set -e -o pipefail
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local java=java
 	[[ $3 ]] && java="$3"
 	cat <<- EOF > "$1" || return 1
@@ -303,7 +331,11 @@ compile::_javawrapper() {
 }
 
 compile::trimmomatic(){
-	set -e -o pipefail
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	# conda trimmomatic wrapper is written in python and thus cannot handle process substitutions
 	local insdir threads url
 
@@ -324,7 +356,11 @@ compile::trimmomatic(){
 }
 
 compile::sortmerna() {
-	set -e -o pipefail
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local insdir threads url
 
 	commander::printinfo "installing sortmerna"
@@ -352,7 +388,11 @@ compile::sortmerna() {
 }
 
 compile::segemehl() {
-	set -e -o pipefail
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local insdir threads url
 
 	commander::printinfo "installing segemehl"
@@ -393,7 +433,11 @@ compile::segemehl() {
 }
 
 compile::preparedexseq() {
-	set -e -o pipefail
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local insdir threads
 
 	commander::printinfo "installing dexseq"
@@ -412,7 +456,11 @@ compile::preparedexseq() {
 }
 
 compile::revigo() {
-	set -e -o pipefail
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local insdir threads
 
 	commander::printinfo "installing revigo"
@@ -431,7 +479,11 @@ compile::revigo() {
 }
 
 compile::gem() {
-	set -e -o pipefail
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local insdir threads url version
 
 	commander::printinfo "installing gem"
@@ -456,7 +508,11 @@ compile::gem() {
 }
 
 compile::idr() {
-	set -e -o pipefail
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local insdir threads url
 
 	commander::printinfo "installing idr"
@@ -472,286 +528,6 @@ compile::idr() {
 	python setup.py install
 	mkdir -p $insdir/latest
 	ln -sfn $PWD/bin $insdir/latest/idr
-
-	return 0
-}
-
-### OLD STUFF
-
-compile::conda_old() {
-	local insdir threads url version
-	compile::_parse -r insdir -s threads "$@"
-
-	commander::printinfo "installing conda and tools"
-	{	url='https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh' && \
-		wget -q -O $insdir/miniconda.sh $url && \
-		version=$(bash $insdir/miniconda.sh -h | grep -F Installs | cut -d ' ' -f 3) && \
-		rm -rf $insdir/conda && \
-		mkdir -p $insdir/conda && \
-		bash $insdir/miniconda.sh -b -f -p $insdir/conda && \
-		rm $insdir/miniconda.sh && \
-		source $insdir/conda/bin/activate && \
-
-		conda env remove -y -n py2 && \
-		conda env remove -y -n py3 && \
-		conda create -y -n py2 python=2 && \
-		conda create -y -n py2r python=2 && \
-		conda create -y -n py3 python=3 && \
-
-		# tophat2/hisat2 and some R stuff needs python2 whereas cutadapt,idr,rseqc need python3 env
-		# star-fusion needs perl-set-intervaltree perl-db-file perl-set-intervaltree perl-uri perl-io-gzip
-		#   installation might be fixed manually via perl-app-cpanminus and execution of cpanm Set::IntervalTree URI ...
-		conda install -n py2 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
-			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
-			perl perl-threaded perl-db-file perl-dbi perl-app-cpanminus perl-list-moreutils perl-try-tiny perl-set-intervaltree perl-uri \
-			numpy scipy pysam cython matplotlib \
-			datamash \
-			fastqc rcorrector \
-			star star-fusion bwa hisat2 macs2 \
-			samtools picard bamutil bedtools \
-			ucsc-facount khmer \
-			bcftools gatk4 freebayes varscan platypus-variant vardict vardict-java \
-			vcflib vt snpeff snpsift
-		chmod 755 $insdir/conda/envs/py2/bin/run_rcorrector.pl && \
-		conda list -n py2 -f "fastqc|rcorrector|star|star-fusion|bwa|hisat2|macs2|samtools|picard|bamutil|bedtools|ucsc-facount|khmer" | grep -v '^#' > $insdir/condatools.txt && \
-		conda list -n py2 -f "bcftools|gatk4|freebayes|varscan|platypus-variant|vardict|vardict-java|vcflib|vt|snpeff|snpsift" | grep -v '^#' >> $insdir/condatools.txt && \
-
-		conda install -n py3 -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
-			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
-			numpy scipy pysam cython matplotlib \
-			cutadapt rseqc htseq diego bedtools && \
-		conda list -n py3 -f "cutadapt|rseqc|diego|bedtools|htseq" | grep -v '^#' >> $insdir/condatools.txt && \
-
-		conda install -n py2r -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
-			gcc_linux-64 readline make automake xz zlib bzip2 pigz pbzip2 ncurses htslib ghostscript \
-			r-devtools bioconductor-biocinstaller bioconductor-biocparallel \
-			bioconductor-genomicfeatures bioconductor-genefilter \
-			subread r-wgcna bioconductor-deseq2 bioconductor-dexseq bioconductor-gseabase bioconductor-clusterprofiler \
-			r-dplyr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-ggpubr r-treemap r-rngtools && \
-		conda list -n py2r -f "subread|r-wgcna|bioconductor-deseq2|bioconductor-dexseq" | grep -v '^#' >> $insdir/condatools.txt && \
-
-		conda clean -y -a
-	} || return 1
-
-	return 0
-}
-
-compile::wgcna() {
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
-
-	commander::printinfo "installing wgcna"
-	{	source $insdir/conda/bin/activate py2r && \
-		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('cran/WGCNA', upgrade='never', force=T, clean=T)"
-	} || return 1
-
-	return 0
-}
-
-compile::dgca() {
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
-
-	commander::printinfo "installing dgca"
-	{	source $insdir/conda/bin/activate py2r && \
-		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('andymckenzie/DGCA', upgrade='never', force=T, clean=T)"
-	} || return 1
-
-	return 0
-}
-
-compile::knapsack(){
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
-
-	commander::printinfo "installing knapsack"
-	{	source $insdir/conda/bin/activate py2r && \
-		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); install.packages('knapsack', repos='http://R-Forge.R-project.org')"
-	} || return 1
-
-	return 0
-}
-
-compile::_annovar() {
-	local insdir threads url
-	compile::_parse -r insdir -s threads "$@" || return 1
-
-	commander::printinfo "installing annovar"
-	{	url="http://www.openbioinformatics.org/annovar/download/xxxxxxxx/annovar.latest.tar.gz" && \
-		wget -q $url -O $insdir/annovar.tar.gz && \
-		tar -xzf $insdir/annovar.tar.gz -C $insdir && \
-		rm $insdir/annovar.tar.gz && \
-		cd $insdir/annovar && \
-		url='http://www.openbioinformatics.org/annovar/download/table_annovar.pl' && \
-		wget -q $url -O table_annovar.pl && \
-		chmod 755 table_annovar.pl && \
-		mkdir -p $insdir/latest && \
-		ln -sfn $PWD/bin $insdir/latest/annovar
-	} || return 1
-
-	return 0
-}
-
-compile::_setup_annovar() {
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@" || return 1
-
-	commander::printinfo "configuring annovar databases"
-	{	source $insdir/conda/bin/activate py2 && \
-		cd -P $insdir/latest/annovar && \
-		#refSeq
-		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar refGene humandb/ && \
-		# ./annotate_variation.pl -buildver hg19 -downdb ensGene humandb/ #UCSC - needs seq to get mRNA
-		# ./annotate_variation.pl -buildver hg19 -downdb knownGene humandb/ #UCSC - needs seq to get mRNA
-		# ./annotate_variation.pl -buildver hg19 -downdb seq humandb/hg19_seq
-		# ./retrieve_seq_from_fasta.pl humandb/hg19_ensGene.txt -seqdir humandb/hg19_seq -format ensGene -outfile humandb/hg19_ensGeneMrna.fa
-		# ./retrieve_seq_from_fasta.pl humandb/hg19_knownGene.txt -seqdir humandb/hg19_seq -format knownGene -outfile humandb/hg19_knownGeneMrna.fa
-		url='http://hgdownload.soe.ucsc.edu/goldenPath/hg19/database/ensemblToGeneName.txt.gz' && \
-		wget -q $url -O humandb/ensemblToGeneName.txt.gz && \
-		gzip -d humandb/ensemblToGeneName.txt.gz  && \
-		# ./annotate_variation.pl -buildver hg19 -downdb cytoBand humandb/
-		# ./annotate_variation.pl -buildver hg19 -downdb genomicSuperDups humandb/
-		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar esp6500siv2_all humandb/ && \
-		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar 1000g2015aug humandb/ && \
-		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar exac03 humandb/ && \
-		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar avsnp147 humandb/ && \
-		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar dbnsfp33a humandb/ && \
-		# ./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar snp142 humandb
-		./annotate_variation.pl -buildver hg19 -downdb tfbsConsSites humandb/ && \
-		./annotate_variation.pl -buildver hg19 -downdb targetScanS humandb/ && \
-		./annotate_variation.pl -buildver hg19 -downdb wgRna humandb/ && \
-		./annotate_variation.pl -buildver hg19 -downdb gwasCatalog humandb/ && \
-		./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar clinvar_20170130 humandb/
-	} || return 1
-
-	return 0
-}
-
-compile::_setup_snpeff() {
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@" || return 1
-
-	commander::printinfo "configuring snpeff databases"
-	{	source $insdir/conda/bin/activate py2 && \
-		java -jar snpEff.jar download -v GRCh37.75 && \
-		#java -jar snpEff.jar download -v hg19 #hg19: UCSC, hg19kg: UCSC knownGenes, GRCh37.75: Ensembl
-		url='http://ftp.ebi.ac.uk/pub/databases/ensembl/encode/integration_data_jan2011/byDataType/openchrom/jan2011/promoter_predictions/master_known.bed' && \
-		wget -q $url -O data/promoter.bed && \
-		url='http://ftp.ebi.ac.uk/pub/databases/ensembl/encode/integration_data_jan2011/byDataType/openchrom/jan2011/mirna_tss/miRNA_promoters_hg19_edited_data.bed' && \
-		wget -q $url -O data/miRNApromoter.bed && \
-		url='ftp://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh37/clinvar.vcf.gz' && \
-		wget -q $url -O data/clinvar.vcf.gz && \
-		url='ftp://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh37/clinvar.vcf.gz.tbi' && \
-		wget -q $url -O data/clinvar.vcf.gz.tbi && \
-		url='ftp://ftp.broadinstitute.org/pub/ExAC_release/release1/ExAC.r1.sites.vep.vcf.gz' && \
-		wget -q $url -O data/exac.vcf.gz && \
-		url='ftp://ftp.broadinstitute.org/pub/ExAC_release/release1/ExAC.r1.sites.vep.vcf.gz.tbi' && \
-		wget -q $url -O data/exac.vcf.gz.tbi && \
-		# url='https://drive.google.com/open?id=0B60wROKy6OqceTNZRkZnaERWREk'
-		#(see https://sites.google.com/site/jpopgen/dbNSFP)
-		url='ftp://dbnsfp:dbnsfp@dbnsfp.softgenetics.com/dbNSFPv2.9.3.zip' && \
-		wget -q $url -O data/dbnsfp.zip && \
-		unzip -q -o -d data dbnsfp.zip && \
-		rm data/dbnsfp.zip && \
-		head -n 1 data/dbNSFP*_variant.chr1 > data/dbNSFP.txt && \
-		cat dbNSFP*_variant.chr* | grep -v "^#" >> data/dbNSFP.txt && \
-		rm dbNSFP*_variant.chr* && \
-		$MUVAC/bin/samtools/bgzip -f -@ $threads < data/dbNSFP.txt > data/dbNSFP.txt.gz && \
-		$MUVAC/bin/samtools/tabix -f -s 1 -b 2 -e 2 data/dbNSFP.txt.gz && \
-		# url='http://www.genome.gov/admin/gwascatalog.txt'
-		url='ftp://ftp.ebi.ac.uk/pub/databases/gwas/releases/latest/gwas-catalog-associations.tsv' && \
-		wget -q $url -O data/gwas.txt
-	} || return 1
-
-	return 0
-}
-
-compile::m6aviewer() {
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
-
-	commander::printinfo "installing m6aviewer"
-	{	source $insdir/conda/bin/activate py2 && \
-		url='http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar' && \
-		mkdir -p $insdir/m6aViewer/bin && \
-		wget -q $url -O $insdir/m6aViewer/m6aViewer_1_6_1.jar && \
-		cd $insdir/m6aViewer && \
-		compile::_javawrapper $PWD/bin/m6aViewer $(readlink -e m6aViewer_1_6_1.jar) $insdir/latest/java/java && \
-		mkdir -p $insdir/latest && \
-		ln -sfn $PWD/bin $insdir/latest/m6aViewer
-	} || return 1
-
-	return 0
-}
-
-compile::metpeak() {
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
-
-	commander::printinfo "installing metpeak"
-	{	source $insdir/conda/bin/activate py2r && \
-		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('compgenomics/MeTPeak', build_opts = c('--no-resave-data', '--no-manual'), upgrade='never', force=T, clean=T)"
-	} || return 1
-
-	return 0
-}
-
-compile::zerone() {
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
-
-	commander::printinfo "installing zerone"
-	{	source $insdir/conda/bin/activate py2 && \
-		cd $insdir && \
-		rm -rf zerone && \
-		git clone https://github.com/nanakiksc/zerone.git && \
-		cd zerone && \
-		make clean; true && \
-		make -j $threads && \
-		mkdir bin && \
-		mv zerone bin && \
-		mkdir -p $insdir/latest && \
-		ln -sfn $PWD/bin $insdir/latest/zerone
-	} || return 1
-
-	return 0
-}
-
-compile::dpgpc() {
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
-
-	commander::printinfo "installing dp_gp_cluster"
-	{	source $insdir/conda/bin/activate py2 && \
-		cd $insdir && \
-		rm -rf DP_GP_cluster && \
-		git clone https://github.com/PrincetonUniversity/DP_GP_cluster.git && \
-		cd DP_GP_cluster && \
-		sed -i -r '18,19{s/^#\s*//}' bin/DP_GP_cluster.py && \
-		pip install GPy pandas numpy scipy matplotlib cython sklearn && \
-		python setup.py install && \
-		touch bin/DP_GP_cluster && \
-		chmod 755 bin/* && \
-		mkdir -p $insdir/latest && \
-		ln -sfn $PWD/bin $insdir/latest/DP_GP_cluster
-	} || return 1
-
-	cat <<- 'EOF' > $insdir/latest/DP_GP_cluster/DP_GP_cluster || return 1
-		#!/usr/bin/env bash
-		export PYTHONPATH=$CONDA_PREFIX/lib/python2.7/site-packages/:$PYTHONPATH
-		$(cd $(dirname \$0) && echo $PWD)/DP_GP_cluster.py $*
-	EOF
-	return 0
-}
-
-compile::webgestalt() {
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
-
-	commander::printinfo "installing webgestalt"
-	{	source $insdir/conda/bin/activate py2r && \
-		Rscript -e "options(unzip='$(which unzip)'); Sys.setenv(TAR='$(which tar)'); devtools::install_github('cran/WebGestaltR', upgrade='never', force=T, clean=T)"
-	} || return 1
 
 	return 0
 }

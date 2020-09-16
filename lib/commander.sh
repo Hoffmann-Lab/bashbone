@@ -44,16 +44,14 @@ commander::warn(){
 }
 
 commander::printerr(){
-	echo -ne "\e[0;31m"
-	[[ $* ]] && echo ":ERROR: $*" >&2
+	[[ $* ]] && echo ":ERROR: $*" 1>&2
 	local fd
 	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
 		mapfile -u $fd -t mapdata
-		printf ':ERROR: %s\n' "${mapdata[@]}" >&2
+		printf ':ERROR: %s\n' "${mapdata[@]}" 1>&2
 	done
 	COMMANDER=()
-	echo -ne "\e[m"
 	return 0
 }
 

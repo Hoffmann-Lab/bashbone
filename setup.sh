@@ -1,39 +1,41 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
+set -o pipefail
 
-die() {
-	echo ":ERROR: $*" >&2
-	exit 1
-}
+# defines INSDIR
+source $(dirname $(readlink -e $0))/activate.sh -c false || exit 1
 
-source $(dirname $(readlink -e $0))/activate.sh -c false || die
-
+unset ERROR
 trap 'configure::exit -p $$' EXIT
-trap 'die "killed"' INT TERM
-trap 'die' ERR
-set -e -o pipefail
+trap 'ERROR="killed"' INT TERM
+trap 'configure::err -x $? -s "$0" -l $LINENO -e "$ERROR" -c "$BASH_COMMAND"; exit $?' ERR
 
 THREADS=$(cat /proc/cpuinfo | grep -cF processor)
 VERBOSITY=0
+ERROR="parameterization issue"
+options::parse "$@"
 
-options::parse "$@" || die "parameterization issue"
+ERROR="mandatory parameter -i missing"
+[[ $INSTALL ]]
 
-[[ $INSTALL ]] || die "mandatory parameter -i missing"
-[[ $INSDIR ]] || die "mandatory parameter -d missing"
-
-mkdir -p $INSDIR || die "cannot access $INSDIR"
+ERROR="cannot access $INSDIR"
+mkdir -p $INSDIR
 INSDIR=$(readlink -e $INSDIR)
-[[ $LOG ]] || LOG=$INSDIR/install.log
-printf '' > $LOG || die "cannot access $LOG"
 
+[[ $LOG ]] || LOG=$INSDIR/install.log
+ERROR="cannot access $LOG"
+printf '' > $LOG
+
+unset ERROR
 progress::log -v $VERBOSITY -o $LOG
 commander::printinfo "installation started. please be patient." >> $LOG
 
 for i in "${INSTALL[@]}"; do
+	ERROR="compilation of $i failed"
 	compile::$i -i $INSDIR -t $THREADS 2> >(tee -ai $LOG >&2) >> $LOG
-	[[ $? -gt 0 ]] && die "compilation of $i failed"
-	# compile::$i || die <- do not use because of set -e i.e. shell will not exit if command executed in a && or || list
 done
 
+unset ERROR
 commander::printinfo "success" >> $LOG
+
 exit 0

@@ -2,28 +2,32 @@
 # (c) Konstantin Riege
 
 configure::exit(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-p <pid>      | process id
 			-f <function> | to call
 		EOF
-		return 0
+		return 1
 	}
 
-	local OPTIND arg mandatory pid function
+	local OPTIND arg mandatory pid fun
 	while getopts 'p:f:' arg; do
 		case $arg in
 			p) ((++mandatory)); pid=$OPTARG;;
-			f) function=$OPTARG;;
-			*) _usage; return 1;;
+			f) fun=$OPTARG;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 1 ]] && _usage && return 1
+	[[ $mandatory -lt 1 ]] && _usage
 
 	shift $((OPTIND-1))
-	$(declare -F $function &> /dev/null) && $function "$@"
+	$(declare -F $fun &> /dev/null) && $fun "$@"
 
 	sleep 1 # to get very last entry of logifle by tail -f before being killed
 	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
@@ -33,8 +37,61 @@ configure::exit(){
 	return 0
 }
 
+configure::err(){
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			$funcname usage:
+			-x <exit>     | better use as first option. code to print and return
+			-f <function> | name to print
+			-s <source>   | filename of
+			-l <lineno>   | LINENO
+			-e <error>    | message
+			-c <cmd>      | command
+
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory fun src lineno error cmd ex
+	while getopts 'f:s:l:e:c:x:' arg; do
+		case $arg in
+			f) fun="$OPTARG";;
+			s) src="$(basename "$OPTARG")";;
+			l) ((++mandatory)); lineno=$OPTARG;;
+			e) error="$OPTARG";;
+			c) cmd="$OPTARG";;
+			x) ((++mandatory)); ex=$OPTARG;;
+			*) _usage;;
+		esac
+	done
+	[[ $mandatory -lt 2 ]] && _usage
+
+	[[ $fun ]] && {
+		local line
+		shopt -s extdebug
+		read -r fun line src < <(declare -F "$fun")
+		shopt -u extdebug
+		src="$(basename "$src")"
+		src="$fun / $src"
+		[[ -t 1 ]] && ((lineno+=line))
+	}
+
+	unset BASH_COMMAND
+	commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src (line $lineno) $cmd"
+	return $ex
+}
+
 configure::environment(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -42,7 +99,7 @@ configure::environment(){
 			-b <insdir> | root path to bashbone
 			-c <conda>  | true/false activate
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory insdir_tools insdir_bashbone activate_conda=true
@@ -51,11 +108,12 @@ configure::environment(){
 			i) ((++mandatory)); insdir_tools="$OPTARG";;
 			b) ((++mandatory)); insdir_bashbone="$OPTARG";;
 			c) activate_conda="$OPTARG";;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && _usage && return 1
+	[[ $mandatory -lt 2 ]] && _usage
 
+	set -o pipefail
 	shopt -s extglob
 	shopt -s expand_aliases
 	ulimit -n $(ulimit -Hn)
@@ -63,7 +121,7 @@ configure::environment(){
 
 	$activate_conda && {
 		commander::printinfo "setting up environment"
-		source $insdir_tools/conda/bin/activate base &> /dev/null || return 1
+		source $insdir_tools/conda/bin/activate base &> /dev/null
 	}
 
 	local tp=$(readlink -e $insdir_tools/latest)
@@ -76,7 +134,11 @@ configure::environment(){
 }
 
 configure::instances_by_threads(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -84,7 +146,7 @@ configure::instances_by_threads(){
 			-t <threads>   | per instance targeted
 			-T <threads>   | available
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory instances ithreads=1 maxthreads
@@ -93,10 +155,10 @@ configure::instances_by_threads(){
 			i) ((++mandatory)); instances=$OPTARG;;
 			t) ithreads=$OPTARG;;
 			T) ((++mandatory)); maxthreads=$OPTARG;;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && _usage && return 1
+	[[ $mandatory -lt 2 ]] && _usage
 
 	local maxinstances=$maxthreads
 	[[ $maxinstances -gt $(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) ]] && maxinstances=$(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) #+10 for better approximation
@@ -109,14 +171,18 @@ configure::instances_by_threads(){
 }
 
 configure::instances_by_memory(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-t <threads> | available
 			-m <memory>  | per instance maximum
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory threads memory
@@ -124,10 +190,10 @@ configure::instances_by_memory(){
 		case $arg in
 			t) ((++mandatory)); threads=$OPTARG;;
 			m) ((++mandatory)); memory=$OPTARG;;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && _usage && return 1
+	[[ $mandatory -lt 2 ]] && _usage
 
 	local maxmemory=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
 	[[ $memory -gt $maxmemory ]] && memory=$maxmemory
@@ -140,7 +206,11 @@ configure::instances_by_memory(){
 }
 
 configure::jvm(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -149,7 +219,7 @@ configure::jvm(){
 			-T <threads>   | available
 			-m <memory>    | per instance maximum
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory instances ithreads=1 maxthreads memory=1
@@ -159,10 +229,10 @@ configure::jvm(){
 			t)	ithreads=$OPTARG;;
 			T)	((++mandatory)); maxthreads=$OPTARG;;
 			m)	memory=$OPTARG;;
-			*)	_usage; return 1;;
+			*)	_usage
 		esac
 	done
-	[[ $mandatory -lt 1 ]] && _usage && return 1
+	[[ $mandatory -lt 1 ]] && _usage
 	[[ ! $instances ]] && instances=$maxthreads
 
 	local jmem jgct jcgct maxmemory=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
