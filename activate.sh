@@ -3,7 +3,7 @@
 set -o pipefail
 
 unset ERROR
-trap 'e=$?; echo ":ERROR: ${ERROR:-"..an unexpected one"} (exit $e) @ $(basename ${BASH_SOURCE[0]}) (line: $LINENO) $BASH_COMMAND" >&2; exit $e' ERR
+trap 'e=$?; echo ":ERROR: ${ERROR:-"..an unexpected one"} (exit $e) @ $(basename $0) (line: $LINENO) $BASH_COMMAND" >&2; exit $e' ERR
 ERROR="$(basename "$0") script needs to be sourced"
 [[ "${BASH_SOURCE[0]}" != "$0" ]]
 

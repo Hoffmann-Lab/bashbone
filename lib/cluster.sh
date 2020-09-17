@@ -29,7 +29,7 @@ cluster::coexpression_deseq(){
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			f) clusterfilter=$OPTARG;;
-			b) biotype=$OPTARG;;
+			b) biotype="$OPTARG";;
 			g) gtf="$OPTARG";;
 			t) ((++mandatory)); threads=$OPTARG;;
 			m) ((++mandatory)); memory=$OPTARG;;
@@ -103,18 +103,18 @@ cluster::coexpression_deseq(){
 		' -- -cf=$clusterfilter "$odir/experiments.deseq.tsv" > "$odir/experiments.filtered.genes"
 		# 0 padj 1 fc>0.5 2 basemean > 5 3 30% see below
 
-		[[ $biotype ]] && {
+		[[ $biotype && "$biotype" != "." ]] && {
 			perl -lane -F'\t' '{
 				if($#F<5){
 					print $F[0] if $F[2]==$cb;
 				} else {
 					$F[-1]=~/gene_(bio)?type\s+"([^"]+)/;
-					if ($2 eq $cb && $F[-1]=~/gene_id\s+"([^"]+)/){
+					if ($2 =~ /$cb/ && $F[-1]=~/gene_id\s+"([^"]+)/){
 						print $1 unless exists $m{$1};
 						$m{$1}=1;
 					}
 				}
-			}' -- -cb=$biotype "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
+			}' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
 			grep -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 		}
@@ -306,7 +306,7 @@ cluster::coexpression(){
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			f) clusterfilter=$OPTARG;;
-			b) biotype=$OPTARG;;
+			b) biotype="$OPTARG";;
 			g) gtf="$OPTARG";;
 			t) ((++mandatory)); threads=$OPTARG;;
 			m) ((++mandatory)); memory=$OPTARG;;
@@ -395,18 +395,18 @@ cluster::coexpression(){
 			awk '{print $1}' "$odir/experiments.tpm" > "$odir/experiments.filtered.genes"
 		}
 
-		[[ $biotype ]] && {
+		[[ $biotype && "$biotype" != "." ]] && {
 			perl -F'\t' -slane '{
 				if($#F<5){
 					print $F[0] if $F[2]==$cb;
 				} else {
 					$F[-1]=~/gene_(bio)?type\s+"([^"]+)/;
-					if ($2 eq $cb && $F[-1]=~/gene_id\s+"([^"]+)/){
+					if ($2 =~ /$cb/ && $F[-1]=~/gene_id\s+"([^"]+)/){
 						print $1 unless exists $m{$1};
 						$m{$1}=1;
 					}
 				}
-			}' -- -cb=$biotype "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
+			}' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
 			grep -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 		}

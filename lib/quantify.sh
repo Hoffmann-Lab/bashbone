@@ -40,6 +40,8 @@ quantify::featurecounts() {
 	done
 	[[ $mandatory -lt 6 ]] && _usage && return 1
 
+	commander::printinfo "quantifying reads"
+
 	# featurecounts cannot handle more than 64 threads
 	local instances ithreads m f
 	for m in "${_mapper_featurecounts[@]}"; do
@@ -138,7 +140,7 @@ quantify::tpm() {
 		for f in "${_bams_tpm[@]}"; do
 			countfile="$countsdir/$m/$(basename $f)"
 			countfile=$(readlink -e "${countfile%.*}"*.+(genecounts|counts).+(reduced|htsc) | head -1)
-			commander::makecmd -a _cmds1_tpm -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				tpm.pl "$gtf" "$countfile" > "$countfile.tpm"
 			CMD
 		done
