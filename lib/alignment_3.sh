@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 alignment::mkreplicates() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -18,28 +22,28 @@ alignment::mkreplicates() {
 			-o <outdir>     | path to
 			-p <tmpdir>     | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir
 	declare -n _mapper_mkreplicates _nidx_mkreplicates _nridx_mkreplicates _tidx_mkreplicates _ridx_mkreplicates _pidx_mkreplicates
 	while getopts 'S:s:t:r:n:m:i:j:k:o:p:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			r) ((++mandatory)); _mapper_mkreplicates=$OPTARG;;
-			n) ((++mandatory)); _nidx_mkreplicates=$OPTARG;;
-			m) _nridx_mkreplicates=$OPTARG;;
-			i) ((++mandatory)); _tidx_mkreplicates=$OPTARG;;
-			j) ((++mandatory)); _ridx_mkreplicates=$OPTARG;;
-			k) ((++mandatory)); _pidx_mkreplicates=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_mkreplicates=$OPTARG;;
+			n)	((++mandatory)); _nidx_mkreplicates=$OPTARG;;
+			m)	_nridx_mkreplicates=$OPTARG;;
+			i)	((++mandatory)); _tidx_mkreplicates=$OPTARG;;
+			j)	((++mandatory)); _ridx_mkreplicates=$OPTARG;;
+			k)	((++mandatory)); _pidx_mkreplicates=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 8 ]] && _usage && return 1
+	[[ $mandatory -lt 8 ]] && _usage
 
 	local m i odir o tmp nf nrf tf rf pf addindex=true ithreads1 ithreads2 instances1=1 instances2=1
 	declare -a cmd1 cmd2 cmd3 tdirs
@@ -185,21 +189,15 @@ alignment::mkreplicates() {
 		done
 	fi
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
-	} || {
-		{	commander::runcmd -v -b -t $instances1 -a cmd1 && \
-			commander::runcmd -v -b -t $instances2 -a cmd2 && \
-			commander::runcmd -v -b -t $instances1 -a cmd3
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t $instances1 -a cmd1
+		commander::runcmd -v -b -t $instances2 -a cmd2
+		commander::runcmd -v -b -t $instances1 -a cmd3
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }

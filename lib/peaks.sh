@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 peaks::_idr() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -13,23 +17,23 @@ peaks::_idr() {
 			-p <file>     | oracle: normal vs pool peaks path to
 			-o <outfile>  | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory t r p o
 	declare -n _cmds1_idr _cmds2_idr
 	while getopts '1:2:t:r:p:o:' arg; do
 		case $arg in
-			1) ((++mandatory)); _cmds1_idr=$OPTARG;;
-			2) ((++mandatory)); _cmds2_idr=$OPTARG;;
-			t) ((++mandatory)); t=$OPTARG;;
-			r) ((++mandatory)); r=$OPTARG;;
-			p) ((++mandatory)); p=$OPTARG;;
-			o) ((++mandatory)); o="$OPTARG";;
-			*) _usage; return 1;;
+			1)	((++mandatory)); _cmds1_idr=$OPTARG;;
+			2)	((++mandatory)); _cmds2_idr=$OPTARG;;
+			t)	((++mandatory)); t=$OPTARG;;
+			r)	((++mandatory)); r=$OPTARG;;
+			p)	((++mandatory)); p=$OPTARG;;
+			o)	((++mandatory)); o="$OPTARG";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::makecmd -a _cmds1_idr -s '|' -c {COMMANDER[0]}<<- CMD
 		idr
@@ -54,7 +58,11 @@ peaks::_idr() {
 }
 
 peaks::macs() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -74,37 +82,37 @@ peaks::macs() {
 			-o <outdir>     | path to
 			-p <tmpdir>     | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false ripseq=false genome threads memory fragmentsize outdir tmpdir
 	declare -n _mapper_macs _macs _nidx_macs _nridx_macs _tidx_macs _ridx_macs _pidx_macs
 	while getopts 'S:s:t:m:g:f:q:r:c:a:b:i:j:k:o:p:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
-			g) ((++mandatory)); genome="$OPTARG";;
-			r) ((++mandatory)); _mapper_macs=$OPTARG;;
-			f) ((++mandatory)); fragmentsize=$OPTARG;;
-			q) ripseq=$OPTARG;;
-			c) ((++mandatory))
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			r)	((++mandatory)); _mapper_macs=$OPTARG;;
+			f)	((++mandatory)); fragmentsize=$OPTARG;;
+			q)	ripseq=$OPTARG;;
+			c)	((++mandatory))
 				declare -n _caller_macs=$OPTARG
 				_caller_macs+=(macs)
 				_macs=macs
-				;;
-			a) ((++mandatory)); _nidx_macs=$OPTARG;;
-			b) _nridx_macs=$OPTARG;;
-			i) ((++mandatory)); _tidx_macs=$OPTARG;;
-			j) ((++mandatory)); _ridx_macs=$OPTARG;;
-			k) ((++mandatory)); _pidx_macs=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			*) _usage; return 1;;
+			;;
+			a)	((++mandatory)); _nidx_macs=$OPTARG;;
+			b)	_nridx_macs=$OPTARG;;
+			i)	((++mandatory)); _tidx_macs=$OPTARG;;
+			j)	((++mandatory)); _ridx_macs=$OPTARG;;
+			k)	((++mandatory)); _pidx_macs=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 12 ]] && _usage && return 1
+	[[ $mandatory -lt 12 ]] && _usage
 
 	commander::printinfo "peak calling macs"
 	commander::printinfo "preparing genome"
@@ -113,7 +121,8 @@ peaks::macs() {
 	# if multimapped reads: genome minus Ns , else genome minus Ns minus repetetive Elements
 	declare -n _bams_macs=${_mapper_macs[0]}
 	local genomesize nf=${_bams_macs[${_nidx_macs[0]}]}
-	if [[ $(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 256) -gt 0 ]]; then
+	local x=$(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 256)
+	if [[ $x -gt 0 ]]; then
 		genomesize=$(faCount $genome | tail -1 | awk '{print $3+$4+$5+$6}')
 	else
 		genomesize=$(unique-kmers.py -k 100 $genome 2>&1 | tail -1 | awk '{print $NF}')
@@ -125,15 +134,15 @@ peaks::macs() {
 	local numchr=$(samtools view -H results/mapped/segemehl/11q_HT.ip2.R1.final.sorted.bam | grep -c '^@SQ')
 	local buffer=$(( (1024*1024*memory)/(numchr*mult) ))
 
-	[[ $buffer -lt 100000 ]] && {
+	if [[ $buffer -lt 100000 ]]; then
 		params="--buffer-size $buffer"
 		read -r instances ithreads < <(configure::instances_by_memory -t $threads -m $memory)
-	} || {
+	else
 		params=''
 		read -r instances ithreads < <(configure::instances_by_memory -t $threads -m $(( (numchr*buffer*mult)/1024/1024 )))
-	}
+	fi
 
-	local m i f o odir nf nrf tf rf x pff nff params2
+	local m i f o odir nf nrf tf rf x pff nff params2 x
 	declare -a cmd1 cmd2 cmd3 cmd4 tdirs toidr
 	for m in "${_mapper_macs[@]}"; do
 		declare -n _bams_macs=$m
@@ -147,7 +156,8 @@ peaks::macs() {
 
 			# infer SE or PE
 			params+=' -f BAM'
-			[[ $(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 1) -gt 0 ]] && params+=' -f BAMPE'
+			x=$(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 1)
+			[[ $x -gt 0 ]] && params+=' -f BAMPE'
 
 			toidr=()
 			for f in $tf $rf $pf; do
@@ -248,29 +258,27 @@ peaks::macs() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
-	} || {
-		{	commander::runcmd -c macs -v -b -t $instances -a cmd1 && \
-			commander::runcmd -v -b -t $threads -a cmd2 && \
-			commander::runcmd -v -b -t $threads -a cmd3 && \
-			commander::runcmd -v -b -t $threads -a cmd4
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c macs -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -v -b -t $threads -a cmd4
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }
 
 peaks::gem() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "$tdir"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -290,37 +298,37 @@ peaks::gem() {
 			-o <outdir>     | path to
 			-p <tmpdir>     | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false ripseq=false threads genome gtf outdir tmpdir
 	declare -n _mapper_gem _strandness_gem _gem _nidx_gem _nridx_gem _tidx_gem _ridx_gem _pidx_gem
 	while getopts 'S:s:t:g:f:q:r:x:c:a:b:i:j:k:o:p:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			g) ((++mandatory)); genome="$OPTARG";;
-			f) ((++mandatory)); gtf="$OPTARG";;
-			r) ((++mandatory)); _mapper_gem=$OPTARG;;
-			x) ((++mandatory)); _strandness_gem=$OPTARG;;
-			q) ripseq=$OPTARG;;
-			c) ((++mandatory))
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			f)	((++mandatory)); gtf="$OPTARG";;
+			r)	((++mandatory)); _mapper_gem=$OPTARG;;
+			x)	((++mandatory)); _strandness_gem=$OPTARG;;
+			q)	ripseq=$OPTARG;;
+			c)	((++mandatory))
 				declare -n _caller_gem=$OPTARG
 				_caller_gem+=(gem)
 				_gem=gem
-				;;
-			a) ((++mandatory)); _nidx_gem=$OPTARG;;
-			b) _nridx_gem=$OPTARG;;
-			i) ((++mandatory)); _tidx_gem=$OPTARG;;
-			j) ((++mandatory)); _ridx_gem=$OPTARG;;
-			k) ((++mandatory)); _pidx_gem=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG";;
-			p) ((++mandatory)); tmpdir="$OPTARG";;
-			*) _usage; return 1;;
+			;;
+			a)	((++mandatory)); _nidx_gem=$OPTARG;;
+			b)	_nridx_gem=$OPTARG;;
+			i)	((++mandatory)); _tidx_gem=$OPTARG;;
+			j)	((++mandatory)); _ridx_gem=$OPTARG;;
+			k)	((++mandatory)); _pidx_gem=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG";;
+			p)	((++mandatory)); tmpdir="$OPTARG";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 12 ]] && _usage && return 1
+	[[ $mandatory -lt 12 ]] && _usage
 
 	commander::printinfo "peak calling gem"
 	commander::printinfo "preparing genome"
@@ -331,22 +339,24 @@ peaks::gem() {
 	declare -n _bams_gem=${_mapper_gem[0]}
 	local params nf="${_bams_gem[${_nidx_macs[0]}]}"
 	local strandness=0
-	$ripseq && {
+	if $ripseq; then
 		# --strand_type 1 disables search for asymmetry between sense and antisense mapped reads. instead leads to strand specific peak calls based on read orientation
 		# if data is paired end, mates will be analyzed individually as single end reads
 		# in case of PE this leads to duplicated peaks on both strands since orientation is not inferred from first in pair read
 		# -> use this parameter only in case of strand specific SE reads
-		[[ $(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 1) -eq 0 ]] && strandness=${_strandness_gem["$nf"]}
+		local x=$(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 1)
+		[[ $x -eq 0 ]] && strandness=${_strandness_gem["$nf"]}
 		params='--relax --d $(dirname $(which gem))/Read_Distribution_CLIP.txt'
-	} || {
+	else
 		params="--d $(dirname $(which gem))/Read_Distribution_default.txt"
-	}
+	fi
 	[[ $strandness -ne 0 ]] && params+=" --strand_type 1"
 
 	# get effective genome size
 	# if multimapped reads: genome minus Ns , else genome minus Ns minus repetetive Elements
 	local genomesize
-	if [[ $(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 256) -gt 0 ]]; then
+	local x=$(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 256)
+	if [[ $x -gt 0 ]]; then
 		genomesize=$(faCount $genome | tail -1 | awk '{print $3+$4+$5+$6}')
 	else
 		genomesize=$(unique-kmers.py -k 100 $genome 2>&1 | tail -1 | awk '{print $NF}')
@@ -368,15 +378,12 @@ peaks::gem() {
 	CMD
 		-- -t="$tdir" "$genome"
 	CMD
-	$skip && {
+
+	if $skip; then
 		commander::printcmd -a cmdg
-	} || {
-		{	commander::runcmd -v -b -t $threads -a cmdg
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t $threads -a cmdg
+	fi
 
 	local m i f o tdir odir nf nrf tf rf x pff nff
 	declare -a cmd1 cmd2 cmd3 cmd4 toidr
@@ -418,7 +425,7 @@ peaks::gem() {
 					cp "$odir/$o/$o.GPS_events.narrowPeak" "$odir/$o.narrowPeak"
 				CMD
 
-				[[ $strandness -eq 0 ]] && {
+				if [[ $strandness -eq 0 ]]; then
 					commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 						bedtools merge
 						-c 5,7,8,9
@@ -429,7 +436,7 @@ peaks::gem() {
 							print join "\t", (@F[0..2],"merged_peak_".(++$x),max(split/,/,$F[3]),".",max(split/,/,$F[4]),max(split/,/,$F[5]),max(split/,/,$F[6]),"-1")
 						'
 					CMD
-				} || {
+				else
 					commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 						bedtools merge
 						-s
@@ -441,7 +448,7 @@ peaks::gem() {
 							print join "\t", (@F[0..2],"merged_peak_".(++$x),max(split/,/,$F[3]),(split/,/,$F[4])[0],max(split/,/,$F[5]),max(split/,/,$F[6]),max(split/,/,$F[7]),"-1")
 						'
 					CMD
-				}
+				fi
 
 				_gem+=("$odir/$o.narrowPeak")
 				toidr+=("$odir/$o.narrowPeak")
@@ -486,23 +493,17 @@ peaks::gem() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
-	} || {
-		{	commander::runcmd -v -b -t $instances -a cmd1 && \
-			commander::runcmd -v -b -t $threads -a cmd2 && \
-			commander::runcmd -v -b -t $threads -a cmd3 && \
-			commander::runcmd -v -b -t $threads -a cmd4
-		} || {
-			rm -rf "$tdir"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -v -b -t $threads -a cmd4
+	fi
 
-	rm -rf "$tdir"
 	return 0
 }

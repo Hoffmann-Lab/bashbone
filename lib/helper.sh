@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 helper::makezipcmd(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -13,7 +17,7 @@ helper::makezipcmd(){
 			example:
 			$funcname -a cmds -c f1.txt -c f2.txt -z o1 -z o2
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory threads=1
@@ -25,10 +29,10 @@ helper::makezipcmd(){
 			t) threads=$OPTARG;;
 			c) ((++mandatory)); check_makezipcmd+=("$OPTARG");;
 			z) ((++mandatory)); tozip_makezipcmd+=("$OPTARG");;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 3 || ${#check_makezipcmd[@]} -ne ${#tozip_makezipcmd[@]} ]] && _usage && return 1
+	[[ $mandatory -lt 3 || ${#check_makezipcmd[@]} -ne ${#tozip_makezipcmd[@]} ]] && _usage
 
 	local i
 	for i in "${!check_makezipcmd[@]}"; do
@@ -45,7 +49,11 @@ helper::makezipcmd(){
 }
 
 helper::makecatcmd(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -54,7 +62,7 @@ helper::makecatcmd(){
 			example:
 			$funcname -c cmd -f [txt|bz2|gz]
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory f
@@ -63,10 +71,10 @@ helper::makecatcmd(){
 		case $arg in
 			c) ((++mandatory)); _makecatcmd=$OPTARG;;
 			f) ((++mandatory)); f="$OPTARG";;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && _usage && return 1
+	[[ $mandatory -lt 2 ]] && _usage
 
 	_makecatcmd=$(readlink -e "$f" | file -f - | grep -Eo '(gzip|bzip)' && echo -cd || echo cat)
 
@@ -74,7 +82,11 @@ helper::makecatcmd(){
 }
 
 helper::basename(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -85,7 +97,7 @@ helper::basename(){
 			example:
 			$funcname -f foo.txt.gz -o base -e ex
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg f mandatory
@@ -95,42 +107,45 @@ helper::basename(){
 			f) ((++mandatory)); f="$OPTARG";;
 			o) ((++mandatory)); _basename=$OPTARG;;
 			e) ((++mandatory)); _basenamex=$OPTARG;;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 3 ]] && _usage && return 1
+	[[ $mandatory -lt 3 ]] && _usage
 
-	readlink -e "$f" | file -f - | grep -qE '(gzip|bzip)' && {
+	if readlink -e "$f" | file -f - | grep -qE '(gzip|bzip)'; then
 		_basename=$(basename $f | rev | cut -d '.' -f 3- | rev)
 		_basenamex=$(basename $f | rev | cut -d '.' -f 1-2 | rev)
-	} || {
+	else
 		_basename=$(basename $f | rev | cut -d '.' -f 2- | rev)
 		_basenamex=$(basename $f | rev | cut -d '.' -f 1 | rev)
-	}
+	fi
 
 	return 0
 }
 
 helper::ishash(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-v <var> | variable
 		EOF
-		return 0
+		return 1
 	}
-	local OPTIND arg mandatory var
-	declare -a vars
+
+	local OPTIND arg
 	while getopts 'v:' arg; do
 		case $arg in
-			v)	((++mandatory)); vars+=("$(printf '%q' "$OPTARG")")
-				{	declare -p "$OPTARG" &> /dev/null && \
+			v)	{	declare -p "$OPTARG" &> /dev/null
 					declare -n __="$OPTARG"
 					[[ "$(declare -p ${!__})" =~ ^declare\ \-[Ab-z]+ ]]
 				} || return 1
 			;;
-			*)	_usage; return 1;;
+			*)	_usage;;
 		esac
 	done
 
@@ -138,25 +153,28 @@ helper::ishash(){
 }
 
 helper::isarray(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-v <var> | variable
 		EOF
-		return 0
+		return 1
 	}
 	local OPTIND arg mandatory var
 	declare -a vars
 	while getopts 'v:' arg; do
 		case $arg in
-			v)	((++mandatory)); vars+=("$(printf '%q' "$OPTARG")")
-				{	declare -p "$OPTARG" &> /dev/null && \
+			v)	{	declare -p "$OPTARG" &> /dev/null
 					declare -n __="$OPTARG"
 					[[ "$(declare -p ${!__})" =~ ^declare\ \-[a-zB-Z]+ ]]
 				} || return 1
 			;;
-			*)	_usage; return 1;;
+			*)	_usage;;
 		esac
 	done
 
@@ -164,23 +182,28 @@ helper::isarray(){
 }
 
 helper::addmemberfunctions(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-v <var> | variable
 		EOF
-		return 0
+		return 1
 	}
+
 	local OPTIND arg mandatory var
 	declare -a vars
 	while getopts 'v:' arg; do
 		case $arg in
 			v) ((++mandatory)); vars+=("$(printf '%q' "$OPTARG")");;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 1 ]] && _usage && return 1
+	[[ $mandatory -lt 1 ]] && _usage
 
 	shopt -s expand_aliases
 	for var in "${vars[@]}"; do

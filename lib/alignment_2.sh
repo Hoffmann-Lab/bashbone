@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 alignment::slice(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -14,24 +18,24 @@ alignment::slice(){
 			-c <slicesinfo>| hash per bam of
 			-p <tmpdir>    | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory tmpdir
 	declare -n _mapper_slice _bamslices_slice
 	while getopts 'S:s:t:m:r:c:p:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
-			r) ((++mandatory)); _mapper_slice=$OPTARG;;
-			c) ((++mandatory)); _bamslices_slice=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			r)	((++mandatory)); _mapper_slice=$OPTARG;;
+			c)	((++mandatory)); _bamslices_slice=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "slicing alignments"
 
@@ -81,12 +85,8 @@ alignment::slice(){
 		$minstances "$tmpdir/genome" "$tmpdir/genome/chr.bed"
 	CMD
 
-	{	rm -f "$tmpdir/genome/slice".*.bed && \
-		commander::runcmd -c r -v -b -t $threads -a cmd1
-	} || {
-		commander::printerr "$funcname failed"
-		return 1
-	}
+	rm -f "$tmpdir/genome/slice".*.bed
+	commander::runcmd -c r -v -b -t $threads -a cmd1
 
 	for m in "${_mapper_slice[@]}"; do
 		declare -n _bams_slice=$m
@@ -118,23 +118,23 @@ alignment::slice(){
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
-	} || {
-		{	commander::runcmd -v -b -t $instances -a cmd2 && \
-			commander::runcmd -v -b -t $instances -a cmd3
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd3
+	fi
 
 	return 0
 }
 
 alignment::rmduplicates(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -154,19 +154,19 @@ alignment::rmduplicates(){
 	declare -n _mapper_rmduplicates _bamslices_rmduplicates
 	while getopts 'S:s:t:m:x:r:c:p:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
-			x) regex="$OPTARG";;
-			r) ((++mandatory)); _mapper_rmduplicates=$OPTARG;;
-			c) ((++mandatory)); _bamslices_rmduplicates=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			x)	regex="$OPTARG";;
+			r)	((++mandatory)); _mapper_rmduplicates=$OPTARG;;
+			c)	((++mandatory)); _bamslices_rmduplicates=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "removing duplicates"
 
@@ -234,27 +234,27 @@ alignment::rmduplicates(){
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c picard -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -v -b -t $instances -a cmd2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c picard -v -b -t $minstances -a cmd1
+		commander::runcmd -v -b -t $instances -a cmd2
+	fi
 
 	return 0
 }
 
 alignment::clipmateoverlaps() {
-# must not handle supplementary i.e. circular/chimeric transcripts due to potentially uneven lists
-# if not flagged as supplementary and mate2 is mapped totally before mate1, both will be flagged as unmapped
-# fully covered by mate will be flagged as unmapped
-# adjusted poolsize will consume ~15gb memory
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
+	# must not handle supplementary i.e. circular/chimeric transcripts due to potentially uneven lists
+	# if not flagged as supplementary and mate2 is mapped totally before mate1, both will be flagged as unmapped
+	# fully covered by mate will be flagged as unmapped
+	# adjusted poolsize will consume ~15gb memory
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -266,7 +266,7 @@ alignment::clipmateoverlaps() {
 			-c <sliceinfo> | array of
 			-o <outbase>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory outdir
@@ -274,17 +274,17 @@ alignment::clipmateoverlaps() {
 	declare -A nidx tidx
 	while getopts 'S:s:t:m:r:c:p:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
-			r) ((++mandatory)); _mapper_clipmateoverlaps=$OPTARG;;
-			c) ((++mandatory)); _bamslices_clipmateoverlaps=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			r)	((++mandatory)); _mapper_clipmateoverlaps=$OPTARG;;
+			c)	((++mandatory)); _bamslices_clipmateoverlaps=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "clipping ends of overlapping mate pairs"
 
@@ -349,25 +349,25 @@ alignment::clipmateoverlaps() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
-	} || {
-		{	commander::runcmd -c bamutil -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -v -b -t $instances -a cmd2 && \
-			commander::runcmd -v -b -t $instances -a cmd3
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c bamutil -v -b -t $minstances -a cmd1
+		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd3
+	fi
 
 	return 0
 }
 
 alignment::reorder() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -381,7 +381,7 @@ alignment::reorder() {
 			-p <tmpdir>    | path to
 			-o <outbase>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir i
@@ -389,19 +389,19 @@ alignment::reorder() {
 	declare -A nidx tidx
 	while getopts 'S:s:t:g:m:r:c:p:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
-			g) ((++mandatory)); genome="$OPTARG";;
-			r) ((++mandatory)); _mapper_reorder=$OPTARG;;
-			c) ((++mandatory)); _bamslices_reorder=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			r)	((++mandatory)); _mapper_reorder=$OPTARG;;
+			c)	((++mandatory)); _bamslices_reorder=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage && return 1
+	[[ $mandatory -lt 7 ]] && _usage
 
 	commander::printinfo "reordering alignments"
 
@@ -465,23 +465,23 @@ alignment::reorder() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c picard -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -v -b -t $instances -a cmd2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c picard -v -b -t $minstances -a cmd1
+		commander::runcmd -v -b -t $instances -a cmd2
+	fi
 
 	return 0
 }
 
 alignment::addreadgroup() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -496,7 +496,7 @@ alignment::addreadgroup() {
 			-p <tmpdir>    | path to
 			-o <outbase>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory tmpdir outdir i rgprefix=''
@@ -504,28 +504,29 @@ alignment::addreadgroup() {
 	declare -A nidx tidx
 	while getopts 'S:s:t:m:n:r:1:2:c:p:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
-			n) rgprefix=$OPTARG;;
-			r) ((++mandatory)); _mapper_addreadgroup=$OPTARG;;
-			1) _nidx_addreadgroup=$OPTARG;;
-			2) _tidx_addreadgroup=$OPTARG;;
-			c) ((++mandatory)); _bamslices_addreadgroup=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			n)	rgprefix=$OPTARG;;
+			r)	((++mandatory)); _mapper_addreadgroup=$OPTARG;;
+			1)	_nidx_addreadgroup=$OPTARG;;
+			2)	_tidx_addreadgroup=$OPTARG;;
+			c)	((++mandatory)); _bamslices_addreadgroup=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 6 ]] && _usage
+
 	if [[ ! $_nidx_addreadgroup ]]; then
 		declare -n _bams_addreadgroup="${_mapper_addreadgroup[0]}"
 		for i in "${!_bams_addreadgroup[@]}"; do
 			nidx[$i]=1
 		done
 	else
-		[[ ! $_tidx_addreadgroup ]] && _usage && return 1
+		[[ ! $_tidx_addreadgroup ]] && _usage
 		for i in "${!_nidx_addreadgroup[@]}"; do
 			nidx[$i]=1
 		done
@@ -601,23 +602,23 @@ alignment::addreadgroup() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c picard -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -v -b -t $instances -a cmd2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c picard -v -b -t $minstances -a cmd1
+		commander::runcmd -v -b -t $instances -a cmd2
+	fi
 
 	return 0
 }
 
 alignment::splitncigar() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -631,7 +632,7 @@ alignment::splitncigar() {
 			-p <tmpdir>    | path to
 			-o <outbase>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir i
@@ -639,19 +640,19 @@ alignment::splitncigar() {
 	declare -A nidx tidx
 	while getopts 'S:s:t:g:m:r:1:2:c:p:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
-			g) ((++mandatory)); genome="$OPTARG";;
-			r) ((++mandatory)); _mapper_splitncigar=$OPTARG;;
-			c) ((++mandatory)); _bamslices_splitncigar=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			r)	((++mandatory)); _mapper_splitncigar=$OPTARG;;
+			c)	((++mandatory)); _bamslices_splitncigar=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage && return 1
+	[[ $mandatory -lt 7 ]] && _usage
 
 	commander::printinfo "splitting N-cigar alignments"
 
@@ -725,25 +726,23 @@ alignment::splitncigar() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c gatk -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -v -b -t $instances -a cmd2
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
+		commander::runcmd -v -b -t $instances -a cmd2
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }
 
 alignment::leftalign() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -757,7 +756,7 @@ alignment::leftalign() {
 			-p <tmpdir>    | path to
 			-o <outbase>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir i
@@ -765,19 +764,19 @@ alignment::leftalign() {
 	declare -A nidx tidx
 	while getopts 'S:s:t:g:m:r:1:2:c:p:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
-			g) ((++mandatory)); genome="$OPTARG";;
-			r) ((++mandatory)); _mapper_leftalign=$OPTARG;;
-			c) ((++mandatory)); _bamslices_leftalign=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			r)	((++mandatory)); _mapper_leftalign=$OPTARG;;
+			c)	((++mandatory)); _bamslices_leftalign=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage && return 1
+	[[ $mandatory -lt 7 ]] && _usage
 
 	commander::printinfo "leftaligning alignments"
 
@@ -844,25 +843,23 @@ alignment::leftalign() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c gatk -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -v -b -t $instances -a cmd2
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
+		commander::runcmd -v -b -t $instances -a cmd2
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }
 
 alignment::bqsr() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -f "$tmpfile"; rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -877,7 +874,7 @@ alignment::bqsr() {
 			-p <tmpdir>    | path to
 			-o <outbase>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory genome dbsnp tmpdir outdir i
@@ -885,27 +882,30 @@ alignment::bqsr() {
 	declare -A nidx tidx
 	while getopts 'S:s:t:g:d:m:r:1:2:c:p:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
-			g) ((++mandatory)); genome="$OPTARG";;
-			d) dbsnp="$OPTARG";;
-			r) ((++mandatory)); _mapper_bqsr=$OPTARG;;
-			c) ((++mandatory)); _bamslices_bqsr=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			d)	dbsnp="$OPTARG";;
+			r)	((++mandatory)); _mapper_bqsr=$OPTARG;;
+			c)	((++mandatory)); _bamslices_bqsr=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage && return 1
+	[[ $mandatory -lt 7 ]] && _usage
+
 	if [[ ! $dbsnp ]]; then
-		dbsnp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf)"
+		local tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf)"
+		dbsnp="$tmpfile"
 		echo -e "##fileformat=VCFv4.0\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" > "$dbsnp"
 		bgzip -f -@ $threads < "$dbsnp" > "$dbsnp.gz"
 		tabix -f -p vcf "$dbsnp.gz"
 		dbsnp="$dbsnp.gz"
 	fi
+
 	commander::printinfo "base quality score recalibration"
 
 	local minstances mthreads jmem jgct jcgct
@@ -1002,23 +1002,15 @@ alignment::bqsr() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
         commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
-	} || {
-		{	commander::runcmd -c gatk -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -c gatk -v -b -t $minstances -a cmd2 && \
-			commander::runcmd -v -b -t $instances -a cmd3
-		} || {
-			rm -rf "${tdirs[@]}"
-			[[ $(basename "$dbsnp") =~ ^cleanup ]] && rm -f "$dbsnp"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd3
+	fi
 
-	rm -rf "${tdirs[@]}"
-	[[ $(basename "$dbsnp") =~ ^cleanup ]] && rm -f "$dbsnp"
 	return 0
 }

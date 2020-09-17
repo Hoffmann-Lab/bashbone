@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 variants::vcfzip() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -13,7 +17,7 @@ variants::vcfzip() {
 			example:
 			$funcname -t 4 -v f1 -v f2
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads
@@ -24,10 +28,10 @@ variants::vcfzip() {
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
 			z) ((++mandatory)); tozip_vcfzip+=("$OPTARG");;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && _usage && return 1
+	[[ $mandatory -lt 2 ]] && _usage
 
 	commander::printinfo "compressing and indexing vcf"
 
@@ -46,23 +50,23 @@ variants::vcfzip() {
 		CMD
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -v -b -t 1 -a cmd1 && \
-			commander::runcmd -v -b -t $threads -a cmd2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t 1 -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
+	fi
 
 	return 0
 }
 
 variants::haplotypecaller() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -f $tmpfile; rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -77,7 +81,7 @@ variants::haplotypecaller() {
 			-p <tmpdir>    | path to
 			-o <outbase>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory genome dbsnp tmpdir outdir i
@@ -93,14 +97,16 @@ variants::haplotypecaller() {
 			d) dbsnp="$OPTARG";;
 			r) ((++mandatory)); _mapper_haplotypecaller=$OPTARG;;
 			c) ((++mandatory)); _bamslices_haplotypecaller=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage && return 1
+	[[ $mandatory -lt 7 ]] && _usage
+
 	if [[ ! $dbsnp ]]; then
-		dbsnp="$tmpdir/$(basename "$genome").vcf"
+		local tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf)"
+		dbsnp="$tmpfile"
 		echo -e "##fileformat=VCFv4.0\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" > "$dbsnp"
 		bgzip -f -@ $threads < "$dbsnp" > "$dbsnp.gz"
 		tabix -f -p vcf "$dbsnp.gz"
@@ -187,7 +193,7 @@ variants::haplotypecaller() {
 				tomerge+=("$slice")
 			done < "${_bamslices_haplotypecaller[${_bams_haplotypecaller[$i]}]}"
 
-			o=$(basename "${_bams_haplotypecaller[$i]}")
+			o="$(basename "${_bams_haplotypecaller[$i]}")"
 			t="$tdir/${o%.*}"
 			o="$odir/${o%.*}"
 
@@ -209,36 +215,34 @@ variants::haplotypecaller() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 		commander::printcmd -a cmd5
 		commander::printcmd -a cmd6
-	} || {
-		{	commander::runcmd -c gatk -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -v -b -t $threads -a cmd2 && \
-			commander::runcmd -v -b -t $threads -a cmd3 && \
-			commander::runcmd -v -b -t $threads -a cmd4 && \
-			commander::runcmd -v -b -t $minstances -a cmd5 && \
-			commander::runcmd -v -b -t $instances -a cmd6
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -v -b -t $minstances -a cmd5
+		commander::runcmd -v -b -t $instances -a cmd6
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }
 
 variants::panelofnormals() {
-# The panel of normals not only represents common germline variant sites,
-# it presents commonly noisy sites in sequencing data, e.g. mapping artifacts or
-# other somewhat random but systematic artifacts of sequencing.
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
+	# The panel of normals not only represents common germline variant sites,
+	# it presents commonly noisy sites in sequencing data, e.g. mapping artifacts or
+	# other somewhat random but systematic artifacts of sequencing.
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -252,7 +256,7 @@ variants::panelofnormals() {
 			-p <tmpdir>    | path to
 			-o <outbase>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory genome dbsnp tmpdir outdir i
@@ -266,12 +270,12 @@ variants::panelofnormals() {
 			g) ((++mandatory)); genome="$OPTARG";;
 			r) ((++mandatory)); _mapper_panelofnormals=$OPTARG;;
 			c) ((++mandatory)); _bamslices_panelofnormals=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage && return 1
+	[[ $mandatory -lt 7 ]] && _usage
 
 	commander::printinfo "calling panel of normals"
 
@@ -331,25 +335,23 @@ variants::panelofnormals() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c gatk -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -v -b -t $threads -a cmd2
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }
 
 variants::makepondb() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -361,7 +363,7 @@ variants::makepondb() {
 			-p <tmpdir>    | path to
 			-o <outbase>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory genome dbsnp tmpdir outdir i
@@ -373,12 +375,12 @@ variants::makepondb() {
 			t) ((++mandatory)); threads=$OPTARG;;
 			g) ((++mandatory)); genome="$OPTARG";;
 			r) ((++mandatory)); _mapper_makepondb=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "calling panel of normals"
 
@@ -405,7 +407,10 @@ variants::makepondb() {
 			o="$(basename "${_bams_makepondb[$i]}")"
 			t="$tdir/${o%.*}"
 			o="$odir/${o%.*}"
-			[[ ! -s "$o.pon.vcf" ]] && commander::printerr "file does not exists $o.pon.vcf" && return 1
+
+			error="file does not exists $o.pon.vcf"
+			[[ -s "$o.pon.vcf" ]]
+			unset error
 
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[4]}<<- CMD
 				bcftools reheader -s <(echo "NORMAL NORMAL$i") -o "$t.pon.vcf" "$o.pon.vcf"
@@ -462,42 +467,40 @@ variants::makepondb() {
 		CMD
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -v -b -t $instances -a cmd1 && \
-			commander::runcmd -c gatk -v -b -t $minstances -a cmd2 && \
-			commander::runcmd -c gatk -v -b -t $minstances -a cmd3
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd2
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd3
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }
 
 variants::mutect() {
-# You do not need to make you own panel of normals (unless you have a huge number of samples,
-# it may even be counterproductive than our generic public panel).
-# Instead you may use gs://gatk-best-practices/somatic-b37/Mutect2-exome-panel.vcf.
-# For the -germline-resource you should use gs://gatk-best-practices/somatic-b37/af-only-gnomad.raw.sites.vcf.
-# -> this seems to be replacing old dbSNP input, which does not have AF info field
-# For the -V and -L arguments to GetPileupSummaries you may use gs://gatk-best-practices/somatic-b37/small_exac_common_3.vcf.
-# -> can this be used? ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606_b151_GRCh38p7/VCF/GATK/00-common_all.vcf.gz
-# -> cam this be used? ftp://ftp.ensembl.org/pub/current_variation/vcf/homo_sapiens/homo_sapiens_somatic.vcf.gz
-# BUT b37 => HG19 ...
-# https://software.broadinstitute.org/gatk/download/bundle
-# https://console.cloud.google.com/storage/browser/gatk-best-practices/somatic-hg38/
-# BUT this is b37 (similar to hg19) liftovered data (picard LiftoverVCF ? ENSEMBL/NCBI remap?)
-# from helsinki workshop to create gatk tutotial webpage : https://software.broadinstitute.org/gatk/documentation/article?id=11136
-# data downloaded to /misc/paras/data/genomes/GRCh38.p12/GATK-resources
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
 
-	local funcname=${FUNCNAME[0]}
+	# You do not need to make you own panel of normals (unless you have a huge number of samples,
+	# it may even be counterproductive than our generic public panel).
+	# Instead you may use gs://gatk-best-practices/somatic-b37/Mutect2-exome-panel.vcf.
+	# For the -germline-resource you should use gs://gatk-best-practices/somatic-b37/af-only-gnomad.raw.sites.vcf.
+	# -> this seems to be replacing old dbSNP input, which does not have AF info field
+	# For the -V and -L arguments to GetPileupSummaries you may use gs://gatk-best-practices/somatic-b37/small_exac_common_3.vcf.
+	# -> can this be used? ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606_b151_GRCh38p7/VCF/GATK/00-common_all.vcf.gz
+	# -> cam this be used? ftp://ftp.ensembl.org/pub/current_variation/vcf/homo_sapiens/homo_sapiens_somatic.vcf.gz
+	# BUT b37 => HG19 ...
+	# https://software.broadinstitute.org/gatk/download/bundle
+	# https://console.cloud.google.com/storage/browser/gatk-best-practices/somatic-hg38/
+	# BUT this is b37 (similar to hg19) liftovered data (picard LiftoverVCF ? ENSEMBL/NCBI remap?)
+	# from helsinki workshop to create gatk tutotial webpage : https://software.broadinstitute.org/gatk/documentation/article?id=11136
+	# data downloaded to /misc/paras/data/genomes/GRCh38.p12/GATK-resources
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -514,7 +517,7 @@ variants::mutect() {
 			-p <tmpdir>    | path to
 			-o <outbase>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir i mypon=false
@@ -531,12 +534,12 @@ variants::mutect() {
 			d) mypon=$OPTARG;;
 			1) ((++mandatory)); _nidx_mutect=$OPTARG;;
 			2) ((++mandatory)); _tidx_mutect=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 9 ]] && _usage && return 1
+	[[ $mandatory -lt 9 ]] && _usage
 
 	commander::printinfo "calling variants mutect"
 
@@ -554,28 +557,19 @@ variants::mutect() {
 		tdir="$tmpdir/$m"
 		mkdir -p "$odir" "$tdir"
 
-		$mypon && {
-			# TODO later on the fly ? needs to be completed by pon calling,
-			# but sice pon creation is germline calling i'd like to keep things seperated
-			# {	variants::makepondb \
-			# 		-s $skip \
-			# 		-t $threads \
-			# 		-g "$genome" \
-			# 		-r _mapper_mutect \
-			# 		-1 _nidx_mutect \ <- requiered
-			# 		-p "$tmpdir" \
-			# 		-o "$outdir"
-			# } || return 1
-			[[ ! -s "$odir/pon.vcf.gz" ]] && commander::printerr "cannot find panel of normals $odir/pon.vcf.gz" && return 1
+		if $mypon; then
+			error="cannot find panel of normals $odir/pon.vcf.gz"
+			[[ -s "$odir/pon.vcf.gz" ]]
+			unset error
 			params=" -pon '$odir/pon.vcf.gz'"
-		} || {
+		else
 			if [[ -s "$genome.pon.vcf.gz" ]]; then
 				params=" -pon '$genome.pon.vcf.gz'"
 			else
 				params=''
 				commander::warn "proceeding without panel of normals - expect file $genome.pon.vcf.gz"
 			fi
-		}
+		fi
 
 		for i in "${!_tidx_mutect[@]}"; do
 			tomerge=()
@@ -740,7 +734,7 @@ variants::mutect() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
@@ -751,24 +745,18 @@ variants::mutect() {
 		commander::printcmd -a cmd8
 		commander::printcmd -a cmd9
 		commander::printcmd -a cmd10
-	} || {
-		{	commander::runcmd -c gatk -v -b -t $minstances -a cmd1 && \
-			commander::runcmd -c gatk -v -b -t $minstances -a cmd2 && \
-			commander::runcmd -c gatk -v -b -t $minstances -a cmd3 && \
-			commander::runcmd -c gatk -v -b -t $minstances -a cmd4 && \
-			commander::runcmd -v -b -t $threads -a cmd5 && \
-			commander::runcmd -v -b -t $threads -a cmd6 && \
-			commander::runcmd -v -b -t $threads -a cmd7 && \
-			commander::runcmd -c gatk -v -b -t $minstances2 -a cmd8 && \
-			commander::runcmd -v -b -t $instances -a cmd9 && \
-			commander::runcmd -v -b -t $instances -a cmd10
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd2
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd3
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd4
+		commander::runcmd -v -b -t $threads -a cmd5
+		commander::runcmd -v -b -t $threads -a cmd6
+		commander::runcmd -v -b -t $threads -a cmd7
+		commander::runcmd -c gatk -v -b -t $minstances2 -a cmd8
+		commander::runcmd -v -b -t $instances -a cmd9
+		commander::runcmd -v -b -t $instances -a cmd10
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }

@@ -4,6 +4,11 @@
 declare -a COMMANDER
 
 commander::print(){
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	[[ $* ]] && echo ":INFO: $*"
 	local fd
 	declare -a mapdata
@@ -15,10 +20,16 @@ commander::print(){
 		# done
 	done
 	COMMANDER=()
+
 	return 0
 }
 
 commander::printinfo(){
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	[[ $* ]] && echo ":INFO: $*"
 	local fd
 	declare -a mapdata
@@ -27,10 +38,16 @@ commander::printinfo(){
 		printf ':INFO: %s\n' "${mapdata[@]}"
 	done
 	COMMANDER=()
+
 	return 0
 }
 
 commander::warn(){
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	[[ $* ]] && echo ":WARNING: $*"
 	local fd
 	declare -a mapdata
@@ -40,10 +57,16 @@ commander::warn(){
 		printf ':WARNING: %s\n' "${mapdata[@]}"
 	done
 	COMMANDER=()
+
 	return 0
 }
 
 commander::printerr(){
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	[[ $* ]] && echo ":ERROR: $*" 1>&2
 	local fd
 	declare -a mapdata
@@ -52,11 +75,16 @@ commander::printerr(){
 		printf ':ERROR: %s\n' "${mapdata[@]}" 1>&2
 	done
 	COMMANDER=()
+
 	return 0
 }
 
 commander::makecmd(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -76,7 +104,7 @@ commander::makecmd(){
 			    awk '{print $0}'
 			CMD
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory sep='|' suffix='' fd tmp
@@ -87,7 +115,7 @@ commander::makecmd(){
 			a)	mandatory=1; _cmds_makecmd=$OPTARG;;
 			s)	sep=$(echo -e "${OPTARG:- }");; # echo -e to make e.g. '\t' possible
 			o)	suffix=' > '"$OPTARG";;
-			c)	[[ ! $mandatory ]] && { _usage; return 1; }
+			c)	[[ ! $mandatory ]] && _usage
 				shift $((OPTIND-1)) # remove '-a <cmd>' '-s <char> '-o <file>' '-c' from $@
 				for fd in "${COMMANDER[@]}"; do
 					mapfile -u $fd -t mapdata
@@ -99,21 +127,25 @@ commander::makecmd(){
 				tmp="${cmd_makecmd[*]/#/$sep }" # concatenate CMD* with seperator
 				_cmds_makecmd+=("$* ${tmp/#$sep /}$suffix")
 				return 0;;
-			*)	_usage; return 1;;
+			*)	_usage;;
 		esac
 	done
 
-	_usage; return 1
+	_usage
 }
 
 commander::printcmd(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-a <cmds> | array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg
@@ -123,15 +155,19 @@ commander::printcmd(){
 			a)	_cmds_printcmd=$OPTARG
 				[[ "${#_cmds_printcmd[@]}" -gt 0 ]] && printf ':CMD: %s\n' "${_cmds_printcmd[@]}"
 				return 0;;
-			*)	_usage; return 1;;
+			*)	_usage;;
 		esac
 	done
 
-	_usage; return 1
+	_usage
 }
 
 commander::runcmd(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "$tmpdir"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -144,7 +180,7 @@ commander::runcmd(){
 			example:
 			$funcname -v -b -t 1 -a cmd
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg threads=1 verbose=false benchmark=false conda
@@ -161,49 +197,43 @@ commander::runcmd(){
 					commander::printinfo "running commands of array ${!_cmds_runcmd}"
 					commander::printcmd -a _cmds_runcmd
 				}
-				local i sh tmpdir
+				local i sh tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 				# better write to file to avoid xargs argument too long error due to -I {}
 				# old: printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $threads -I {} bash -c {}
 				# use a subshell with its own trap, destructed if subshell terminates
-				$benchmark && {
-					(	trap 'rm -rf "$tmpdir"' EXIT
-						trap 'exit $?' ERR INT TERM
-						set -e -o pipefail
-						tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
-						for i in "${!_cmds_runcmd[@]}"; do
-							sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
-							echo "#!/usr/bin/env bash" > "$sh"
-							echo "set -e -o pipefail" >> "$sh"
-							[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
-							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
-							echo "$sh"
-						done | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
-					)
-				} || {
-					(	trap 'rm -rf "$tmpdir"' EXIT
-						trap 'exit $?' ERR INT TERM
-						set -e -o pipefail
-						tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
-						for i in "${!_cmds_runcmd[@]}"; do
-							sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
-							echo "#!/usr/bin/env bash" > "$sh"
-							echo "set -e -o pipefail" >> "$sh"
-							[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
-							printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
-							echo "$sh"
-						done | xargs -P $threads -I {} bash {}
-					)
-				}
-				return $?;;
-			*)	_usage; return 1;;
+				if $benchmark; then
+					for i in "${!_cmds_runcmd[@]}"; do
+						sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
+						echo "#!/usr/bin/env bash" > "$sh"
+						echo "set -e -o pipefail" >> "$sh"
+						[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
+						printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
+						echo "$sh"
+					done | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
+				else
+					for i in "${!_cmds_runcmd[@]}"; do
+						sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
+						echo "#!/usr/bin/env bash" > "$sh"
+						echo "set -e -o pipefail" >> "$sh"
+						[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
+						printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
+						echo "$sh"
+					done | xargs -P $threads -I {} bash {}
+				fi
+			;;
+			*)	_usage;;
 		esac
 	done
 
-	_usage; return 1
+	_usage
 }
 
 commander::qsubcmd(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap '[[ $jobname ]] && qdel "$jobname.*"; rm -rf "$tmpdir"; rm -f "$ex"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -220,7 +250,7 @@ commander::qsubcmd(){
 			$funcname -v -h "!bcl102&!bcl103" -p envname -t 4 -a cmd
 			$funcname -v -h "!bcl102&!bcl103" -a cmd
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg threads=1 verbose=false benchmark=false conda penv log hosts
@@ -242,52 +272,54 @@ commander::qsubcmd(){
 					commander::printcmd -a _cmds_qsubcmd
 				}
 				[[ $penv ]] && penv+=" $threads"
-				local i sh e tmpdir ex
-				local jobname
-				(	trap '[[ $jobname ]] && qdel "$jobname.*"; rm -rf "$tmpdir"; rm -f "$ex"' EXIT
-					trap 'exit $?' ERR INT TERM
-					set -e -o pipefail
-					tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
-					jobname="$(basename "$tmpdir")"
-					jobname="X${jobname#*.}" # ensure first character to be a letter
-					[[ $log ]] && ex="$(dirname "$log")"/$jobname.exitcodes || ex="$tmpdir/exitcodes"
-					for i in "${!_cmds_qsubcmd[@]}"; do
-						sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.$i.sh)"
-						[[ ! $log ]] && log="${sh%.*}.out"
 
-						echo "#!/usr/bin/env bash" > "$sh"
-						echo "set -e -o pipefail" >> "$sh"
-						[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
-						printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
-						echo "echo \$? >> '$ex'" >> "$sh"
+				local i sh e tmpdir ex jobname
+				tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
+				jobname="$(basename "$tmpdir")"
+				jobname="X${jobname#*.}" # ensure first character to be a letter
+				if [[ $log ]]; then
+					ex="$(dirname "$log")"/$jobname.exitcodes
+				else
+					ex="$tmpdir/exitcodes"
+				fi
 
-						qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh" > /dev/null
-					done
-					$benchmark && {
-						command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" \
-						qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
-						e=$?
-					} || {
-						qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
-						e=$?
-					}
-					unset jobname # do this for qdel trap handling, since check for $? -gt 0 may call qdel just because cmd failed
-					[[ $log && -e "$ex" ]] && {
-						mapfile -t mapdata < "$ex"
-						exit $((${mapdata[@]/%/+}0))
-					} || {
-						exit $e
-					}
-				)
-				return $?;;
-			*)	_usage;	return 1;;
+				for i in "${!_cmds_qsubcmd[@]}"; do
+					sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.$i.sh)"
+					[[ ! $log ]] && log="${sh%.*}.out"
+
+					echo "#!/usr/bin/env bash" > "$sh"
+					echo "set -e -o pipefail" >> "$sh"
+					[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
+					printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
+					echo "echo \$? >> '$ex'" >> "$sh"
+
+					qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh" > /dev/null
+				done
+				if $benchmark; then
+					command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" \
+					qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
+				else
+					qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
+				fi
+				unset jobname # do this for qdel trap handling
+				[[ $log && -e "$ex" ]] && {
+					mapfile -t mapdata < "$ex"
+					return $((${mapdata[@]/%/+}0))
+				}
+			;;
+			*)	_usage;;
 		esac
 	done
 
-	_usage; return 1
+	_usage
 }
 
 commander::_test(){
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local x=${1:-'hello world'} threads=${2:-1} i=2 s
 
 	while read -u $((++i)) -r s 2> /dev/null; do

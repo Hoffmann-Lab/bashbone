@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 expression::diego() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "$tmp"; rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -18,34 +22,34 @@ expression::diego() {
 			-p <tmpdir>   | path to
 			-o <outdir>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads countsdir mappeddir tmpdir outdir gtf tmp
 	declare -n _mapper_diego _cmpfiles_diego
 	while getopts 'S:s:5:t:r:g:c:i:j:p:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			5) $OPTARG && skipmd5=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			r) ((++mandatory)); _mapper_diego=$OPTARG;;
-			g) ((++mandatory)); gtf="$OPTARG";;
-			c) ((++mandatory)); _cmpfiles_diego=$OPTARG;;
-			i) ((++mandatory)); countsdir="$OPTARG";;
-			j) ((++mandatory)); mappeddir="$OPTARG";;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			5)	$OPTARG && skipmd5=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_diego=$OPTARG;;
+			g)	((++mandatory)); gtf="$OPTARG";;
+			c)	((++mandatory)); _cmpfiles_diego=$OPTARG;;
+			i)	((++mandatory)); countsdir="$OPTARG";;
+			j)	((++mandatory)); mappeddir="$OPTARG";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 8 ]] && _usage && return 1
+	[[ $mandatory -lt 8 ]] && _usage
 
 	commander::printinfo "differential splice junction analyses"
 
-	$skipmd5 && {
+	if $skipmd5; then
 		commander::warn "skip checking md5 sums and thus annotation preparation"
-	} || {
+	else
 		commander::printinfo "checking md5 sums"
 		local thismd5gtf tmp
 		declare -a cmdprep
@@ -70,14 +74,8 @@ expression::diego() {
 			CMD
 		fi
 
-		{	commander::runcmd -v -b -t $threads -a cmdprep
-		} || {
-			rm -f $tmp
-			commander::printerr "$funcname failed at annotation preparation"
-			return 1
-		}
-		rm -rf $tmp
-	}
+		commander::runcmd -v -b -t $threads -a cmdprep
+	fi
 
 	quantify::featurecounts \
 		-S false \
@@ -88,11 +86,7 @@ expression::diego() {
 		-l exon \
 		-f exon_id \
 		-o "$countsdir" \
-		-r _mapper_diego || {
-
-		commander::printerr "$funcname failed"
-		return 1
-	}
+		-r _mapper_diego
 
 	declare -a cmd1 cmd2 mapdata tdirs
 	local m f i c t odir sjfile countfile min sample condition library replicate factors
@@ -189,25 +183,23 @@ expression::diego() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c diego -v -b -t $threads -a cmd1 && \
-			commander::runcmd -c diego -v -b -t $threads -a cmd2
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c diego -v -b -t $threads -a cmd1
+		commander::runcmd -c diego -v -b -t $threads -a cmd2
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }
 
 expression::deseq() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -220,25 +212,25 @@ expression::deseq() {
 			-i <htscdir>  | path to
 			-o <outdir>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads countsdir outdir gtf
 	declare -n _mapper_deseq _cmpfiles_deseq
 	while getopts 'S:s:t:r:g:c:i:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			r) ((++mandatory)); _mapper_deseq=$OPTARG;;
-			g) gtf="$OPTARG";;
-			c) ((++mandatory)); _cmpfiles_deseq=$OPTARG;;
-			i) ((++mandatory)); countsdir="$OPTARG";;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_deseq=$OPTARG;;
+			g)	gtf="$OPTARG";;
+			c)	((++mandatory)); _cmpfiles_deseq=$OPTARG;;
+			i)	((++mandatory)); countsdir="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "principal component and differential gene expression analyses"
 
@@ -282,23 +274,23 @@ expression::deseq() {
 			-o "$odir"
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c r -v -b -t $instances -a cmd1 && \
-			commander::runcmd -v -b -t $threads -a cmd2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c r -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
+	fi
 
 	return 0
 }
 
 expression::_deseq() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -310,7 +302,7 @@ expression::_deseq() {
 			-c <cmps>    | string of pairs
 			-o <outdir>  | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory threads csvfile gtf outdir gtfinfo
@@ -318,17 +310,17 @@ expression::_deseq() {
 	declare -a cmppairs
 	while getopts '1:2:t:i:g:c:o:' arg; do
 		case $arg in
-			1) ((++mandatory)); _cmds1_deseq=$OPTARG;;
-			2) ((++mandatory)); _cmds2_deseq=$OPTARG;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			i) ((++mandatory)); csvfile="$OPTARG";;
-			g) gtf="$OPTARG";;
-			c) ((++mandatory)); mapfile -t -d ' ' cmppairs < <(printf '%s' "$OPTARG");;
-			o) ((++mandatory)); outdir="$OPTARG";;
-			*) _usage; return 1;;
+			1)	((++mandatory)); _cmds1_deseq=$OPTARG;;
+			2)	((++mandatory)); _cmds2_deseq=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			i)	((++mandatory)); csvfile="$OPTARG";;
+			g)	gtf="$OPTARG";;
+			c)	((++mandatory)); mapfile -t -d ' ' cmppairs < <(printf '%s' "$OPTARG");;
+			o)	((++mandatory)); outdir="$OPTARG";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::makecmd -a _cmds1_deseq -s '|' -c {COMMANDER[0]}<<- CMD
 		deseq2.R $threads "$csvfile" "$outdir" ${cmppairs[*]}
@@ -354,7 +346,11 @@ expression::_deseq() {
 }
 
 expression::joincounts() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -f "${tfiles[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -367,32 +363,33 @@ expression::joincounts() {
 			-i <htscdir>  | path to
 			-o <outdir>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads countsdir deseqdir outdir tmpdir
     declare -n _mapper_join _cmpfiles_join
 	while getopts 'S:s:t:r:p:c:i:j:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			r) ((++mandatory)); _mapper_join=$OPTARG;;
-			c) ((++mandatory)); _cmpfiles_join=$OPTARG;;
-			i) ((++mandatory)); countsdir="$OPTARG";;
-			j) ((++mandatory)); deseqdir="$OPTARG";;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			r)	((++mandatory)); _mapper_join=$OPTARG;;
+			c)	((++mandatory)); _cmpfiles_join=$OPTARG;;
+			i)	((++mandatory)); countsdir="$OPTARG";;
+			j)	((++mandatory)); deseqdir="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" ;;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage && return 1
+	[[ $mandatory -lt 7 ]] && _usage
 
 	commander::printinfo "joining count values plus zscore calculation"
 
-	declare -a cmd1 cmd2 mapdata
+	declare -a cmd1 cmd2 mapdata tfiles
 	local m f x i c t h mh sample condition library replicate factors cf e tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
+	tfiles+=("$tmp" "$tojoin" "$joined")
 	for m in "${_mapper_join[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
@@ -444,6 +441,7 @@ expression::joincounts() {
 			cat "$joined" >> "$odir/experiments.$e"
 			echo -e "$mh" > "$tmp.$e"
 			cat "$joined" >> "$tmp.$e"
+			tfiles+=("$tmp.$e")
 
 			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 				Rscript - <<< '
@@ -493,18 +491,13 @@ expression::joincounts() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
-	} || {
-		{	commander::runcmd -c r -v -b -t $threads -a cmd1 && \
-			commander::runcmd -c r -v -b -t $threads -a cmd2
-		} || {
-			rm -f "$tmp".*
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+		commander::printcmd -a cmd2
+	else
+		commander::runcmd -c r -v -b -t $threads -a cmd1
+		commander::runcmd -c r -v -b -t $threads -a cmd2
+	fi
 
-	rm -f "$tmp".*
 	return 0
 }

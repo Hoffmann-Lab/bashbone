@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 cluster::coexpression_deseq(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -f "${tfiles[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -26,32 +30,33 @@ cluster::coexpression_deseq(){
 	declare -n _mapper_coexpression _cmpfiles_coexpression _idfiles_coexpression
 	while getopts 'S:s:f:b:g:t:m:c:r:p:i:j:o:l:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			f) clusterfilter=$OPTARG;;
-			b) biotype="$OPTARG";;
-			g) gtf="$OPTARG";;
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
-			c) ((++mandatory)); _cmpfiles_coexpression=$OPTARG;;
-			r) ((++mandatory)); _mapper_coexpression=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			i) ((++mandatory)); countsdir="$OPTARG";;
-			j) ((++mandatory)); deseqdir="$OPTARG";;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			l) ((++mandatory)); _idfiles_coexpression=$OPTARG;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			f)	clusterfilter=$OPTARG;;
+			b)	biotype="$OPTARG";;
+			g)	gtf="$OPTARG";;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			c)	((++mandatory)); _cmpfiles_coexpression=$OPTARG;;
+			r)	((++mandatory)); _mapper_coexpression=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			i)	((++mandatory)); countsdir="$OPTARG";;
+			j)	((++mandatory)); deseqdir="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			l)	((++mandatory)); _idfiles_coexpression=$OPTARG;;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 9 ]] && _usage && return 1
-	[[ $biotype && ! $gtf ]] && _usage && return 1
+	[[ $mandatory -lt 9 ]] && _usage
+	[[ $biotype && ! $gtf ]] && _usage
 
 	commander::printinfo "inferring coexpression"
 
-	declare -a mapdata cmd1
+	declare -a mapdata cmd1 tfiles
 	declare -A visited
 	local m f i c t e odir cdir ddir params tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
+	tfiles+=("$tmp" "$tojoin" "$joined")
 	for m in "${_mapper_coexpression[@]}"; do
 		odir="$outdir/$m"
 		cdir="$countsdir/$m"
@@ -59,7 +64,7 @@ cluster::coexpression_deseq(){
 		mkdir -p "$odir"
 		visited=()
 
-		rm -f $joined
+		rm -f "$joined"
 		for f in "${_cmpfiles_coexpression[@]}"; do
 			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
@@ -77,7 +82,7 @@ cluster::coexpression_deseq(){
 				done
 			done
 		done
-		mv $joined $odir/experiments.deseq.tsv
+		mv "$joined" "$odir/experiments.deseq.tsv"
 
 		# filter joined deseq tables requiers padj >0 due to NA replacement
 		perl -F'\t' -slane '
@@ -117,6 +122,7 @@ cluster::coexpression_deseq(){
 			}' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
 			grep -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
+			tfiles+=("$tmp.genes" "$tmp.filtered.genes")
 		}
 
 		for e in tpm vsc; do
@@ -133,17 +139,11 @@ cluster::coexpression_deseq(){
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
-	} || {
-		{	commander::runcmd -c r -v -b -t $threads -a cmd1
-		} || {
-			rm -f "$tmp"*
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
-	rm -f "$tmp"*
+	else
+		commander::runcmd -c r -v -b -t $threads -a cmd1
+	fi
 
 	declare -a cmd2
 	local m e i type wdir cdir wdir odir
@@ -267,21 +267,21 @@ cluster::coexpression_deseq(){
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c r -v -b -t $threads -a cmd2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c r -v -b -t $threads -a cmd2
+	fi
 
 	return 0
 }
 
 cluster::coexpression(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -f "${tfiles[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -303,19 +303,19 @@ cluster::coexpression(){
 	declare -n _mapper_coexpression _idfiles_coexpression
 	while getopts 'S:s:f:b:g:t:m:c:r:p:i:j:o:l:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			f) clusterfilter=$OPTARG;;
-			b) biotype="$OPTARG";;
-			g) gtf="$OPTARG";;
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
-			r) ((++mandatory)); _mapper_coexpression=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			i) ((++mandatory)); countsdir="$OPTARG";;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			l) ((++mandatory)); _idfiles_coexpression=$OPTARG;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			f)	clusterfilter=$OPTARG;;
+			b)	biotype="$OPTARG";;
+			g)	gtf="$OPTARG";;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			r)	((++mandatory)); _mapper_coexpression=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			i)	((++mandatory)); countsdir="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			l)	((++mandatory)); _idfiles_coexpression=$OPTARG;;
+			*)	_usage; return 1;;
 		esac
 	done
 	[[ $mandatory -lt 7 ]] && _usage && return 1
@@ -323,10 +323,10 @@ cluster::coexpression(){
 
 	commander::printinfo "inferring coexpression"
 
-	declare -a cmd1
+	declare -a cmd1 tfiles
 	local m f cdir odir suff header sample countfile tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
-
+	tfiles+=("$tmp" "$tojoin" "$joined")
 	for m in "${_mapper_coexpression[@]}"; do
 		cdir="$countsdir/$m"
 		odir="$outdir/$m"
@@ -335,8 +335,8 @@ cluster::coexpression(){
 		declare -n _bams_coexpression=$m
 		suff=$(cat <(echo -e "${_bams_coexpression[0]}\n${_bams_coexpression[1]}") | rev | paste - - | sed -E 's/(.+\.).+\t\1.+/\1/' | rev)
 		header='id'
-		rm -f $joined
 
+		rm -f "$joined"
 		for f in "${_bams_coexpression[@]}"; do
 			sample=$(basename $f $suff)
 			countfile=$(readlink -e "$countsdir/$m/$sample"*.tpm | head -1)
@@ -371,17 +371,11 @@ cluster::coexpression(){
 		CMD
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
-	} || {
-		{	commander::runcmd -c r -v -b -t $threads -a cmd1
-		} || {
-			rm -f "$tmp"*
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
-	rm -f "$tmp"*
+	else
+		commander::runcmd -c r -v -b -t $threads -a cmd1
+	fi
 
 	declare -a cmd2
 	local m odir params
@@ -389,11 +383,11 @@ cluster::coexpression(){
 		odir="$outdir/$m"
 		mkdir -p "$odir"
 
-		[[ $clusterfilter =~ 2 ]] && {
+		if [[ $clusterfilter =~ 2 ]]; then
 			awk '{i=2; ok=0; while(i<NF){if($i>=5){ok=1} i=i+1} if(ok){print $1}}' "$odir/experiments.tpm" > "$odir/experiments.filtered.genes"
-		} || {
+		else
 			awk '{print $1}' "$odir/experiments.tpm" > "$odir/experiments.filtered.genes"
-		}
+		fi
 
 		[[ $biotype && "$biotype" != "." ]] && {
 			perl -F'\t' -slane '{
@@ -409,6 +403,7 @@ cluster::coexpression(){
 			}' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
 			grep -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
+			tfiles+=("$tmp.genes" "$tmp.filtered.genes")
 		}
 
 		head -1 "$odir/experiments.tpm" > "$odir/experiments.filtered.tpm"
@@ -421,15 +416,11 @@ cluster::coexpression(){
 		CMD
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c r -v -b -t $threads -a cmd2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c r -v -b -t $threads -a cmd2
+	fi
 
 	declare -a cmd3
 	local m e i j wdir odir type
@@ -515,15 +506,11 @@ cluster::coexpression(){
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd3
-	} || {
-		{	commander::runcmd -c r -v -b -t $threads -a cmd3
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c r -v -b -t $threads -a cmd3
+	fi
 
 	return 0
 }

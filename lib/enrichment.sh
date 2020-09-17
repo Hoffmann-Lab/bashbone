@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 enrichment::_ora(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -13,24 +17,23 @@ enrichment::_ora(){
 			-i <idsfile>  | path to
 			-o <outdir>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory threads domain gofile idsfile outdir
 	declare -n _cmds1_ora _cmds2_ora
 	while getopts '1:2:d:g:i:o:' arg; do
 		case $arg in
-			1) ((++mandatory)); _cmds1_ora=$OPTARG;;
-			2) ((++mandatory)); _cmds2_ora=$OPTARG;;
-			d) ((++mandatory)); domain=$OPTARG;;
-			g) ((++mandatory)); gofile="$OPTARG";;
-			i) ((++mandatory)); idsfile="$OPTARG";;
-			o) ((++mandatory)); outdir="$OPTARG";;
-			*) _usage; return 1;;
+			1)	((++mandatory)); _cmds1_ora=$OPTARG;;
+			2)	((++mandatory)); _cmds2_ora=$OPTARG;;
+			d)	((++mandatory)); domain=$OPTARG;;
+			g)	((++mandatory)); gofile="$OPTARG";;
+			i)	((++mandatory)); idsfile="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG";;
+			*)	_usage;;
 		esac
 	done
-
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::makecmd -a _cmds1_ora -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 		grep -F $domain $gofile
@@ -82,24 +85,23 @@ enrichment::_gsea(){
 			-i <deseqtsv> | path to
 			-o <outdir>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory threads domain gofile deseqtsv outdir
 	declare -n _cmds1_gsea _cmds2_gsea
 	while getopts '1:2:d:g:i:o:' arg; do
 		case $arg in
-			1) ((++mandatory)); _cmds1_gsea=$OPTARG;;
-			2) ((++mandatory)); _cmds2_gsea=$OPTARG;;
-			d) ((++mandatory)); domain=$OPTARG;;
-			g) ((++mandatory)); gofile="$OPTARG";;
-			i) ((++mandatory)); deseqtsv="$OPTARG";;
-			o) ((++mandatory)); outdir="$OPTARG";;
-			*) _usage; return 1;;
+			1)	((++mandatory)); _cmds1_gsea=$OPTARG;;
+			2)	((++mandatory)); _cmds2_gsea=$OPTARG;;
+			d)	((++mandatory)); domain=$OPTARG;;
+			g)	((++mandatory)); gofile="$OPTARG";;
+			i)	((++mandatory)); deseqtsv="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG";;
+			*)	_usage;;
 		esac
 	done
-
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::makecmd -a _cmds1_gsea -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 		grep -F $domain $gofile
@@ -149,7 +151,11 @@ enrichment::_gsea(){
 }
 
 enrichment::_revigo(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -159,23 +165,22 @@ enrichment::_revigo(){
 			-i <orafile>  | path to
 			-o <outdir>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory threads domain gofile orafile outdir
 	declare -n _cmds1_revigo _cmds2_revigo
 	while getopts '1:2:d:i:o:' arg; do
 		case $arg in
-			1) ((++mandatory)); _cmds1_revigo=$OPTARG;;
-			2) ((++mandatory)); _cmds2_revigo=$OPTARG;;
-			d) ((++mandatory)); domain=$(sed -r 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/' <<< $OPTARG);;
-			i) ((++mandatory)); orafile="$OPTARG";;
-			o) ((++mandatory)); outdir="$OPTARG";;
-			*) _usage; return 1;;
+			1)	((++mandatory)); _cmds1_revigo=$OPTARG;;
+			2)	((++mandatory)); _cmds2_revigo=$OPTARG;;
+			d)	((++mandatory)); domain=$(sed -r 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/' <<< $OPTARG);;
+			i)	((++mandatory)); orafile="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG";;
+			*)	_usage;;
 		esac
 	done
-
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage
 
 	# for pvalue instead of padj do revigo <(awk 'NR>1 && \$(NF-1)<=0.05' $odir/gsea.tsv) --stdout
 	# need to remove [_'"\t*$#%^!]
@@ -246,7 +251,11 @@ enrichment::_revigo(){
 }
 
 enrichment::go(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -265,7 +274,7 @@ enrichment::go(){
 			-l <idfiles>  | for ora array of (does not require -i -c)
 
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads gofile deseqdir genelist best=false
@@ -280,10 +289,10 @@ enrichment::go(){
 			g) ((++mandatory)); gofile="$OPTARG";;
 			l) _idfiles_go="$OPTARG";;
 			i) deseqdir="$OPTARG";;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && _usage && return 1
+	[[ $mandatory -lt 2 ]] && _usage
 
 	commander::printinfo "calculating go enrichment"
 
@@ -300,7 +309,7 @@ enrichment::go(){
 
 	for f in "${_idfiles_go[@]}"; do
 		for domain in biological_process cellular_component molecular_function; do
-			odir="$(dirname $f)/$domain"
+			odir="$(dirname "$f")/$domain"
 			mkdir -p "$odir"
 			enrichment::_ora -1 cmd1 -2 cmd2 -d $domain -g $gofile -i $f -o $odir
 			enrichmentfiles+=("$odir/goenrichment.tsv")
@@ -325,37 +334,31 @@ enrichment::go(){
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -v -b -t $threads -a cmd1 && \
-			commander::runcmd -c r -v -b -t $threads -a cmd2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -c r -v -b -t $threads -a cmd2
+	fi
 
 	declare -a cmd3 cmd4
+	local x
 	for f in "${enrichmentfiles[@]}"; do
-		[[ $(head $f | wc -l ) -lt 2 ]] && commander::warn "no enriched go terms in $f" && continue
+		x=$(head $f | wc -l)
+		[[ $x -lt 2 ]] && commander::warn "no enriched go terms in $f" && continue
 		odir=$(dirname $f)
 		domain=$(basename $odir)
 		enrichment::_revigo -1 cmd3 -2 cmd4 -d $domain -i $f -o $odir
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
-	} || {
-		{	commander::runcmd -v -b -t $threads -a cmd3 && \
-			commander::runcmd -c r -v -b -t $threads -a cmd4
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -c r -v -b -t $threads -a cmd4
+	fi
 
 	return 0
 }

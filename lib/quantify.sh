@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 quantify::featurecounts() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -18,7 +22,7 @@ quantify::featurecounts() {
 			-p <tmpdir>   | path to
 			-o <outdir>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf level="exon" featuretag="gene_id"
@@ -33,12 +37,12 @@ quantify::featurecounts() {
 			g) ((++mandatory)); gtf="$OPTARG";;
 			l) level=$OPTARG;;
 			f) featuretag=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "quantifying reads"
 
@@ -52,7 +56,7 @@ quantify::featurecounts() {
 	read -r instances ithreads < <(configure::instances_by_threads -i $((instances==0?1:instances)) -t 64 -T $threads)
 
 	declare -a cmd1 tdirs
-	local mf f o params
+	local mf f o params x
 	for m in "${_mapper_featurecounts[@]}"; do
 		declare -n _bams_featurecounts=$m
 		mkdir -p "$outdir/$m"
@@ -62,7 +66,8 @@ quantify::featurecounts() {
 
 			# infer SE or PE
 			params=''
-			[[ $(samtools view -F 4 "$f" | head -10000 | cat <(samtools view -H "$f") - | samtools view -c -f 1) -gt 0 ]] && params+='-p '
+			x=$(samtools view -F 4 "$f" | head -10000 | cat <(samtools view -H "$f") - | samtools view -c -f 1)
+			[[ $x -gt 0 ]] && params+='-p '
 			[[ "$featuretag" != "gene_id" ]] && params+='-f -O '
 
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -86,23 +91,21 @@ quantify::featurecounts() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
-	} || {
-		{	commander::runcmd -c subread -v -b -t $instances -a cmd1
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c subread -v -b -t $instances -a cmd1
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }
 
 quantify::tpm() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -113,7 +116,7 @@ quantify::tpm() {
 			-g <gtf>      | path to
 			-i <countsdir>| path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads countsdir gtf
@@ -126,10 +129,10 @@ quantify::tpm() {
 			r) ((++mandatory)); _mapper_tpm=$OPTARG;;
 			g) ((++mandatory)); gtf="$OPTARG";;
 			i) ((++mandatory)); countsdir="$OPTARG";;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calculating transcripts per million"
 
@@ -146,15 +149,11 @@ quantify::tpm() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
-	} || {
-		{	commander::runcmd -v -b -t $threads -a cmd1
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t $threads -a cmd1
+	fi
 
 	return 0
 }

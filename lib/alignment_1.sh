@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 alignment::segemehl() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -20,7 +24,7 @@ alignment::segemehl() {
 			-1 <fastq1>     | array of
 			-2 <fastq2>     | array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads genome genomeidx outdir accuracy insertsize nosplitaln=false
@@ -34,7 +38,7 @@ alignment::segemehl() {
 			t)	((++mandatory)); threads=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			x)	((++mandatory)); genomeidx="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG/segemehl"; mkdir -p "$outdir" || return 1;;
+			o)	((++mandatory)); outdir="$OPTARG/segemehl"; mkdir -p "$outdir";;
 			a)	accuracy=$OPTARG;;
 			n)	nosplitaln=$OPTARG;;
 			i)	insertsize=$OPTARG;;
@@ -44,16 +48,16 @@ alignment::segemehl() {
 			;;
 			1)	((++mandatory)); _fq1_segemehl=$OPTARG;;
 			2)	_fq2_segemehl=$OPTARG;;
-			*)	_usage; return 1;;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "mapping segemehl"
 
-	$skipmd5 && {
+	if $skipmd5; then
 		commander::warn "skip checking md5 sums and genome indexing respectively"
-	} || {
+	else
 		commander::printinfo "checking md5 sums"
 		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
 		source "$genome.md5.sh"
@@ -67,14 +71,11 @@ alignment::segemehl() {
 			commander::makecmd -a cmdidx -s '|' -c {COMMANDER[0]}<<- CMD
 				segemehl -x "$genomeidx" -d "$genome"
 			CMD
-			commander::runcmd -v -b -t $threads -a cmdidx || {
-				commander::printerr "$funcname failed at indexing"
-				return 1
-			}
+			commander::runcmd -v -b -t $threads -a cmdidx
 			thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
 			sed -i "s/md5segemehl=.*/md5segemehl=$thismd5segemehl/" $genome.md5.sh
 		fi
-	}
+	fi
 
 	# read not properly paired - additional tag:
 	# YI:i:0 (orientation)
@@ -121,21 +122,21 @@ alignment::segemehl() {
 		segemehl+=("$o.bam")
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
-	} || {
-		{	commander::runcmd -v -b -t 1 -a cmd1
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t 1 -a cmd1
+	fi
 
 	return 0
 }
 
 alignment::star() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -156,7 +157,7 @@ alignment::star() {
 			-2 <fastq2>       | array of
 			-c <opts>         | passed to star
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false params=''
@@ -171,8 +172,8 @@ alignment::star() {
 			g)	((++mandatory)); genome="$OPTARG";;
 			f)	gtf="$OPTARG";;
 			x)	((++mandatory)); genomeidxdir="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG/star"; mkdir -p "$outdir" || return 1;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o)	((++mandatory)); outdir="$OPTARG/star"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			a)	accuracy=$OPTARG;;
 			n)	nosplitaln=$OPTARG;;
 			i)	insertsize=$OPTARG;;
@@ -183,15 +184,15 @@ alignment::star() {
 			1)	((++mandatory)); _fq1_star=$OPTARG;;
 			2)	_fq2_star=$OPTARG;;
 			c)	params="$OPTARG";;
-			*)	_usage; return 1;;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage && return 1
+	[[ $mandatory -lt 7 ]] && _usage
 	commander::printinfo "mapping star"
 
-	$skipmd5 && {
+	if $skipmd5; then
 		commander::warn "skip checking md5 sums and genome indexing respectively"
-	} || {
+	else
 		commander::printinfo "checking md5 sums"
 		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
 		source "$genome.md5.sh"
@@ -200,7 +201,7 @@ alignment::star() {
 		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 		[[ -s "$genomeidxdir/SA" ]] && thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
 		[[ -s $gtf ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
-		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5star" || "$thismd5star" != "$md5star" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
+		if [[ ("$thismd5genome" != "$md5genome" || ! "$thismd5star" || "$thismd5star" != "$md5star") || ("$thismd5gtf" && "$thismd5gtf" != "$md5gtf") ]]; then
 			commander::printinfo "indexing genome for star"
 			#100 = assumend usual read length
 			[[ "$thismd5gtf" ]] && params+=" --sjdbGTFfile '$gtf' --sjdbOverhang 200"
@@ -221,15 +222,11 @@ alignment::star() {
 				--genomeFastaFiles "$genome"
 				--outFileNamePrefix "$genomeidxdir/$(basename "$genome")."
 			CMD
-			commander::runcmd -c star -v -b -t $threads -a cmdidx || {
-				commander::printerr "$funcname failed at indexing"
-				return 1
-			}
-
+			commander::runcmd -c star -v -b -t $threads -a cmdidx
 			thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
 			sed -i "s/md5star=.*/md5star=$thismd5star/" $genome.md5.sh
 		fi
-	}
+	fi
 
 	declare -a cmd1 tdirs
 	local a o e extractcmd
@@ -305,23 +302,21 @@ alignment::star() {
 		star+=("$o.bam")
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
-	} || {
-		{	commander::runcmd -c star -v -b -t 1 -a cmd1
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c star -v -b -t 1 -a cmd1
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }
 
 alignment::bwa() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -338,7 +333,7 @@ alignment::bwa() {
 			-1 <fastq1>     | array of
 			-2 <fastq2>     | array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads genome idxprefix outdir accuracy forcemem=true
@@ -352,7 +347,7 @@ alignment::bwa() {
 			t)	((++mandatory)); threads=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			x)	((++mandatory)); idxprefix="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG/bwa"; mkdir -p "$outdir" || return 1;;
+			o)	((++mandatory)); outdir="$OPTARG/bwa"; mkdir -p "$outdir";;
 			a)	accuracy=$((100-$OPTARG));;
 			f)	forcemem=$OPTARG;;
 			r)	((++mandatory))
@@ -361,16 +356,16 @@ alignment::bwa() {
 			;;
 			1)	((++mandatory)); _fq1_bwa=$OPTARG;;
 			2)	_fq2_bwa=$OPTARG;;
-			*)	_usage; return 1;;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "mapping bwa"
 
-	$skipmd5 && {
+	if $skipmd5; then
 		commander::warn "skip checking md5 sums and genome indexing respectively"
-	} || {
+	else
 		commander::printinfo "checking md5 sums"
 		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
 		source "$genome.md5.sh"
@@ -386,14 +381,11 @@ alignment::bwa() {
 			CMD
 				bwa index -p "$idxprefix" "$genome"
 			CMD
-			commander::runcmd -c bwa -v -b -t $threads -a cmdidx || {
-				commander::printerr "$funcname failed at indexing"
-				return 1
-			}
+			commander::runcmd -c bwa -v -b -t $threads -a cmdidx
 			thismd5bwa=$(md5sum "$idxprefix.bwt" | cut -d ' ' -f 1)
 			sed -i "s/md5bwa=.*/md5bwa=$thismd5bwa/" $genome.md5.sh
 		fi
-	}
+	fi
 
 	local instances=${#_fq1_bwa[@]} ithreads
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
@@ -401,7 +393,6 @@ alignment::bwa() {
 	declare -a cmd1 cmd2
 	local i o1 e1 o2 e2 readlength catcmd params
 	for i in "${!_fq1_bwa[@]}"; do
-
 		helper::basename -f "${_fq1_bwa[$i]}" -o o1 -e e1
 		helper::basename -f "${_fq2_bwa[$i]}" -o o2 -e e2
 		o1="$outdir/$o1"
@@ -487,23 +478,22 @@ alignment::bwa() {
 	done
 
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c bwa -v -b -t 1 -a cmd1 && \
-			commander::runcmd -c bwa -v -b -t $instances -a cmd2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c bwa -v -b -t 1 -a cmd1
+	fi
 
 	return 0
 }
 
 alignment::postprocess() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -515,24 +505,24 @@ alignment::postprocess() {
 			-p <tmpdir>   | path to
 			-o <outdir>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads outdir tmpdir job
 	declare -n _mapper_process
 	while getopts 'S:s:t:j:r:p:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			j) ((++mandatory)); job=${OPTARG,,*};;
-			r) ((++mandatory)); _mapper_process=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			j)	((++mandatory)); job=${OPTARG,,*};;
+			r)	((++mandatory)); _mapper_process=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage
 
 	local instances ithreads m i outbase newbam
 	for m in "${_mapper_process[@]}"; do
@@ -585,25 +575,22 @@ alignment::postprocess() {
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -v -b -t $instances -a cmd1 && \
-			commander::runcmd -v -b -t $instances -a cmd2
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
-
-	rm -rf "${tdirs[@]}"
+	else
+		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -t $instances -a cmd2
+	fi
 	return 0
 }
 
 alignment::_uniqify() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -615,24 +602,24 @@ alignment::_uniqify() {
 			-o <outbase>  | path to
 			-r <var>      | returned alignment file
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory threads sambam outbase m
 	declare -n _cmds1_uniqify _cmds2_uniqify _returnfile_uniqify
 	while getopts '1:2:t:i:o:r:m:' arg; do
 		case $arg in
-			1) ((++mandatory)); _cmds1_uniqify=$OPTARG;;
-			2) ((++mandatory)); _cmds2_uniqify=$OPTARG;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			i) ((++mandatory)); sambam="$OPTARG";;
-			m) m=${OPTARG,,*};;
-			o) ((++mandatory)); outbase="$OPTARG";;
-			r) _returnfile_uniqify=$OPTARG; ;;
-			*) _usage; return 1;;
+			1)	((++mandatory)); _cmds1_uniqify=$OPTARG;;
+			2)	((++mandatory)); _cmds2_uniqify=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			i)	((++mandatory)); sambam="$OPTARG";;
+			m)	m=${OPTARG,,*};;
+			o)	((++mandatory)); outbase="$OPTARG";;
+			r)	_returnfile_uniqify=$OPTARG;;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage
 
 	_returnfile_uniqify="$outbase.unique.bam"
 
@@ -658,7 +645,8 @@ alignment::_uniqify() {
 
 	# infer SE or PE filter
 	local params=''
-	[[ $(samtools view -F 4 "$sambam" | head -10000 | cat <(samtools view -H "$sambam") - | samtools view -c -f 1) -gt 0 ]] && params+='-f 2 '
+	local x=$(samtools view -F 4 "$sambam" | head -10000 | cat <(samtools view -H "$sambam") - | samtools view -c -f 1)
+	[[ $x -gt 0 ]] && params+='-f 2 '
 
 	if [[ "$m" =~ bwa || "$m" =~ bowtie || "$m" =~ tophat || "$m" =~ hisat || "$m" =~ star || \
 		$(samtools view -F 4 "$sambam" | head -10000 | grep -cE '\s+NH:i:[0-9]+\s+' ) -eq 0 ]]; then
@@ -699,7 +687,11 @@ alignment::_uniqify() {
 }
 
 alignment::_sort() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -710,23 +702,23 @@ alignment::_sort() {
 			-p <tmpdir>   | path to
 			-r <var>      | returned alignment file
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory threads bam outbase tmpdir
 	declare -n _cmds1_sort _returnfile_sort
 	while getopts '1:t:i:o:p:r:' arg; do
 		case $arg in
-			1) ((++mandatory)); _cmds1_sort=$OPTARG;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			i) ((++mandatory)); bam="$OPTARG";;
-			o) ((++mandatory)); outbase="$OPTARG";;
-			p) ((++mandatory)); tmpdir="$OPTARG";;
-			r) _returnfile_sort=$OPTARG; ;;
-			*) _usage; return 1;;
+			1)	((++mandatory)); _cmds1_sort=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			i)	((++mandatory)); bam="$OPTARG";;
+			o)	((++mandatory)); outbase="$OPTARG";;
+			p)	((++mandatory)); tmpdir="$OPTARG";;
+			r)	_returnfile_sort=$OPTARG; ;;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage
 
 	_returnfile_sort="$outbase.sorted.bam"
 
@@ -745,7 +737,11 @@ alignment::_sort() {
 }
 
 alignment::_index() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -753,20 +749,20 @@ alignment::_index() {
 			-t <threads>  | number of
 			-i <bam>      | sorted alignment file
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory threads bam
 	declare -n _cmds1_index
 	while getopts '1:t:i:' arg; do
 		case $arg in
-			1) ((++mandatory)); _cmds1_index=$OPTARG;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			i) ((++mandatory)); bam="$OPTARG";;
-			*) _usage; return 1;;
+			1)	((++mandatory)); _cmds1_index=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			i)	((++mandatory)); bam="$OPTARG";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 3 ]] && _usage && return 1
+	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::makecmd -a _cmds1_index -s '|' -c {COMMANDER[0]}<<- CMD
 		samtools index
@@ -779,7 +775,11 @@ alignment::_index() {
 }
 
 alignment::inferstrandness(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -f "${tfiles[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -791,25 +791,25 @@ alignment::inferstrandness(){
 			-g <gtf>        | path to
 			-p <tmpdir>     | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf level="exon" featuretag="gene_id"
 	declare -n _mapper_inferstrandness _strandness_inferstrandness
 	while getopts 'S:s:t:r:x:g:l:f:p:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			r) ((++mandatory)); _mapper_inferstrandness=$OPTARG;;
-			x) ((++mandatory)); _strandness_inferstrandness=$OPTARG;;
-			g) ((++mandatory)); gtf="$OPTARG";;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_inferstrandness=$OPTARG;;
+			x)	((++mandatory)); _strandness_inferstrandness=$OPTARG;;
+			g)	((++mandatory)); gtf="$OPTARG";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			*)	_usage;;
 		esac
 	done
 
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "inferring library preparation method"
 
@@ -868,50 +868,48 @@ alignment::inferstrandness(){
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	local l
-			declare -a a mapdata
-			commander::runcmd -v -b -t $threads -a cmd1 && \
-			echo ":INFO: running commands of array cmd2" && \
-			commander::printcmd -a cmd2 && \
-			mapfile -t mapdata < <(commander::runcmd -c rseqc -t $threads -a cmd2)
-			for l in "${mapdata[@]}"; do
-				a=($l)
-				_strandness_inferstrandness["${a[@]:1}"]="${a[0]}"
-			done
-		} || {
-			rm -f "${tfiles[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		local l
+		declare -a a mapdata
+		commander::runcmd -v -b -t $threads -a cmd1
+		echo ":INFO: running commands of array cmd2"
+		commander::printcmd -a cmd2
+		mapfile -t mapdata < <(commander::runcmd -c rseqc -t $threads -a cmd2)
+		for l in "${mapdata[@]}"; do
+			a=($l)
+			_strandness_inferstrandness["${a[@]:1}"]="${a[0]}"
+		done
+	fi
 
-	rm -f "${tfiles[@]}"
 	return 0
 }
 
 alignment::add4stats(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-r <mapper>    | array of bams within array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory
 	declare -n _mapper_add4stats
 	while getopts 'r:' arg; do
 		case $arg in
-			r) ((++mandatory)); _mapper_add4stats=$OPTARG;;
-			*) _usage; return 1;;
+			r)	((++mandatory)); _mapper_add4stats=$OPTARG;;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 1 ]] && _usage && return 1
+	[[ $mandatory -lt 1 ]] && _usage
 
 	local m
 	for m in "${_mapper_add4stats[@]}"; do
@@ -931,7 +929,11 @@ alignment::add4stats(){
 }
 
 alignment::bamstats(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -941,22 +943,22 @@ alignment::bamstats(){
 			-r <mapper>   | array of sorted, indexed bams within array of
 			-o <outdir>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads outdir
 	declare -n _mapper_bamstats
 	while getopts 'S:s:r:t:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			r) ((++mandatory)); _mapper_bamstats=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			*) _usage; return 1;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_bamstats=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 3 ]] && _usage && return 1
+	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "summarizing mapping stats"
 
@@ -988,15 +990,11 @@ alignment::bamstats(){
 		done
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
-	} || {
-		{	commander::runcmd -v -b -t $instances -a cmd1
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t $instances -a cmd1
+	fi
 
 	local filter b o all a s c
 	declare -a cmd2
@@ -1055,15 +1053,11 @@ alignment::bamstats(){
 		CMD
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c r -v -b -t $threads -a cmd2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c r -v -b -t $threads -a cmd2
+	fi
 
 	return 0
 }

@@ -52,7 +52,6 @@ configure::err(){
 			-l <lineno>   | LINENO
 			-e <error>    | message
 			-c <cmd>      | command
-
 		EOF
 		return 1
 	}
@@ -83,6 +82,7 @@ configure::err(){
 	}
 
 	unset BASH_COMMAND
+	sleep 1 # to be very last entry of a logifle
 	commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src (line $lineno) $cmd"
 	return $ex
 }

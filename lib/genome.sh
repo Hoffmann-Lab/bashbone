@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 genome::mkdict() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -f "$dict"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -13,7 +17,7 @@ genome::mkdict() {
 			-i <genome>   | path to
 			-p <tmpdir>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory threads genome tmpdir skip=false skipmd5=false
@@ -25,16 +29,16 @@ genome::mkdict() {
 			t) ((++mandatory)); threads=$OPTARG;;
 			i) ((++mandatory)); genome="$OPTARG";;
 			p) ((++mandatory)); tmpdir="$OPTARG";;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 3 ]] && _usage && return 1
+	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "creating genome dictionary"
 
-	$skipmd5 && {
+	if $skipmd5; then
 		commander::warn "skip checking md5 sums and genome dictionary creation respectively"
-	} || {
+	else
 		commander::printinfo "checking md5 sums"
 
 		local instances ithreads jmem jgct jcgct
@@ -64,26 +68,20 @@ genome::mkdict() {
 			samtools faidx "$genome"
 		CMD
 
-		$skip && {
+		if $skip; then
 			commander::printcmd -a cmd1
 			commander::printcmd -a cmd2
-		} || {
-			{	commander::runcmd -c picard -v -b -t $threads -a cmd1 || return 1
-				local md5dict thismd5genome thismd5dict
-				md5dict=$(md5sum "$dict" | cut -d ' ' -f 1)
-				thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
-				[[ -s "${genome%.*}.dict" ]] && thismd5dict=$(md5sum "${genome%.*}.dict" | cut -d ' ' -f 1)
-				if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5dict" || "$thismd5dict" != "$md5dict" ]]; then
-					commander::runcmd -v -b -t $threads -a cmd2 || return 1
-				fi
-			} || {
-				rm -f "$dict"
-				commander::printerr "$funcname failed"
-				return 1
-			}
-		}
-	}
+		else
+			commander::runcmd -c picard -v -b -t $threads -a cmd1
+			local md5dict thismd5genome thismd5dict
+			md5dict=$(md5sum "$dict" | cut -d ' ' -f 1)
+			thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
+			[[ -s "${genome%.*}.dict" ]] && thismd5dict=$(md5sum "${genome%.*}.dict" | cut -d ' ' -f 1)
+			if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5dict" || "$thismd5dict" != "$md5dict" ]]; then
+				commander::runcmd -v -b -t $threads -a cmd2
+			fi
+		fi
+	fi
 
-	rm -f "$dict"
 	return 0
 }

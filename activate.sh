@@ -31,11 +31,16 @@ done
 _IFS=$IFS
 IFS=$'\n'
 for f in "$INSDIR/lib/"*.sh; do
+	ERROR="file not found $f"
+	[[ -s "$f" ]]
 	source "$f"
 done
 IFS=$_IFS
 
-ERROR="environment setup failed (use -c false to disable tools and conda activation)"
+trap 'trap - ERR; trap - RETURN' RETURN
+trap 'configure::err -x $? -s "${BASH_SOURCE[0]}" -l $LINENO -e "$ERROR" -c "$BASH_COMMAND"; return $?' ERR
+
+ERROR="environment setup failed. use -c false to disable tools and conda activation"
 configure::environment -i "$INSDIR_TOOLS" -b "$INSDIR" -c ${activate:-false}
 [[ $activate ]] || {
 	commander::printinfo {COMMANDER[0]}<<- EOF

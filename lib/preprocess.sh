@@ -2,7 +2,11 @@
 # (c) Konstantin Riege
 
 preprocess::fastqc() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -13,7 +17,7 @@ preprocess::fastqc() {
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads outdir tmpdir
@@ -23,14 +27,14 @@ preprocess::fastqc() {
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			1) ((++mandatory)); _fq1_fastqc=$OPTARG;;
 			2) _fq2_fastqc=$OPTARG;;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calculating qualities"
 
@@ -46,23 +50,21 @@ preprocess::fastqc() {
 		CMD
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
-	} || {
-		{	commander::runcmd -c fastqc -v -b -t $threads -a cmd1
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c fastqc -v -b -t $threads -a cmd1
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }
 
 preprocess::rmpolynt(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -73,7 +75,7 @@ preprocess::rmpolynt(){
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads outdir
@@ -83,13 +85,13 @@ preprocess::rmpolynt(){
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			1) ((++mandatory)); _fq1_rmpolynuc=$OPTARG;;
 			2) _fq2_rmpolynuc=$OPTARG;;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 3 ]] && _usage && return 1
+	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "clipping poly N-, mono- and di-nucleotide ends"
 
@@ -104,22 +106,25 @@ preprocess::rmpolynt(){
 		poly+=("$(printf "$i%.0s" {1..100})X")
 	done
 
-	{	preprocess::cutadapt \
-			-S false \
-			-s $skip \
-			-a poly \
-			-A poly \
-			-t $threads \
-			-o "$outdir" \
-			-1 _fq1_rmpolynuc \
-			-2 _fq2_rmpolynuc
-	} || return 1
+	preprocess::cutadapt \
+		-S false \
+		-s $skip \
+		-a poly \
+		-A poly \
+		-t $threads \
+		-o "$outdir" \
+		-1 _fq1_rmpolynuc \
+		-2 _fq2_rmpolynuc
 
 	return 0
 }
 
 preprocess::cutadapt(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -132,7 +137,7 @@ preprocess::cutadapt(){
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads outdir
@@ -144,13 +149,13 @@ preprocess::cutadapt(){
 			a) ((++mandatory)); _adaptera_cutadapt=$OPTARG;;
 			A) _adapterA_cutadapt=$OPTARG;;
 			t) ((++mandatory)); threads=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			1) ((++mandatory)); _fq1_cutadapt=$OPTARG;;
 			2) _fq2_cutadapt=$OPTARG;;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "adapter clipping"
 
@@ -199,23 +204,23 @@ preprocess::cutadapt(){
 		fi
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c cutadapt -v -b -t $instances -a cmd1 && \
-			commander::runcmd -v -b -t $instances -a cmd2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c cutadapt -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -t $instances -a cmd2
+	fi
 
 	return 0
 }
 
 preprocess::trimmomatic() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -227,7 +232,7 @@ preprocess::trimmomatic() {
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads outdir tmpdir
@@ -237,14 +242,14 @@ preprocess::trimmomatic() {
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_trimmomatic=$OPTARG;;
 			2) _fq2_trimmomatic=$OPTARG;;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "trimming"
 
@@ -353,21 +358,21 @@ preprocess::trimmomatic() {
 		fi
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -v -b -t $instances -a cmd2
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t $instances -a cmd2
+	fi
 
 	return 0
 }
 
 preprocess::rcorrector() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -379,7 +384,7 @@ preprocess::rcorrector() {
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads outdir tmpdir
@@ -389,14 +394,14 @@ preprocess::rcorrector() {
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_rcorrector=$OPTARG;;
 			2) _fq2_rcorrector=$OPTARG;;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "correcting read errors"
 
@@ -446,25 +451,23 @@ preprocess::rcorrector() {
 		fi
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-	} || {
-		{	commander::runcmd -c rcorrector -v -b -t 1 -a cmd1 && \
-			commander::runcmd -v -b -t 1 -a cmd2
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c rcorrector -v -b -t 1 -a cmd1
+		commander::runcmd -v -b -t 1 -a cmd2
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }
 
 preprocess::sortmerna() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -478,7 +481,7 @@ preprocess::sortmerna() {
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory outdir tmpdir
@@ -489,14 +492,14 @@ preprocess::sortmerna() {
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
 			m) ((++mandatory)); memory=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_sortmerna=$OPTARG;;
 			2) _fq2_sortmerna=$OPTARG;;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "filtering rRNA fragments"
 
@@ -510,25 +513,23 @@ preprocess::sortmerna() {
 	local i catcmd tmp o1 o2 or1 or2 b1 b2 e1 e2 instances=$threads
 	for i in "${!_fq1_sortmerna[@]}"; do
 		helper::basename -f "${_fq1_sortmerna[$i]}" -o b1 -e e1
-		helper::basename -f "${_fq2_sortmerna[$i]}" -o b2 -e e2 &> /dev/null
 		e1=${e1%.*} # trim potential compressing extension
-		e2=${e2%.*}
-
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sortmerna)")
-
 		tmp="${tdirs[-1]}/tmp.$b1.$e1"
 		tmpo="${tdirs[-1]}/$b1"
 		tmpr="${tdirs[-1]}/rRNA.$b1"
-
 		o1="$outdir/$b1.$e1.gz"
-		o2="$outdir/$b2.$e2.gz"
 		or1="$outdir/rRNA.$b1.$e1.gz"
-		or2="$outdir/rRNA.$b2.$e2.gz"
 
 		# sortmerna v2.1 input must not be compressed (v.3.* creates empty files)
 		# outfile gets extension from input file
 		# in.fq.bz2 > in.fq + rRNA.out|out -> rRNA.out.fq|out.fq -> rRNA.out.fq.gz|out.fq.gz
 		if [[ ${_fq2_sortmerna[$i]} ]]; then
+			helper::basename -f "${_fq2_sortmerna[$i]}" -o b2 -e e2
+			e2=${e2%.*}
+			o2="$outdir/$b2.$e2.gz"
+			or2="$outdir/rRNA.$b2.$e2.gz"
+
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				mergefq.sh
 				-t $ithreads
@@ -621,27 +622,25 @@ preprocess::sortmerna() {
 		fi
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
-	} || {
-		{	commander::runcmd -v -b -t $instances -a cmd1 && \
-			commander::runcmd -v -b -t 1 -a cmd2 && \
-			commander::runcmd -v -b -t 1 -a cmd3
-		} || {
-			rm -rf "${tdirs[@]}"
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -t 1 -a cmd2
+		commander::runcmd -v -b -t 1 -a cmd3
+	fi
 
-	rm -rf "${tdirs[@]}"
 	return 0
 }
 
 preprocess::qcstats(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'rm -f "$tmp"; trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -653,7 +652,7 @@ preprocess::qcstats(){
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false outdir tmpdir
@@ -664,14 +663,14 @@ preprocess::qcstats(){
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			i) ((++mandatory)); _qualdirs_qcstats=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_qcstats=$OPTARG;;
 			2) _fq2_qcstats=$OPTARG;;
-			*) _usage; return 1;;
+			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "summarizing preprocessing stats"
 
@@ -693,7 +692,6 @@ preprocess::qcstats(){
 		done > "$tmp" # strange!!! if piped directly into tac - tac's awk implementation fails - not a shournal raceexception bug!
 		tac "$tmp" | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$outdir/preprocessing.barplot.tsv"
 	done
-	rm -f "$tmp"
 
 	declare -a cmd1
 	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
@@ -720,15 +718,11 @@ preprocess::qcstats(){
 		"$outdir/preprocessing.barplot.tsv"  "$outdir/preprocessing.barplot.pdf"
 	CMD
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
-	} || {
-		{	commander::runcmd -c r -v -b -a cmd1
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c r -v -b -a cmd1
+	fi
 
 	return 0
 }

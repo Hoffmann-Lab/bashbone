@@ -2,6 +2,11 @@
 # (c) Konstantin Riege
 
 progress::_bar() {
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local mod=0
 	while true; do
 		((++mod))
@@ -19,24 +24,29 @@ progress::_bar() {
 }
 
 progress::log() {
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
 			-v [0|1|2] | verbosity level
 			-o <file>  | path to
 		EOF
-		return 0
+		return 1
 	}
+
 	local OPTIND arg mandatory log verbosity
 	while getopts 'v:o:' arg; do
 		case $arg in
 			v)	((++mandatory)); verbosity=$OPTARG;;
 			o)	((++mandatory)); log="$OPTARG";;
-			*)	_usage;	return 1;;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && { _usage; return 1; }
+	[[ $mandatory -lt 2 ]] && _usage
 
 	# do not grep :ERROR: since this goes to stderr and will be printed anyways
 	case $verbosity in

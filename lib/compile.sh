@@ -74,7 +74,7 @@ compile::bashbone() {
 	mkdir -p "$insdir/latest"
 	ln -sfn "$insdir/bashbone-$version" "$insdir/latest/bashbone"
 
-	return $?
+	return 0
 }
 
 compile::upgrade(){

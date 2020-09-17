@@ -2,6 +2,11 @@
 # (c) Konstantin Riege
 
 fusions::starfusion(){
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	local funcname=${FUNCNAME[0]}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
@@ -14,7 +19,7 @@ fusions::starfusion(){
 			-1 <fastq1>       | array of
 			-2 <fastq2>       | array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads genome outdir
@@ -25,13 +30,13 @@ fusions::starfusion(){
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG/starfusion"; mkdir -p "$outdir" || return 1;;
+			o)	((++mandatory)); outdir="$OPTARG/starfusion"; mkdir -p "$outdir";;
 			1)	((++mandatory)); _fq1_starfusion=$OPTARG;;
 			2)	_fq2_starfusion=$OPTARG;;
-			*)	_usage; return 1;;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage
 	commander::printinfo "detecting gene fusions star-fusion"
 
 	# as of v1.8 and still true for v1.9, STAR 2.7.2b is requiered
@@ -95,21 +100,21 @@ fusions::starfusion(){
 		fi
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
-	} || {
-		{	commander::runcmd -c starfusion -v -b -t 1 -a cmd1
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c starfusion -v -b -t 1 -a cmd1
+	fi
 
 	return 0
 }
 
 fusions::arriba(){
-	local funcname=${FUNCNAME[0]}
+	set -o pipefail
+	local error funcname=${FUNCNAME[0]}
+	trap 'trap - ERR; trap - RETURN' RETURN
+	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			$funcname usage:
@@ -125,7 +130,7 @@ fusions::arriba(){
 			-1 <fastq1>       | array of
 			-2 <fastq2>       | array of
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf outdir tmpdir fragmentsize
@@ -138,15 +143,15 @@ fusions::arriba(){
 			t)	((++mandatory)); threads=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			a)	((++mandatory)); gtf="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG/arriba"; mkdir -p "$outdir" || return 1;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
+			o)	((++mandatory)); outdir="$OPTARG/arriba"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			f)	((++mandatory)); fragmentsize=$OPTARG;;
 			1)	((++mandatory)); _fq1_arriba=$OPTARG;;
 			2)	_fq2_arriba=$OPTARG;;
-			*)	_usage; return 1;;
+			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage && return 1
+	[[ $mandatory -lt 7 ]] && _usage
 	commander::printinfo "detecting gene fusions arriba"
 
 	# compatible with CTAT_genome_lib
@@ -176,47 +181,46 @@ fusions::arriba(){
 	params+=" --chimScoreJunctionNonGTAG 0"
 	params+=" --chimSegmentReadGapMax 3"
 
-	{	alignment::star \
-			-S false \
-			-s $skip \
-			-5 $skipmd5 \
-			-1 _fq1_arriba \
-			-2 _fq2_arriba \
-			-o "$outdir" \
-			-p "$tmpdir" \
-			-t $threads \
-			-g "$genome" \
-			-x $genome.star.idx \
-			-r mapper \
-			-c "$params" && \
+	alignment::star \
+		-S false \
+		-s $skip \
+		-5 $skipmd5 \
+		-1 _fq1_arriba \
+		-2 _fq2_arriba \
+		-o "$outdir" \
+		-p "$tmpdir" \
+		-t $threads \
+		-g "$genome" \
+		-x $genome.star.idx \
+		-r mapper \
+		-c "$params"
 
-		alignment::postprocess \
-			-S false \
-			-s $skip \
-			-j sort \
-			-t $threads \
-			-p "$tmpdir" \
-			-o "$outdir" \
-			-r mapper && \
+	alignment::postprocess \
+		-S false \
+		-s $skip \
+		-j sort \
+		-t $threads \
+		-p "$tmpdir" \
+		-o "$outdir" \
+		-r mapper
 
-		alignment::postprocess \
-			-S false \
-			-s $skip \
-			-j index \
-			-t $threads \
-			-p "$tmpdir" \
-			-o "$outdir" \
-			-r mapper && \
+	alignment::postprocess \
+		-S false \
+		-s $skip \
+		-j index \
+		-t $threads \
+		-p "$tmpdir" \
+		-o "$outdir" \
+		-r mapper
 
-		alignment::inferstrandness \
-			-S false \
-			-s $skip \
-			-t $threads \
-			-r mapper \
-			-x strandness \
-			-g "$gtf" \
-			-p "$tmpd"ir
-	} || return 1
+	alignment::inferstrandness \
+		-S false \
+		-s $skip \
+		-t $threads \
+		-r mapper \
+		-x strandness \
+		-g "$gtf" \
+		-p "$tmpdir"
 
 	local m f o
 	declare -a cmd1
@@ -237,15 +241,11 @@ fusions::arriba(){
 		CMD
 	done
 
-	$skip && {
+	if $skip; then
 		commander::printcmd -a cmd1
-	} || {
-		{	commander::runcmd -c arriba -v -b -t $threads -a cmd1
-		} || {
-			commander::printerr "$funcname failed"
-			return 1
-		}
-	}
+	else
+		commander::runcmd -c arriba -v -b -t $threads -a cmd1
+	fi
 
 	return 0
 }
