@@ -1,17 +1,16 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 set -o pipefail
+trap 'trap - ERR; trap - RETURN' RETURN
 
 unset ERROR
-trap 'e=$?; echo ":ERROR: ${ERROR:-"..an unexpected one"} (exit $e) @ $(basename $0) (line: $LINENO) $BASH_COMMAND" >&2; exit $e' ERR
-ERROR="$(basename "$0") script needs to be sourced"
+trap 'e=$?; echo ":ERROR: ${ERROR:-"..an unexpected one"} (exit $e) @ $(basename "${BASH_SOURCE[0]}") (line: $LINENO) $BASH_COMMAND" >&2; exit $e' ERR
+ERROR="$(basename "${BASH_SOURCE[0]}") script needs to be sourced"
 [[ "${BASH_SOURCE[0]}" != "$0" ]]
-
-trap 'trap - ERR; trap - RETURN' RETURN
-trap 'e=$?; echo ":ERROR: ${ERROR:-"..an unexpected one"} (exit $e) @ $(basename ${BASH_SOURCE[0]}) (line: $LINENO) $BASH_COMMAND" >&2; return $e' ERR
+trap 'e=$?; echo ":ERROR: ${ERROR:-"..an unexpected one"} (exit $e) @ $(basename "${BASH_SOURCE[0]}") (line: $LINENO) $BASH_COMMAND" >&2; return $e' ERR
 
 ERROR="requires a bash shell"
-[[ "$(ps -p $$ -o command= | cut -d ' ' -f 1)" == "bash" ]]
+[[ "$(ps -p $$ -o command= | cut -d ' ' -f 1)" =~ bash ]]
 ERROR="unsupported operating system"
 [[ $OSTYPE == "linux" ]]
 ERROR="requieres bash >= v4.4"

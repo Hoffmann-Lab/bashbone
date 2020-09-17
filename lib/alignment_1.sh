@@ -977,6 +977,7 @@ alignment::bamstats(){
 			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
 			for bam in "${_mi_bamstats[@]}"; do
 				[[ "$bam" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
+				bam=${bam/%\.sorted\.bam/.bam}
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 					samtools flagstat
 						-@ $ithreads

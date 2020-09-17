@@ -78,7 +78,8 @@ configure::err(){
 		shopt -u extdebug
 		src="$(basename "$src")"
 		src="$fun / $src"
-		[[ -t 1 ]] && ((lineno+=line))
+		#[[ -t 1 ]] && ((lineno+=line))
+		[[ $- =~ i ]] && ((lineno+=line))
 	}
 
 	unset BASH_COMMAND
