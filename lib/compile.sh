@@ -198,7 +198,7 @@ compile::conda_tools() {
 	trap 'trap - ERR; trap - RETURN' RETURN
 	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
 
-	local insdir threads upgrade=false url version tool n bin
+	local insdir threads upgrade=false url version tool n bin doclean=false
 	declare -A envs
 
 	compile::_parse -r insdir -s threads -c upgrade "$@"
@@ -211,6 +211,7 @@ compile::conda_tools() {
 	for tool in fastqc cutadapt rcorrector star bwa rseqc subread arriba star-fusion picard bamutil macs2 diego gatk4 freebayes varscan; do
 		n=${tool//[^[:alpha:]]/}
 		$upgrade && ${envs[$n]:=false} && continue
+		doclean=true
 
 		commander::printinfo "setup conda $tool env"
 		conda create -y -n $n python=3
@@ -225,6 +226,8 @@ compile::conda_tools() {
 	tool=vardict
 	n=${tool//[^[:alpha:]]/}
 	$upgrade && ${envs[$n]:=false} || {
+		doclean=true
+
 		commander::printinfo "setup conda $tool env"
 		conda create -y -n $n python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java
@@ -236,6 +239,8 @@ compile::conda_tools() {
 	tool=snpeff
 	n=${tool//[^[:alpha:]]/}
 	$upgrade && ${envs[$n]:=false} || {
+		doclean=true
+
 		commander::printinfo "setup conda $tool env"
 		conda create -y -n $n python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
@@ -249,6 +254,8 @@ compile::conda_tools() {
 	tool=platypus-variant
 	n=platypus
 	$upgrade && ${envs[$n]:=false} || {
+		doclean=true
+
 		commander::printinfo "setup conda $tool env"
 		conda create -y -n $n python=2
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
@@ -272,10 +279,12 @@ compile::conda_tools() {
 	# rm -f $FC_DB_PATH/*.tar.gz* # env variable
 	# conda deactivate
 
-	commander::printinfo "conda clean up"
-	conda clean -y -a
-	conda deactivate
+	$doclean && {
+		commander::printinfo "conda clean up"
+		conda clean -y -a
+	}
 
+	conda deactivate
 	return 0
 }
 

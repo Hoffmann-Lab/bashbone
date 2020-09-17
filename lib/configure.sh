@@ -31,7 +31,7 @@ configure::exit(){
 
 	sleep 1 # to get very last entry of logifle by tail -f before being killed
 	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
-	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null
+	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # includes pids of pstree parser pipeline above, thus throws errors necessary to be catched
 	printf "\r"
 
 	return 0
