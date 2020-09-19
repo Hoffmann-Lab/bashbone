@@ -4,11 +4,6 @@
 declare -a COMMANDER
 
 commander::print(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	[[ $* ]] && echo ":INFO: $*"
 	local fd
 	declare -a mapdata
@@ -25,11 +20,6 @@ commander::print(){
 }
 
 commander::printinfo(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	[[ $* ]] && echo ":INFO: $*"
 	local fd
 	declare -a mapdata
@@ -43,11 +33,6 @@ commander::printinfo(){
 }
 
 commander::warn(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	[[ $* ]] && echo ":WARNING: $*"
 	local fd
 	declare -a mapdata
@@ -62,11 +47,6 @@ commander::warn(){
 }
 
 commander::printerr(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	[[ $* ]] && echo ":ERROR: $*" 1>&2
 	local fd
 	declare -a mapdata
@@ -80,14 +60,9 @@ commander::printerr(){
 }
 
 commander::makecmd(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-a <cmds>      | array of
 			-s <seperator> | string for
 			-o <outfile>   | stdout redirection to
@@ -95,7 +70,7 @@ commander::makecmd(){
 			                 command line string(s) and or
 			                 file descriptor(s) starting from 3
 			example:
-			$funcname -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+			${FUNCNAME[1]} -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 			    perl -sl - -y=$x <<< '
 			        print "$x";
 			        print "\$y";
@@ -135,14 +110,9 @@ commander::makecmd(){
 }
 
 commander::printcmd(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-a <cmds> | array of
 		EOF
 		return 1
@@ -163,14 +133,13 @@ commander::printcmd(){
 }
 
 commander::runcmd(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -rf "$tmpdir"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::commander::runcmd(){
+		rm -rf "$tmpdir"
+	}
 
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-v           | verbose on
 			-b           | benchmark on
 			-c <env>     | run with conda
@@ -178,7 +147,7 @@ commander::runcmd(){
 			-a <cmds>    | ALWAYS LAST OPTION
 			               array of
 			example:
-			$funcname -v -b -t 1 -a cmd
+			${FUNCNAME[1]} -v -b -t 1 -a cmd
 		EOF
 		return 1
 	}
@@ -209,7 +178,10 @@ commander::runcmd(){
 						[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 						printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 						echo "$sh"
-					done | command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
+					done | $(command -v time) -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
+					# time may be a shell keyword, so use full path
+					# due to set -E based error tracing, command time may leads to *** longjmp causes uninitialized stack frame ***: bash terminated
+					# workaround: use which or command -v
 				else
 					for i in "${!_cmds_runcmd[@]}"; do
 						sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
@@ -220,6 +192,7 @@ commander::runcmd(){
 						echo "$sh"
 					done | xargs -P $threads -I {} bash {}
 				fi
+				return 0
 			;;
 			*)	_usage;;
 		esac
@@ -229,44 +202,45 @@ commander::runcmd(){
 }
 
 commander::qsubcmd(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap '[[ $jobname ]] && qdel "$jobname.*"; rm -rf "$tmpdir"; rm -f "$ex"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::commander::qsubcmd(){
+		[[ $jobname ]] && qdel "$jobname.*"
+		rm -rf "$tmpdir"
+		rm -f "$ex"
+	}
 
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-v           | verbose on
 			-b           | benchmark on
 			-c <env>     | run with conda
-			-h <hosts>   | sge digestable list of
-			-l <logfile> | sge nodes shared path to
+			-l <complex> | sge digestable list of consumables as key value pairs (see qconf -sc or -mc)
+			-f <file>    | for logs path to
 			-t <threads> | number of
 			-p <env>     | name of parallel
 			-a <cmds>    | ALWAYS LAST OPTION
 			               array of
 			example:
-			$funcname -v -h "!bcl102&!bcl103" -p envname -t 4 -a cmd
-			$funcname -v -h "!bcl102&!bcl103" -a cmd
+			${FUNCNAME[1]} -v -l "hostname=!bcl102&!bcl103" -l "mem_free=50G" -c segemehl -p threads -t 4 -a cmd
 		EOF
 		return 1
 	}
 
-	local OPTIND arg threads=1 verbose=false benchmark=false conda penv log hosts
+	local OPTIND arg threads=1 verbose=false benchmark=false conda penv log complex
 	declare -n _cmds_qsubcmd # be very careful with circular name reference
-	declare -a mapdata
-	while getopts 'vbt:l:h:p:c:a:' arg; do
+	declare -a mapdata complexes
+	while getopts 'vbt:f:l:p:c:a:' arg; do
 		case $arg in
 			v)	verbose=true;;
 			b)	benchmark=true;;
 			c)	conda=$OPTARG;;
 			t)	threads=$OPTARG;;
-			l)	log="$OPTARG";;
-			h)	hosts="-l h=$OPTARG";;
+			f)	log="$OPTARG";;
+			l)	complexes+=("-l $OPTARG");;
 			p)	penv="-pe $OPTARG";;
 			a)	_cmds_qsubcmd=$OPTARG
 				[[ $_cmds_qsubcmd ]] || return 0
+
 				$verbose && {
 					commander::printinfo "running commands of array ${!_cmds_qsubcmd}"
 					commander::printcmd -a _cmds_qsubcmd
@@ -293,19 +267,20 @@ commander::qsubcmd(){
 					printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
 					echo "echo \$? >> '$ex'" >> "$sh"
 
-					qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh" > /dev/null
+					qsub $penv "${complexes[@]}" -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh" > /dev/null
 				done
 				if $benchmark; then
-					command time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" \
-					qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
+					$(command -v time) -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" \
+					qsub $penv "${complexes[@]}" -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
 				else
-					qsub $penv $hosts -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
+					qsub $penv "${complexes[@]}" -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
 				fi
 				unset jobname # do this for qdel trap handling
 				[[ $log && -e "$ex" ]] && {
 					mapfile -t mapdata < "$ex"
 					return $((${mapdata[@]/%/+}0))
 				}
+				return 0
 			;;
 			*)	_usage;;
 		esac
@@ -315,11 +290,6 @@ commander::qsubcmd(){
 }
 
 commander::_test(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local x=${1:-'hello world'} threads=${2:-1} i=2 s
 
 	while read -u $((++i)) -r s 2> /dev/null; do

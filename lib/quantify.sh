@@ -2,14 +2,13 @@
 # (c) Konstantin Riege
 
 quantify::featurecounts() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::quantify::featurecounts(){
+		rm -rf "${tdirs[@]}"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-5 <skip>     | true/false md5sums, gtf prep respectively
@@ -101,14 +100,9 @@ quantify::featurecounts() {
 }
 
 quantify::tpm() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of

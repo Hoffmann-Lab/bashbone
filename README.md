@@ -1,14 +1,15 @@
-# Bashbone
+# Bashbones
 ---
 
 A bash library for workflow and pipeline design within but not restricted to the scope of Next Generation Sequencing (NGS) data analyses.
 
 ## For developers
 
-- Write one-liners in your favorite language as Here-documents for later execution
+- Write code in your favorite language as Here-documents for later orchestrated execution
 - Add object-oriented programming (oop) like syntactic sugar to bash variables and arrays to avoid complex parameter-expansions, variable-expansions and brace-expansions
 - Execute commands in parallel on your machine or submit them as jobs to a sun grid engine (SGE)
 - Infer number of parallel instances according to targeted memory consumption or targeted threads per instance
+- Get a full bash error stack trace upon SIGERR
 
 ## For users
 
@@ -65,12 +66,14 @@ source activate.sh
 bashbone -h
 ```
 
-Check out stand-alone scripts to retrieve genomes or SRA datasets
+Check out stand-alone scripts to retrieve SRA datasets, or genomes (convert them into a transcriptome) and calulate transcripts per million (TPM).
 
 ```bash
 cd scripts
 ./dlgenome.sh -h
 ./sra-dump.sh -h
+./genome2transcriptome.pl
+./tpm.pl
 ```
 
 ## Developers centerpiece
@@ -87,7 +90,7 @@ commander::qsubcmd
 
 ### Example
 
-Example using the builtin file descriptors array `COMMANDER` with separator (`-s '|'`) based concatenation of interpreted and non-interpreted Here-Documents. Each concatenation will be stored as a single command in a de-referenced array (`-a cmds`) Optionally, an output file can be defined (`-o <path/to/file>`).
+Example using the builtin file descriptors array `COMMANDER` with separator (`-s '|'`) based concatenation of interpreted and non-interpreted Here-Documents. Each concatenation will be stored as a single command in a de-referenced array (`-a cmds`) Optionally, an output file can be defined (`-o <path/to/file>`). `BASHBONE_ERROR` can be used to alter the default error message.
 
 ```bash
 declare -a cmds
@@ -103,8 +106,9 @@ for i in sun mercury venus earth mars jupiter saturn uranus neptune pluto; do
 	CMD
 done
 commander::printcmd -a cmds
+BASHBONE_ERROR="hello world failed"
 commander::runcmd -v -b -t $threads -a cmds
-
+unset BASHBONE_ERROR
 ```
 
 ### OOP bash
@@ -139,6 +143,8 @@ bashbone -h
 ```
 
 ## Upgrade to a newer release
+
+Excluded are tools, previously installed into conda environments. Please rerun the full installation to upgrade them, too.
 
 ```bash
 setup -i upgrade -d <path/of/installation>
@@ -232,8 +238,10 @@ memoryPerInstance=2000
 preprocess::fastqc -t $threads -o results/qualities/raw -p /tmp -1 fastqs
 preprocess::trimmomatic -t $threads -1 fastqs
 preprocess::fastqc -t $threads -o results/qualities/trimmed -p /tmp -1 fastqs
-preprocess::cutadapt -t $threads -o results/clipped -a adapters -1 fastqs
-preprocess::fastqc -t $threads -o results/qualities/clipped -p /tmp -1 fastqs
+preprocess::rmpolynt -t $threads -o results/polyntclipped -1 fastqs
+preprocess::fastqc -t $threads -o results/qualities/polyntclipped -p /tmp -1 fastqs
+preprocess::cutadapt -t $threads -o results/adapterclipped -a adapters -1 fastqs
+preprocess::fastqc -t $threads -o results/qualities/adapterclipped -p /tmp -1 fastqs
 preprocess::rcorrector -t $threads -o results/corrected -p /tmp -1 fastqs
 preprocess::sortmerna -t $threads -m $memoryPerInstance -o results/rrnafiltered -p /tmp
 preprocess::fastqc -t $threads -o results/qualities/rrnafiltered -p /tmp -1 fastqs
@@ -243,9 +251,9 @@ fusions::arriba -t $threads -g $genome -a $gtf -o results/fusions -p /tmp -f $fr
 fusions::starfusion -t $threads -g $genome -g $gtf -o results/fusions -1 fastqs
 declare -a mapped
 alignment::segemehl -t $threads -g $genome -x $genomeidx -o results/mapped -1 fastqs -r mapped
-alignment::add4stats -r mapper
+alignment::add4stats -r mapped
 alignment::postprocess -j uniqify -t $threads -p /tmp -o results/mapped -r mapped
-alignment::add4stats -r mapper
+alignment::add4stats -r mapped
 alignment::postprocess -r sort -t $threads -p /tmp -o results/mapped -r mapped
 alignment::postprocess -r index -t $threads -p /tmp -o results/mapped -r mapped
 alignment::bamstats -t $threads -o results/stats -r mapped
@@ -254,6 +262,8 @@ alignment::inferstrandness -t $threads -g $gtf -p /tmp -r mapped -x strandness
 quantify::featurecounts -t $threads -p /tmp -g $gtf -o results/counted -r mapped -x strandness
 quantify::tpm -t $threads -g $gtf -o results/counted -r mapped
 expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o results/deseq -r mapped
+declare -a custergenes
+cluster::coexpression -t $threads -g $gtf -b protein_coding -f 23 -i /results/counted -o results/coexpressed -r mapped -l clustergenes
 ```
 
 # Third-party software
@@ -265,6 +275,7 @@ expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o resul
 | ---  | ---    | --- |
 | Arriba        | <https://github.com/suhrig/arriba/>                                 | NA |
 | BamUtil       | <https://genome.sph.umich.edu/wiki/BamUtil>                         | 10.1101/gr.176552.114 |
+| BW            | <https://github.com/lh3/bwa>                                        | 10.1093/bioinformatics/btp324 |
 | BCFtools      | <http://www.htslib.org/doc/bcftools.html>                           | 10.1093/bioinformatics/btr509 |
 | BEDTools      | <https://bedtools.readthedocs.io>                                   | 10.1093/bioinformatics/btq033 |
 | Cutadapt      | <https://cutadapt.readthedocs.io/en/stable>                         | 10.14806/ej.17.1.200 |
@@ -298,7 +309,6 @@ expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o resul
 
 | Tool | Source | DOI |
 | ---  | ---    | --- |
-| BWA             | <https://github.com/lh3/bwa>                               | 10.1093/bioinformatics/btp324 |
 | clusterProfiler | <https://guangchuangyu.github.io/software/clusterProfiler> | NA |
 | freebayes       | <https://github.com/ekg/freebayes>                         | arXiv:1207.3907 |
 | HISAT2          | <https://daehwankimlab.github.io/hisat2>                   | 10.1038/nmeth.3317 |
@@ -306,3 +316,7 @@ expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o resul
 | SnpEff          | <https://pcingola.github.io/SnpEff>                        | 10.4161/fly.19695 |
 | VarDict         | <https://github.com/AstraZeneca-NGS/VarDict>               | 10.1093/nar/gkw227 |
 | VarScan         | <http://dkoboldt.github.io/varscan>                        | 10.1101/gr.129684.111 |
+
+# Closing remarks
+
+Bashbone is a continously developed library and actively used in my daily work. As a single developer it may take me a while to fix errors and issues. Feature requests cannot be handled so far, but I am happy to receive pull request.

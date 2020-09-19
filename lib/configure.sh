@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
 # (c) Konstantin Riege
 
-configure::exit(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
+_configure::test(){
+	_cleanup::_configure::test(){
+		echo "${FUNCNAME[0]} of ${FUNCNAME[1]}"
+	}
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			test usage
+		EOF
+	}
+	echo "${FUNCNAME[0]}"
+	failcmd -a -b
+	echo "this message must not be shown"
+}
+
+configure::exit(){
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
 			-p <pid>      | process id
 			-f <function> | to call
 		EOF
@@ -19,51 +28,43 @@ configure::exit(){
 	local OPTIND arg mandatory pid fun
 	while getopts 'p:f:' arg; do
 		case $arg in
-			p) ((++mandatory)); pid=$OPTARG;;
-			f) fun=$OPTARG;;
+			p)	((++mandatory)); pid=$OPTARG;;
+			f)	fun=$OPTARG;;
 			*) _usage;;
 		esac
 	done
 	[[ $mandatory -lt 1 ]] && _usage
 
 	shift $((OPTIND-1))
-	$(declare -F $fun &> /dev/null) && $fun "$@"
+	declare -F $fun &> /dev/null && $fun "$@"
 
 	sleep 1 # to get very last entry of logifle by tail -f before being killed
 	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
 	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # includes pids of pstree parser pipeline above, thus throws errors necessary to be catched
 	printf "\r"
-
 	return 0
 }
 
 configure::err(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-x <exit>     | better use as first option. code to print and return
 			-f <function> | name to print
 			-s <source>   | filename of
 			-l <lineno>   | LINENO
 			-e <error>    | message
-			-c <cmd>      | command
 		EOF
 		return 1
 	}
 
 	local OPTIND arg mandatory fun src lineno error cmd ex
-	while getopts 'f:s:l:e:c:x:' arg; do
+	while getopts 'f:s:l:e:x:' arg; do
 		case $arg in
 			f) fun="$OPTARG";;
 			s) src="$(basename "$OPTARG")";;
 			l) ((++mandatory)); lineno=$OPTARG;;
 			e) error="$OPTARG";;
-			c) cmd="$OPTARG";;
 			x) ((++mandatory)); ex=$OPTARG;;
 			*) _usage;;
 		esac
@@ -72,30 +73,21 @@ configure::err(){
 
 	[[ $fun ]] && {
 		local line
-		shopt -s extdebug
-		read -r fun line src < <(declare -F "$fun")
-		shopt -u extdebug
-		src="$(basename "$src")"
-		src="$fun / $src"
-		#[[ -t 1 ]] && ((lineno+=line))
+		read -r fun line src < <(declare -F "$fun") # requires shopt -s extdebug
 		[[ $- =~ i ]] && ((lineno+=line))
 	}
+	local cmd=$(awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o$0}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o$0}else{o=""}}}' $src | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+	[[ $fun ]] && src="$src ($fun)"
 
-	unset BASH_COMMAND
 	sleep 1 # to be very last entry of a logifle
-	commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src (line $lineno) $cmd"
+	commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
 	return $ex
 }
 
 configure::environment(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-i <insdir> | root path to tools
 			-b <insdir> | root path to bashbone
 			-c <conda>  | true/false activate
@@ -103,46 +95,56 @@ configure::environment(){
 		return 1
 	}
 
-	local OPTIND arg mandatory insdir_tools insdir_bashbone activate_conda=true
+	local OPTIND arg mandatory insdir_tools activate_conda=true
 	while getopts 'i:b:c:' arg; do
 		case $arg in
 			i) ((++mandatory)); insdir_tools="$OPTARG";;
-			b) ((++mandatory)); insdir_bashbone="$OPTARG";;
 			c) activate_conda="$OPTARG";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && _usage
+	[[ $mandatory -lt 1 ]] && _usage
 
-	set -o pipefail
+	$activate_conda && {
+		source $insdir_tools/conda/bin/activate base &> /dev/null && {
+			commander::printinfo "utilizing $(conda --version)"
+		}|| {
+			commander::printerr "conda activation failed. use -i [path] to point towards installation directory"
+			return 1
+		}
+	}
+
+	set -E -o pipefail -o functrace # -E allows simple trap bubbeling and -o functrace enables inheritance of RETURN and DEBUG trap
+	shopt -s extdebug # do not shopt -u extdebug, otherwise set -E -o pipefail configuration will be nuked
 	shopt -s extglob
 	shopt -s expand_aliases
 	ulimit -n $(ulimit -Hn)
 	export MALLOC_ARENA_MAX=4
 
-	$activate_conda && {
-		commander::printinfo "setting up environment"
-		source $insdir_tools/conda/bin/activate base &> /dev/null
-	}
-
-	local tp=$(readlink -e $insdir_tools/latest)
+	local tp="$(readlink -e "$insdir_tools/latest")"
 	# better stay off custom java path to avoid conflicts with conda openjdk and pre-compiled jars requesting specific versions (IncompatibleClassChangeError)
 	# [[ $tp && -e $tp/java ]] && export JAVA_HOME=$(dirname $(readlink -e $tp/java))
-	[[ $tp ]] && export PATH=$(readlink -e $tp/!(java) | xargs -echo | sed 's/ /:/g'):$PATH
-	export PATH=$(readlink -e $insdir_bashbone/scripts | xargs -echo | sed 's/ /:/g'):$PATH
+	[[ $tp ]] && export PATH="$(readlink -e "$tp/!(java)" | xargs -echo | sed 's/ /:/g'):$PATH"
+	export PATH="$(readlink -e "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):$PATH"
+
+	# make use of local scope during trace to trigger tmp file deletion etc.
+	trap 'declare -F _cleanup::${FUNCNAME[0]} &> /dev/null && _cleanup::${FUNCNAME[0]}' RETURN
+	if [[ $- =~ i ]]; then
+		# do not split in muliple lines. lineno will be wrong
+		# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte etc.
+		trap 'e=$?; if [[ ${BASH_SOURCE[0]} && "$(readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]}; return $e; fi' ERR
+	else
+		# dont call exit directly. allow for back trace through all functions. local scopes are available
+		trap 'e=$?; if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s $0; exit $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]}; return $e; fi' ERR
+	fi
 
 	return 0
 }
 
 configure::instances_by_threads(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-i <instances> | number of all
 			-t <threads>   | per instance targeted
 			-T <threads>   | available
@@ -172,14 +174,9 @@ configure::instances_by_threads(){
 }
 
 configure::instances_by_memory(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-t <threads> | available
 			-m <memory>  | per instance maximum
 		EOF
@@ -207,14 +204,9 @@ configure::instances_by_memory(){
 }
 
 configure::jvm(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-i <instances> | number of all
 			-t <threads>   | per instance targeted
 			-T <threads>   | available

@@ -2,14 +2,9 @@
 # (c) Konstantin Riege
 
 alignment::segemehl() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-5 <skip>       | true/false md5sums, indexing respectively
@@ -132,14 +127,13 @@ alignment::segemehl() {
 }
 
 alignment::star() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::alignment::star(){
+		rm -rf "${tdirs[@]}"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>     | true/false return
 			-s <softskip>     | true/false only print commands
 			-5 <skip>         | true/false md5sums, indexing respectively
@@ -312,14 +306,9 @@ alignment::star() {
 }
 
 alignment::bwa() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-5 <skip>       | true/false md5sums, indexing respectively
@@ -489,14 +478,13 @@ alignment::bwa() {
 }
 
 alignment::postprocess() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::alignment::postprocess(){
+		rm -rf "${tdirs[@]}"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-j <job>      | [uniqify|sort|index]
@@ -586,14 +574,9 @@ alignment::postprocess() {
 }
 
 alignment::_uniqify() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-1 <cmds1>    | array of
 			-2 <cmds2>    | array of
 			-t <threads>  | number of
@@ -687,14 +670,9 @@ alignment::_uniqify() {
 }
 
 alignment::_sort() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-1 <cmds1>    | array of
 			-t <threads>  | number of
 			-i <bam>      | binary alignment file
@@ -737,14 +715,9 @@ alignment::_sort() {
 }
 
 alignment::_index() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-1 <cmds1>    | array of
 			-t <threads>  | number of
 			-i <bam>      | sorted alignment file
@@ -775,14 +748,13 @@ alignment::_index() {
 }
 
 alignment::inferstrandness(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -f "${tfiles[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::alignment::inferstrandness(){
+		rm -f "${tfiles[@]}"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -888,14 +860,9 @@ alignment::inferstrandness(){
 }
 
 alignment::add4stats(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-r <mapper>    | array of bams within array of
 		EOF
 		return 1
@@ -929,14 +896,9 @@ alignment::add4stats(){
 }
 
 alignment::bamstats(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of

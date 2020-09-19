@@ -2,20 +2,15 @@
 # (c) Konstantin Riege
 
 variants::vcfzip() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-z <var>      | of path to file
 			example:
-			$funcname -t 4 -v f1 -v f2
+			${FUNCNAME[1]} -t 4 -v f1 -v f2
 		EOF
 		return 1
 	}
@@ -62,14 +57,14 @@ variants::vcfzip() {
 }
 
 variants::haplotypecaller() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -f $tmpfile; rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::variants::haplotypecaller(){
+		rm -f $tmpfile
+		rm -rf "${tdirs[@]}"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -235,17 +230,16 @@ variants::haplotypecaller() {
 }
 
 variants::panelofnormals() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::variants::panelofnormals(){
+		rm -rf "${tdirs[@]}"
+	}
 
 	# The panel of normals not only represents common germline variant sites,
 	# it presents commonly noisy sites in sequencing data, e.g. mapping artifacts or
 	# other somewhat random but systematic artifacts of sequencing.
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -347,14 +341,13 @@ variants::panelofnormals() {
 }
 
 variants::makepondb() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::variants::makepondb(){
+		rm -rf "${tdirs[@]}"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -481,10 +474,9 @@ variants::makepondb() {
 }
 
 variants::mutect() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::variants::mutect(){
+		rm -rf "${tdirs[@]}"
+	}
 
 	# You do not need to make you own panel of normals (unless you have a huge number of samples,
 	# it may even be counterproductive than our generic public panel).
@@ -503,7 +495,7 @@ variants::mutect() {
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of

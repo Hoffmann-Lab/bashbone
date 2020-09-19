@@ -2,11 +2,6 @@
 # (c) Konstantin Riege
 
 progress::_bar() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local mod=0
 	while true; do
 		((++mod))
@@ -24,16 +19,11 @@ progress::_bar() {
 }
 
 progress::log() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
-			-v [0|1|2] | verbosity level
-			-o <file>  | path to
+			${FUNCNAME[1]} usage:
+			-v [0|1|2]    | verbosity level
+			-o <logfile>  | path to
 		EOF
 		return 1
 	}
@@ -48,6 +38,7 @@ progress::log() {
 	done
 	[[ $mandatory -lt 2 ]] && _usage
 
+	printf '' > "$log"
 	# do not grep :ERROR: since this goes to stderr and will be printed anyways
 	case $verbosity in
 		0)	progress::_bar &
@@ -57,8 +48,42 @@ progress::log() {
 			{ tail -f $log | grep -E --line-buffered '^\s*(:INFO:|:CMD:|:BENCHMARK:|:WARNING:)'; } &
 			;;
 		2)	{ tail -f $log | grep -v -E --line-buffered '^\s*:ERROR:'; } &;;
-		*)	_usage;	return 1;;
+		*)	_usage;;
 	esac
 
 	return 0
+}
+
+progress::observe() {
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-v [0|1|2]    | verbosity level
+			-o <logfile>  | path to
+			-f <function> | and parameters
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory log verbosity fun
+	while getopts 'v:o:f:' arg; do
+		case $arg in
+			v)	((++mandatory)); verbosity=$OPTARG;;
+			o)	((++mandatory)); log="$OPTARG";;
+			f)	fun=$OPTARG
+				[[ $mandatory -lt 2 ]] && _usage
+				shift $((OPTIND-1))
+				case $verbosity in
+					0)	$fun "$@" 2> >(tee -ai "$log" | grep -E --line-buffered '^\s*:ERROR:' || true >&2) >> "$log";;
+					1)	$fun "$@" 2> >(tee -ai "$log" | grep -E --line-buffered '^\s*:ERROR:' || true >&2) >> "$log";;
+					2)	$fun "$@" 2> >(tee -ai  "$log" >&2) >> "$log";;
+					*)	_usage;;
+				esac
+				return 0
+			;;
+			*)	_usage;;
+		esac
+	done
+
+	_usage
 }

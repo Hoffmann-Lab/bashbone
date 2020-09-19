@@ -2,14 +2,13 @@
 # (c) Konstantin Riege
 
 cluster::coexpression_deseq(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -f "${tfiles[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::cluster::coexpression_deseq(){
+		rm -f "${tfiles[@]}"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-f <value>    | filter cluster for 0|1|2|20|21
@@ -277,14 +276,13 @@ cluster::coexpression_deseq(){
 }
 
 cluster::coexpression(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -f "${tfiles[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::cluster::coexpression(){
+		rm -f "${tfiles[@]}"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-f <value>    | filter cluster for 0|1|2|20|21

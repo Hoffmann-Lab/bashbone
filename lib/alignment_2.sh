@@ -2,14 +2,9 @@
 # (c) Konstantin Riege
 
 alignment::slice(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -130,14 +125,9 @@ alignment::slice(){
 }
 
 alignment::rmduplicates(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -246,18 +236,13 @@ alignment::rmduplicates(){
 }
 
 alignment::clipmateoverlaps() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	# must not handle supplementary i.e. circular/chimeric transcripts due to potentially uneven lists
 	# if not flagged as supplementary and mate2 is mapped totally before mate1, both will be flagged as unmapped
 	# fully covered by mate will be flagged as unmapped
 	# adjusted poolsize will consume ~15gb memory
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -363,14 +348,9 @@ alignment::clipmateoverlaps() {
 }
 
 alignment::reorder() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -477,14 +457,9 @@ alignment::reorder() {
 }
 
 alignment::addreadgroup() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -614,14 +589,13 @@ alignment::addreadgroup() {
 }
 
 alignment::splitncigar() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::alignment::splitncigar(){
+		rm -rf "${tdirs[@]}"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -738,14 +712,13 @@ alignment::splitncigar() {
 }
 
 alignment::leftalign() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::alignment::leftalign(){
+		rm -rf "${tdirs[@]}"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -855,14 +828,14 @@ alignment::leftalign() {
 }
 
 alignment::bqsr() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -f "$tmpfile"; rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::alignment::bqsr(){
+		rm -f "$tmpfile"
+		rm -rf "${tdirs[@]}"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of

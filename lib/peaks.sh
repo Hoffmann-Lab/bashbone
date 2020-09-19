@@ -2,14 +2,9 @@
 # (c) Konstantin Riege
 
 peaks::_idr() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-1 <cmds1>    | array of
 			-2 <cmds2>    | array of
 			-t <file>     | normal vs treatment peaks path to
@@ -58,14 +53,13 @@ peaks::_idr() {
 }
 
 peaks::macs() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -rf "${tdirs[@]}"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::peaks::macs(){
+		rm -rf "${tdirs[@]}"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -274,14 +268,13 @@ peaks::macs() {
 }
 
 peaks::gem() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -rf "$tdir"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::peaks::gem(){
+		rm -rf "$tdir"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of

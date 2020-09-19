@@ -2,14 +2,13 @@
 # (c) Konstantin Riege
 
 genome::mkdict() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -f "$dict"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::genome::mkdict(){
+		rm -f "$dict"
+	}
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-5 <skip>     | true/false md5sums, indexing respectively

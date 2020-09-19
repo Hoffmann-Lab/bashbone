@@ -2,20 +2,15 @@
 # (c) Konstantin Riege
 
 helper::makezipcmd(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-a <cmds>    | array of
 			-t <threads> | number of
 			-c <file>    | compress if not compressed
 			-z <var>     | of path to file
 			example:
-			$funcname -a cmds -c f1.txt -c f2.txt -z o1 -z o2
+			${FUNCNAME[1]} -a cmds -c f1.txt -c f2.txt -z o1 -z o2
 		EOF
 		return 1
 	}
@@ -49,18 +44,13 @@ helper::makezipcmd(){
 }
 
 helper::makecatcmd(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-c <var>  | cmd
 			-f <file> | to ascii
 			example:
-			$funcname -c cmd -f [txt|bz2|gz]
+			${FUNCNAME[1]} -c cmd -f [txt|bz2|gz]
 		EOF
 		return 1
 	}
@@ -82,20 +72,15 @@ helper::makecatcmd(){
 }
 
 helper::basename(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-f <file> | path to
 			-o <var>  | basename
 			-e <var>  | extension
 
 			example:
-			$funcname -f foo.txt.gz -o base -e ex
+			${FUNCNAME[1]} -f foo.txt.gz -o base -e ex
 		EOF
 		return 1
 	}
@@ -124,14 +109,9 @@ helper::basename(){
 }
 
 helper::ishash(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-v <var> | variable
 		EOF
 		return 1
@@ -153,18 +133,14 @@ helper::ishash(){
 }
 
 helper::isarray(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-v <var> | variable
 		EOF
 		return 1
 	}
+
 	local OPTIND arg mandatory var
 	declare -a vars
 	while getopts 'v:' arg; do
@@ -182,14 +158,9 @@ helper::isarray(){
 }
 
 helper::addmemberfunctions(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			$funcname usage:
+			${FUNCNAME[1]} usage:
 			-v <var> | variable
 		EOF
 		return 1

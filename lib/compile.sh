@@ -2,11 +2,6 @@
 # (c) Konstantin Riege
 
 compile::_parse(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 		usage:
@@ -36,11 +31,6 @@ compile::_parse(){
 }
 
 compile::all(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 	compile::bashbone -i "$insdir" -t $threads
@@ -59,11 +49,6 @@ compile::all(){
 }
 
 compile::bashbone() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local insdir threads version src=$(dirname $(readlink -e $0))
 	commander::printinfo "installing bashbone"
 	compile::_parse -r insdir -s threads "$@"
@@ -78,11 +63,6 @@ compile::bashbone() {
 }
 
 compile::upgrade(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 	compile::bashbone -i "$insdir" -t $threads
@@ -92,10 +72,9 @@ compile::upgrade(){
 }
 
 compile::conda() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'rm -rf "$tmpdir"; trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
+	_cleanup::compile::conda(){
+		rm -rf "$tmpdir"
+	}
 
 	local insdir threads url version tmpdir n bin
 
@@ -193,11 +172,6 @@ compile::conda() {
 }
 
 compile::conda_tools() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local insdir threads upgrade=false url version tool n bin doclean=false
 	declare -A envs
 
@@ -289,11 +263,6 @@ compile::conda_tools() {
 }
 
 compile::java() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local insdir threads url version
 
 	commander::printinfo "installing java"
@@ -311,11 +280,6 @@ compile::java() {
 }
 
 compile::_javawrapper() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local java=java
 	[[ $3 ]] && java="$3"
 	cat <<- EOF > "$1" || return 1
@@ -340,11 +304,6 @@ compile::_javawrapper() {
 }
 
 compile::trimmomatic(){
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	# conda trimmomatic wrapper is written in python and thus cannot handle process substitutions
 	local insdir threads url
 
@@ -365,11 +324,6 @@ compile::trimmomatic(){
 }
 
 compile::sortmerna() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local insdir threads url
 
 	commander::printinfo "installing sortmerna"
@@ -397,11 +351,6 @@ compile::sortmerna() {
 }
 
 compile::segemehl() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local insdir threads url
 
 	commander::printinfo "installing segemehl"
@@ -442,11 +391,6 @@ compile::segemehl() {
 }
 
 compile::preparedexseq() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local insdir threads
 
 	commander::printinfo "installing dexseq"
@@ -465,11 +409,6 @@ compile::preparedexseq() {
 }
 
 compile::revigo() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local insdir threads
 
 	commander::printinfo "installing revigo"
@@ -488,11 +427,6 @@ compile::revigo() {
 }
 
 compile::gem() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local insdir threads url version
 
 	commander::printinfo "installing gem"
@@ -517,11 +451,6 @@ compile::gem() {
 }
 
 compile::idr() {
-	set -o pipefail
-	local error funcname=${FUNCNAME[0]}
-	trap 'trap - ERR; trap - RETURN' RETURN
-	trap 'configure::err -x $? -f "$funcname" -l $LINENO -e "$error" -c "$BASH_COMMAND"; return $?' ERR
-
 	local insdir threads url
 
 	commander::printinfo "installing idr"
