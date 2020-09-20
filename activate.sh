@@ -7,6 +7,7 @@
 [[ ${BASH_VERSINFO[0]} -lt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -lt 4) ]] && echo "requieres bash >= v4.4" >&2 && return 1
 
 declare -F bashbone &> /dev/null && bashbone -x
+BASHBONE_BAK_PATH="$PATH"
 mapfile -t BASCHBONE_BAK_SHOPT < <(shopt | sed -E '/off$/d;{s/^(\S+).+/shopt -s \1/}')
 mapfile -t BASCHBONE_BAK_ERR < <(trap -p ERR)
 mapfile -t BASCHBONE_BAK_RET < <(trap -p RETURN)
@@ -78,6 +79,7 @@ bashbone(){
 			source <(printf '%s\n' "${BASCHBONE_BAK_RET[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_ERR[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_SHOPT[@]}")
+			PATH="$BASHBONE_BAK_PATH"
 
 			local x
 			for x in $(declare -p  | cut -d ' ' -f 3 | grep -oE '^BASHBONE[^=]+'); do

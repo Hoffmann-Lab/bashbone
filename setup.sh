@@ -22,12 +22,10 @@ INSDIR="$(readlink -e "$INSDIR")"
 
 [[ $LOG ]] || LOG="$INSDIR/install.log"
 BASHBONE_ERROR="cannot access $LOG"
+progress::log -v $VERBOSITY -o "$LOG"
 
 unset BASHBONE_ERROR
-
-progress::log -v $VERBOSITY -o "$LOG"
 commander::printinfo "installation started. please be patient." >> "$LOG"
-
 for i in "${INSTALL[@]}"; do
 	BASHBONE_ERROR="compilation of $i failed"
 	progress::observe -v $VERBOSITY -o "$LOG" -f compile::$i -i "$INSDIR" -t $THREADS

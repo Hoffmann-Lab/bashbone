@@ -135,7 +135,7 @@ configure::environment(){
 		trap 'e=$?; if [[ ${BASH_SOURCE[0]} && "$(readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]}; return $e; fi' ERR
 	else
 		# dont call exit directly. allow for back trace through all functions. local scopes are available
-		trap 'e=$?; if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s $0; exit $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]}; return $e; fi' ERR
+		trap 'e=$?; if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "$0"; exit $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]}; return $e; fi' ERR
 	fi
 
 	return 0
