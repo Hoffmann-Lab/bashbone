@@ -62,7 +62,7 @@ configure::err(){
 	while getopts 'f:s:l:e:x:' arg; do
 		case $arg in
 			f) fun="$OPTARG";;
-			s) src="$(basename "$OPTARG")";;
+			s) src="$OPTARG";;
 			l) ((++mandatory)); lineno=$OPTARG;;
 			e) error="$OPTARG";;
 			x) ((++mandatory)); ex=$OPTARG;;
@@ -81,7 +81,8 @@ configure::err(){
 
 	sleep 1 # to be very last entry of a logifle
 	commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
-	return $ex
+
+	return 0
 }
 
 configure::environment(){
@@ -89,7 +90,6 @@ configure::environment(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-i <insdir> | root path to tools
-			-b <insdir> | root path to bashbone
 			-c <conda>  | true/false activate
 		EOF
 		return 1
@@ -124,7 +124,7 @@ configure::environment(){
 	local tp="$(readlink -e "$insdir_tools/latest")"
 	# better stay off custom java path to avoid conflicts with conda openjdk and pre-compiled jars requesting specific versions (IncompatibleClassChangeError)
 	# [[ $tp && -e $tp/java ]] && export JAVA_HOME=$(dirname $(readlink -e $tp/java))
-	[[ $tp ]] && export PATH="$(readlink -e "$tp/!(java)" | xargs -echo | sed 's/ /:/g'):$PATH"
+	[[ $tp ]] && export PATH="$(readlink -e "$tp/"!(java) | xargs -echo | sed 's/ /:/g'):$PATH"
 	export PATH="$(readlink -e "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):$PATH"
 
 	# make use of local scope during trace to trigger tmp file deletion etc.
@@ -132,10 +132,10 @@ configure::environment(){
 	if [[ $- =~ i ]]; then
 		# do not split in muliple lines. lineno will be wrong
 		# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte etc.
-		trap 'e=$?; if [[ ${BASH_SOURCE[0]} && "$(readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]}; return $e; fi' ERR
+		trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ ${BASH_SOURCE[0]} && "$(readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]}; return $e; fi; fi' ERR
 	else
 		# dont call exit directly. allow for back trace through all functions. local scopes are available
-		trap 'e=$?; if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "$0"; exit $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]}; return $e; fi' ERR
+		trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "$(readlink -e "$0")"; exit $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]}; return $e; fi; fi' ERR
 	fi
 
 	return 0

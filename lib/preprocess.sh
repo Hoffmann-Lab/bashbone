@@ -280,6 +280,7 @@ preprocess::trimmomatic() {
 	declare -A phred
 	local l
 	declare -a a mapdata
+	commander::printcmd -a cmd1
 	mapfile -t mapdata < <(commander::runcmd -t $threads -a cmd1)
 	for l in "${mapdata[@]}"; do
 		a=($l)

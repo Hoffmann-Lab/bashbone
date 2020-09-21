@@ -174,9 +174,11 @@ commander::runcmd(){
 					for i in "${!_cmds_runcmd[@]}"; do
 						sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
 						echo "#!/usr/bin/env bash" > "$sh"
-						echo "set -e -o pipefail" >> "$sh"
+						echo "set -o pipefail" >> "$sh"
+						echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh" # do not use set -e, to ignore sigpipe caused by e.g. samtools view | head
 						[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 						printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
+						echo "exit \$(( \$(echo \${PIPESTATUS[@]/141/0} | sed 's/ /+/g') ))" >> "$sh"
 						echo "$sh"
 					done | $(command -v time) -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
 					# time may be a shell keyword, so use full path
@@ -186,9 +188,11 @@ commander::runcmd(){
 					for i in "${!_cmds_runcmd[@]}"; do
 						sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
 						echo "#!/usr/bin/env bash" > "$sh"
-						echo "set -e -o pipefail" >> "$sh"
+						echo "set -o pipefail" >> "$sh"
+						echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh"
 						[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 						printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
+						echo "exit \$(( \$(echo \${PIPESTATUS[@]/141/0} | sed 's/ /+/g') ))" >> "$sh"
 						echo "$sh"
 					done | xargs -P $threads -I {} bash {}
 				fi
@@ -262,10 +266,13 @@ commander::qsubcmd(){
 					[[ ! $log ]] && log="${sh%.*}.out"
 
 					echo "#!/usr/bin/env bash" > "$sh"
-					echo "set -e -o pipefail" >> "$sh"
+					echo "set -o pipefail" >> "$sh"
+					echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh"
 					[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 					printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
-					echo "echo \$? >> '$ex'" >> "$sh"
+					echo "e=\$(( \$(echo \${PIPESTATUS[@]/141/0} | sed 's/ /+/g') ))" >> "$sh"
+					echo "echo \$e >> '$ex'" >> "$sh"
+					echo "exit \$e" >> "$sh"
 
 					qsub $penv "${complexes[@]}" -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh" > /dev/null
 				done

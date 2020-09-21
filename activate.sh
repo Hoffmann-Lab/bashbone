@@ -37,14 +37,12 @@ BASHBONE_VERSION=$version
 BASHBONE_ERROR="environment setup failed. use -c false to disable tools and conda activation"
 configure::environment -i "$toolsdir" -c ${activate:-false}
 
- [[ $activate ]] || {
+[[ $activate ]] || {
 	commander::printinfo {COMMANDER[0]}<<- EOF
 		to activate conda environment do
 		source $(basename "${BASH_SOURCE[0]}") -c true
 	EOF
 }
-
-unset BASHBONE_ERROR
 
 bashbone(){
 	_usage(){
@@ -97,4 +95,5 @@ bashbone(){
 	return 0
 }
 
+unset BASHBONE_ERROR
 return 0

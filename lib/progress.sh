@@ -74,8 +74,8 @@ progress::observe() {
 				[[ $mandatory -lt 2 ]] && _usage
 				shift $((OPTIND-1))
 				case $verbosity in
-					0)	$fun "$@" 2> >(tee -ai "$log" | grep -E --line-buffered '^\s*:ERROR:' || true >&2) >> "$log";;
-					1)	$fun "$@" 2> >(tee -ai "$log" | grep -E --line-buffered '^\s*:ERROR:' || true >&2) >> "$log";;
+					0)	$fun "$@" 2> >(tee -ai "$log" | grep -E --line-buffered '^\s*:ERROR:' >&2 || true) >> "$log";;
+					1)	$fun "$@" 2> >(tee -ai "$log" | grep -E --line-buffered '^\s*:ERROR:' >&2 || true) >> "$log";;
 					2)	$fun "$@" 2> >(tee -ai  "$log" >&2) >> "$log";;
 					*)	_usage;;
 				esac
