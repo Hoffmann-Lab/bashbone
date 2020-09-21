@@ -178,7 +178,7 @@ commander::runcmd(){
 						echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh" # do not use set -e, to ignore sigpipe caused by e.g. samtools view | head
 						[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 						printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
-						echo "exit \$(( \$(echo \${PIPESTATUS[@]/141/0} | sed 's/ /+/g') ))" >> "$sh"
+						echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 						echo "$sh"
 					done | $(command -v time) -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
 					# time may be a shell keyword, so use full path
@@ -192,7 +192,7 @@ commander::runcmd(){
 						echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh"
 						[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 						printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
-						echo "exit \$(( \$(echo \${PIPESTATUS[@]/141/0} | sed 's/ /+/g') ))" >> "$sh"
+						echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 						echo "$sh"
 					done | xargs -P $threads -I {} bash {}
 				fi
@@ -267,12 +267,11 @@ commander::qsubcmd(){
 
 					echo "#!/usr/bin/env bash" > "$sh"
 					echo "set -o pipefail" >> "$sh"
-					echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh"
+					echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then echo \$e >> '$ex'; exit \$e; fi' ERR" >> "$sh"
 					[[ $conda ]] && echo "source $CONDA_PREFIX/bin/activate $conda" >> "$sh"
 					printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
-					echo "e=\$(( \$(echo \${PIPESTATUS[@]/141/0} | sed 's/ /+/g') ))" >> "$sh"
-					echo "echo \$e >> '$ex'" >> "$sh"
-					echo "exit \$e" >> "$sh"
+					echo "echo 0 >> '$ex'" >> "$sh"
+					echo "exit 0" >> "$sh"
 
 					qsub $penv "${complexes[@]}" -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh" > /dev/null
 				done
