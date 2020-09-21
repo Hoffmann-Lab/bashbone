@@ -218,14 +218,14 @@ commander::qsubcmd(){
 			-v           | verbose on
 			-b           | benchmark on
 			-c <env>     | run with conda
-			-l <complex> | sge digestable list of consumables as key value pairs (see qconf -sc or -mc)
+			-l <complex> | sge digestable list of consumables as key="value" pairs (see qconf -sc or -mc)
 			-f <file>    | for logs path to
 			-t <threads> | number of
 			-p <env>     | name of parallel
 			-a <cmds>    | ALWAYS LAST OPTION
 			               array of
 			example:
-			${FUNCNAME[1]} -v -l "hostname=!bcl102&!bcl103" -l "mem_free=50G" -c segemehl -p threads -t 4 -a cmd
+			${FUNCNAME[1]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c segemehl -p threads -t 4 -a cmd
 		EOF
 		return 1
 	}
@@ -273,13 +273,13 @@ commander::qsubcmd(){
 					echo "echo 0 >> '$ex'" >> "$sh"
 					echo "exit 0" >> "$sh"
 
-					qsub $penv "${complexes[@]}" -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh" > /dev/null
+					qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh" > /dev/null
 				done
 				if $benchmark; then
 					$(command -v time) -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" \
-					qsub $penv "${complexes[@]}" -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
+					qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
 				else
-					qsub $penv "${complexes[@]}" -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
+					qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
 				fi
 				unset jobname # do this for qdel trap handling
 				[[ $log && -e "$ex" ]] && {
