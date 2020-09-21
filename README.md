@@ -222,7 +222,7 @@ Then the info file should consist of:
 
 ## Example
 
-Tiny example pipeline to perform gene fusion detection and differential gene expression analysis
+Tiny example pipeline to perform gene fusion detection and differential expression analyses
 
 ```bash
 source <path/of/installation/activate.sh> -c true
@@ -261,7 +261,8 @@ declare -A strandness
 alignment::inferstrandness -t $threads -g $gtf -p /tmp -r mapped -x strandness
 quantify::featurecounts -t $threads -p /tmp -g $gtf -o results/counted -r mapped -x strandness
 quantify::tpm -t $threads -g $gtf -o results/counted -r mapped
-expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o results/deseq -r mapped
+expression::diego -t $threads -g $gtf -c comparisons -i results/counted -j results/mapped -p /tmp -o results/diffexonjunctions -r mapped -x strandness
+expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o results/diffgenes -r mapped
 declare -a custergenes
 cluster::coexpression -t $threads -g $gtf -b protein_coding -f 23 -i /results/counted -o results/coexpressed -r mapped -l clustergenes
 ```
