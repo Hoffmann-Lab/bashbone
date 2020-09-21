@@ -10,30 +10,32 @@ expression::diego() {
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
-			-S <hardskip> | true/false return
-			-s <softskip> | true/false only print commands
-			-5 <skip>     | true/false md5sums, gtf prep respectively
-			-t <threads>  | number of
-			-r <mapper>   | array of bams within array of
-			-g <gtf>      | path to
-			-c <cmpfiles> | array of
-			-i <htscdir>  | path to
-			-j <mapeddir> | path to
-			-p <tmpdir>   | path to
-			-o <outdir>   | path to
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-5 <skip>       | true/false md5sums, gtf prep respectively
+			-t <threads>    | number of
+			-r <mapper>     | array of bams within array of
+			-x <strandness> | hash per bam of
+			-g <gtf>        | path to
+			-c <cmpfiles>   | array of
+			-i <htscdir>    | path to
+			-j <mapeddir>   | path to
+			-p <tmpdir>     | path to
+			-o <outdir>     | path to
 		EOF
 		return 1
 	}
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads countsdir mappeddir tmpdir outdir gtf tmp
-	declare -n _mapper_diego _cmpfiles_diego
-	while getopts 'S:s:5:t:r:g:c:i:j:p:o:' arg; do
+	declare -n _mapper_diego _cmpfiles_diego _strandness_diego
+	while getopts 'S:s:5:t:r:x:g:c:i:j:p:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			5)	$OPTARG && skipmd5=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			r)	((++mandatory)); _mapper_diego=$OPTARG;;
+			x)	((++mandatory)); _strandness_diego=$OPTARG;;
 			g)	((++mandatory)); gtf="$OPTARG";;
 			c)	((++mandatory)); _cmpfiles_diego=$OPTARG;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
@@ -43,7 +45,7 @@ expression::diego() {
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 8 ]] && _usage
+	[[ $mandatory -lt 9 ]] && _usage
 
 	commander::printinfo "differential splice junction analyses"
 
@@ -86,7 +88,8 @@ expression::diego() {
 		-l exon \
 		-f exon_id \
 		-o "$countsdir" \
-		-r _mapper_diego
+		-r _mapper_diego \
+		-x strandness
 
 	declare -a cmd1 cmd2 mapdata tdirs
 	local m f i c t odir sjfile countfile min sample condition library replicate factors

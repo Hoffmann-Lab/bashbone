@@ -749,7 +749,7 @@ alignment::_index() {
 
 alignment::inferstrandness(){
 	_cleanup::alignment::inferstrandness(){
-		rm -f "${tfiles[@]}"
+		rm -f "$tmpfile"
 	}
 
 	_usage() {
@@ -785,29 +785,36 @@ alignment::inferstrandness(){
 
 	commander::printinfo "inferring library preparation method"
 
-	declare -a cmd1 cmd2 tfiles
+	local tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)"
+	declare -a cmd1
+	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+		perl -lane '
+			next if $F[0] =~ /^(MT|chrM)/i;
+			next unless $F[2] eq "exon";
+			if($F[6] eq "+"){
+				++$plus;
+				print join"\t",($F[0],$F[3],$F[4],$F[1],0,$F[6]);
+			} else {
+				++$minus;
+				print join"\t",($F[0],$F[3],$F[4],$F[1],0,$F[6]);
+			}
+			exit if $plus>2000 && $minus>2000;
+		'
+	CMD
+		"$gtf" > "$tmpfile"
+	CMD
+
+	if $skip; then
+		commander::printcmd -a cmd1
+	else
+		commander::runcmd -v -b -t $threads -a cmd1
+	fi
+
+	declare -a cmd2
 	local m f
 	for m in "${_mapper_inferstrandness[@]}"; do
 		declare -n _bams_inferstrandness=$m
 		for f in "${_bams_inferstrandness[@]}"; do
-			tfiles+=("$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
-
-			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-				perl -lane '
-					next if $F[0] =~ /^(MT|chrM)/i;
-					next unless $F[2] eq "exon";
-					if($F[6] eq "+"){
-						++$plus;
-						print join"\t",($F[0],$F[3],$F[4],$F[1],0,$F[6]);
-					} else {
-						++$minus;
-						print join"\t",($F[0],$F[3],$F[4],$F[1],0,$F[6]);
-					}
-					exit if $plus>2000 && $minus>2000;
-				'
-			CMD
-				"$gtf" > "${tfiles[-1]}"
-			CMD
 			# requires, sorted, indexed bam
 			# 0 - unstranded
 			# 1 - dUTP ++,-+ (FR stranded)
@@ -818,7 +825,7 @@ alignment::inferstrandness(){
 					-q 0
 					-s 100000
 					-i "$f"
-					-r "${tfiles[-1]}";
+					-r "$tmpfile";
 				}
 			CMD
 				perl -lane '
@@ -841,13 +848,11 @@ alignment::inferstrandness(){
 	done
 
 	if $skip; then
-		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
 		local l
 		declare -a a mapdata
-		commander::runcmd -v -b -t $threads -a cmd1
-		echo ":INFO: running commands of array cmd2"
+		commander::printinfo "running commands of array cmd2"
 		commander::printcmd -a cmd2
 		mapfile -t mapdata < <(commander::runcmd -c rseqc -t $threads -a cmd2)
 		for l in "${mapdata[@]}"; do

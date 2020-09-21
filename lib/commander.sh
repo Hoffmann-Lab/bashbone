@@ -140,12 +140,12 @@ commander::runcmd(){
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
-			-v           | verbose on
-			-b           | benchmark on
-			-c <env>     | run with conda
-			-t <threads> | number of
-			-a <cmds>    | ALWAYS LAST OPTION
-			               array of
+			-v             | verbose on
+			-b             | benchmark on
+			-c <env>       | run with conda
+			-t <instances> | number of parallel
+			-a <cmds>      | ALWAYS LAST OPTION
+			                 array of
 			example:
 			${FUNCNAME[1]} -v -b -t 1 -a cmd
 		EOF
@@ -220,7 +220,7 @@ commander::qsubcmd(){
 			-c <env>     | run with conda
 			-l <complex> | sge digestable list of consumables as key="value" pairs (see qconf -sc or -mc)
 			-f <file>    | for logs path to
-			-t <threads> | number of
+			-t <threads> | to be allocated number of
 			-p <env>     | name of parallel
 			-a <cmds>    | ALWAYS LAST OPTION
 			               array of
