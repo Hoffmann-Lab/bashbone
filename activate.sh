@@ -12,14 +12,39 @@ mapfile -t BASCHBONE_BAK_SHOPT < <(shopt | sed -E '/off$/d;{s/^(\S+).+/shopt -s 
 mapfile -t BASCHBONE_BAK_ERR < <(trap -p ERR)
 mapfile -t BASCHBONE_BAK_RET < <(trap -p RETURN)
 
+BASHBONE_WORKDIR="$PWD"
 BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
-toolsdir="$(dirname "$BASHBONE_DIR")"
+BASHBONE_TOOLSDIR="$(dirname "$BASHBONE_DIR")"
 unset OPTIND activate
-while getopts :i:c: arg; do
+while getopts ':i:c:x:h' arg; do
 	case $arg in
-		i) toolsdir="$OPTARG";;
-		c) activate="$OPTARG";;
-		:) echo "argument missing" >&2; return 1;;
+		i)	BASHBONE_TOOLSDIR="$OPTARG";;
+		c)	BASHBONE_CONDA="$OPTARG";;
+		x)	BASHBONE_EXITFUN="$OPTARG";;
+		:)	echo "argument missing" >&2; return 1;;
+		h)	cat <<- EOF
+				This is bashbone activation script.
+
+				Afterwards bashbone functions can be called. To see lists of available functions, execute bashbone -h
+				To revert changes made to the current shell environment, execute bashbone -x
+
+				Usage:
+				-h            | this help
+				-i <path>     | to installation root <path>/latest/<tools>/<bins>
+				                default: inferred from script location
+				                hint: run activation from source code, indeed enables basic functions, but will fail on executing tools
+				-c <activate> | true/false conda from [-i]/conda/bin
+				                default: false
+				-x <fun>      | a function or command to be called upon EXIT signal with the exit code appended to its argument list
+				                default: none
+
+				Example:
+				source activate.sh -i <path> -c true -x "<fun> [<arg>..]"
+				bashbone -h
+				bashbone -x
+			EOF
+			return 0
+		;;
 	esac
 done
 
@@ -34,12 +59,43 @@ done
 IFS=$_IFS
 BASHBONE_VERSION=$version
 
-BASHBONE_ERROR="environment setup failed. use -c false to disable tools and conda activation"
-configure::environment -i "$toolsdir" -c ${activate:-false}
+${BASHBONE_CONDA:-false} && {
+	BASHBONE_ERROR="conda activation failed. use -c false to disable conda activation"
+	source $BASHBONE_TOOLSDIR/conda/bin/activate base &> /dev/null
+	commander::printinfo "utilizing $(conda --version)"
+}
+set -E -o pipefail -o functrace # -E allows simple trap bubbeling and -o functrace enables inheritance of RETURN and DEBUG trap
+shopt -s extdebug # do not shopt -u extdebug, otherwise set -E -o pipefail configuration will be nuked
+shopt -s extglob
+shopt -s expand_aliases
+ulimit -n $(ulimit -Hn)
+export MALLOC_ARENA_MAX=4
+BASHBONE_ERROR="environment setup failed. use -i [path] to point towards a custom installation directory"
+td="$(readlink -e "$BASHBONE_TOOLSDIR/latest")"
+# better stay off custom java path to avoid conflicts with conda openjdk and pre-compiled jars requesting specific versions (IncompatibleClassChangeError)
+# [[ $td && -e $td/java ]] && export JAVA_HOME=$(dirname $(readlink -e $td/java))
+[[ $td ]] && export PATH="$(readlink -e "$td/"!(java) | xargs -echo | sed 's/ /:/g'):$PATH"
+export PATH="$(readlink -e "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):$PATH"
+if [[ $BASHBONE_EXITFUN ]]; then
+	trap 'configure::exit -p $$ -f $BASHBONE_EXITFUN $?' EXIT
+else
+	trap 'configure::exit -p $$' EXIT
+fi
+# make use of local scope during trace to trigger tmp file deletion etc.
+trap 'declare -F _cleanup::${FUNCNAME[0]} &> /dev/null && _cleanup::${FUNCNAME[0]}' RETURN
+if [[ $- =~ i ]]; then
+	# do not split in muliple lines. lineno will be wrong
+	# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte etc.
+	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ ${BASH_SOURCE[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]} -w "$BASHBONE_WORKDIR"; return $e; fi; fi' ERR
+else
+	# dont call exit directly. allow for back trace through all functions. local scopes are available
+	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ "${BASH_SOURCE[0]}" == "$0" && "${FUNCNAME[0]}" == "main" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "$0" -w "$BASHBONE_WORKDIR"; exit $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]} -w "$BASHBONE_WORKDIR"; return $e; fi; fi' ERR
+fi
+trap 'BASHBONE_ERROR="killed"' INT TERM
 
-[[ $activate ]] || {
+[[ $BASHBONE_CONDA ]] || {
 	commander::printinfo {COMMANDER[0]}<<- EOF
-		to activate conda environment do
+		to activate conda environment execute
 		source $(basename "${BASH_SOURCE[0]}") -c true
 	EOF
 }

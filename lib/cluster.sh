@@ -108,7 +108,7 @@ cluster::coexpression_deseq(){
 		# 0 padj 1 fc>0.5 2 basemean > 5 3 30% see below
 
 		[[ $biotype && "$biotype" != "." ]] && {
-			perl -lane -F'\t' '{
+			perl -F'\t' -slane '
 				if($#F<5){
 					print $F[0] if $F[2]==$cb;
 				} else {
@@ -118,7 +118,7 @@ cluster::coexpression_deseq(){
 						$m{$1}=1;
 					}
 				}
-			}' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
+			' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
 			grep -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			tfiles+=("$tmp.genes" "$tmp.filtered.genes")
@@ -388,7 +388,7 @@ cluster::coexpression(){
 		fi
 
 		[[ $biotype && "$biotype" != "." ]] && {
-			perl -F'\t' -slane '{
+			perl -F'\t' -slane '
 				if($#F<5){
 					print $F[0] if $F[2]==$cb;
 				} else {
@@ -398,7 +398,7 @@ cluster::coexpression(){
 						$m{$1}=1;
 					}
 				}
-			}' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
+			' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
 			grep -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			tfiles+=("$tmp.genes" "$tmp.filtered.genes")

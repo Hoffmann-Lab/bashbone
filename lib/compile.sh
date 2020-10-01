@@ -134,7 +134,7 @@ compile::conda() {
 		Rscript - <<< '
 			options(unzip="$(command -v unzip)");
 			Sys.setenv(TAR="$(command -v tar)");
-			BiocManager::install(c("BiocParallel","genefilter","DESeq2","DEXSeq","TCGAutils","TCGAbiolinks","impute","preprocessCore","GO.db","AnnotationDbi"),
+			BiocManager::install(c("BiocParallel","genefilter","DESeq2","DEXSeq","clusterProfiler","TCGAutils","TCGAbiolinks","impute","preprocessCore","GO.db","AnnotationDbi"),
 				ask=F, Ncpus=$threads, clean=T, destdir="$tmpdir");
 		'
 	CMD
@@ -145,7 +145,7 @@ compile::conda() {
 		Rscript - <<< '
 			options(unzip="$(command -v unzip)");
 			Sys.setenv(TAR="$(command -v tar)");
-			install.packages(c("knapsack","WGCNA","dplyr","tidyverse","ggpubr","ggplot2","gplots","RColorBrewer","svglite","pheatmap","data.table"),
+			install.packages(c("reshape2","WGCNA","dplyr","tidyverse","ggpubr","ggplot2","gplots","RColorBrewer","svglite","pheatmap","treemap","data.table"),
 				repos="http://cloud.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
 			install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
 		'

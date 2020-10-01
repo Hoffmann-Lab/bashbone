@@ -51,19 +51,19 @@ options::checkopt(){
 		-*) commander::printerr "illegal option $1"; return 1;;
 		*) commander::printerr "illegal option $2"; return 1;;
 	esac
-	$arg && {
+	if $arg; then
 		[[ ! $2 ]] && commander::printerr "argument missing for option $1" && return 1
 		[[ "$2" =~ ^- ]] && commander::printerr "illegal argument $2 for option $1" && return 1
-		return 0
-	} || {
+	else
 		[[ $2 ]] && [[ ! "$2" =~ ^- ]] && commander::printerr "illegal argument $2 for option $1" && return 1
-		return 0
-	}
+	fi
+
+	return 0
 }
 
 options::parse(){
 	[[ $# -eq 0 ]] && options::usage
-	[[ $# -eq 1 ]] && [[ ! $1 =~ ^- ]] && echo "illegal option $1" >&2 && return 1
+	[[ $# -eq 1 ]] && [[ ! $1 =~ ^- ]] && commander::printerr "illegal option $1" && return 1
 	for i in $(seq 1 $#); do
 		if [[ ${!i} =~ ^- ]]; then
 			j=$((i+1))

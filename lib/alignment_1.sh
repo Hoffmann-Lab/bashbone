@@ -337,7 +337,7 @@ alignment::bwa() {
 			g)	((++mandatory)); genome="$OPTARG";;
 			x)	((++mandatory)); idxprefix="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG/bwa"; mkdir -p "$outdir";;
-			a)	accuracy=$((100-$OPTARG));;
+			a)	accuracy=$((100-OPTARG));;
 			f)	forcemem=$OPTARG;;
 			r)	((++mandatory))
 				_mapper_bwa=$OPTARG
@@ -929,12 +929,13 @@ alignment::bamstats(){
 
 	commander::printinfo "summarizing mapping stats"
 
-	local m instances ithreads
+	local m instances ithreads x
 	for m in "${_mapper_bamstats[@]}"; do
 		declare -n _bams_bamstats=$m
 		for i in "${!_bams_bamstats[@]}"; do
 			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
-			((instances+=${#_mi_bamstats[@]}))
+			x=${#_mi_bamstats[@]}
+			((instances+=x))
 		done
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
@@ -946,7 +947,6 @@ alignment::bamstats(){
 			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
 			for bam in "${_mi_bamstats[@]}"; do
 				[[ "$bam" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
-				bam=${bam/%\.sorted\.bam/.bam}
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 					samtools flagstat
 						-@ $ithreads
@@ -962,6 +962,11 @@ alignment::bamstats(){
 	else
 		commander::runcmd -v -b -t $instances -a cmd1
 	fi
+
+	[[ $x -lt 2 ]] && {
+		commander::warn "too few postprocessing steps applied. proceeding without plotting"
+		return 0
+	}
 
 	local filter b o all a s c
 	declare -a cmd2
@@ -985,7 +990,7 @@ alignment::bamstats(){
 				rm -f $o
 			fi
 			for bam in "${_mi_bamstats[@]}"; do
-				[[ ! $filter ]] && filter='mapped' || filter=$(echo $bam | rev | cut -d '.' -f 2 | rev)
+				[[ ! $filter ]] && filter='mapped' || filter=$(echo "${bam/\.sorted\./.}" | rev | cut -d '.' -f 2 | rev)
 				a=$(grep mapped -m 1 ${bam%.*}.flagstat | cut -d ' ' -f 1)
 				s=$(grep secondary -m 1 ${bam%.*}.flagstat | cut -d ' ' -f 1) # get rid of multicounts - 0 if unique reads in bam only
 				c=$((a-s))

@@ -41,7 +41,7 @@ if ($ARGV[1]){
 					$n = $1;
 					$mps{$g} = $n;
 				}
-				if ($l[-1]=~/gene_biotype\s+\"([^\"]+)/){
+				if ($l[-1]=~/gene_(bio)?type\s+\"([^\"]+)/){
 					$b = $1;
 				}
 				$m{$g} = join"\t",($n,$b,'NA');

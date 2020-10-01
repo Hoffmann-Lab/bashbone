@@ -139,7 +139,7 @@ expression::diego() {
 						fi
 						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 							diego.py
-								-d $min
+								-d $((min<3?min:3))
 								-a "$odir/input.sj.tsv"
 								-b "$odir/groups.tsv"
 								-x $c
@@ -147,7 +147,7 @@ expression::diego() {
 						CMD
 						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 							diego.py
-								-d $min
+								-d $((min<3?min:3))
 								-a "$odir/input.sj.tsv"
 								-b "$odir/groups.tsv"
 								-x $c
@@ -166,7 +166,7 @@ expression::diego() {
 					CMD
 					commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 						diego.py
-							-d $min
+							-d $((min<3?min:3))
 							-a "$odir/input.ex.tsv"
 							-b "$odir/groups.tsv"
 							-x $c
@@ -174,7 +174,7 @@ expression::diego() {
 					CMD
 					commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 						diego.py
-							-d $min
+							-d $((min<3?min:3))
 							-a "$odir/input.ex.tsv"
 							-b "$odir/groups.tsv"
 							-x $c

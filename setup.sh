@@ -3,8 +3,6 @@
 
 source $(dirname $(readlink -e $0))/activate.sh -c false || exit 1
 
-trap 'configure::exit -p $$' EXIT
-
 THREADS=$(cat /proc/cpuinfo | grep -cF processor)
 VERBOSITY=0
 BASHBONE_ERROR="parameterization issue"
