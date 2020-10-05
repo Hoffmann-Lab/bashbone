@@ -102,7 +102,7 @@ compile::conda() {
 		curl ghostscript dos2unix \
 		ucsc-facount khmer \
 		datamash samtools bedtools \
-		htslib bcftools vcflib vt
+		htslib htseq bcftools vcflib vt
 	cpanm Switch
 
 	# setup r env with compilers for r packages
@@ -182,7 +182,7 @@ compile::conda_tools() {
 	done < <(conda info -e | awk -v prefix="^"$insdir '$NF ~ prefix {print $1}')
 
 	# python 3 envs
-	for tool in fastqc cutadapt rcorrector star bwa rseqc subread arriba star-fusion picard bamutil macs2 diego gatk4 freebayes varscan; do
+	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq arriba star-fusion picard bamutil macs2 diego gatk4 freebayes varscan; do
 		n=${tool//[^[:alpha:]]/}
 		$upgrade && ${envs[$n]:=false} && continue
 		doclean=true

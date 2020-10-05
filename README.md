@@ -1,4 +1,4 @@
-# Bashbones
+# Bashbone
 ---
 
 A bash library for workflow and pipeline design within but not restricted to the scope of Next Generation Sequencing (NGS) data analyses.

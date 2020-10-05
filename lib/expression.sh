@@ -54,11 +54,11 @@ expression::diego() {
 	else
 		commander::printinfo "checking md5 sums"
 		local thismd5gtf tmp
-		declare -a cmdprep
+		declare -a cmdprep1 cmdprep2
 		[[ -s "$gtf" ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
 		if [[ ! -s ${gtf%.*}.diego.bed ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::printinfo "preparing annotation for differential splice junction analyses"
-			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmdprep1 -s '&&' -c {COMMANDER[0]}<<- CMD
 				gfftoDIEGObed.pl -g "$gtf" -o "${gtf%.*}.diego.bed"
 			CMD
 		fi
@@ -66,17 +66,18 @@ expression::diego() {
 		if [[ ! -s "${gtf%.*}.aggregated.gtf" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::printinfo "preparing annotation for exon_id tag based quantification"
 			tmp=$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.gtf)
-			commander::makecmd -a cmdprep -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmdprep2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				dexseq_prepare_annotation2.py
 					-r no
 					-f "$tmp"
 					"$gtf" "${gtf%.*}.dexseq.gtf"
 			CMD
-				sed -r 's/(.+gene_id\s+")([^"]+)(.+exon_number\s+")([^"]+)(.+)/\1\2\3\4\5; exon_id "\2:\4"/' "$tmp" > "${gtf%.*}.aggregated.gtf"
+				sed -E 's/(.+gene_id\s+")([^"]+)(.+exon_number\s+")([^"]+)(.+)/\1\2\3\4\5; exon_id "\2:\4"/' "$tmp" > "${gtf%.*}.aggregated.gtf"
 			CMD
 		fi
 
-		commander::runcmd -v -b -t $threads -a cmdprep
+		commander::runcmd -c diego -v -b -t $threads -a cmdprep1
+		commander::runcmd -c htseq -v -b -t $threads -a cmdprep2
 	fi
 
 	quantify::featurecounts \
@@ -89,7 +90,7 @@ expression::diego() {
 		-f exon_id \
 		-o "$countsdir" \
 		-r _mapper_diego \
-		-x strandness
+		-x _strandness_diego
 
 	declare -a cmd1 cmd2 mapdata tdirs
 	local m f i c t odir sjfile countfile min sample condition library replicate factors

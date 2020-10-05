@@ -47,8 +47,6 @@ progress::log() {
 		1)	progress::_bar &
 			{ tail -f "$log" | grep -E --line-buffered '^\s*(:INFO:|:CMD:|:BENCHMARK:|:WARNING:)'; } &
 			;;
-		2)	{ tail -f "$log" | grep -v -E --line-buffered '^\s*:ERROR:'; } &;;
-		*)	_usage;;
 	esac
 
 	return 0
@@ -76,7 +74,7 @@ progress::observe() {
 				case $verbosity in
 					0)	$fun "$@" 2> >(tee -ai "$log" | grep -E --line-buffered '^\s*:ERROR:' >&2 || true) >> "$log";;
 					1)	$fun "$@" 2> >(tee -ai "$log" | grep -E --line-buffered '^\s*:ERROR:' >&2 || true) >> "$log";;
-					2)	$fun "$@" 2> >(tee -ai  "$log" >&2) >> "$log";;
+					2)	$fun "$@" 2> >(tee -ai "$log" >&2) | tee -ai "$log";;
 					*)	_usage;;
 				esac
 				return 0
