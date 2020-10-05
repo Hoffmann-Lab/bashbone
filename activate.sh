@@ -15,7 +15,7 @@ mapfile -t BASCHBONE_BAK_RET < <(trap -p RETURN)
 BASHBONE_WORKDIR="$PWD"
 BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
 BASHBONE_TOOLSDIR="$(dirname "$BASHBONE_DIR")"
-unset OPTIND activate
+unset OPTIND
 while getopts ':i:c:x:h' arg; do
 	case $arg in
 		i)	BASHBONE_TOOLSDIR="$OPTARG";;
@@ -83,11 +83,13 @@ else
 fi
 # make use of local scope during trace to trigger tmp file deletion etc.
 trap 'declare -F _cleanup::${FUNCNAME[0]} &> /dev/null && _cleanup::${FUNCNAME[0]}' RETURN
-if [[ $- =~ i ]]; then
-	# do not split in muliple lines. lineno will be wrong
-	# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte etc.
+# check execution from terminal (use return only) or a script/subshell (use return and exit)
+# error traps must not be splited into muliple lines to hold correct lineno
+if ! [[ ${BASH_EXECUTION_STRING} ]]; then # prefer over [[ $- =~ i ]] which is true in bash -i -c 'echo $-'
+	# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte and other functions
 	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ ${BASH_SOURCE[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]} -w "$BASHBONE_WORKDIR"; return $e; fi; fi' ERR
 else
+	# if activate used within script or subshell, traps will be nuked anyways, thus allow tracing for all functions
 	# dont call exit directly. allow for back trace through all functions. local scopes are available
 	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ "${BASH_SOURCE[0]}" == "$0" && "${FUNCNAME[0]}" == "main" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "$0" -w "$BASHBONE_WORKDIR"; exit $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]} -w "$BASHBONE_WORKDIR"; return $e; fi; fi' ERR
 fi

@@ -8,22 +8,34 @@ use File::Spec::Functions qw(catfile);
 use File::Path qw(make_path remove_tree);
 use File::Temp;
 use Try::Tiny;
-use sigtrap qw(handler mydie INT TERM KILL);
+use sigtrap qw(handler cleanup END);
 
-my $tmp;
+my @tmp;
+sub cleanup {
+	for (@tmp){
+		unlink $_ for glob "$_*";
+	}
+}
+
+END {
+	&cleanup();
+}
+
 sub mydie {
 	say STDERR $_ for @_;
-	unlink $tmp->filename if defined $tmp;
+	&cleanup();
 	exit 1;
 }
 
 sub usage {
 print <<EOF;
 DESCRIPTION
-Convert a genome and its annotation into a transcriptome
+Convert a genome and its annotation into
+- a transcriptome - i.e. each faste entry is a single transcript and
+- a transcriptgenome - i.e. single fake chromosome containing all transcripts N-separated
 (c) Konstantin Riege - konstantin{.}riege{a}leibniz-fli{.}de
 
-i.e. an input gtf with
+an chromosomal input gtf with
 
 pos  i                            j
 .....[=======....========..=======]..   transcript and exons
@@ -32,7 +44,7 @@ pos  i                            j
 will be converted into
 
 1                     j-i
-[======================]   transcript as "genes"
+[======================]   transcript as "gene"
 =======|========|=======   exons
           ------|----      CDS
                      s     STOP (actually not printed)
@@ -47,19 +59,17 @@ PARAMETER
 -o | --outdir    path to output directory
 
 REQUIREMENTS
-input gtf needs to be sorted this way:
-  sort -k3,3r -k1,1 -k4,4n -k5,5n
-gtf features:
+gtf with features:
   transcript
   exon (at least one per transcript, even for ncRNAs)
   CDS (optional)
-gtf info fields:
+and info fields:
   transcript_id
   exon_number
 
 RESULTS
-unsorted gtf @ outdir/transcriptome.gtf
-output fasta @ outdir/transcriptome.fa
+output gtf @ outdir/transcriptome.gtf outdir/transcriptgenome.gtf
+output fasta @ outdir/transcriptome.fa outdir/transcriptgenome.fa
 
 EOF
 	exit 0;
@@ -77,8 +87,8 @@ my ($verbose, $fasta, $gtf, $outdir);
 &usage unless $fasta && $gtf && $outdir;
 
 try {
-	$tmp=File::Temp->new(DIR => "/dev/shm/", SUFFIX => ".faidx");
-	my $fa=Bio::Index::Fasta->new(-filename => $tmp->filename, -write_flag => 1 , -verbose => -1);
+	push @tmp,File::Temp->new(DIR => "/dev/shm/", SUFFIX => ".faidx")->filename;
+	my $fa=Bio::Index::Fasta->new(-filename => $tmp[-1], -write_flag => 1 , -verbose => -1);
 	$fa->id_parser(sub{
 		my ($h)=@_;
 		$h=~/^>\s*(\S+)/;
@@ -86,11 +96,20 @@ try {
 	});
 	$fa->make_index($fasta);
 
+	push @tmp,File::Temp->new(DIR => "/dev/shm/", SUFFIX => ".ingtf")->filename;
+	my $cmd="sort -k3,3r -k1,1 -k4,4n -k5,5n '$gtf' > $tmp[-1]";
+	system($cmd) == 0 or &mydie($?);
+	$gtf=$tmp[-1];
+
+	push @tmp,File::Temp->new(DIR => "/dev/shm/", SUFFIX => ".outgtf")->filename;
+	my $outgtf=$tmp[-1];
+
+
 	make_path($outdir);
 	my (@F, $tid, %t, $eno, %eorigsta, %tseq, $seq, $subseq, %enewsta, $sta, %csta, %csto);
 	my $chr="";
 	open GTF,"<$gtf" or &mydie($!);
-	open OGTF,">".catfile($outdir,"transcriptome.gtf") or &mydie($!);
+	open TGTF,">$outgtf" or &mydie($!);
 	while(<GTF>){
 		chomp;
 		@F = split/\t/,$_;
@@ -119,7 +138,7 @@ try {
 			$F[4]=$F[3]+length($subseq)-1; # set new stop position
 			$enewsta{"$tid$eno"}=$F[3]; # keep new position to recalculate related CDS
 			$F[0]=$tid;
-			say OGTF join"\t",@F;
+			say TGTF join"\t",@F;
 			say join"\t",@F if $verbose;
 		}
 		if($F[2] eq "CDS"){
@@ -134,7 +153,7 @@ try {
 			$F[4]=$sta+$F[4]-$F[3]; # set new stop position
 			$F[3]=$sta; # set new start position
 			$F[0]=$tid;
-			say OGTF join"\t",@F;
+			say TGTF join"\t",@F;
 			say join"\t",@F if $verbose;
 			$csta{$tid}=$F[3] unless exists $csta{$tid}; # due to sort -k4,4 keep very first CDS start position for UTR calculation
 			$csto{$tid}=$F[4]; # update until last CDS stop position for UTR calculation
@@ -142,14 +161,19 @@ try {
 	}
 	close GTF;
 
-	open OFA,">$outdir/transcriptome.fa" or &mydie($!);
+	open TFA,">".catfile($outdir,"transcriptome.fa") or &mydie($!);
+	open GFA,">".catfile($outdir,"transcriptgenome.fa") or &mydie($!);
+	say GFA ">chr1";
+	say GFA $_ for unpack "(A100)*","N"x1000;
+	my ($s, $fill);
+	my $overhang=0;
 	for $tid (sort {$a cmp $b} keys %t){
 		@F=split/\t/,$t{$tid};
 		$F[0]=$tid;
 		$F[2]="gene"; # treat transcript as gene in new annotation
 		$F[3]=1; # set start posotion
 		$F[4]=length($tseq{$tid}); # set stop position
-		say OGTF join"\t",@F;
+		say TGTF join"\t",@F;
 		say join"\t",@F if $verbose;
 		if(exists $csto{$tid} && $csto{$tid}<$F[4]){ # if right hand CDS present, calculate UTR
 			$F[2]="5primeUTR";
@@ -158,7 +182,7 @@ try {
 				$F[2]="3primeUTR";
 				$F[3]+=3 if $F[3]+3<$F[4]; # move UTR behind stop codon
 			}
-			say OGTF join"\t",@F;
+			say TGTF join"\t",@F;
 			say join"\t",@F if $verbose;
 		}
 		if(exists $csta{$tid} && $csta{$tid}>1){ # if left hand CDS present, calculate UTR
@@ -169,15 +193,43 @@ try {
 				$F[2]="3primeUTR";
 				$F[4]-=3 if $F[4]-4>1; # move UTR behind stop codon
 			}
-			say OGTF join"\t",@F;
+			say TGTF join"\t",@F;
 			say join"\t",@F if $verbose;
 		}
-		say OFA ">$tid";
-		say OFA $_ for unpack "(A100)*",$tseq{$tid};
-	}
 
-	close OGTF;
-	close OFA;
+		$s=$tseq{$tid};
+		say TFA ">$tid";
+		say TFA $_ for unpack "(A100)*",$s;
+
+		$s="N"x$overhang.$s;
+		$overhang=length($s)%1000;
+		$fill=1000-$overhang;
+		say GFA $_ for unpack "(A100)*",$s."N"x$fill;
+	}
+	close TGTF;
+	close TFA;
+	say GFA $_ for unpack "(A100)*","N"x$overhang;
+	close GFA;
+
+	system("sort -k1,1 -k4,4n -k5,5n $outgtf > ".catfile($outdir,"transcriptome.gtf")) == 0 or &mydie($?);
+	open GTF,"<".catfile($outdir,"transcriptome.gtf") or die &mydie($!);
+	open GGTF,">".catfile($outdir,"transcriptgenome.gtf") or die &mydie($!);
+	my ($l, $i) = (0, 0);
+	$chr="";
+	while(<GTF>){
+		chomp;
+		@F = split/\t/,$_;
+		$l=$F[4] if $F[2] eq "gene";
+		$i+=1000+$l unless $chr eq $F[0];
+		$chr=$F[0];
+		$F[0]="chr1";
+		$F[3] += $i;
+		$F[4] += $i;
+		say GGTF join"\t",@F;
+		say join"\t",@F if $verbose;
+	}
+	close GTF;
+	close GGTF;
 } catch {
 	&mydie($_);
 };
