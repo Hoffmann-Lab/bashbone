@@ -26,7 +26,6 @@ configure::exit(){
 		$exitfun "$@"
 	}
 
-	sleep 1 # to get very last entry of logifle by tail -f before being killed
 	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
 	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # includes pids of pstree parser pipeline above, thus throws errors necessary to be catched
 	printf "\r"
@@ -69,7 +68,6 @@ configure::err(){
 	local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o$0}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o$0}else{o=""}}}' $src | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 	[[ $fun ]] && src="$src ($fun)"
 
-	sleep 1 # to be very last entry of a logifle
 	commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
 
 	return 0

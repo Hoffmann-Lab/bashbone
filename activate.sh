@@ -77,21 +77,21 @@ td="$(readlink -e "$BASHBONE_TOOLSDIR/latest")"
 [[ $td ]] && export PATH="$(readlink -e "$td/"!(java) | xargs -echo | sed 's/ /:/g'):$PATH"
 export PATH="$(readlink -e "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):$PATH"
 if [[ $BASHBONE_EXITFUN ]]; then
-	trap 'configure::exit -p $$ -f $BASHBONE_EXITFUN $?' EXIT
+	trap 'e=$?; sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::exit -p $$ -f $BASHBONE_EXITFUN $e' EXIT
 else
-	trap 'configure::exit -p $$' EXIT
+	trap 'sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::exit -p $$' EXIT
 fi
 # make use of local scope during trace to trigger tmp file deletion etc.
 trap 'declare -F _cleanup::${FUNCNAME[0]} &> /dev/null && _cleanup::${FUNCNAME[0]}' RETURN
 # check execution from terminal (use return only) or a script/subshell (use return and exit)
 # error traps must not be splited into muliple lines to hold correct lineno
-if ! [[ ${BASH_EXECUTION_STRING} ]]; then # prefer over [[ $- =~ i ]] which is true in bash -i -c 'echo $-'
+if [[ $- =~ i ]]; then
 	# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte and other functions
-	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ ${BASH_SOURCE[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]} -w "$BASHBONE_WORKDIR"; return $e; fi; fi' ERR
+	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ ${BASH_SOURCE[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]} -w "$BASHBONE_WORKDIR"; return $e; else unset BASHBONE_TRAPPED; fi; fi' ERR
 else
 	# if activate used within script or subshell, traps will be nuked anyways, thus allow tracing for all functions
 	# dont call exit directly. allow for back trace through all functions. local scopes are available
-	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ "${BASH_SOURCE[0]}" == "$0" && "${FUNCNAME[0]}" == "main" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "$0" -w "$BASHBONE_WORKDIR"; exit $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]} -w "$BASHBONE_WORKDIR"; return $e; fi; fi' ERR
+	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ "${BASH_SOURCE[0]}" == "$0" && "${FUNCNAME[0]}" == "main" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "$0" -w "$BASHBONE_WORKDIR"; exit $e; else sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]} -w "$BASHBONE_WORKDIR"; return $e; fi; fi' ERR
 fi
 trap 'BASHBONE_ERROR="killed"' INT TERM
 
