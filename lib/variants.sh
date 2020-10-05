@@ -401,9 +401,9 @@ variants::makepondb() {
 			t="$tdir/${o%.*}"
 			o="$odir/${o%.*}"
 
-			error="file does not exists $o.pon.vcf"
-			[[ -s "$o.pon.vcf" ]]
-			unset error
+			BASHBONE_ERROR="file does not exists $o.pon.vcf"
+			[[ -s "$o.pon.vcf" ]] || false
+			unset BASHBONE_ERROR
 
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[4]}<<- CMD
 				bcftools reheader -s <(echo "NORMAL NORMAL$i") -o "$t.pon.vcf" "$o.pon.vcf"
@@ -550,9 +550,9 @@ variants::mutect() {
 		mkdir -p "$odir" "$tdir"
 
 		if $mypon; then
-			error="cannot find panel of normals $odir/pon.vcf.gz"
-			[[ -s "$odir/pon.vcf.gz" ]]
-			unset error
+			BASHBONE_ERROR="cannot find panel of normals $odir/pon.vcf.gz"
+			[[ -s "$odir/pon.vcf.gz" ]] || false
+			unset BASHBONE_ERROR
 			params=" -pon '$odir/pon.vcf.gz'"
 		else
 			if [[ -s "$genome.pon.vcf.gz" ]]; then

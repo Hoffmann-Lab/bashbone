@@ -62,10 +62,9 @@ configure::err(){
 	[[ $mandatory -lt 2 ]] && _usage
 
 	[[ $fun ]] && {
-		declare -F "$fun"
 		local line
 		read -r fun line src < <(declare -F "$fun") # requires shopt -s extdebug
-		[[ $- =~ i ]] && ((lineno+=line))
+		[[ $- =~ i ]] && ((lineno+=line)) # do not!! use [[ ${BASH_EXECUTION_STRING} ]] || ((lineno+=line))
 	}
 	local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o$0}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o$0}else{o=""}}}' $src | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 	[[ $fun ]] && src="$src ($fun)"
