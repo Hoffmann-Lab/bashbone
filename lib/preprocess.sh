@@ -13,6 +13,7 @@ preprocess::fastqc() {
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-o <outdir>   | path to
+			-p <tmpdir>   | path to
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
