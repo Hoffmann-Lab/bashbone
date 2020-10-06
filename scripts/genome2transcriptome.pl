@@ -116,7 +116,8 @@ try {
 		if($F[2] eq "transcript"){ #due to sort -k3,3r, handle transcript features first
 			$F[-1]=~/transcript_id "([^"]+)/;
 			$tid=$1;
-			$F[-1]=~s/gene_id "[^"]+"/gene_id "$tid"/;
+			$F[-1]=~s/gene_id ("[^"]+")/gene_id "$tid"/;
+			$F[-1].=" orig_id $1;";
 
 			$t{$tid}=join"\t",@F;
 			$tseq{$tid}=""; # store id and initialize sequence
@@ -125,7 +126,8 @@ try {
 			$F[-1]=~/transcript_id "([^"]+)/;
 			$tid=$1;
 			next unless exists $t{$tid}; # if valid gtf, this should not occure
-			$F[-1]=~s/gene_id "[^"]+"/gene_id "$tid"/;
+			$F[-1]=~s/gene_id ("[^"]+")/gene_id "$tid"/;
+			$F[-1].=" orig_id $1;";
 
 			$seq=$fa->fetch($F[0]) unless $chr eq $F[0]; # get chr seq obj
 			$chr=$F[0];
@@ -147,7 +149,8 @@ try {
 			$F[-1]=~/exon_number "([^"]+)/;
 			$eno=$1;
 			next unless exists $enewsta{"$tid$eno"};
-			$F[-1]=~s/gene_id "[^"]+"/gene_id "$tid"/;
+			$F[-1]=~s/gene_id ("[^"]+")/gene_id "$tid"/;
+			$F[-1].=" orig_id $1;";
 
 			$sta=$enewsta{"$tid$eno"}+$F[3]-$eorigsta{"$tid$eno"}; # calculate new start position
 			$F[4]=$sta+$F[4]-$F[3]; # set new stop position

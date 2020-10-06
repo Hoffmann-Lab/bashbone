@@ -207,9 +207,8 @@ commander::runcmd(){
 
 commander::qsubcmd(){
 	_cleanup::commander::qsubcmd(){
-		[[ $jobname ]] && qdel "$jobname.*"
+		[[ $jobname ]] && qdel "$jobname.*" &> /dev/null
 		rm -rf "$tmpdir"
-		rm -f "$ex"
 	}
 
 	_usage(){
@@ -217,31 +216,35 @@ commander::qsubcmd(){
 			${FUNCNAME[1]} usage:
 			-v           | verbose on
 			-b           | benchmark on
+			-w           | do not wait
+			-n <name>    | prefix of logs and jobs to wait for - use with caution!
 			-c <env>     | run with conda
 			-l <complex> | sge digestable list of consumables as key="value" pairs (see qconf -sc or -mc)
-			-f <file>    | for logs path to
-			-t <threads> | to be allocated number of
+			-o <path>    | shared among machines for exit codes and logs
+			-t <threads> | to be allocated per instance - number of parallel instances depends on -l, -a and number/power of machines
 			-p <env>     | name of parallel
 			-a <cmds>    | ALWAYS LAST OPTION
 			               array of
 			example:
-			${FUNCNAME[1]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c segemehl -p threads -t 4 -a cmd
+			${FUNCNAME[1]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c segemehl -p threads -t 4 -w -o ~/logs -a cmd
 		EOF
 		return 1
 	}
 
-	local OPTIND arg threads=1 verbose=false benchmark=false conda penv log complex
+	local OPTIND arg threads=1 verbose=false benchmark=false dowait=false conda penv logdir complex jobname
 	declare -n _cmds_qsubcmd # be very careful with circular name reference
 	declare -a mapdata complexes
-	while getopts 'vbt:f:l:p:c:a:' arg; do
+	while getopts 'vbwt:o:l:p:c:n:a:' arg; do
 		case $arg in
 			v)	verbose=true;;
 			b)	benchmark=true;;
+			w)	dowait=true;;
 			c)	conda=$OPTARG;;
 			t)	threads=$OPTARG;;
-			f)	log="$OPTARG";;
+			o)	logdir="$OPTARG"; mkdir -p "$logdir";;
 			l)	complexes+=("-l $OPTARG");;
 			p)	penv="-pe $OPTARG";;
+			n)	jobname="$OPTARG";;
 			a)	_cmds_qsubcmd=$OPTARG
 				[[ $_cmds_qsubcmd ]] || return 0
 
@@ -251,20 +254,26 @@ commander::qsubcmd(){
 				}
 				[[ $penv ]] && penv+=" $threads"
 
-				local i sh e tmpdir ex jobname
+				local i sh tmpdir ex log
 				tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
-				jobname="$(basename "$tmpdir")"
-				jobname="X${jobname#*.}" # ensure first character to be a letter
-				if [[ $log ]]; then
-					ex="$(dirname "$log")"/$jobname.exitcodes
+				if [[ $logdir ]]; then
+					ex="$logdir/exitcodes.$jobname"
+					rm -f $ex
 				else
-					ex="$tmpdir/exitcodes"
+					commander::warn "no shared directory supplied. ${FUNCNAME[0]} always succeeds."
 				fi
+				[[ $jobname ]] || jobname="${tmpdir#.*}"
 
+
+				jobname="job.$jobname" # ensure first character to be a letter
 				for i in "${!_cmds_qsubcmd[@]}"; do
-					sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.$i.sh)"
-					[[ ! $log ]] && log="${sh%.*}.out"
-
+					if [[ $logdir ]]; then
+						log="$logdir/$jobname.$i.log"
+						rm -f "$log"
+					else
+						log="/dev/null"
+					fi
+					sh="$tmpdir/$jobname.$i.sh"
 					echo "#!/usr/bin/env bash" > "$sh"
 					echo "set -o pipefail" >> "$sh"
 					echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then echo \$e >> '$ex'; exit \$e; fi' ERR" >> "$sh"
@@ -273,19 +282,22 @@ commander::qsubcmd(){
 					echo "echo 0 >> '$ex'" >> "$sh"
 					echo "exit 0" >> "$sh"
 
+					$verbose && commander::printinfo qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh"
 					qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh" > /dev/null
 				done
-				if $benchmark; then
-					$(command -v time) -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" \
-					qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
-				else
-					qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
-				fi
-				unset jobname # do this for qdel trap handling
-				[[ $log && -e "$ex" ]] && {
-					mapfile -t mapdata < "$ex"
-					return $((${mapdata[@]/%/+}0))
+				$dowait && {
+					if $benchmark; then
+						$(command -v time) -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" \
+						qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
+					else
+						qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
+					fi
 				}
+				unset jobname # do this for qdel trap handling
+				if [[ $logdir ]]; then
+					mapfile -t mapdata < "$ex"
+					return $((${mapdata[@]/%/+}0 > 0 ? 1 : 0))
+				fi
 				return 0
 			;;
 			*)	_usage;;
