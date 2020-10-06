@@ -207,7 +207,7 @@ commander::runcmd(){
 
 commander::qsubcmd(){
 	_cleanup::commander::qsubcmd(){
-		[[ $jobname ]] && qdel "$jobname.*" &> /dev/null
+		$dowait && qdel "$jobname.*" &> /dev/null || true
 		rm -rf "$tmpdir"
 	}
 
@@ -216,7 +216,7 @@ commander::qsubcmd(){
 			${FUNCNAME[1]} usage:
 			-v           | verbose on
 			-b           | benchmark on
-			-w           | do not wait
+			-w           | do wait for jobs
 			-n <name>    | prefix of logs and jobs to wait for - use with caution!
 			-c <env>     | run with conda
 			-l <complex> | sge digestable list of consumables as key="value" pairs (see qconf -sc or -mc)
@@ -262,7 +262,7 @@ commander::qsubcmd(){
 				else
 					commander::warn "no shared directory supplied. ${FUNCNAME[0]} always succeeds."
 				fi
-				[[ $jobname ]] || jobname="${tmpdir#.*}"
+				[[ $jobname ]] || jobname="${tmpdir#*.}"
 
 
 				jobname="job.$jobname" # ensure first character to be a letter
@@ -292,12 +292,11 @@ commander::qsubcmd(){
 					else
 						qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
 					fi
+					if [[ $logdir ]]; then
+						mapfile -t mapdata < "$ex"
+						return $((${mapdata[@]/%/+}0 > 0 ? 1 : 0))
+					fi
 				}
-				unset jobname # do this for qdel trap handling
-				if [[ $logdir ]]; then
-					mapfile -t mapdata < "$ex"
-					return $((${mapdata[@]/%/+}0 > 0 ? 1 : 0))
-				fi
 				return 0
 			;;
 			*)	_usage;;
