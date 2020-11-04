@@ -353,7 +353,8 @@ preprocess::trimmomatic() {
 	return 0
 }
 
-preprocess::rcorrector() {
+preprocess::rcorrector(){
+	declare -a tdirs
 	_cleanup::preprocess::rcorrector(){
 		rm -rf "${tdirs[@]}"
 	}
@@ -390,7 +391,7 @@ preprocess::rcorrector() {
 
 	commander::printinfo "correcting read errors"
 
-	declare -a cmd1 cmd2 tdirs
+	declare -a cmd1 cmd2
 	local i o1 b1 e1 o2 b2 e2
 	for i in "${!_fq1_rcorrector[@]}"; do
 		o1="$outdir"/$(basename "${_fq1_rcorrector[$i]}")
@@ -447,7 +448,8 @@ preprocess::rcorrector() {
 	return 0
 }
 
-preprocess::sortmerna() {
+preprocess::sortmerna(){
+	declare -a tdirs
 	_cleanup::preprocess::sortmerna(){
 		rm -rf "${tdirs[@]}"
 	}
@@ -493,7 +495,7 @@ preprocess::sortmerna() {
 	local insdir=$(dirname $(dirname $(which sortmerna)))
 	local sortmernaref=$(for i in $insdir/rRNA_databases/*.fasta; do echo $i,$insdir/index/$(basename $i .fasta)-L18; done | xargs -echo | sed 's/ /:/g')
 
-	declare -a cmd1 cmd2 cmd3 tdirs
+	declare -a cmd1 cmd2 cmd3
 	local i catcmd tmp o1 o2 or1 or2 b1 b2 e1 e2 instances=$threads
 	for i in "${!_fq1_sortmerna[@]}"; do
 		helper::basename -f "${_fq1_sortmerna[$i]}" -o b1 -e e1
@@ -620,6 +622,7 @@ preprocess::sortmerna() {
 }
 
 preprocess::qcstats(){
+	local tmp
 	_cleanup::preprocess::qcstats(){
 		rm -f "$tmp"
 	}
@@ -657,7 +660,8 @@ preprocess::qcstats(){
 
 	commander::printinfo "summarizing preprocessing stats"
 
-	local i o b e c multiplier qdir tool tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.tsv)"
+	tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.tsv)"
+	local i o b e c multiplier qdir tool
 	declare -a counts
 	echo -e "sample\ttype\tcount" > "$outdir/preprocessing.barplot.tsv"
 	for i in "${!_fq1_qcstats[@]}"; do
