@@ -154,10 +154,10 @@ bashbone -h
 
 ## Update a specific tool
 
-Bashbone supports downloading latest sources of Trimmomatic, segemehl and/or GEM as comma separated list.
+Bashbone supports downloading latest sources of Trimmomatic, segemehl, STAR-Fusion and/or GEM as comma separated list.
 
 ```bash
-setup -i trimmomatic,segemehl,gem -d <path/of/installation>
+setup -i trimmomatic,segemehl,starfusion,gem -d <path/of/installation>
 source <path/of/installation/activate.sh> -c true
 trimmomatic -version
 segemehl -h
@@ -184,6 +184,10 @@ Use the enclosed script to fetch human hg19/hg38 or mouse mm9/mm10 genomes and a
 source <path/of/installation/activate.sh> -c true
 dlgenome.sh -h
 ```
+
+Or download plug-n-play CTAT genome resource made for gene fusion detection and shipped with STAR index.
+
+<https://data.broadinstitute.org/Trinity/CTAT_RESOURCE_LIB/__genome_libs_StarFv1.9/>
 
 ## Sample info file
 
