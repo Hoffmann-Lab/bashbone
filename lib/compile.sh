@@ -40,6 +40,7 @@ compile::all(){
 	compile::trimmomatic -i "$insdir" -t $threads
 	compile::sortmerna -i "$insdir" -t $threads
 	compile::segemehl -i "$insdir" -t $threads
+	compile::starfusion -i "$insdir" -t $threads
 	compile::preparedexseq -i "$insdir" -t $threads
 	compile::revigo -i "$insdir" -t $threads
 	compile::gem -i "$insdir" -t $threads
@@ -71,18 +72,15 @@ compile::upgrade(){
 	return 0
 }
 
-compile::conda() {
+compile::conda(){
+	local tmpdir
 	_cleanup::compile::conda(){
 		rm -rf "$tmpdir"
 	}
 
-	local insdir threads url version tmpdir n bin
-
+	local insdir threads url version n bin
 	commander::printinfo "installing conda"
 	compile::_parse -r insdir -s threads "$@"
-	tmpdir="$insdir/tmp"
-	mkdir -p "$tmpdir"
-
 	url="https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh"
 	wget -q -O "$insdir/miniconda.sh" "$url"
 	mkdir -p "$insdir/conda"
@@ -93,19 +91,21 @@ compile::conda() {
 	conda update -y conda
 
 	# base env: install tools used on the fly and compilers for perl modules
+	# perl from conda-forge is compiled with threads, perl from bioconda not (recently removed) - thus there is an old perl-threaded version
 	commander::printinfo "setup conda base env"
 	conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 		gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
 		glib pkg-config make automake cmake \
 		bzip2 pigz pbzip2 \
-		perl-threaded perl-app-cpanminus perl-list-moreutils perl-try-tiny \
+		java-jdk \
+		perl perl-app-cpanminus perl-list-moreutils perl-try-tiny \
 		curl ghostscript dos2unix \
 		ucsc-facount khmer \
 		datamash samtools bedtools \
 		htslib htseq bcftools vcflib vt
 	cpanm Switch
 
-	# setup r env with compilers for r packages
+	# setup r env with compilers for r packages, freeze latest r-base version for which all packages are available
 	# to avoid r downgrades due to modules r built versions, compile them manually (ggpubr requires nlopt)
 	commander::printinfo "setup conda r env for deseq, dexseq, survival, wgcna, ggpubr, pheatmap, dplyr, knapsack"
 	n=r
@@ -114,10 +114,14 @@ compile::conda() {
 		gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
 		glib pkg-config make automake cmake \
 		bzip2 pigz pbzip2 \
-		htslib nlopt r-base
+		htslib nlopt r-base=4.0.2
 	for bin in perl samtools bedtools; do
 		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 	done
+
+	tmpdir="$insdir/tmp"
+	mkdir -p "$tmpdir"
+
 	# basics
 	declare -a cmd1
 	commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
@@ -182,12 +186,14 @@ compile::conda_tools() {
 	done < <(conda info -e | awk -v prefix="^"$insdir '$NF ~ prefix {print $1}')
 
 	# python 3 envs
-	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq arriba star-fusion picard bamutil macs2 diego gatk4 freebayes varscan; do
-		n=${tool//[^[:alpha:]]/}
+	# ensure star compatibility with CTAT genome index which is built from star indexer 2.7.1a (compatible up to 2.7.3a) as of CTAT for star-fusion v1.9
+	for tool in fastqc cutadapt rcorrector star=2.7.2b bwa rseqc subread htseq arriba picard bamutil macs2 peakachu diego gatk4 freebayes varscan igv; do
+		n=${tool/=*/}
+		n=${n//[^[:alpha:]]/}
 		$upgrade && ${envs[$n]:=false} && continue
 		doclean=true
 
-		commander::printinfo "setup conda $tool env"
+		commander::printinfo "setup conda $n env"
 		conda create -y -n $n python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
 		# link commonly used base binaries into env
@@ -197,12 +203,31 @@ compile::conda_tools() {
 	done
 	chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl" # necessary fix
 
-	tool=vardict
-	n=${tool//[^[:alpha:]]/}
+	# manual setup of requirements from bioconda meta.yaml (see compile::starfusion)
+	tool=star-fusion
+	n=${tool/=*/}
+	n=${n//[^[:alpha:]]/}
 	$upgrade && ${envs[$n]:=false} || {
 		doclean=true
 
-		commander::printinfo "setup conda $tool env"
+		commander::printinfo "setup conda $n env"
+		conda create -y -n $n python=3
+		# propably enought: perl perl-set-intervaltree perl-carp perl-carp-assert perl-db-file perl-io-gzip perl-json-xs perl-uri \
+		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+			perl perl-file-path perl-getopt-long perl-set-intervaltree perl-carp perl-carp-assert perl-data-dumper perl-findbin perl-db-file perl-io-gzip perl-json-xs perl-uri perl-list-moreutils perl-list-util perl-storable \
+			igv-reports star=2.7.2b gmap bowtie bbmap samtools blast
+		for bin in perl samtools bedtools; do
+			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
+	}
+
+	tool=vardict
+	n=${tool/=*/}
+	n=${n//[^[:alpha:]]/}
+	$upgrade && ${envs[$n]:=false} || {
+		doclean=true
+
+		commander::printinfo "setup conda $n env"
 		conda create -y -n $n python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java
 		for bin in perl samtools bedtools; do
@@ -211,11 +236,12 @@ compile::conda_tools() {
 	}
 
 	tool=snpeff
-	n=${tool//[^[:alpha:]]/}
+	n=${tool/=*/}
+	n=${n//[^[:alpha:]]/}
 	$upgrade && ${envs[$n]:=false} || {
 		doclean=true
 
-		commander::printinfo "setup conda $tool env"
+		commander::printinfo "setup conda $n env"
 		conda create -y -n $n python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
 		for bin in perl samtools bedtools; do
@@ -227,10 +253,12 @@ compile::conda_tools() {
 	# python 2 envs
 	tool=platypus-variant
 	n=platypus
+	n=${tool/=*/}
+	n=${n//[^[:alpha:]]/}
 	$upgrade && ${envs[$n]:=false} || {
 		doclean=true
 
-		commander::printinfo "setup conda $tool env"
+		commander::printinfo "setup conda $n env"
 		conda create -y -n $n python=2
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
 		for bin in perl samtools bedtools; do
@@ -268,7 +296,7 @@ compile::java() {
 	commander::printinfo "installing java"
 	compile::_parse -r insdir -s threads "$@"
 	source $insdir/conda/bin/activate base
-	url="https://download.oracle.com/otn-pub/java/jdk/14.0.2+12/205943a0976c4ed48cb16f1043c5c647/jdk-14.0.2_linux-x64_bin.tar.gz"
+	url="https://download.oracle.com/otn-pub/java/jdk/15.0.1%2B9/51f4f36ad4ef43e39d0dfdbaf6549e32/jdk-15.0.1_linux-x64_bin.tar.gz"
 	wget -q --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O $insdir/java.tar.gz $url
 	version=$(echo $url | perl -lane '$_=~/jdk-([^-_]+)/; print $1')
 	tar -xzf $insdir/java.tar.gz -C $insdir
@@ -378,7 +406,6 @@ compile::segemehl() {
 		[[ $l ]] && export LD_LIBRARY_PATH=$l
 		$(cd $(dirname $0) && echo $PWD)/segemehl.x $*
 	EOF
-	echo hier
 	cat <<- 'EOF' > $insdir/latest/segemehl/haarz
 		#!/usr/bin/env bash
 		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig
@@ -386,6 +413,24 @@ compile::segemehl() {
 		[[ $l ]] && export LD_LIBRARY_PATH=$l
 		$(cd $(dirname $0) && echo $PWD)/haarz.x $*
 	EOF
+
+	return 0
+}
+
+compile::starfusion() {
+	local insdir threads url
+
+	# bioconda recipes are incompatible with CTAT genome index (2.7.1a)
+	# recipe has either star > 2.7.0f (v1.6) or star > 2.5 (>=v1.8, plus python compatibility issues)
+	commander::printinfo "installing starfusion"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	url='https://github.com/'$(curl -s https://github.com/STAR-Fusion/STAR-Fusion/releases | grep -oE 'STAR-Fusion/\S+STAR-Fusion-v[0-9\.]+\.FULL\.tar\.gz' | sort -Vr | head -1)
+	wget -q $url -O $insdir/starfusion.tar.gz
+	tar -xzf $insdir/starfusion.tar.gz -C $insdir
+	rm $insdir/starfusion.tar.gz
+	cd $(ls -dv $insdir/STAR-Fusion-*/ | tail -1)
+	ln -sfn $PWD $insdir/latest/starfusion
 
 	return 0
 }
@@ -446,6 +491,24 @@ compile::gem() {
 	compile::_javawrapper bin/gem $(readlink -e gem.jar) $insdir/latest/java/java
 	mkdir -p $insdir/latest
 	ln -sfn $PWD/bin $insdir/latest/gem
+
+	return 0
+}
+
+compile::m6aviewer() {
+	local insdir threads url version
+	commander::printinfo "installing revigo"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	url=http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar
+	version="1.6.1"
+	rm -rf $insdir/m6aviewer-$version
+	mkdir -p $insdir/m6aviewer-$version/bin
+	cd $insdir/m6aviewer-$version
+	wget -q $url -O $insdir/m6aviewer.jar
+	compile::_javawrapper bin/m6aviewer $(readlink -e m6aviewer.jar)
+	mkdir -p $insdir/latest
+	ln -sfn $PWD/bin $insdir/latest/m6aviewer
 
 	return 0
 }
