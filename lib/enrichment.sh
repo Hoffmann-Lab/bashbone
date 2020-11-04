@@ -163,7 +163,7 @@ enrichment::_revigo(){
 		case $arg in
 			1)	((++mandatory)); _cmds1_revigo=$OPTARG;;
 			2)	((++mandatory)); _cmds2_revigo=$OPTARG;;
-			d)	((++mandatory)); domain=$(sed -r 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/' <<< $OPTARG);;
+			d)	((++mandatory)); domain=$(sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/' <<< $OPTARG);;
 			i)	((++mandatory)); orafile="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG";;
 			*)	_usage;;
@@ -233,7 +233,7 @@ enrichment::_revigo(){
 			graphics.off();
 		'
 	CMD
-		"$orafile" "$outdir/revigo.tsv" "$outdir/barplot.pdf" $(echo $domain | sed -r 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/')
+		"$orafile" "$outdir/revigo.tsv" "$outdir/barplot.pdf" $(echo $domain | sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/')
 	CMD
 
 	return 0
