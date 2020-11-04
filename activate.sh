@@ -11,6 +11,7 @@ BASHBONE_BAK_PATH="$PATH"
 mapfile -t BASCHBONE_BAK_SHOPT < <(shopt | sed -E '/off$/d;{s/^(\S+).+/shopt -s \1/}')
 mapfile -t BASCHBONE_BAK_ERR < <(trap -p ERR)
 mapfile -t BASCHBONE_BAK_RET < <(trap -p RETURN)
+mapfile -t BASCHBONE_BAK_EXIT < <(trap -p EXIT)
 
 BASHBONE_WORKDIR="$PWD"
 BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
@@ -132,8 +133,10 @@ bashbone(){
 			set +E +o pipefail +o functrace
 			trap - ERR
 			trap - RETURN
+			trap - EXIT
 			source <(printf '%s\n' "${BASCHBONE_BAK_RET[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_ERR[@]}")
+			source <(printf '%s\n' "${BASCHBONE_BAK_EXIT[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_SHOPT[@]}")
 			PATH="$BASHBONE_BAK_PATH"
 
