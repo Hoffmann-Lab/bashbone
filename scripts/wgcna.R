@@ -87,9 +87,28 @@ wgcnar = blockwiseModules(
   numericLabels = TRUE,
   pamRespectsDendro = FALSE,
   verbose = 3,
-  saveTOMs = F,
+  saveTOMs = T,
+  saveTOMFileBase = file.path(outdir, "wgcnar.TOM"),
   maxBlockSize = blockSize(50000, rectangularBlocks = TRUE, maxMemoryAllocation = 2^31*memory)
 )
+# adjacency=WGCNA::bicor(t(df)) , rownames=colanmes=rownames(counts_raw), call adjacency["name1/id1","name2/id2"] to check if pos or neg correlated [-1,+1]
+# TOM = bicor ^ power * tomtpye formular. use TOM [0,1] to check for correlation of two disjunct gene sets e.g. pathways
+# sample a normal distribution from mean values of n rounds and calculate p-values for both sets
+# load(/path/to/tom/); adjacency_matrix=as.matrix(TOM)
+bipartiteConnectivity<-function(adjacency_matrix,a,b,rounds=100000){
+  c=a
+  a=setdiff(a,b)
+  b=setdiff(b,c)
+  x=sapply(1:rounds,function(x){
+    sample_a=sample(nrow(adjacency_matrix),length(a))
+    sample_b=sample(setdiff(1:nrow(adjacency_matrix),sample_a),length(b))
+    sum(adjacency_matrix[sample_a,sample_b])/(length(a)*length(b))
+  })
+  stat=sum(adjacency_matrix[a,b])/(length(a)*length(b))
+  stat2=abs(stat-median(x))
+  x2=abs(x-median(x))
+  return(c(stat=stat,pvalue_one_sided=length(which(x>=stat))/length(x),mean=mean(x),median=median(x),stat2=stat2,pvalue_two_sided=length(which(x2>=stat2))/length(x)))
+}
 
 pdf(file.path(outdir, "wgcna.dendrogram.pdf"))
 plotDendroAndColors(main="Gene dendrogram and modules",wgcnar$dendrograms[[1]], labels2colors(wgcnar$unmergedColors)[wgcnar$blockGenes[[1]]],"Module colors",dendroLabels = FALSE, hang = 0.03,addGuide = TRUE, guideHang = 0.05)
