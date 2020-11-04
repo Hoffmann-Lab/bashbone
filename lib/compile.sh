@@ -449,7 +449,7 @@ compile::preparedexseq() {
 	mkdir -p bin
 	mv *.py bin
 	mkdir -p $insdir/latest
-	ln -sfn $PWD/bin $insdir/latest/preparedexseq
+	ln -sfn $PWD/bin $insdir/latest/subreadtodexseq
 
 	return 0
 }
