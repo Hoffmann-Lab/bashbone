@@ -44,6 +44,7 @@ compile::all(){
 	compile::preparedexseq -i "$insdir" -t $threads
 	compile::revigo -i "$insdir" -t $threads
 	compile::gem -i "$insdir" -t $threads
+	compile::m6aviewer -i "$insdir" -t $threads
 	compile::idr -i "$insdir" -t $threads
 
 	return 0
@@ -497,7 +498,7 @@ compile::gem() {
 
 compile::m6aviewer() {
 	local insdir threads url version
-	commander::printinfo "installing revigo"
+	commander::printinfo "installing m6aviewer"
 	compile::_parse -r insdir -s threads "$@"
 	source $insdir/conda/bin/activate base
 	url=http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar
@@ -505,7 +506,7 @@ compile::m6aviewer() {
 	rm -rf $insdir/m6aviewer-$version
 	mkdir -p $insdir/m6aviewer-$version/bin
 	cd $insdir/m6aviewer-$version
-	wget -q $url -O $insdir/m6aviewer.jar
+	wget -q $url -O m6aviewer.jar
 	compile::_javawrapper bin/m6aviewer $(readlink -e m6aviewer.jar)
 	mkdir -p $insdir/latest
 	ln -sfn $PWD/bin $insdir/latest/m6aviewer
