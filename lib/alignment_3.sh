@@ -2,6 +2,7 @@
 # (c) Konstantin Riege
 
 alignment::mkreplicates() {
+	declare -a tdirs
 	_cleanup::alignment::mkreplicates(){
 		rm -rf "${tdirs[@]}"
 	}
@@ -26,7 +27,7 @@ alignment::mkreplicates() {
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir
 	declare -n _mapper_mkreplicates _nidx_mkreplicates _nridx_mkreplicates _tidx_mkreplicates _ridx_mkreplicates _pidx_mkreplicates
-	while getopts 'S:s:t:r:n:m:i:j:k:o:p:' arg; do
+	while getopts 'S:s:q:t:r:n:m:i:j:k:o:p:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -45,7 +46,7 @@ alignment::mkreplicates() {
 	[[ $mandatory -lt 8 ]] && _usage
 
 	local m i odir o tmp nf nrf tf rf pf addindex=true ithreads1 ithreads2 instances1=1 instances2=1
-	declare -a cmd1 cmd2 cmd3 tdirs
+	declare -a cmd1 cmd2 cmd3
 	if [[ $_ridx_mkreplicates ]]; then
 		commander::printinfo "generating pseudo-pools"
 		instances1=$((${#_mapper_mkreplicates[@]} * ${#_nidx_mkreplicates[@]} * 2 + ${#_mapper_mkreplicates[@]} * ${#_nridx_mkreplicates[@]} * 2))
@@ -70,7 +71,7 @@ alignment::mkreplicates() {
 			for i in "${!_nidx_mkreplicates[@]}"; do
 				tf=${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}
 				rf=${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}
-				o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(.+)\t(.+)\.\1/-\2.pseudopool.\1/')
+				o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(\..+)\t(.+)\1/-\2.pseudopool\1/')
 
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 					samtools view -@ $ithreads1 -b -s 0.5 $tf > "${tdirs[-1]}/$(basename "$tf")"
@@ -114,7 +115,7 @@ alignment::mkreplicates() {
 				for i in "${!_nridx_mkreplicates[@]}"; do
 					nf=${_bams_mkreplicates[${_nidx_mkreplicates[$i]}]}
 					nrf=${_bams_mkreplicates[${_nridx_mkreplicates[$i]}]}
-					o=$odir/$(echo -e "$(basename $nf)\t$(basename $nrf)" | sed -E 's/(.+)\t(.+)\.\1/-\2.fullpool.\1/')
+					o=$odir/$(echo -e "$(basename $nf)\t$(basename $nrf)" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')
 
 					commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
 						samtools merge -f -@ $ithreads1 $o $nf $nrf
@@ -124,7 +125,7 @@ alignment::mkreplicates() {
 
 					tf=${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}
 					rf=${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}
-					o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(.+)\t(.+)\.\1/-\2.fullpool.\1/')
+					o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')
 					commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
 						samtools merge -f -@ $ithreads1 $o $tf $rf
 					CMD

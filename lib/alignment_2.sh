@@ -47,7 +47,7 @@ alignment::slice(){
 	declare -a mapdata cmd1 cmd2 cmd3 cmd4
 
 	mkdir -p "$tmpdir/genome"
-	samtools view -H "${_bams_slice[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t0\t\2/p}' > $tmpdir/genome/chr.bed
+	samtools view -H "${_bams_slice[0]}" | sed -En '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t0\t\2/p}' > $tmpdir/genome/chr.bed
 	# do not use process substitution as Rscript argument - sometimes R swallows parts
 	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
@@ -92,7 +92,7 @@ alignment::slice(){
 			o="${o%.*}"
 
 			_bamslices_slice["$f"]="$o.slices.info"
-			ls -v "$tmpdir/genome/slice".*.bed | sed -E "s@.+([0-9]+)\.bed@$o.slice.\1.bam@" > "$o.slices.info"
+			ls -v "$tmpdir/genome/slice".*.bed | sed -E "s@.+\.([0-9]+)\.bed@$o.slice.\1.bam@" > "$o.slices.info"
 
 			alignment::_index -1 cmd2 -t $ithreads -i "$f"
 
@@ -589,6 +589,7 @@ alignment::addreadgroup() {
 }
 
 alignment::splitncigar() {
+	declare -a tdirs
 	_cleanup::alignment::splitncigar(){
 		rm -rf "${tdirs[@]}"
 	}
@@ -640,7 +641,7 @@ alignment::splitncigar() {
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 tdirs
+	declare -a tomerge cmd1 cmd2
 	for m in "${_mapper_splitncigar[@]}"; do
 		declare -n _bams_splitncigar=$m
 		odir="$outdir/$m"
@@ -712,6 +713,7 @@ alignment::splitncigar() {
 }
 
 alignment::leftalign() {
+	declare -a tdirs
 	_cleanup::alignment::leftalign(){
 		rm -rf "${tdirs[@]}"
 	}
@@ -763,7 +765,7 @@ alignment::leftalign() {
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 tdirs
+	declare -a tomerge cmd1 cmd2
 	for m in "${_mapper_leftalign[@]}"; do
 		declare -n _bams_leftalign=$m
 		odir="$outdir/$m"
@@ -828,6 +830,8 @@ alignment::leftalign() {
 }
 
 alignment::bqsr() {
+	local tmpfile
+	declare -a tdirs
 	_cleanup::alignment::bqsr(){
 		rm -f "$tmpfile"
 		rm -rf "${tdirs[@]}"
@@ -891,7 +895,7 @@ alignment::bqsr() {
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3 tdirs
+	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_bqsr[@]}"; do
 		declare -n _bams_bqsr=$m
 		odir="$outdir/$m"

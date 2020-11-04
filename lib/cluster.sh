@@ -2,6 +2,7 @@
 # (c) Konstantin Riege
 
 cluster::coexpression_deseq(){
+	declare -a tfiles
 	_cleanup::cluster::coexpression_deseq(){
 		rm -f "${tfiles[@]}"
 	}
@@ -51,7 +52,7 @@ cluster::coexpression_deseq(){
 
 	commander::printinfo "inferring coexpression"
 
-	declare -a mapdata cmd1 tfiles
+	declare -a mapdata cmd1
 	declare -A visited
 	local m f i c t e odir cdir ddir params tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
@@ -276,6 +277,7 @@ cluster::coexpression_deseq(){
 }
 
 cluster::coexpression(){
+	declare -a tfiles
 	_cleanup::cluster::coexpression(){
 		rm -f "${tfiles[@]}"
 	}
@@ -321,7 +323,7 @@ cluster::coexpression(){
 
 	commander::printinfo "inferring coexpression"
 
-	declare -a cmd1 tfiles
+	declare -a cmd1
 	local m f cdir odir suff header sample countfile tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
 	tfiles+=("$tmp" "$tojoin" "$joined")
