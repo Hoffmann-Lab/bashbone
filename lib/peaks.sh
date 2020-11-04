@@ -702,7 +702,7 @@ peaks::peakachu() {
 					awk -v OFS='\t' '{$4="peak_"NR; print}'
 				CMD
 
-				_pekachu+=("$odir/$o.narrowPeak")
+				_peakachu+=("$odir/$o.narrowPeak")
 				toidr+=("$odir/$o.narrowPeak")
 			done
 
@@ -819,29 +819,36 @@ peaks::m6aviewer() {
 		declare -n _bams_m6aviewer=$m
 		odir=$outdir/$m/m6aviewer
 
+		commander::printinfo {COMMANDER[0]}<<- EOF
+			load the following control and IP files as pairs into m6aviewer
+			define all loaded pairs as one group
+			use settings: fc=2, min_peak_height=50, peak_width=$((2*fragmentsize)), threads=$threads
+			after peak calling save under $odir as "results"
+		EOF
+
 		for i in "${!_nidx_m6aviewer[@]}"; do
 			nf="${_bams_m6aviewer[${_nidx_m6aviewer[$i]}]}"
 			tf="${_bams_m6aviewer[${_tidx_m6aviewer[$i]}]}"
 			rf="${_bams_m6aviewer[${_ridx_m6aviewer[$i]}]}"
 			pf="${_bams_m6aviewer[${_pidx_m6aviewer[$i]}]}"
 
-			toidr=()
-			commander::print {COMMANDER[0]}<<- EOF
-				load into m6aviewer, define ALL loaded pairs as one group and after peak calling save under $odir as "results"
-				dont forget to check the settings: fc=2, min_peak_height=50, peak_width=$((2*fragmentsize)), other: threads=$threads
+			commander::printinfo {COMMANDER[0]}<<- EOF
+				load
 				$nf
 				versus
 				$tf
 				$rf
 				$pf
 			EOF
+
+			toidr=()
 			for f in "$tf" "$rf" "$pf"; do
 				o=$(echo -e "$(basename $nf)\t$(basename $f)" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak
 
 				commander::makecmd -a cmd2 -s '|' -o "$odir/$o" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
 					cat "$odir/results_$(basename $f).txt"
 				CMD
-					awk -v OFS="\t" '!/^\s*$/ && NR>2{ if($5==0){logp=999}else{logp=log($5)/log(10)*-1}; print $3,$4-75,$4+76,".",0,".",$6,logp,-1,75}'
+					awk -v OFS='\t' '!/^\s*$/ && NR>2{ if($5==0){logp=999}else{logp=log($5)/log(10)*-1}; print $3,$4-75,$4+76,".",0,".",$6,logp,-1,75}'
 				CMD
 					sort -k1,1 -k2,2n -k3,3n
 				CMD
@@ -861,7 +868,7 @@ peaks::m6aviewer() {
 					'
 				CMD
 
-				_pekachu+=("$odir/$o")
+				_m6aviewer+=("$odir/$o")
 				toidr+=("$odir/$o")
 			done
 
