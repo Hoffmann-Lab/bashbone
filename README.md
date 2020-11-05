@@ -1,5 +1,4 @@
 # Bashbone
----
 
 A bash library for workflow and pipeline design within but not restricted to the scope of Next Generation Sequencing (NGS) data analyses.
 
@@ -41,7 +40,6 @@ A bash library for workflow and pipeline design within but not restricted to the
 - Germline and somatic variant detection from DNA or RNA sequencing experiments plus VCF normalization
 
 # License
----
 
 The whole project is licensed under the GPL v3 (see LICENSE file for details). <br>
 **except** the the third-party tools set-upped during installation. Please refer to the corresponding licenses
@@ -49,7 +47,6 @@ The whole project is licensed under the GPL v3 (see LICENSE file for details). <
 Copyleft (C) 2020, Konstantin Riege
 
 # Download
----
 
 ```bash
 git clone --recursive https://github.com/koriege/bashbone.git
@@ -57,7 +54,6 @@ git checkout $(git describe --tags)
 ```
 
 # Quick start (without installation)
----
 
 Please see installation section to get all third-party tools set-upped and subsequently all functions to work properly.
 
@@ -124,7 +120,6 @@ x.print
 ```
 
 # Installation
----
 
 ## Base installation of programming languages and libraries to a get enclosed scripts to operate.
 
@@ -175,7 +170,6 @@ setup -i trimmomatic,segemehl,starfusion,gem -d <path/of/installation>
 ```
 
 # Usage
----
 
 To load bashbone execute
 ```bash
@@ -297,7 +291,6 @@ cluster::coexpression -t $threads -g $gtf -b protein_coding -f 23 -i /results/co
 ```
 
 # Third-party software
----
 
 ## In production
 
@@ -348,7 +341,6 @@ cluster::coexpression -t $threads -g $gtf -b protein_coding -f 23 -i /results/co
 | VarScan         | <http://dkoboldt.github.io/varscan>                        | 10.1101/gr.129684.111 |
 
 # Supplementary information
----
 
 Bashbone functions can be executed in parallel instances and thus are able to be submitted as jobs into a queuing system like a Sun Grid Engine (SGE). This could be easily done by using scripts written via here-documents or via the bashbone builtin `commander::qsubcmd`. The latter makes use of array jobs, which enables to wait for completion of all jobs, handle single exit codes and amend used resources via `qalter -tc <instances> <jobname>`.
 
@@ -375,6 +367,5 @@ LD_PRELOAD=/lib64/noelision/libpthread.so.0 bashbone -h
 ```
 
 # Closing remarks
----
 
 Bashbone is a continuously developed library and actively used in my daily work. As a single developer it may take me a while to fix errors and issues. Feature requests cannot be handled so far, but I am happy to receive pull request.
