@@ -323,7 +323,7 @@ enrichment::go(){
 		commander::printcmd -a cmd2
 	else
 		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -c r -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $threads -a cmd2
 	fi
 
 	declare -a cmd3 cmd4
@@ -341,7 +341,7 @@ enrichment::go(){
 		commander::printcmd -a cmd4
 	else
 		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -c r -v -b -t $threads -a cmd4
+		commander::runcmd -v -b -t $threads -a cmd4
 	fi
 
 	return 0

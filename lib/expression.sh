@@ -279,7 +279,7 @@ expression::deseq() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c r -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -t $instances -a cmd1
 		commander::runcmd -v -b -t $threads -a cmd2
 	fi
 
@@ -491,8 +491,8 @@ expression::joincounts(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c r -v -b -t $threads -a cmd1
-		commander::runcmd -c r -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
 	fi
 
 	return 0

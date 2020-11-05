@@ -1031,7 +1031,7 @@ alignment::bamstats(){
 	if $skip; then
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c r -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $threads -a cmd2
 	fi
 
 	return 0

@@ -57,6 +57,8 @@ git checkout $(git describe --tags)
 ```
 
 # Quick start (without installation)
+---
+
 Please see installation section to get all third-party tools set-upped and subsequently all functions to work properly.
 
 Load the library and list available functions. Each function comes with a usage.
@@ -64,16 +66,6 @@ Load the library and list available functions. Each function comes with a usage.
 ```bash
 source activate.sh
 bashbone -h
-```
-
-Check out stand-alone scripts to retrieve SRA datasets, or genomes (convert them into a transcriptome) and calulate transcripts per million (TPM).
-
-```bash
-cd scripts
-./dlgenome.sh -h
-./sra-dump.sh -h
-./genome2transcriptome.pl
-./tpm.pl
 ```
 
 ## Developers centerpiece
@@ -90,7 +82,7 @@ commander::qsubcmd
 
 ### Example
 
-Example using the builtin file descriptors array `COMMANDER` with separator (`-s '|'`) based concatenation of interpreted and non-interpreted Here-Documents. Each concatenation will be stored as a single command in a de-referenced array (`-a cmds`) Optionally, an output file can be defined (`-o <path/to/file>`). `BASHBONE_ERROR` can be used to alter the default error message.
+Showcase of the builtin file descriptors array `COMMANDER` with separator (`-s '|'`) based concatenation of interpreted and non-interpreted Here-Documents. Each concatenation will be stored as a single command in a de-referenced array (`-a cmds`) Optionally, an output file can be defined (`-o <path/to/file>`). `BASHBONE_ERROR` can be used to alter the default error message.
 
 ```bash
 declare -a cmds
@@ -134,60 +126,93 @@ x.print
 # Installation
 ---
 
-## Full installation
+## Base installation of programming languages and libraries to a get enclosed scripts to operate.
+
+```bash
+setup -i conda -d <path/to/installation>
+source <path/of/installation/latest/bashbone/activate.sh>
+bashbone -h
+```
+
+Afterwards, activate bashbone conda base environment and check out stand-alone scripts to e.g. retrieve SRA datasets, or genomes (convert them into a transcriptome) and calulate transcripts per million (TPM). Finally, stop conda.
+
+```bash
+source <path/of/installation/latest/bashbone/activate.sh>
+bashbone -c
+./dlgenome.sh -h
+./sra-dump.sh -h
+./genome2transcriptome.pl
+./tpm.pl
+bashbone -s
+```
+
+## Full installation of all third party tools used in bashbone functions
 
 ```bash
 setup -i all -d <path/to/installation>
-source <path/of/installation/activate.sh>
+source <path/of/installation/latest/bashbone/activate.sh>
 bashbone -h
 ```
 
-## Upgrade to a newer release
-
-Excluded are tools, previously installed into conda environments. Please rerun the full installation to upgrade them, too.
+### Upgrade to a newer release (sources only)
 
 ```bash
 setup -i upgrade -d <path/of/installation>
-source <path/of/installation/activate.sh>
-bashbone -h
 ```
 
-## Update a specific tool
+### Update tools
 
-Bashbone supports downloading latest sources of Trimmomatic, segemehl, STAR-Fusion and/or GEM as comma separated list.
+The setup routine will always install the latest software via conda, which can be updated by running the related setup functions again.
+
+```bash
+setup -i conda_tools -d <path/of/installation>
+```
+
+Trimmomatic, segemehl, STAR-Fusion and GEM will be installed next to the conda environments. If new releases are available, they will be automatically fetched and installed upon running the related setup functions again.
 
 ```bash
 setup -i trimmomatic,segemehl,starfusion,gem -d <path/of/installation>
-source <path/of/installation/activate.sh> -c true
-trimmomatic -version
-segemehl -h
-gem --help
 ```
 
 # Usage
 ---
+
+To load bashbone execute
+```bash
+source <path/of/installation/latest/bashbone/activate.sh>
+bashbone -h
+```
+
+In order to get all function work properly, enable bashbone to use conda environments. Conda can be disabled analogously.
+```bash
+bashbone -c
+bashbone -s
+```
+
+Shortcut:
+
+```bash
+source <path/of/installation/latest/bashbone/activate.sh> -c true
+bashbone -s
+```
 
 ## Retrieve SRA datasets
 
 Use the enclosed script to fetch sequencing data from SRA
 
 ```bash
-source <path/of/installation/activate.sh> -c true
+source <path/of/installation/latest/bashbone/activate.sh> -c true
 sra-dump.sh -h
 ```
 
 ## Retrieve genomes
 
-Use the enclosed script to fetch human hg19/hg38 or mouse mm9/mm10 genomes and annotations.
+Use the enclosed script to fetch human hg19/hg38 or mouse mm9/mm10 genomes and annotations. Plug-n-play CTAT genome resource made for gene fusion detection and shipped with STAR index can be selected optionally.
 
 ```bash
-source <path/of/installation/activate.sh> -c true
+source <path/of/installation/latest/bashbone/activate.sh> -c true
 dlgenome.sh -h
 ```
-
-Or download plug-n-play CTAT genome resource made for gene fusion detection and shipped with STAR index.
-
-<https://data.broadinstitute.org/Trinity/CTAT_RESOURCE_LIB/__genome_libs_StarFv1.9/>
 
 ## Sample info file
 
@@ -226,10 +251,10 @@ Then the info file should consist of:
 
 ## Example
 
-Tiny example pipeline to perform gene fusion detection and differential expression analyses
+Tiny example pipeline to perform gene fusion detection and differential expression analyses. Check out further pre-compiled pipelines for peak calling from *IP-Seq experiments and differential expression- and ontology analysis from RNA-Seq data (rippchen) or for multiple variant calling options from Exome-Seq/WG-Seq or RNA-Seq data following GATK best-practices in an optimized, parallelized fashion (muvac).
 
 ```bash
-source <path/of/installation/activate.sh> -c true
+source <path/of/installation/latest/bashbone/activate.sh> -c true
 genome=<path/to/fasta>
 genomeidx=<path/to/segemhl.idx>
 gtf=<path/to/gtf>
@@ -322,6 +347,34 @@ cluster::coexpression -t $threads -g $gtf -b protein_coding -f 23 -i /results/co
 | VarDict         | <https://github.com/AstraZeneca-NGS/VarDict>               | 10.1093/nar/gkw227 |
 | VarScan         | <http://dkoboldt.github.io/varscan>                        | 10.1101/gr.129684.111 |
 
-# Closing remarks
+# Supplementary information
+---
 
-Bashbone is a continously developed library and actively used in my daily work. As a single developer it may take me a while to fix errors and issues. Feature requests cannot be handled so far, but I am happy to receive pull request.
+Bashbone functions can be executed in parallel instances and thus are able to be submitted as jobs into a queuing system like a Sun Grid Engine (SGE). This could be easily done by using scripts written via here-documents or via the bashbone builtin `commander::qsubcmd`. The latter makes use of array jobs, which enables to wait for completion of all jobs, handle single exit codes and amend used resources via `qalter -tc <instances> <jobname>`.
+
+```bash
+source <path/of/installation/latest/muvac/activate.sh>
+declare -a cmds=()
+for i in *R1.fastq.gz; do
+	j=${i/R1/R2}
+	sh=job_$(basename $i .R1.fastq.gz)
+	commander::makecmd -a cmd1 -c {COMMANDER[0]}<<- CMD
+		source <path/of/installation/latest/bashbone/activate.sh>;
+		bashbone -h
+	CMD
+done
+commander::qsubcmd -r -l h="<hostname>|<hostname>" -p <env> -t <threads> -i <instances> -n <jobname> -o <logdir> -a cmds
+# analogously: echo job.\$SGE_TASK_ID.sh | qsub -sync n -pe <env> <threads> -t 1-<#jobs> -tc <instances> -l h="<hostname>|<hostname>" -S /bin/bash -N <jobname> -o <logfile> -j y -V -cwd
+```
+
+In some cases a glibc pthreads bug (<https://sourceware.org/bugzilla/show_bug.cgi?id=23275>) may cause pigz failures (`internal threads error`) and premature termination of toola leveraging on it e.g. Cutadapt. One can circumvent this by upgrading the operating system or making use of an alternative pthreads library and `LD_PRELOAD`
+
+```bash
+source <path/of/installation/latest/bashbone/activate.sh>
+LD_PRELOAD=/lib64/noelision/libpthread.so.0 bashbone -h
+```
+
+# Closing remarks
+---
+
+Bashbone is a continuously developed library and actively used in my daily work. As a single developer it may take me a while to fix errors and issues. Feature requests cannot be handled so far, but I am happy to receive pull request.

@@ -81,7 +81,7 @@ alignment::slice(){
 	CMD
 
 	rm -f "$tmpdir/genome/slice".*.bed
-	commander::runcmd -c r -v -b -t $threads -a cmd1
+	commander::runcmd -v -b -t $threads -a cmd1
 
 	for m in "${_mapper_slice[@]}"; do
 		declare -n _bams_slice=$m

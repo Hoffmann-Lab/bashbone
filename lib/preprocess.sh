@@ -708,7 +708,7 @@ preprocess::qcstats(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c r -v -b -a cmd1
+		commander::runcmd -v -b -a cmd1
 	fi
 
 	return 0
