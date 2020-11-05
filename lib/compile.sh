@@ -91,34 +91,27 @@ compile::conda(){
 	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
 	conda update -y conda
 
-	# base env: install tools used on the fly and compilers for perl modules
 	# perl from conda-forge is compiled with threads, perl from bioconda not (recently removed) - thus there is an old perl-threaded version
+	# perl + modules and R for scripts and R based bashbone functions (freeze latest r-base version for which all packages are available)
+	# to avoid R downgrades due to modules R built versions, compile them manually below (ggpubr requires nlopt)
+	# non-oracle java for m6aviewer
+	# htslib htseq for prepare_dexseq and some r packages
+	# bcftools vcflib vt for vcf normalization
+	# ucsc-facount khmer for peak calling required effective genome size estimation
+	# ghostscript for ps2pdf
 	commander::printinfo "setup conda base env"
 	conda install -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 		gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
 		glib pkg-config make automake cmake \
 		bzip2 pigz pbzip2 \
+		wget curl ghostscript dos2unix \
+		sra-tools entrez-direct \
+		datamash samtools bedtools ucsc-facount khmer \
+		htslib htseq bcftools vcflib vt \
+		perl perl-app-cpanminus perl-list-moreutils perl-try-tiny perl-dbi perl-db-file perl-xml-parser perl-bioperl perl-bio-eutilities \
 		java-jdk \
-		perl perl-app-cpanminus perl-list-moreutils perl-try-tiny \
-		curl ghostscript dos2unix \
-		ucsc-facount khmer \
-		datamash samtools bedtools \
-		htslib htseq bcftools vcflib vt
+		nlopt r-base=4.0.2
 	cpanm Switch
-
-	# setup r env with compilers for r packages, freeze latest r-base version for which all packages are available
-	# to avoid r downgrades due to modules r built versions, compile them manually (ggpubr requires nlopt)
-	commander::printinfo "setup conda r env for deseq, dexseq, survival, wgcna, ggpubr, pheatmap, dplyr, knapsack"
-	n=r
-	conda create -y -n $n python=3
-	conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
-		gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
-		glib pkg-config make automake cmake \
-		bzip2 pigz pbzip2 \
-		htslib nlopt r-base=4.0.2
-	for bin in perl samtools bedtools; do
-		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-	done
 
 	tmpdir="$insdir/tmp"
 	mkdir -p "$tmpdir"
@@ -139,7 +132,7 @@ compile::conda(){
 		Rscript - <<< '
 			options(unzip="$(command -v unzip)");
 			Sys.setenv(TAR="$(command -v tar)");
-			BiocManager::install(c("BiocParallel","genefilter","DESeq2","DEXSeq","clusterProfiler","TCGAutils","TCGAbiolinks","impute","preprocessCore","GO.db","AnnotationDbi"),
+			BiocManager::install(c("biomaRt","BiocParallel","genefilter","DESeq2","DEXSeq","clusterProfiler","TCGAutils","TCGAbiolinks","impute","preprocessCore","GO.db","AnnotationDbi"),
 				ask=F, Ncpus=$threads, clean=T, destdir="$tmpdir");
 		'
 	CMD
@@ -164,10 +157,10 @@ compile::conda(){
 			devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
 		'
 	CMD
-	commander::runcmd -c $n -t 1 -a cmd1
-	commander::runcmd -c $n -t 1 -a cmd2
-	commander::runcmd -c $n -t 1 -a cmd3
-	commander::runcmd -c $n -t $threads -a cmd4
+	commander::runcmd -t 1 -a cmd1
+	commander::runcmd -t 1 -a cmd2
+	commander::runcmd -t 1 -a cmd3
+	commander::runcmd -t $threads -a cmd4
 
 	commander::printinfo "conda clean up"
 	conda clean -y -a
