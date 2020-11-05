@@ -127,6 +127,7 @@ alignment::segemehl() {
 }
 
 alignment::star() {
+	declare -a tdirs
 	_cleanup::alignment::star(){
 		rm -rf "${tdirs[@]}"
 	}
@@ -222,7 +223,7 @@ alignment::star() {
 		fi
 	fi
 
-	declare -a cmd1 tdirs
+	declare -a cmd1
 	local a o e extractcmd
 	for i in "${!_fq1_star[@]}"; do
 		helper::basename -f "${_fq1_star[$i]}" -o o -e e
@@ -478,6 +479,7 @@ alignment::bwa() {
 }
 
 alignment::postprocess() {
+	declare -a tdirs
 	_cleanup::alignment::postprocess(){
 		rm -rf "${tdirs[@]}"
 	}
@@ -521,7 +523,7 @@ alignment::postprocess() {
 
 	commander::printinfo "$job alignments"
 
-	declare -a cmd1 cmd2 tdirs
+	declare -a cmd1 cmd2
 	for m in "${_mapper_process[@]}"; do
 		declare -n _bams_process=$m
 		mkdir -p "$outdir/$m"
@@ -748,6 +750,7 @@ alignment::_index() {
 }
 
 alignment::inferstrandness(){
+	local tmpfile
 	_cleanup::alignment::inferstrandness(){
 		rm -f "$tmpfile"
 	}
@@ -785,7 +788,7 @@ alignment::inferstrandness(){
 
 	commander::printinfo "inferring library preparation method"
 
-	local tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)"
+	tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)"
 	declare -a cmd1
 	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		perl -lane '
@@ -1028,7 +1031,7 @@ alignment::bamstats(){
 	if $skip; then
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c r -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $threads -a cmd2
 	fi
 
 	return 0

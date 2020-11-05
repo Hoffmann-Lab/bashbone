@@ -2,6 +2,7 @@
 # (c) Konstantin Riege
 
 quantify::featurecounts() {
+	declare -a tdirs
 	_cleanup::quantify::featurecounts(){
 		rm -rf "${tdirs[@]}"
 	}
@@ -54,7 +55,7 @@ quantify::featurecounts() {
 	instances=$((instances*2))
 	read -r instances ithreads < <(configure::instances_by_threads -i $((instances==0?1:instances)) -t 64 -T $threads)
 
-	declare -a cmd1 tdirs
+	declare -a cmd1
 	local mf f o params x
 	for m in "${_mapper_featurecounts[@]}"; do
 		declare -n _bams_featurecounts=$m

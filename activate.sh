@@ -11,6 +11,7 @@ BASHBONE_BAK_PATH="$PATH"
 mapfile -t BASCHBONE_BAK_SHOPT < <(shopt | sed -E '/off$/d;{s/^(\S+).+/shopt -s \1/}')
 mapfile -t BASCHBONE_BAK_ERR < <(trap -p ERR)
 mapfile -t BASCHBONE_BAK_RET < <(trap -p RETURN)
+mapfile -t BASCHBONE_BAK_EXIT < <(trap -p EXIT)
 
 BASHBONE_WORKDIR="$PWD"
 BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
@@ -111,6 +112,8 @@ bashbone(){
 
 			Usage:
 			-h | help
+			-c | activate conda if installed
+			-s | stop conda if activated
 			-l | list functions for users
 			-e | list functions for experienced users
 			-d | list functions for developers
@@ -121,9 +124,11 @@ bashbone(){
 	}
 
 	local OPTIND arg
-	while getopts 'hledax' arg; do
+	while getopts 'hcsledax' arg; do
 		case $arg in
 		h)	_usage; return 0;;
+		c)	source $BASHBONE_TOOLSDIR/conda/bin/activate base &> /dev/null;	commander::printinfo "utilizing $(conda --version)"; return 0;;
+		s)	while [[ -n $CONDA_PREFIX ]]; do conda deactivate &> /dev/null; done; return 0;;
 		l)	declare -F | grep -oE '\S+::\S+' | grep -vF -e ::_ -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
 		e)	declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
 		d)	declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper::_ | grep -F -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
@@ -132,8 +137,10 @@ bashbone(){
 			set +E +o pipefail +o functrace
 			trap - ERR
 			trap - RETURN
+			trap - EXIT
 			source <(printf '%s\n' "${BASCHBONE_BAK_RET[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_ERR[@]}")
+			source <(printf '%s\n' "${BASCHBONE_BAK_EXIT[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_SHOPT[@]}")
 			PATH="$BASHBONE_BAK_PATH"
 

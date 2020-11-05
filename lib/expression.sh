@@ -1,7 +1,9 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-expression::diego() {
+expression::diego(){
+	local tmp
+	declare -a tdirs
 	_cleanup::expression::diego(){
 		rm -rf "$tmp"
 		rm -rf "${tdirs[@]}"
@@ -26,7 +28,7 @@ expression::diego() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads countsdir mappeddir tmpdir outdir gtf tmp
+	local OPTIND arg mandatory skip=false skipmd5=false threads countsdir mappeddir tmpdir outdir gtf
 	declare -n _mapper_diego _cmpfiles_diego _strandness_diego
 	while getopts 'S:s:5:t:r:x:g:c:i:j:p:o:' arg; do
 		case $arg in
@@ -92,7 +94,7 @@ expression::diego() {
 		-r _mapper_diego \
 		-x _strandness_diego
 
-	declare -a cmd1 cmd2 mapdata tdirs
+	declare -a cmd1 cmd2 mapdata
 	local m f i c t odir sjfile countfile min sample condition library replicate factors
 	for m in "${_mapper_diego[@]}"; do
 		for f in "${_cmpfiles_diego[@]}"; do
@@ -256,7 +258,7 @@ expression::deseq() {
 					while read -r sample condition library replicate factors; do
 						[[ ${visited["$sample.$replicate"]} ]] && continue || visited["$sample.$replicate"]=1
 						countfile=$(readlink -e "$countsdir/$m/$sample"*.+(genecounts|counts).+(reduced|htsc) | head -1)
-						[[ $factors ]] && factors=","$(echo $factors | sed -r 's/\s+/,/g')
+						[[ $factors ]] && factors=","$(echo $factors | sed -E 's/\s+/,/g')
 						echo "$sample.$replicate,$countfile,$condition,$replicate$factors" >> "$odir/experiments.csv"
 					done < <(awk -v c=$c '$2==c' $f | sort -k4,4V && awk -v t=$t '$2==t' $f | sort -k4,4V)
 				done
@@ -277,7 +279,7 @@ expression::deseq() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c r -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -t $instances -a cmd1
 		commander::runcmd -v -b -t $threads -a cmd2
 	fi
 
@@ -339,7 +341,8 @@ expression::_deseq() {
 	return 0
 }
 
-expression::joincounts() {
+expression::joincounts(){
+	declare -a tfiles
 	_cleanup::expression::joincounts(){
 		rm -f "${tfiles[@]}"
 	}
@@ -379,7 +382,7 @@ expression::joincounts() {
 
 	commander::printinfo "joining count values plus zscore calculation"
 
-	declare -a cmd1 cmd2 mapdata tfiles
+	declare -a cmd1 cmd2 mapdata
 	local m f x i c t h mh sample condition library replicate factors cf e tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
 	tfiles+=("$tmp" "$tojoin" "$joined")
@@ -488,8 +491,8 @@ expression::joincounts() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c r -v -b -t $threads -a cmd1
-		commander::runcmd -c r -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
 	fi
 
 	return 0

@@ -106,9 +106,9 @@ dlgenome::go(){
 	} || {
 		cat <<- EOF > $outdir/tmp/download.R || return 1
 			if (!requireNamespace("biomaRt", quietly = TRUE)) {
-				if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager", repos="http://cran.us.r-project.org")
+				if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager", repos="http://cloud.r-project.org", Ncpus=$threads, clean=T)
 				library("BiocManager")
-				BiocManager::install(c("biomaRt"))
+				BiocManager::install(c("biomaRt"), Ncpus=$threads, clean=T)
 			}
 			library("biomaRt")
 			ensembl <- useMart("ENSEMBL_MART_ENSEMBL")

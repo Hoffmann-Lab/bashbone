@@ -206,7 +206,7 @@ get_table = function(dds){
 		)
 		postscript(file.path(odir,"heatmap.vsc.ps"))
 		heatmap.2(as.matrix(vsc), col = color, Rowv = T, Colv = F, scale = "none",
-			dendrogram = "row", trace = "none", margin = c(8, 8),
+			dendrogram = "row", trace = "none", margin = c(10, 8),
 			cexRow = 0.6, cexCol = 0.8, key.title = NA, key.ylab = NA,
 			key.xlab = "vsc", main = paste("VSC Heatmap of top ",length(topids)," genes by fold-change")
 		)
@@ -218,7 +218,7 @@ get_table = function(dds){
 		)
 		postscript(file.path(odir,"heatmap.vsc.zscores.ps"))
 		heatmap.2(as.matrix(zscores), col = color, Rowv = T, Colv = F, scale = "none",
-			dendrogram = "row", trace = "none", margin = c(8, 8),
+			dendrogram = "row", trace = "none", margin = c(10, 8),
 			cexRow = 0.6, cexCol = 0.8, key.title = NA, key.ylab = NA,
 			key.xlab = "zscore", main = paste("Z-score heatmap of top ",length(topids)," genes by fold-change")
 		)
@@ -230,7 +230,7 @@ get_table = function(dds){
 		)
 		postscript(file.path(odir,"heatmap.mean.vsc.ps"))
 		heatmap.2(as.matrix(meanvsc), col = color, Rowv = T, Colv = F, scale = "none",
-			dendrogram = "row", trace = "none", margin = c(8, 8),
+			dendrogram = "row", trace = "none", margin = c(10, 8),
 			cexRow = 0.6, cexCol = 0.8, key.title = NA, key.ylab = NA,
 			key.xlab = "vsc", main = paste("VSC heatmap of top ",length(topids)," genes by fold-change")
 		)
@@ -242,7 +242,7 @@ get_table = function(dds){
 		);
 		postscript(file.path(odir,"heatmap.mean.vsc.zscores.ps"))
 		heatmap.2(as.matrix(meanzscores), col = color, Rowv = T, Colv = F, scale = "none",
-			dendrogram = "row", trace = "none", margin = c(8, 8),
+			dendrogram = "row", trace = "none", margin = c(10, 8),
 			cexRow = 0.6, cexCol = 0.8, key.title = NA, key.ylab = NA,
 			key.xlab = "zscore", main = paste("Z-score heatmap of top ",length(topids)," genes by fold-change")
 		)

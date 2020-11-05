@@ -57,6 +57,8 @@ variants::vcfzip() {
 }
 
 variants::haplotypecaller() {
+	local tmpfile
+	declare -a tdirs
 	_cleanup::variants::haplotypecaller(){
 		rm -f $tmpfile
 		rm -rf "${tdirs[@]}"
@@ -100,7 +102,7 @@ variants::haplotypecaller() {
 	[[ $mandatory -lt 7 ]] && _usage
 
 	if [[ ! $dbsnp ]]; then
-		local tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf)"
+		tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf)"
 		dbsnp="$tmpfile"
 		echo -e "##fileformat=VCFv4.0\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" > "$dbsnp"
 		bgzip -f -@ $threads < "$dbsnp" > "$dbsnp.gz"
@@ -120,7 +122,7 @@ variants::haplotypecaller() {
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 1 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6 tdirs
+	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6
 	for m in "${_mapper_haplotypecaller[@]}"; do
 		declare -n _bams_haplotypecaller=$m
 		tdir="$tmpdir/$m"
@@ -230,6 +232,7 @@ variants::haplotypecaller() {
 }
 
 variants::panelofnormals() {
+	declare -a tdirs
 	_cleanup::variants::panelofnormals(){
 		rm -rf "${tdirs[@]}"
 	}
@@ -277,7 +280,7 @@ variants::panelofnormals() {
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
 
 	local m i o t e slice odir tdir
-	declare -a tomerge cmd1 cmd2 cmd3 tdirs
+	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_panelofnormals[@]}"; do
 		declare -n _bams_panelofnormals=$m
 		odir="$outdir/$m"
@@ -341,6 +344,7 @@ variants::panelofnormals() {
 }
 
 variants::makepondb() {
+	declare -a tdirs
 	_cleanup::variants::makepondb(){
 		rm -rf "${tdirs[@]}"
 	}
@@ -388,7 +392,7 @@ variants::makepondb() {
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 1 -T $threads)
 
 	local m i o t odir params
-	declare -a tomerge cmd1 cmd2 cmd3 tdirs
+	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_makepondb[@]}"; do
 		declare -n _bams_makepondb=$m
 		odir="$outdir/$m"
@@ -474,6 +478,7 @@ variants::makepondb() {
 }
 
 variants::mutect() {
+	declare -a tdirs
 	_cleanup::variants::mutect(){
 		rm -rf "${tdirs[@]}"
 	}
@@ -542,7 +547,7 @@ variants::mutect() {
 	local params params2 m i o t slice odir tdir ithreads instances=$((${#_mapper_mutect[@]}*${#_tidx_mutect[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 1 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6 cmd7 cmd8 cmd9 cmd10 tdirs
+	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6 cmd7 cmd8 cmd9 cmd10
 	for m in "${_mapper_mutect[@]}"; do
 		declare -n _bams_mutect=$m
 		odir="$outdir/$m"

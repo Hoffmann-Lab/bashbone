@@ -29,6 +29,7 @@ for i in "${INSTALL[@]}"; do
 	progress::observe -v $VERBOSITY -o "$LOG" -f compile::$i -i "$INSDIR" -t $THREADS
 done
 
+unset BASHBONE_ERROR
 commander::printinfo "success" >> "$LOG"
 
 exit 0

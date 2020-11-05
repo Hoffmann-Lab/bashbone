@@ -16,7 +16,7 @@ configure::exit(){
 		case $arg in
 			p)	((++mandatory)); pid=$OPTARG;;
 			f)	exitfun=$OPTARG;;
-			:) _usage;;
+			:)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 1 ]] && _usage
