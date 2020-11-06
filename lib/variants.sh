@@ -102,12 +102,11 @@ variants::haplotypecaller() {
 	[[ $mandatory -lt 7 ]] && _usage
 
 	if [[ ! $dbsnp ]]; then
-		tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf)"
+		tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf.gz)"
 		dbsnp="$tmpfile"
-		echo -e "##fileformat=VCFv4.0\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" > "$dbsnp"
-		bgzip -f -@ $threads < "$dbsnp" > "$dbsnp.gz"
-		tabix -f -p vcf "$dbsnp.gz"
-		dbsnp="$dbsnp.gz"
+		echo -e "##fileformat=VCFv4.0\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" | bgzip -f -@ $threads > "$tmpfile"
+		tabix -f -p vcf "$tmpfile"
+		dbsnp="$tmpfile"
 	fi
 
 	commander::printinfo "calling variants haplotypecaller"
@@ -279,7 +278,13 @@ variants::panelofnormals() {
 	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
 
-	local m i o t e slice odir tdir
+	local m i o t e slice odir instances ithreads odir tdir
+	for m in "${_mapper_panelofnormals[@]}"; do
+		declare -n _bams_panelofnormals=$m
+		((instances+=${#_bams_panelofnormals[@]}))
+	done
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
+
 	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_panelofnormals[@]}"; do
 		declare -n _bams_panelofnormals=$m
@@ -329,15 +334,23 @@ variants::panelofnormals() {
 			CMD
 				bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.vcf" "$t.vcf"
 			CMD
+
+			commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				bgzip -f -@ $ithreads < "$o.vcf" > "$o.vcf.gz"
+			CMD
+				tabix -f -p vcf "$o.vcf.gz"
+			CMD
 		done
 	done
 
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	else
 		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
 		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd3
 	fi
 
 	return 0
@@ -347,6 +360,7 @@ variants::makepondb() {
 	declare -a tdirs
 	_cleanup::variants::makepondb(){
 		rm -rf "${tdirs[@]}"
+		rm -f "$outdir"/*/blocked
 	}
 
 	_usage() {
@@ -379,53 +393,55 @@ variants::makepondb() {
 	done
 	[[ $mandatory -lt 5 ]] && _usage
 
-	commander::printinfo "calling panel of normals"
+	commander::printinfo "creating panel of normals database"
 
 	local minstances mthreads jmem jgct jcgct
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m 4000)
-
-	local m i o odir params instances ithreads
-	for m in "${_mapper_makepondb[@]}"; do
-		declare -n _bams_makepondb=$m
-		((instances+=${#_bams_makepondb[@]}))
-	done
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 1 -T $threads)
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -i ${#_mapper_makepondb[@]} -m 4000)
 
 	local m i o t odir params
-	declare -a tomerge cmd1 cmd2 cmd3
+	declare -a cmd1 cmd2 cmd3
 	for m in "${_mapper_makepondb[@]}"; do
 		declare -n _bams_makepondb=$m
 		odir="$outdir/$m"
-		tdir="$tmpdir/$m"
-		mkdir -p "$odir" "$tdir"
-
-		tomerge=()
-		for i in "${!_bams_makepondb[@]}"; do
-			o="$(basename "${_bams_makepondb[$i]}")"
-			t="$tdir/${o%.*}"
-			o="$odir/${o%.*}"
-
-			BASHBONE_ERROR="file does not exists $o.vcf"
-			[[ -s "$o.vcf" ]] || false
-			unset BASHBONE_ERROR
-
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[4]}<<- CMD
-				bcftools reheader -s <(echo "NORMAL NORMAL$i") -o "$t.vcf" "$o.vcf"
-			CMD
-				mv "$t.vcf" "$o.vcf"
-			CMD
-				bgzip -f -@ $ithreads < "$o.vcf" > "$o.vcf.gz"
-			CMD
-				tabix -f -p vcf "$o.vcf.gz"
-			CMD
-
-			tomerge+=("$o.vcf.gz")
-		done
+		mkdir -p "$odir"
 
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-			rm -rf "$odir/pondb"
-		CMD
+		for i in "${!_bams_makepondb[@]}"; do
+			o="$(basename "${_bams_makepondb[$i]}")"
+			echo -e "$m.${o%.*}\t$odir/${o%.*}.vcf.gz" >> ${tdirs[-1]}/import.list
+		done
+
+		while [[ -e "$odir/blocked" ]]; do sleep 1; done
+		if [[ ! -e "$odir/pondb" && ! -e "$odir/blocked" ]]; then
+			touch $odir/blocked # claimed by first parallel instance reaching this line
+			bcftools view -h $odir/${o%.*}.vcf.gz | head -n -1 > "${tdirs[-1]}/vcf"
+			echo -e "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tINITIALIZE" >> "${tdirs[-1]}/vcf"
+			bgzip -f -@ $threads < "${tdirs[-1]}/vcf" > "${tdirs[-1]}/vcf.gz"
+			tabix -f -p vcf "${tdirs[-1]}/vcf.gz"
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				gatk
+					--java-options '
+						-Xmx${jmem}m
+						-XX:ParallelGCThreads=$jgct
+						-XX:ConcGCThreads=$jcgct
+						-Djava.io.tmpdir="$tmpdir"
+						-DGATK_STACKTRACE_ON_USER_EXCEPTION=true
+					'
+					GenomicsDBImport
+					-L "$genome.list"
+					-R "$genome"
+					-V "${tdirs[-1]}/vcf.gz"
+					--reader-threads $mthreads
+					--genomicsdb-workspace-path "$odir/pondb"
+					--verbosity INFO
+					--tmp-dir "${tdirs[-1]}"
+			CMD
+				rm -f "$odir/blocked"
+			CMD
+		fi
+
+		# alternative rm "$odir/pondb" && --genomicsdb-workspace-path "$odir/pondb" or --overwrite-existing-genomicsdb-workspace true
+		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 			gatk
 				--java-options '
 					-Xmx${jmem}m
@@ -437,12 +453,14 @@ variants::makepondb() {
 				GenomicsDBImport
 				-L "$genome.list"
 				-R "$genome"
-				$(printf ' -V "%s" ' "${tomerge[@]}")
-				--genomicsdb-workspace-path "$odir/pondb"
+				--sample-name-map "${tdirs[-1]}/import.list"
+				--reader-threads $mthreads
+				--genomicsdb-update-workspace-path "$odir/pondb"
 				--verbosity INFO
 				--tmp-dir "${tdirs[-1]}"
 		CMD
-		#rm pondb becase this does not work yet: --overwrite-existing-genomicsdb-workspace true
+
+		# there is no conflict if multiple instances are writing/reading in parallel. the last running instance creates full pon.vcf
 
 		[[ -s "$genome.af_only_gnomad.vcf.gz" ]] && params=" --germline-resource '$genome.af_only_gnomad.vcf.gz'" || params=''
 		commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
@@ -469,7 +487,7 @@ variants::makepondb() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
 		commander::runcmd -c gatk -v -b -t $minstances -a cmd2
 		commander::runcmd -c gatk -v -b -t $minstances -a cmd3
 	fi
@@ -545,7 +563,7 @@ variants::mutect() {
 	read -r minstances2 mthreads2 jmem2 jgct2 jcgct2 < <(configure::jvm -T $threads -m 4000)
 
 	local params params2 m i o t slice odir tdir ithreads instances=$((${#_mapper_mutect[@]}*${#_tidx_mutect[@]}))
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 1 -T $threads)
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
 
 	[[ $pondb ]] && params=" -pon '$pondb'"
 
