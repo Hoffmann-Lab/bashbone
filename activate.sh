@@ -60,11 +60,6 @@ done
 IFS=$_IFS
 BASHBONE_VERSION=$version
 
-${BASHBONE_CONDA:-false} && {
-	BASHBONE_ERROR="conda activation failed. use -c false to disable conda activation"
-	source $BASHBONE_TOOLSDIR/conda/bin/activate base &> /dev/null
-	commander::printinfo "utilizing $(conda --version)"
-}
 set -E -o pipefail -o functrace # -E allows simple trap bubbeling and -o functrace enables inheritance of RETURN and DEBUG trap
 shopt -s extdebug # do not shopt -u extdebug, otherwise set -E -o pipefail configuration will be nuked
 shopt -s extglob
@@ -96,12 +91,18 @@ else
 fi
 trap 'BASHBONE_ERROR="killed"' INT TERM
 
-[[ $BASHBONE_CONDA ]] || {
-	commander::printinfo {COMMANDER[0]}<<- EOF
-		to activate conda environment execute
-		source $(basename "${BASH_SOURCE[0]}") -c true
-	EOF
-}
+if ${BASHBONE_CONDA:-false}; then
+	BASHBONE_ERROR="conda activation failed. use -c false to disable conda activation"
+	source $BASHBONE_TOOLSDIR/conda/bin/activate base &> /dev/null
+	commander::printinfo "utilizing $(conda --version)"
+else
+	[[ $BASHBONE_CONDA ]] && {
+		commander::printinfo {COMMANDER[0]}<<- EOF
+			to activate conda environment either execute: bashbone -c
+			or execute: source $(basename "${BASH_SOURCE[0]}") -c true
+		EOF
+	}
+fi
 
 bashbone(){
 	_usage(){
