@@ -80,7 +80,7 @@ alignment::mkreplicates() {
 					samtools view -@ $ithreads1 -b -s 0.5 $rf > "${tdirs[-1]}/$(basename "$rf")"
 				CMD
 				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-					samtools merge -f -@ $ithreads2 "$o" "${tdirs[-1]}/$(basename "$tf")" "${tdirs[-1]}/$(basename "$rf")"
+					samtools merge -f -c -p -@ $ithreads2 "$o" "${tdirs[-1]}/$(basename "$tf")" "${tdirs[-1]}/$(basename "$rf")"
 				CMD
 
 				_bams_mkreplicates+=("$o")
@@ -118,7 +118,7 @@ alignment::mkreplicates() {
 					o=$odir/$(echo -e "$(basename $nf)\t$(basename $nrf)" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')
 
 					commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
-						samtools merge -f -@ $ithreads1 $o $nf $nrf
+						samtools merge -f -c -p -@ $ithreads1 $o $nf $nrf
 					CMD
 					_bams_mkreplicates+=("$o")
 					$addindex && _nidx_mkreplicates+=($((${#_bams_mkreplicates[@]}-1)))
@@ -127,7 +127,7 @@ alignment::mkreplicates() {
 					rf=${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}
 					o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')
 					commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
-						samtools merge -f -@ $ithreads1 $o $tf $rf
+						samtools merge -f -c -p -@ $ithreads1 $o $tf $rf
 					CMD
 					_bams_mkreplicates+=("$o")
 					$addindex && _pidx_mkreplicates+=($((${#_bams_mkreplicates[@]}-1)))
