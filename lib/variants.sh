@@ -81,7 +81,7 @@ variants::haplotypecaller() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory genome dbsnp tmpdir outdir i
+	local OPTIND arg mandatory skip=false threads memory genome dbsnp tmpdir outdir
 	declare -n _mapper_haplotypecaller _bamslices_haplotypecaller
 	declare -A nidx tidx
 	while getopts 'S:s:t:g:d:m:r:c:p:o:' arg; do
@@ -256,7 +256,7 @@ variants::panelofnormals() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory genome dbsnp tmpdir outdir i
+	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir
 	declare -n _mapper_panelofnormals _bamslices_panelofnormals
 	while getopts 'S:s:t:g:m:r:c:p:o:' arg; do
 		case $arg in
@@ -303,7 +303,7 @@ variants::panelofnormals() {
 							'
 						Mutect2
 						-I "$slice"
-						-O "$slice.pon.vcf"
+						-O "$slice.vcf"
 						-R "$genome"
 						-A Coverage
 						-A DepthPerAlleleBySample
@@ -315,7 +315,7 @@ variants::panelofnormals() {
 						--max-mnp-distance 0
 				CMD
 
-				tomerge+=("$slice.pon.vcf")
+				tomerge+=("$slice.vcf")
 			done < "${_bamslices_panelofnormals[${_bams_panelofnormals[$i]}]}"
 
 			o="$(basename "${_bams_panelofnormals[$i]}")"
@@ -325,9 +325,9 @@ variants::panelofnormals() {
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 			#DO NOT PIPE - DATALOSS!
 			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bcftools concat -o "$t.pon.vcf" $(printf '"%s" ' "${tomerge[@]}")
+				bcftools concat -o "$t.vcf" $(printf '"%s" ' "${tomerge[@]}")
 			CMD
-				bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.pon.vcf" "$t.pon.vcf"
+				bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.vcf" "$t.vcf"
 			CMD
 		done
 	done
@@ -363,7 +363,7 @@ variants::makepondb() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory genome dbsnp tmpdir outdir i
+	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir
 	declare -n _mapper_makepondb
 	while getopts 'S:s:t:g:r:p:o:' arg; do
 		case $arg in
@@ -405,21 +405,21 @@ variants::makepondb() {
 			t="$tdir/${o%.*}"
 			o="$odir/${o%.*}"
 
-			BASHBONE_ERROR="file does not exists $o.pon.vcf"
-			[[ -s "$o.pon.vcf" ]] || false
+			BASHBONE_ERROR="file does not exists $o.vcf"
+			[[ -s "$o.vcf" ]] || false
 			unset BASHBONE_ERROR
 
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[4]}<<- CMD
-				bcftools reheader -s <(echo "NORMAL NORMAL$i") -o "$t.pon.vcf" "$o.pon.vcf"
+				bcftools reheader -s <(echo "NORMAL NORMAL$i") -o "$t.vcf" "$o.vcf"
 			CMD
-				mv "$t.pon.vcf" "$o.pon.vcf"
+				mv "$t.vcf" "$o.vcf"
 			CMD
-				bgzip -f -@ $ithreads < "$o.pon.vcf" > "$o.pon.vcf.gz"
+				bgzip -f -@ $ithreads < "$o.vcf" > "$o.vcf.gz"
 			CMD
-				tabix -f -p vcf "$o.pon.vcf.gz"
+				tabix -f -p vcf "$o.vcf.gz"
 			CMD
 
-			tomerge+=("$o.pon.vcf.gz")
+			tomerge+=("$o.vcf.gz")
 		done
 
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
@@ -517,23 +517,23 @@ variants::mutect() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir i mypon=false
+	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir pondb
 	declare -n _mapper_mutect _bamslices_mutect _nidx_mutect _tidx_mutect
-	while getopts 'S:s:t:g:d:m:r:1:2:c:d:p:o:' arg; do
+	while getopts 'S:s:t:g:d:m:r:1:2:c:p:o:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
-			g) ((++mandatory)); genome="$OPTARG";;
-			r) ((++mandatory)); _mapper_mutect=$OPTARG;;
-			c) ((++mandatory)); _bamslices_mutect=$OPTARG;;
-			d) mypon=$OPTARG;;
-			1) ((++mandatory)); _nidx_mutect=$OPTARG;;
-			2) ((++mandatory)); _tidx_mutect=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			*) _usage;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			d)	pondb="$OPTARG";;
+			r)	((++mandatory)); _mapper_mutect=$OPTARG;;
+			c)	((++mandatory)); _bamslices_mutect=$OPTARG;;
+			1)	((++mandatory)); _nidx_mutect=$OPTARG;;
+			2)	((++mandatory)); _tidx_mutect=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 9 ]] && _usage
@@ -547,26 +547,14 @@ variants::mutect() {
 	local params params2 m i o t slice odir tdir ithreads instances=$((${#_mapper_mutect[@]}*${#_tidx_mutect[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 1 -T $threads)
 
+	[[ $pondb ]] && params=" -pon '$pondb'"
+
 	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6 cmd7 cmd8 cmd9 cmd10
 	for m in "${_mapper_mutect[@]}"; do
 		declare -n _bams_mutect=$m
 		odir="$outdir/$m"
 		tdir="$tmpdir/$m"
 		mkdir -p "$odir" "$tdir"
-
-		if $mypon; then
-			BASHBONE_ERROR="cannot find panel of normals $odir/pon.vcf.gz"
-			[[ -s "$odir/pon.vcf.gz" ]] || false
-			unset BASHBONE_ERROR
-			params=" -pon '$odir/pon.vcf.gz'"
-		else
-			if [[ -s "$genome.pon.vcf.gz" ]]; then
-				params=" -pon '$genome.pon.vcf.gz'"
-			else
-				params=''
-				commander::warn "proceeding without panel of normals - expect file $genome.pon.vcf.gz"
-			fi
-		fi
 
 		for i in "${!_tidx_mutect[@]}"; do
 			tomerge=()
@@ -645,8 +633,6 @@ variants::mutect() {
 							--tmp-dir "${tdirs[-1]}"
 					CMD
 					params2=" --contamination-table '$slice.contamination.table' --tumor-segmentation '$slice.tumorsegments.table'"
-				else
-					params2=''
 				fi
 
 				commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
