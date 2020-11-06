@@ -96,7 +96,7 @@ if ${BASHBONE_CONDA:-false}; then
 	source $BASHBONE_TOOLSDIR/conda/bin/activate base &> /dev/null
 	commander::printinfo "utilizing $(conda --version)"
 else
-	[[ $BASHBONE_CONDA ]] && {
+	[[ $BASHBONE_CONDA ]] || {
 		commander::printinfo {COMMANDER[0]}<<- EOF
 			to activate conda environment either execute: bashbone -c
 			or execute: source $(basename "${BASH_SOURCE[0]}") -c true
