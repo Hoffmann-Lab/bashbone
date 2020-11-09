@@ -411,13 +411,16 @@ variants::makepondb() {
 			echo -e "$m.${o%.*}\t$odir/${o%.*}.vcf.gz" >> ${tdirs[-1]}/import.list
 		done
 
-		while [[ -e "$odir/blocked" ]]; do sleep 1; done
+		while [[ -e "$odir/blocked" ]]; do sleep 2; done # do not update unless initialized
+
 		if [[ ! -e "$odir/pondb" && ! -e "$odir/blocked" ]]; then
 			touch $odir/blocked # claimed by first parallel instance reaching this line
+
 			bcftools view -h $odir/${o%.*}.vcf.gz | head -n -1 > "${tdirs[-1]}/vcf"
 			echo -e "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tINITIALIZE" >> "${tdirs[-1]}/vcf"
 			bgzip -f -@ $threads < "${tdirs[-1]}/vcf" > "${tdirs[-1]}/vcf.gz"
 			tabix -f -p vcf "${tdirs[-1]}/vcf.gz"
+
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				gatk
 					--java-options '
@@ -460,10 +463,14 @@ variants::makepondb() {
 				--tmp-dir "${tdirs[-1]}"
 		CMD
 
-		# there is no conflict if multiple instances are writing/reading in parallel. the last running instance creates full pon.vcf
+		# there is no conflict if multiple instances are updating pondb in parallel (non-blocking). however do not write pon.vcf in parallel
 
 		[[ -s "$genome.af_only_gnomad.vcf.gz" ]] && params=" --germline-resource '$genome.af_only_gnomad.vcf.gz'" || params=''
-		commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+			while [[ -e "$odir/blocked" ]]; do sleep 2; done
+		CMD
+			touch "$odir/blocked"
+		CMD
 			gatk
 				--java-options '
 					-Xmx${jmem}m
@@ -479,6 +486,8 @@ variants::makepondb() {
 				-O "$odir/pon.vcf.gz"
 				--verbosity INFO
 				--tmp-dir "${tdirs[-1]}"
+		CMD
+			rm -f "$odir/blocked"
 		CMD
 	done
 
