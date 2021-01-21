@@ -42,11 +42,13 @@ preprocess::fastqc() {
 	local f
 	for f in {"${_fq1_fastqc[@]}","${_fq2_fastqc[@]}"}; do
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fastqc)")
-		commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 			fastqc
 			-d "${tdirs[-1]}"
 			-outdir "$outdir"
-			"$f"
+			"$f" 2>&1
+		CMD
+			sed -u '${/Analysis complete/!{q 1}}'
 		CMD
 	done
 
@@ -490,7 +492,7 @@ preprocess::sortmerna(){
 	commander::printinfo "filtering rRNA fragments"
 
 	local instances ithreads
-	read -r instances ithreads < <(configure::instances_by_memory -t $threads -m $memory)
+	read -r instances ithreads < <(configure::instances_by_memory -T $threads -m $memory)
 
 	local insdir=$(dirname $(dirname $(which sortmerna)))
 	local sortmernaref=$(for i in $insdir/rRNA_databases/*.fasta; do echo $i,$insdir/index/$(basename $i .fasta)-L18; done | xargs -echo | sed 's/ /:/g')
