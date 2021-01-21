@@ -24,6 +24,9 @@ A bash library for workflow and pipeline design within but not restricted to the
 ## Covered Tasks
 
 - For paired-end and single-end derived raw sequencing or prior mapped read data
+  - RNA-Seq protocols
+  - DNA-Seq protocols
+  - Bisulfite converted DNA-Seq protocols
 - Data preprocessing (quality check, adapter clipping, quality trimming, error correction, artificial rRNA depletion)
 - Gene fusion detection
 - Read alignment and post-processing
@@ -31,6 +34,7 @@ A bash library for workflow and pipeline design within but not restricted to the
   - sorting, filtering, unique alignment extraction, removal of optical duplicates
   - generation of pools and pseudo-replicates
   - read group modification, split N-cigar reads, left-alignment and base quality score recalibration
+- Methyl-C calling and prediction of differentially methylated regions
 - Read quantification, TPM and Z-score normalization (automated inference of strand specific library preparation methods)
 - Inference of differential expression as well as co-expression clusters
 - Detection of differential splice junctions and differential exon usage
@@ -38,6 +42,7 @@ A bash library for workflow and pipeline design within but not restricted to the
 - Free implementation of Encode3 best-practice ChIP-Seq Peak calling (automated inference of effective genome sizes)
 - Peak calling from RIP-Seq, MeRIP-Seq, m6A-Seq and other related *IP-Seq data
 - Germline and somatic variant detection from DNA or RNA sequencing experiments plus VCF normalization
+- Tree reconstruction from homozygous sites
 
 # License
 
@@ -243,6 +248,15 @@ Then the info file should consist of:
 | trB.n2 | B   | single-end | N2  | male   |
 
 
+## Adapter sequences
+
+Sequences can be found in the Illumina Adapter Sequences Document (<https://www.illumina.com/search.html?q=Illumina Adapter Sequences Document&filter=manuals&p=1>), the resource of Trimmomatic (<https://github.com/timflutre/trimmomatic/tree/master/adapters>), FastQC respectively (<https://github.com/s-andrews/FastQC/blob/master/Configuration/contaminant_list.txt>).
+<br>
+Nextera Transposase Sequence: CTGTCTCTTATACACATCT
+<br>
+Illumina Universal Adapter: ATGTGTATAAGAGACA
+
+
 ## Example
 
 Tiny example pipeline to perform gene fusion detection and differential expression analyses. Check out further pre-compiled pipelines for peak calling from *IP-Seq experiments and differential expression- and ontology analysis from RNA-Seq data (rippchen) or for multiple variant calling options from Exome-Seq/WG-Seq or RNA-Seq data following GATK best-practices in an optimized, parallelized fashion (muvac).
@@ -308,14 +322,20 @@ cluster::coexpression -t $threads -g $gtf -b protein_coding -f 23 -i /results/co
 | DGCA          | <https://github.com/andymckenzie/DGCA>                              | 10.1186/s12918-016-0349-1 |
 | fastqc        | <https://www.bioinformatics.babraham.ac.uk/projects/fastqc>         | NA |
 | featureCounts | <http://subread.sourceforge.net>                                    | 10.1093/bioinformatics/btt656  |
+| freebayes     | <https://github.com/ekg/freebayes>                                  | arXiv:1207.3907 |
 | GATK          | <https://github.com/broadinstitute/gatk>                            | 10.1101/gr.107524.110 <br> 10.1038/ng.806 |
 | GEM           | <https://groups.csail.mit.edu/cgs/gem>                              | 10.1371/journal.pcbi.1002638 |
 | GSEABase      | <https://bioconductor.org/packages/release/bioc/html/GSEABase.html> | NA |
 | HTSeq         | <https://htseq.readthedocs.io>                                      | 10.1093/bioinformatics/btu638 |
 | IDR           | <https://github.com/kundajelab/idr>                                 | 10.1214/11-AOAS466 |
+| IGV           | <http://software.broadinstitute.org/software/igv>                   | 10.1038/nbt.1754 |
+| Intervene     | <https://github.com/asntech/intervene>                              | 10.1186/s12859-017-1708-7 |
 | khmer         | <https://khmer.readthedocs.io>                                      | 10.12688/f1000research.6924.1 |
 | Macs2         | <https://github.com/macs3-project/MACS>                             | 10.1186/gb-2008-9-9-r137 |
+| metilene      | <https://www.bioinf.uni-leipzig.de/Software/metilene/>              | 10.1101/gr.196394.115 |
 | Picard        | <http://broadinstitute.github.io/picard>                            | NA |
+| Platypus      | <https://rahmanteamdevelopment.github.io/Platypus>                  | 10.1038/ng.3036 |
+| RAxML         | <https://cme.h-its.org/exelixis/web/software/raxml/index.html>      | 10.1093/bioinformatics/btl446 |
 | Rcorrector    | <https://github.com/mourisl/Rcorrector>                             | 10.1186/s13742-015-0089-y |
 | ReSeqC        | <http://rseqc.sourceforge.net>                                      | 10.1093/bioinformatics/bts356 |
 | REVIGO        | <https://code.google.com/archive/p/revigo-standalone>               | 10.1371/journal.pone.0021800 |
@@ -324,6 +344,8 @@ cluster::coexpression -t $threads -g $gtf -b protein_coding -f 23 -i /results/co
 | STAR          | <https://github.com/alexdobin/STAR>                                 | 10.1093/bioinformatics/bts635 |
 | STAR-Fusion   | <https://github.com/STAR-Fusion/STAR-Fusion/wiki>                   | 10.1101/120295 |
 | Trimmomatic   | <http://www.usadellab.org/cms/?page=trimmomatic>                    | 10.1093/bioinformatics/btu170 |
+| VarDict       | <https://github.com/AstraZeneca-NGS/VarDict>                        | 10.1093/nar/gkw227 |
+| VarScan       | <http://dkoboldt.github.io/varscan>                                 | 10.1101/gr.129684.111 |
 | vcflib        | <https://github.com/vcflib/vcflib>                                  | NA |
 | Vt            | <https://genome.sph.umich.edu/wiki/Vt>                              | 10.1093/bioinformatics/btv112 |
 | WGCNA         | <https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA> | 10.1186/1471-2105-9-559 |
@@ -333,12 +355,9 @@ cluster::coexpression -t $threads -g $gtf -b protein_coding -f 23 -i /results/co
 | Tool | Source | DOI |
 | ---  | ---    | --- |
 | clusterProfiler | <https://guangchuangyu.github.io/software/clusterProfiler> | NA |
-| freebayes       | <https://github.com/ekg/freebayes>                         | arXiv:1207.3907 |
 | HISAT2          | <https://daehwankimlab.github.io/hisat2>                   | 10.1038/nmeth.3317 |
-| Platypus        | <https://rahmanteamdevelopment.github.io/Platypus>         | 10.1038/ng.3036 |
 | SnpEff          | <https://pcingola.github.io/SnpEff>                        | 10.4161/fly.19695 |
-| VarDict         | <https://github.com/AstraZeneca-NGS/VarDict>               | 10.1093/nar/gkw227 |
-| VarScan         | <http://dkoboldt.github.io/varscan>                        | 10.1101/gr.129684.111 |
+
 
 # Supplementary information
 
@@ -351,7 +370,6 @@ for i in *R1.fastq.gz; do
 	j=${i/R1/R2}
 	sh=job_$(basename $i .R1.fastq.gz)
 	commander::makecmd -a cmd1 -c {COMMANDER[0]}<<- CMD
-		source <path/of/installation/latest/bashbone/activate.sh>;
 		bashbone -h
 	CMD
 done
@@ -359,11 +377,12 @@ commander::qsubcmd -r -l h="<hostname>|<hostname>" -p <env> -t <threads> -i <ins
 # analogously: echo job.\$SGE_TASK_ID.sh | qsub -sync n -pe <env> <threads> -t 1-<#jobs> -tc <instances> -l h="<hostname>|<hostname>" -S /bin/bash -N <jobname> -o <logfile> -j y -V -cwd
 ```
 
-In some cases a glibc pthreads bug (<https://sourceware.org/bugzilla/show_bug.cgi?id=23275>) may cause pigz failures (`internal threads error`) and premature termination of toola leveraging on it e.g. Cutadapt. One can circumvent this by upgrading the operating system or making use of an alternative pthreads library and `LD_PRELOAD`
+In some cases a glibc pthreads bug (<https://sourceware.org/bugzilla/show_bug.cgi?id=23275>) may cause pigz failures (`internal threads error`) and premature termination of tools leveraging on it e.g. Cutadapt. One can circumvent this by e.g. making use of an alternative pthreads library via `LD_PRELOAD`
 
 ```bash
 source <path/of/installation/latest/bashbone/activate.sh>
 LD_PRELOAD=/lib64/noelision/libpthread.so.0 bashbone -h
+LD_PRELOAD=/gsc/biosw/src/glibc-2.32/lib/libpthread.so.0 bashbone -h
 ```
 
 # Closing remarks

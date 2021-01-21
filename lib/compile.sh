@@ -46,6 +46,8 @@ compile::all(){
 	compile::gem -i "$insdir" -t $threads
 	compile::m6aviewer -i "$insdir" -t $threads
 	compile::idr -i "$insdir" -t $threads
+	compile::newicktopdf -i "$insdir" -t $threads
+	compile::ssgsea -i "$insdir" -t $threads
 
 	return 0
 }
@@ -107,7 +109,7 @@ compile::conda(){
 		wget curl ghostscript dos2unix \
 		sra-tools entrez-direct \
 		datamash samtools bedtools ucsc-facount khmer \
-		htslib htseq bcftools vcflib vt \
+		htslib htseq bcftools vcflib vt vcftools \
 		perl perl-app-cpanminus perl-list-moreutils perl-try-tiny perl-dbi perl-db-file perl-xml-parser perl-bioperl perl-bio-eutilities \
 		java-jdk \
 		nlopt r-base=4.0.2
@@ -132,7 +134,7 @@ compile::conda(){
 		Rscript - <<< '
 			options(unzip="$(command -v unzip)");
 			Sys.setenv(TAR="$(command -v tar)");
-			BiocManager::install(c("biomaRt","BiocParallel","genefilter","DESeq2","DEXSeq","clusterProfiler","TCGAutils","TCGAbiolinks","impute","preprocessCore","GO.db","AnnotationDbi"),
+			BiocManager::install(c("biomaRt","BiocParallel","genefilter","DESeq2","DEXSeq","clusterProfiler","TCGAutils","TCGAbiolinks","survminer","impute","preprocessCore","GO.db","AnnotationDbi"),
 				ask=F, Ncpus=$threads, clean=T, destdir="$tmpdir");
 		'
 	CMD
@@ -179,25 +181,27 @@ compile::conda_tools() {
 		envs[$tool]=true
 	done < <(conda info -e | awk -v prefix="^"$insdir '$NF ~ prefix {print $1}')
 
-	# python 3 envs
-	# ensure star compatibility with CTAT genome index which is built from star indexer 2.7.1a (compatible up to 2.7.3a) as of CTAT for star-fusion v1.9
-	for tool in fastqc cutadapt rcorrector star=2.7.2b bwa rseqc subread htseq arriba picard bamutil macs2 peakachu diego gatk4 freebayes varscan igv; do
+	# better do not predefine python version. if tool recipe depends on earlier version, conda installs an older or the oldest version (freebayes)
+
+	# arriba 2.x , successor of 1.2 (arriba=1.2) has new star parameters incompatible with star < 2.7.6
+	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq arriba picard bamutil macs2 peakachu diego gatk4 freebayes varscan igv intervene raxml metilene; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
 		$upgrade && ${envs[$n]:=false} && continue
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
-		conda create -y -n $n python=3
+		conda create -y -n $n #python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
 		# link commonly used base binaries into env
-		for bin in perl samtools bedtools; do
+		for bin in perl samtools bcftools bedtools vcfsamplediff; do
 			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	done
 	chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl" # necessary fix
 
-	# manual setup of requirements from bioconda meta.yaml (see compile::starfusion)
+	# manual setup of requirements from bioconda meta.yaml (see compile::starfusion) due to non-latest installation via conda
+	# note: recent star is not compatible with CTAT plug-n-play genome index as of CTAT for star-fusion v1.9 (star indexer 2.7.1a)
 	tool=star-fusion
 	n=${tool/=*/}
 	n=${n//[^[:alpha:]]/}
@@ -205,15 +209,17 @@ compile::conda_tools() {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
-		conda create -y -n $n python=3
+		conda create -y -n $n #python=3
 		# propably enought: perl perl-set-intervaltree perl-carp perl-carp-assert perl-db-file perl-io-gzip perl-json-xs perl-uri \
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			perl perl-file-path perl-getopt-long perl-set-intervaltree perl-carp perl-carp-assert perl-data-dumper perl-findbin perl-db-file perl-io-gzip perl-json-xs perl-uri perl-list-moreutils perl-list-util perl-storable \
-			igv-reports star=2.7.2b gmap bowtie bbmap samtools blast
-		for bin in perl samtools bedtools; do
+			igv-reports star gmap bowtie bbmap samtools blast
+		for bin in perl samtools bcftools bedtools vcfsamplediff; do
 			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
+
+	# customized env setupus
 
 	tool=vardict
 	n=${tool/=*/}
@@ -222,9 +228,9 @@ compile::conda_tools() {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
-		conda create -y -n $n python=3
-		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java
-		for bin in perl samtools bedtools; do
+		conda create -y -n $n #python=3
+		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java readline=6
+		for bin in perl samtools bcftools bedtools vcfsamplediff; do
 			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
@@ -236,15 +242,13 @@ compile::conda_tools() {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
-		conda create -y -n $n python=3
+		conda create -y -n $n #python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
-		for bin in perl samtools bedtools; do
+		for bin in perl samtools bcftools bedtools vcfsamplediff; do
 			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
 
-
-	# python 2 envs
 	tool=platypus-variant
 	n=platypus
 	n=${tool/=*/}
@@ -253,14 +257,14 @@ compile::conda_tools() {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
-		conda create -y -n $n python=2
+		conda create -y -n $n #python=2
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
-		for bin in perl samtools bedtools; do
+		for bin in perl samtools bcftools bedtools vcfsamplediff; do
 			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
 
-	# this is a pipeline itself and thus will not be part of bashbone
+	# this is a pipeline itself with own genome and databases and thus will not be part of bashbone
 	# commander::printinfo "setup conda fusion-catcher env"
 	# tool=fusioncatcher
 	# n=${tool//[^[:alpha:]]/}
@@ -414,8 +418,7 @@ compile::segemehl() {
 compile::starfusion() {
 	local insdir threads url
 
-	# bioconda recipes are incompatible with CTAT genome index (2.7.1a)
-	# recipe has either star > 2.7.0f (v1.6) or star > 2.5 (>=v1.8, plus python compatibility issues)
+	# conda recipe has either star > 2.7.0f (v1.6) or star > 2.5 (>=v1.8, plus python compatibility issues)
 	commander::printinfo "installing starfusion"
 	compile::_parse -r insdir -s threads "$@"
 	source $insdir/conda/bin/activate base
@@ -437,7 +440,7 @@ compile::preparedexseq() {
 	source $insdir/conda/bin/activate base
 	cd $insdir
 	rm -rf Subread_to_DEXSeq
-	git clone https://github.com/vivekbhr/Subread_to_DEXSeq
+	git clone https://github.com/vivekbhr/Subread_to_DEXSeq.git
 	cd Subread_to_DEXSeq
 	mkdir -p bin
 	mv *.py bin
@@ -491,10 +494,11 @@ compile::gem() {
 
 compile::m6aviewer() {
 	local insdir threads url version
+
 	commander::printinfo "installing m6aviewer"
 	compile::_parse -r insdir -s threads "$@"
 	source $insdir/conda/bin/activate base
-	url=http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar
+	url='http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar'
 	version="1.6.1"
 	rm -rf $insdir/m6aviewer-$version
 	mkdir -p $insdir/m6aviewer-$version/bin
@@ -513,7 +517,7 @@ compile::idr() {
 	commander::printinfo "installing idr"
 	compile::_parse -r insdir -s threads "$@"
 	source $insdir/conda/bin/activate base
-	url=https://github.com/kundajelab/idr
+	url='https://github.com/kundajelab/idr'
 	url="$url/"$(curl -s $url/tags | grep -oE "archive\/[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
 	wget -q $url -O $insdir/idr.tar.gz
 	tar -xzf $insdir/idr.tar.gz -C $insdir
@@ -523,6 +527,47 @@ compile::idr() {
 	python setup.py install
 	mkdir -p $insdir/latest
 	ln -sfn $PWD/bin $insdir/latest/idr
+
+	return 0
+}
+
+compile::newicktopdf(){
+	local insdir threads url
+
+	commander::printinfo "installing idr"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	url='ftp://pbil.univ-lyon1.fr/pub/mol_phylogeny/njplot/newicktopdf'
+	mkdir -p $insdir/newicktopdf
+	wget -q $url -O $insdir/newicktopdf/newicktopdf
+	chmod 755 $insdir/newicktopdf/newicktopdf
+	mkdir -p $insdir/latest
+	ln -sfn $insdir/newicktopdf $insdir/latest/newicktopdf
+}
+
+compile::ssgsea() {
+	local insdir threads
+
+	commander::printinfo "installing ssgsea"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	cd $insdir
+	rm -rf ssGSEA-gpmodule
+	git clone https://github.com/GSEA-MSigDB/ssGSEA-gpmodule.git
+	cd ssGSEA-gpmodule
+	mv src bin
+	chmod 755 bin/*
+	mkdir -p $insdir/latest
+	ln -sfn $PWD/bin $insdir/latest/ssgseagpmodule
+
+	git clone https://github.com/broadinstitute/ssGSEA2.0.git
+	rm -rf ssGSEA-broad
+	mv ssGSEA2.0 ssGSEA-broad
+	cd ssGSEA-broad
+	find . -type f -exec dos2unix {} \;
+	find . -type f -name "*.R" -exec chmod 755 {} \;
+	mkdir -p $insdir/latest
+	ln -sfn $PWD $insdir/latest/ssgseabroad
 
 	return 0
 }

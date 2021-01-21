@@ -35,7 +35,7 @@ alignment::slice(){
 	commander::printinfo "slicing alignments"
 
 	local minstances instances mthreads ithreads m
-	read -r minstances mthreads < <(configure::instances_by_memory -t $threads -m $memory)
+	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory)
 	for m in "${_mapper_slice[@]}"; do
 		declare -n _bams_slice=$m
 		((instances+=${#_bams_slice[@]}))
@@ -137,10 +137,10 @@ alignment::rmduplicates(){
 			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
-		return 0
+		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory tmpdir outdir regex='\S+:(\d+):(\d+):(\d+)\s*.*'
+	local OPTIND arg mandatory skip=false threads memory tmpdir outdir regex
 	declare -n _mapper_rmduplicates _bamslices_rmduplicates
 	while getopts 'S:s:t:m:x:r:c:p:o:' arg; do
 		case $arg in
@@ -173,6 +173,7 @@ alignment::rmduplicates(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	declare -a tomerge cmd1 cmd2
+	[[ $regex ]] && regex="READ_NAME_REGEX='$regex'" # default is to follow casava i.e. split by 5 or 7 colons and use the last 3 groups i.e. \s+:\d+:\d+:\d+.*
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
 		odir="$outdir/$m"
@@ -190,7 +191,7 @@ alignment::rmduplicates(){
 						I="$slice"
 						O="$slice.rmdup"
 						M="$slice.metrics"
-						READ_NAME_REGEX='$regex'
+						$regex
 						REMOVE_DUPLICATES=true
 						ASSUME_SORT_ORDER=coordinate
 						VALIDATION_STRINGENCY=SILENT
@@ -274,7 +275,7 @@ alignment::clipmateoverlaps() {
 	commander::printinfo "clipping ends of overlapping mate pairs"
 
 	local m i o slice odir instances ithreads minstances mthreads
-	read -r minstances mthreads < <(configure::instances_by_memory -t $threads -m $memory)
+	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory)
 
 	for m in "${_mapper_clipmateoverlaps[@]}"; do
 		declare -n _bams_clipmateoverlaps=$m

@@ -136,7 +136,7 @@ quantify::tpm() {
 	for m in "${_mapper_tpm[@]}"; do
 		declare -n _bams_tpm=$m
 		for f in "${_bams_tpm[@]}"; do
-			countfile="$countsdir/$m/$(basename $f)"
+			countfile="$countsdir/$m/$(basename "$f")"
 			countfile=$(readlink -e "${countfile%.*}"*.+(genecounts|counts).+(reduced|htsc) | head -1)
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				tpm.pl "$gtf" "$countfile" > "$countfile.tpm"

@@ -9,14 +9,8 @@ die(){
 }
 
 cleanup(){
-	[[ $tmp && -e "$tmp" ]] && {
-		rm -rf "$tmp"
-		[[ "$cfg" ]] && {
-			sed -i -r "s@/repository/user/main/public/root\s*=.+@$cfg@" "$HOME/.ncbi/user-settings.mkfg"
-		} || {
-			sed -i '$ d' "$HOME/.ncbi/user-settings.mkfg"
-		}
-	}
+	rm -rf "$tmp"
+	[[ $mkfg ]] && printf '%s' "${mkfg[@]}" > "$HOME/.ncbi/user-settings.mkfg"
 }
 
 trap 'exit $?' INT TERM
@@ -35,13 +29,12 @@ usage(){
 		DESCRIPTION
 		$(basename "$0") retrieves fastq data from ncbi sra based on GSM, SRR or SRX accession numbers
 		  - initially, information for given accession numbers will be printed to stderr
-		  - downloads will be saved to current working directory ("$PWD")
 		  - support for parallel download instances
 		  - if installed, sra-toolkit via ncbi gov resource is priorized over retrieval via ebi uk mirror
 		  - ebi uk mirror is used as fallback upon fastq-dump errors (not true for fasterq-dump)
 
 		VERSION
-		0.1.1
+		0.1.2
 
 		REQUIREMENTS
 		  - esearch (from eutilities https://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/)
@@ -54,9 +47,12 @@ usage(){
 		OPTIONS
 		-s        : optional, show received information for given accession numbers and exit
 		-o [file] : optional, additionally print information for given accession numbers to file
+		-d [path] : optional, download into this directory
 		-p [num]  : optional, number of maximum parallel download instances (2)
+		            HINT: use -p 1 in a second run to ensure all files were downloaded correctly
+		-n        : optional, no fallback
 		-t [path] : optional, path to temporary directory ("$PWD")
-		-e        : optional, switch to ebi uk mirror utilizing wget
+		-e        : optional, priorize ebi uk mirror utilizing wget
 		-f        : optional, switch to fasterq-dump
 		            NOTE: not yet recommended!
 		              - uncompressed output
@@ -73,14 +69,16 @@ usage(){
 }
 
 unset OPTIND
-while getopts o:p:t:sfeh ARG; do
+while getopts o:p:t:d:sfenh ARG; do
 	case $ARG in
 		o) outfile="$OPTARG";;
 		p) instances="$OPTARG";;
 		t) tmp="$OPTARG";;
+		d) outdir="$OPTARG";;
 		f) faster=true;;
 		e) ebi=true;;
 		s) nodownload=true;;
+		n) nofallback=true;;
 		h) (usage); exit 0;;
 		*) usage;;
 	esac
@@ -98,18 +96,27 @@ tmp="$(mktemp -d -p "${tmp:-$PWD}")"
 faster=${faster:-false}
 ebi=${ebi:-false}
 nodownload=${nodownload:-false}
-outfile=${outfile:-/dev/null}
-mkdir -p $(dirname $outfile) || die "ERROR cannot create directory for output file"
-echo > $outfile || die "ERROR cannot create output file"
+nofallback=${nofallback:-false}
+outfile="${outfile:-/dev/null}"
+outdir="${outdir:-$PWD}"
+mkdir -p "$outdir" || die "ERROR cannot create output directory"
+mkdir -p $(dirname "$outfile") || die "ERROR cannot create directory for output file"
+[[ "$outfile" != "/dev/null" ]] && rm -f $outfile
+touch $outfile || die "ERROR cannot create output file"
+resume=true
+
+# or use vdb-config
+# set timeout to 10 seconds
+# vdb-config -s /http/timeout/read=10000
 
 [[ -s "$HOME/.ncbi/user-settings.mkfg" ]] && {
-	cfg="$(grep -E '/repository/user/main/public/root\s*=.+' "$HOME/.ncbi/user-settings.mkfg")"
-	[[ "$cfg" ]] && {
-		sed -i -r "s@(/repository/user/main/public/root\s*=\s*)(.+)@\1'$tmp'@" "$HOME/.ncbi/user-settings.mkfg"
-	} || echo "/repository/user/main/public/root = $tmp" >> "$HOME/.ncbi/user-settings.mkfg"
+	mapfile mkfg < "$HOME/.ncbi/user-settings.mkfg"
+	sed -i -nE '\@/repository/user/main/public/root\s*=.+@{H; s@(/repository/user/main/public/root\s*=\s*).+@\1"'$tmp'"@}; p; ${x; \@^$@{s@$@/repository/user/main/public/root = "'$tmp'"@p}}' "$HOME/.ncbi/user-settings.mkfg"
+	sed -i -nE '\@/http/timeout/read\s*=.+@{H; s@(/http/timeout/read\s*=\s*).+@\1"20000"@}; p; ${x; \@^$@{s@$@/http/timeout/read = "20000"@p}}' "$HOME/.ncbi/user-settings.mkfg"
 } || {
-	mkdir -p $HOME/.ncbi
-	echo "/repository/user/main/public/root = '$tmp'" > "$HOME/.ncbi/user-settings.mkfg"
+	mkdir -p "$HOME/.ncbi"
+	echo "/repository/user/main/public/root = \"$tmp\"" > "$HOME/.ncbi/user-settings.mkfg"
+	echo "/http/timeout/read = \"20000\"" >> "$HOME/.ncbi/user-settings.mkfg"
 }
 
 for i in $(seq 1 $#); do
@@ -121,33 +128,71 @@ for i in $(seq 1 $#); do
 		i="${#srr[@]}"
 		srr+=($(esearch -db sra -query "$id" | efetch --format docsum | grep -oE 'SRR[^"]+'))
 		n=$(esearch -db sra -query "$id" | efetch --format info | grep -oE 'sample_title="[^"]+' | cut -d '"' -f 2 | sort -Vu | xargs echo)
-		printf "$id\t%s\t$n\n" "${srr[@]:$i}" | tee -a $outfile >&2
+		printf "$id\t%s\t$n\n" "${srr[@]:$i}" | tee -a "$outfile" >&2
 	}
 done
 
 fastqdump(){
 	cmd="fastq-dump --split-3"
 	[[ $($cmd 2>&1 | grep -c unrecognized) -gt 0 ]] && cmd="fastq-dump --split-e"
-	for id in "${srr[@]}"; do
-		echo "$cmd --defline-seq '@\$ac.\$si[ \$sg ][ \$sn]/\$ri' --defline-qual '+' --gzip -O '$PWD' '$id'" >&2
-		echo -ne "$cmd --defline-seq '@\$ac.\$si[ \$sg ][ \$sn]/\$ri' --defline-qual '+' --gzip -O '$PWD' '$id'\0"
+	for id in ${srr[@]}; do
+		# may add Not-filtered and 0-control-bits and barcode $ri[:N:0:$sg]
+		# with accession, id and if available cellid:lane:tile:x:y
+		echo "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --gzip -O '$outdir' '$id'" >&2
+		echo -ne "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --gzip -O '$outdir' '$id'\0"
 	done | xargs -0 -P $instances -I {} bash -c {} || return 1
+	return 0
 }
 
 fasterqdump(){
-	for id in "${srr[@]}"; do
-		echo "fasterq-dump -t $tmp -p -f -P -O '$PWD' '$id'" >&2
-		echo -ne "fasterq-dump -t $tmp -p -f -P -O '$PWD' '$id'\0"
+	for id in ${srr[@]}; do
+		echo "fasterq-dump -t $tmp -p -f -P -O '$outdir' '$id'" >&2
+		echo -ne "fasterq-dump -t $tmp -p -f -P -O '$outdir' '$id'\0"
 	done | xargs -0 -P $instances -I {} bash -c {} || return 1
+	return 0
 }
 
 ftpdump(){
-	for id in "${srr[@]}"; do
-		#echo "wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${srr:0:6}/00${id:9}/$id/$id*.fastq.gz"
-		#echo -ne "wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --glob on ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${srr:0:6}/00${id:9}/$id/$id*.fastq.gz\0"
-		echo "wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex '$id.*\.fastq\.gz' ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/00${id:9}/$id/" >&2
-		echo -ne "wget -q --show-progress --progress=bar:force --waitretry 1 --tries 5 --retry-connrefused -N --recursive --no-directories --no-parent --level 1 --reject 'index.htm*' --accept-regex '$id.*\.fastq\.gz' ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/00${id:9}/$id/\0"
+	$resume && params="-c" || params=""
+	for id in ${srr[@]}; do # do not quote. in case srr=("$(fastqdump ...)") terminates succesfully, srr==("") -> id==""
+		url=$([[ $(echo -n $id | wc -c) -lt 10 ]] && echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$id || echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$(printf '%03i' $(echo ${id:9} | sed 's/^0*//'))/$id)
+		# colliding .listing files of parallel instances have an observed impact on resumeable downloads and propably also on fetching all files (true for sure when using --recursive)
+		# --recursive --no-directories --no-parent --level=1 --reject 'index.htm*' --accept-regex '$id.*\.fastq\.gz' "$url/"
+		echo "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping --glob=on '$url/$id*.fastq.gz'" >&2
+		echo -ne "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping '$url/$id*.fastq.gz'\0"
 	done | xargs -0 -P $instances -I {} bash -c {} || return 1
+	return 0
+}
+
+ftpdump_curl(){
+	$resume && params="-C -" || params=""
+	for id in ${srr[@]}; do # do not quote. in case srr=("$(fastqdump ...)") terminates succesfully, srr==("") -> id==""
+		url=$([[ $(echo -n $id | wc -c) -lt 10 ]] && echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$id || echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$(printf '%03i' $(echo ${id:9} | sed 's/^0*//'))/$id)
+		echo "curl $params --progress-bar --retry-connrefused --connect-timeout 60 --retry-delay 10 --retry 10 --create-dirs -o '$outdir/#1#2#3' '$url/{$id}{,_1,_2}{.fastq.gz}'" >&2
+		echo -ne "curl $params --progress-bar --retry-connrefused --connect-timeout 60 --retry-delay 10 --retry 10 --create-dirs -o '$outdir/#1#2#3' '$url/{$id}{,_1,_2}{.fastq.gz}'\0"
+	done | xargs -0 -P $instances -I {} bash -c {}
+	# no colliding .listing files, but since at least one of the three files of {$id}{,_1,_2} will be always missed, curl throws errors (in case the latter one was missing).
+	# thus do not "|| return 1" unless logged and parsed or use --parallel (--parallel-max $instances) which always succeeds. when used, one may completely replace xargs by curl --parallel [..] -o $o1 $url1 -o $o2 $url2
+	# though, a log parser cannot classify error 78 aka server 550 aka file not into a true server error or an accepted misbehaviour by {$id}{,_1,_2}
+	return 0
+}
+
+ftpdump_curlwget(){
+	$resume && params="-c" || params=""
+	for id in ${srr[@]}; do # do not quote. in case srr=("$(fastqdump ...)") terminates succesfully, srr==("") -> id==""
+		url=$([[ $(echo -n $id | wc -c) -lt 10 ]] && echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$id || echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$(printf '%03i' $(echo ${id:9} | sed 's/^0*//'))/$id)
+		files=($(curl -s -l "$url/" | grep $id*.fastq.gz))
+		# -l ignores timeouts. thus fetching all files often fails. otherwise this line would be a huge bottle neck if not parallelized
+		if [[ $files ]]; then
+			for f in "${files[@]}"; do
+				echo "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping '$url/$f'" >&2
+				echo -ne "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping '$url/$f'\0"
+			done
+		else
+			echo "CAN NOT FIND $url" >&2
+		fi
+	done | xargs -0 -P $instances -I {} bash -c {} || return 1
+	return 0
 }
 
 $nodownload && exit 0
@@ -155,15 +200,30 @@ $nodownload && exit 0
 $faster && [[ $(command -v fasterq-dump > /dev/null; echo $?) -eq 0 ]] && {
 	fasterqdump && exit 0 || die "UNFORSEEN ERROR"
 }
+
 $ebi || [[ $(command -v fastq-dump > /dev/null; echo $?) -gt 0 ]] && {
 	ftpdump && exit 0 || die "UNFORSEEN ERROR"
+
+	# bad alternative
+	# $nofallback && {
+	# 	ftpdump_curlwget && exit 0 || die "UNFORSEEN ERROR"
+	# } || {
+	# 	srr=("$(ftpdump_curlwget 2> >(tee /dev/fd/2 | awk -F '/' -v x="$(basename "$0")" '/CAN NOT FIND/{print "\nDONT WORRY! "x" WILL RETRY TO DOWNLOAD "$NF" FROM A DIFFERNT SOURCE" > "/dev/fd/2"; print $NF}') | awk '{if(/^SRR[0-9]+$/){print}else{print > "/dev/fd/2"}}')")
+	# 	[[ $(command -v fastq-dump > /dev/null; echo $?) -eq 0 ]] && {
+	# 		fastqdump && exit 0 || die "UNFORSEEN ERROR"
+	# 	}
+	# }
 }
+
 # redirect stderr to subshell via process substitution to be used as stdout
 # use tee to directly print stdout again as stderr and further filter stdout for failed SRR ids via awk
 # print message in awk to stderr and check if accession number is truely SRR by second awk command utilizing regex
 # second awk print SSR ids to stdout or other ID to stderr
 # finally, srr array holds SRR numbers to be re-downloaded via ftpdump
-srr=("$(fastqdump 2> >(tee /dev/fd/2 | awk -v x="$(basename "$0")" '/failed SRR[0-9]+$/{print "\nDONT WORRY! "x" WILL RETRY TO DOWNLOAD "$NF" FROM A DIFFERNT SOURCE" > "/dev/fd/2"; print $NF}') | awk '{if(/^SRR[0-9]+$/){print}else{print > "/dev/fd/2"}}')")
-ftpdump || die "UNFORSEEN ERROR"
-
-exit 0
+$nofallback && {
+	fastqdump && exit 0 || die "UNFORSEEN ERROR"
+} || {
+	srr=("$(fastqdump 2> >(tee /dev/fd/2 | awk -v x="$(basename "$0")" '/failed SRR[0-9]+$/{print "\nDONT WORRY! "x" WILL RETRY TO DOWNLOAD "$NF" FROM A DIFFERNT SOURCE" > "/dev/fd/2"; print $NF}') | awk '{if(/^SRR[0-9]+$/){print}else{print > "/dev/fd/2"}}')")
+	resume=false
+	ftpdump && exit 0 || die "UNFORSEEN ERROR"
+}

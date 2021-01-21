@@ -155,9 +155,9 @@ peaks::macs(){
 	local instances ithreads
 	if [[ $buffer -lt 100000 ]]; then
 		params+=" --buffer-size $buffer"
-		read -r instances ithreads < <(configure::instances_by_memory -t $threads -m $memory)
+		read -r instances ithreads < <(configure::instances_by_memory -T $threads -m $memory)
 	else
-		read -r instances ithreads < <(configure::instances_by_memory -t $threads -m $(( (numchr*buffer*mult)/1024/1024 )))
+		read -r instances ithreads < <(configure::instances_by_memory -T $threads -m $(( (numchr*buffer*mult)/1024/1024 )))
 	fi
 
 	if $strict; then

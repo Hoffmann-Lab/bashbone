@@ -65,13 +65,12 @@ while(<F>){
 	chomp;
 	my @l = split /\s+/;
 	push @ids,$l[0];
-	my $c = $l[1]/($id2len{$l[0]}/1000);
-	$id2count{$l[0]} = $c;
-	$f += $c;
+	$f += $l[1];
+	$id2count{$l[0]} = $l[1];
 }
 close F;
 $f /= 1000000;
 
-say $_."\t".($id2count{$_}/$f) for @ids;
+say $_."\t".( $id2count{$_}/($f * ($id2len{$_}/1000)) ) for @ids;
 
 exit 0;

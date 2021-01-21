@@ -94,7 +94,6 @@ trap 'BASHBONE_ERROR="killed"' INT TERM
 if ${BASHBONE_CONDA:-false}; then
 	BASHBONE_ERROR="conda activation failed. use -c false to disable conda activation"
 	source $BASHBONE_TOOLSDIR/conda/bin/activate base &> /dev/null
-	commander::printinfo "utilizing $(conda --version)"
 else
 	[[ $BASHBONE_CONDA ]] || {
 		commander::printinfo {COMMANDER[0]}<<- EOF
