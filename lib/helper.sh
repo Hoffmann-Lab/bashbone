@@ -1,13 +1,55 @@
 #!/usr/bin/env bash
 # (c) Konstantin Riege
 
+helper::makevcfzipcmd() {
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-a <cmds>    | array of
+			-t <threads> | number of
+			-z <var>     | of path to file
+			example:
+			${FUNCNAME[1]} -a cmds -t 4 -z vcf1 -z vcf2
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory threads
+	declare -a tozip_vcfzip
+	declare -n _cmds_vcfzip
+	while getopts 'a:t:z:' arg; do
+		case $arg in
+			a) ((++mandatory)); _cmds_vcfzip=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			z) ((++mandatory)); tozip_vcfzip+=("$OPTARG");;
+			*) _usage;;
+		esac
+	done
+	[[ $mandatory -lt 3 ]] && _usage
+
+	local f
+	for f in "${tozip_vcfzip[@]}"; do
+		declare -n _f_vcfzip="$f"
+		readlink -e "$_f_vcfzip" | file -f - | grep -qF 'compressed' || {
+			commander::makecmd -a _cmds_vcfzip -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				bgzip -f -@ $threads < "$_f_vcfzip" > "$_f_vcfzip.gz"
+			CMD
+				tabix -f -p vcf "$_f_vcfzip.gz"
+			CMD
+			_f_vcfzip="$_f_vcfzip.gz"
+		}
+	done
+
+	return 0
+}
+
 helper::makezipcmd(){
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-a <cmds>    | array of
 			-t <threads> | number of
-			-c <file>    | compress if not compressed
+			-c <file>    | do compress if this is compressed
 			-z <var>     | of path to file
 			example:
 			${FUNCNAME[1]} -a cmds -c f1.txt -c f2.txt -z o1 -z o2
@@ -106,6 +148,97 @@ helper::basename(){
 	fi
 
 	return 0
+}
+
+helper::makepdfcmd(){
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-c <var>  | cmd
+			-f <file> | to ps
+			example:
+			${FUNCNAME[1]} -c cmd -f [ps]
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory f
+	declare -n _makepdfcmd
+	while getopts 'f:c:' arg; do
+		case $arg in
+			c) ((++mandatory)); _makepdfcmd=$OPTARG;;
+			f) ((++mandatory)); f="$OPTARG";;
+			*) _usage;;
+		esac
+	done
+	[[ $mandatory -lt 2 ]] && _usage
+
+	_makepdfcmd=$("ps2pdf $(grep -m 1 -F BoundingBox "$f" | sed -E 's/.+\s+([0-9]+)\s+([0-9]+)$/-g\10x\20/') '$f' '${f%.*}.pdf'")
+
+	return 0
+}
+
+helper::multijoin(){
+	local tmp joined
+	_cleanup::helper::multijoin(){
+		rm -f "$tmp" "$joined"
+	}
+
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-s <separator> | i/o character - default: tab
+			-h <header>    | string of
+			-e <empty>     | cell character - default: 0
+			-o <outfile>   | path to
+			-f <files>     | ALWAYS LAST OPTION
+			                 tab-seperated, to join by unique id in first column
+			example:
+			${FUNCNAME[1]} -f file1.tsv file2.tsv file3.tsv
+		EOF
+		return 1
+	}
+
+	local OPTIND arg outfile empty=0 sep=$'\t'
+	declare -n _makepdfcmd
+	while getopts 's:h:e:o:f:' arg; do
+		case $arg in
+			s)	sep=$(echo -e "$OPTARG");;
+			e)	empty="$OPTARG";;
+			h)	header="$OPTARG";;
+			o)	outfile="$OPTARG"; mkdir -p "$(dirname "$outfile")";;
+			f)	shift $((OPTIND-2))
+				local format i
+				tmp=$(mktemp -p /dev/shm)
+				joined=$(mktemp -p /dev/shm)
+				join -t "$sep" -1 1 -2 1 -a 1 -a 2 -e "$empty" -o '0,1.2,2.2' "$1" "$2" > "$joined"
+				for i in $(seq 3 ${#@}); do
+					format="0"
+					for j in $(seq 2 $i); do format+=",1.$j"; done
+					format+=",2.2"
+					join -t "$sep" -1 1 -2 1 -a 1 -a 2 -e "$empty" -o "$format" "$joined" "${!i}" > "$tmp"
+					mv "$tmp" "$joined"
+				done
+				if [[ $outfile ]]; then
+					if [[ $header ]]; then
+						cat <(echo -e "$header") "$joined" > "$outfile"
+					else
+						cat "$joined" > "$outfile"
+					fi
+				else
+					if [[ $header ]]; then
+						cat <(echo -e "$header") "$joined"
+					else
+						cat "$joined"
+					fi
+				fi
+				return 0
+			;;
+			*) _usage;;
+		esac
+	done
+
+	_usage
 }
 
 helper::ishash(){
