@@ -69,6 +69,7 @@ while(<F>){
 	$id2count{$l[0]} = $c;
 	$f += $c;
 }
+close F;
 $f /= 1000000;
 
 say $_."\t".($id2count{$_}/$f) for @ids;
