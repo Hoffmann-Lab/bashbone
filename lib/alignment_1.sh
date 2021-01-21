@@ -140,7 +140,7 @@ alignment::star() {
 			-5 <skip>         | true/false md5sums, indexing respectively
 			-t <threads>      | number of
 			-a <accuracy>     | optional: 80 to 100
-			-i <insertsize>   | optional: 50 to 200000+
+			-i <insertsize>   | optional: 0 to 200000+
 			-r <mapper>       | array of bams within array of
 			-g <genome>       | path to
 			-f <gtf>          | path to
@@ -192,26 +192,37 @@ alignment::star() {
 		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
 		source "$genome.md5.sh"
 
-		local thismd5genome thismd5star thismd5gtf
-		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
-		[[ -s "$genomeidxdir/SA" ]] && thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
-		[[ -s $gtf ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
-		if [[ ("$thismd5genome" != "$md5genome" || ! "$thismd5star" || "$thismd5star" != "$md5star") || ("$thismd5gtf" && "$thismd5gtf" != "$md5gtf") ]]; then
-			commander::printinfo "indexing genome for star"
-			#100 = assumend usual read length
-			[[ "$thismd5gtf" ]] && params+=" --sjdbGTFfile '$gtf' --sjdbOverhang 200"
-			local genomesize=$(du -sb "$genome" | cut -f 1)
-			params+=' --genomeSAindexNbases '$(echo $genomesize | perl -M'List::Util qw(min)' -lane 'printf("%d",min(14, log($_)/log(2)/2 - 1))')
-			genomeseqs=$(grep -c '^>' "$genome")
-			[[ $genomeseqs -gt 5000 ]] && params+=' --genomeChrBinNbits '$(echo "$genomesize $genomeseqs" | perl -M'List::Util qw(min)' -lane 'printf("%d",min(18, log($F[0]/$F[1])/log(2)))')
+		declare -a cmdidx=("STAR --help | grep -m 1 -F versionGenome | sed -E 's/.+\s+(.+)/\1/'")
+		local doindex=false idxparams thisidxversion idxversion=$(commander::runcmd -c star -t $threads -a cmdidx)
+		[[ -s "$genomeidxdir/genomeParameters.txt" ]] && thisidxversion=$(grep -m 1 -F versionGenome "$genomeidxdir/genomeParameters.txt" | sed -E 's/.+\s+(.+)/\1/')
 
-			declare -a cmdidx
+		if [[ "$thisidxversion" != "$idxversion" ]]; then
+			doindex=true
+		else
+			local thismd5genome thismd5star thismd5gtf
+			thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
+			[[ -s "$genomeidxdir/SA" ]] && thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
+			[[ -s "$gtf" ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
+			if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5star" || "$thismd5star" != "$md5star" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
+				doindex=true
+			fi
+		fi
+		if $doindex; then
+			commander::printinfo "indexing genome for star"
+			#100 = assumend usual read length. tools like arriba use 250 in case of longer reads
+			[[ -s "$gtf" ]] && idxparams+=" --sjdbGTFfile '$gtf' --sjdbOverhang 250"
+			local genomesize=$(du -sb "$genome" | cut -f 1)
+			idxparams+=' --genomeSAindexNbases '$(echo $genomesize | perl -M'List::Util qw(min)' -lane 'printf("%d",min(14, log($_)/log(2)/2 - 1))')
+			local genomeseqs=$(grep -c '^>' "$genome")
+			[[ $genomeseqs -gt 5000 ]] && idxparams+=' --genomeChrBinNbits '$(echo "$genomesize $genomeseqs" | perl -M'List::Util qw(min)' -lane 'printf("%d",min(18, log($F[0]/$F[1])/log(2)))')
+
+			cmdidx=()
 			commander::makecmd -a cmdidx -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				mkdir -p "$genomeidxdir"
 			CMD
 				STAR
 				--runMode genomeGenerate
-				$params
+				$idxparams
 				--runThreadN $threads
 				--genomeDir "$genomeidxdir"
 				--genomeFastaFiles "$genome"
@@ -560,7 +571,7 @@ alignment::postprocess() {
 						-t $ithreads \
 						-i "${_bams_process[$i]}" \
 				;;
-				*) _usage; return 1;;
+				*) _usage;;
 			esac
 		done
 	done
