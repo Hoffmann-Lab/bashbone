@@ -246,24 +246,24 @@ enrichment::go(){
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
-			-r <mapper>   | array of bams within array of
 			-g <gofile>   | path to
 			                ..
 			                ENSG00000199065 GO:0005615 cellular_component
 			                ENSG00000199065 GO:1903231 molecular_function
 			                ENSG00000199065 GO:0035195 biological_process
 			                ..
+			-r <mapper>   | array of bams within array of
 			-i <deseqdir> | for gsea path to
 			-c <cmpfiles> | array of
-			-l <idfiles>  | for ora array of (does not require -i -c)
+			-l <idfiles>  | for ora array of (does not require -i -r -c)
 
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads gofile deseqdir genelist best=false
+	local OPTIND arg mandatory skip=false threads gofile deseqdir
     declare -n _mapper_go _cmpfiles_go _idfiles_go
-	while getopts 'S:s:t:r:c:g:l:i:o:b:' arg; do
+	while getopts 'S:s:t:r:c:g:l:i:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
