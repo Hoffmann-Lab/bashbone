@@ -28,7 +28,7 @@ configure::exit(){
 
 	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
 	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # includes pids of pstree parser pipeline above, thus throws errors necessary to be catched
-	printf "\r"
+
 	return 0
 }
 
@@ -77,23 +77,27 @@ configure::instances_by_threads(){
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
-			-i <instances> | number of all
+			-i <instances> | number of targeted
 			-t <threads>   | per instance targeted
 			-T <threads>   | available
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory instances ithreads=1 maxthreads
-	while getopts 'i:t:T:m:' arg; do
+	local OPTIND arg instances ithreads=1 maxthreads
+	while getopts 'i:t:T:' arg; do
 		case $arg in
-			i) ((++mandatory)); instances=$OPTARG;;
+			i) instances=$OPTARG;;
 			t) ithreads=$OPTARG;;
-			T) ((++mandatory)); maxthreads=$OPTARG;;
+			T) maxthreads=$OPTARG;;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && _usage
+
+	local t=$(grep -cF processor /proc/cpuinfo)
+	[[ ! $maxthreads ]] && maxthreads=$t
+	[[ $maxthreads -gt $t ]] && maxthreads=$t
+	[[ ! $instances ]] && instances=$maxthreads
 
 	local maxinstances=$maxthreads
 	[[ $maxinstances -gt $(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) ]] && maxinstances=$(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) #+10 for better approximation
@@ -105,31 +109,75 @@ configure::instances_by_threads(){
 	return 0
 }
 
-configure::instances_by_memory(){
+configure::memory_by_instances(){
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
-			-t <threads> | available
-			-m <memory>  | per instance maximum
+			-i <instances> | number of targeted
+			-T <threads>   | available
+			-M <memory>    | available
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads memory
-	while getopts 't:m:' arg; do
+	local OPTIND arg mandatory instances maxthreads maxmemory
+	while getopts 'i:T:M:' arg; do
 		case $arg in
-			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
+			i) ((++mandatory)); instances=$OPTARG;;
+			T) maxthreads=$OPTARG;;
+			M) maxmemory=$OPTARG;;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && _usage
+	[[ $mandatory -lt 1 ]] && _usage
 
-	local maxmemory=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
+	local m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
+	[[ ! $maxmemory ]] && maxmemory=$m
+	[[ $maxmemory -gt $m ]] && maxmemory=$m
+	local t=$(grep -cF processor /proc/cpuinfo)
+	[[ ! $maxthreads ]] && maxthreads=$t
+	[[ $maxthreads -gt $t ]] && maxthreads=$t
+
+	[[ $instances -gt $maxthreads ]] && instances=$maxthreads
+	local imemory=$((maxmemory/instances))
+
+	echo "$instances $imemory"
+	return 0
+}
+
+configure::instances_by_memory(){
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-T <threads> | available
+			-m <memory>  | per instance targeted
+			-M <memory>  | available
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory maxthreads memory maxmemory
+	while getopts 'T:m:M:' arg; do
+		case $arg in
+			T) maxthreads=$OPTARG;;
+			m) ((++mandatory)); memory=$OPTARG;;
+			M) maxmemory=$OPTARG;;
+			*) _usage;;
+		esac
+	done
+	[[ $mandatory -lt 1 ]] && _usage
+
+	local m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
+	[[ ! $maxmemory ]] && maxmemory=$m
+	[[ $maxmemory -gt $m ]] && maxmemory=$m
+	local t=$(grep -cF processor /proc/cpuinfo)
+	[[ ! $maxthreads ]] && maxthreads=$t
+	[[ $maxthreads -gt $t ]] && maxthreads=$t
+
 	[[ $memory -gt $maxmemory ]] && memory=$maxmemory
 	local instances=$((maxmemory/memory))
-	[[ $instances -gt $threads ]] && instances=$threads
-	local ithreads=$((threads/instances))
+	[[ $instances -gt $maxthreads ]] && instances=$maxthreads
+	local ithreads=$((maxthreads/instances))
 
 	echo "$instances $ithreads"
 	return 0
@@ -139,36 +187,43 @@ configure::jvm(){
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
-			-i <instances> | number of all
+			-i <instances> | number of targeted
 			-t <threads>   | per instance targeted
 			-T <threads>   | available
-			-m <memory>    | per instance maximum
+			-m <memory>    | per instance targeted
+			-M <memory>    | available
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory instances ithreads=1 maxthreads memory=1
-	while getopts 'i:t:T:m:' arg; do
+	local OPTIND arg instances ithreads=1 maxthreads memory=1 maxmemory
+	while getopts 'i:t:T:m:M:' arg; do
 		case $arg in
 			i)	instances=$OPTARG;;
 			t)	ithreads=$OPTARG;;
-			T)	((++mandatory)); maxthreads=$OPTARG;;
+			T)	maxthreads=$OPTARG;;
 			m)	memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			*)	_usage
 		esac
 	done
-	[[ $mandatory -lt 1 ]] && _usage
+
+	local m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
+	[[ ! $maxmemory ]] && maxmemory=$m
+	[[ $maxmemory -gt $m ]] && maxmemory=$m
+	local t=$(grep -cF processor /proc/cpuinfo)
+	[[ ! $maxthreads ]] && maxthreads=$t
+	[[ $maxthreads -gt $t ]] && maxthreads=$t
 	[[ ! $instances ]] && instances=$maxthreads
 
-	local jmem jgct jcgct maxmemory=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
+	local jmem jgct jcgct
 	local maxinstances=$((maxmemory/memory))
 	[[ $maxinstances -gt $(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) ]] && maxinstances=$(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) #+10 for better approximation
 	[[ $instances -gt $maxthreads ]] && instances=$maxthreads
 	[[ $instances -gt $maxinstances ]] && instances=$maxinstances
-	ithreads=$((maxthreads/instances))
 
+	ithreads=$((maxthreads/instances))
 	jmem=$((maxmemory/instances))
-	[[ $memory -gt 1 ]] && [[ $jmem -gt $memory ]] && jmem=$memory
 	jgct=$(((3+5*ithreads/8)/instances))
 	[[ $jgct -eq 0 ]] && jgct=1
 	jcgct=$((jgct/4))
