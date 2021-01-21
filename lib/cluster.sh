@@ -23,7 +23,7 @@ cluster::coexpression_deseq(){
 			-j <deseqdir> | path to
 			-o <outdir>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory outdir tmpdir deseqdir countsdir clusterfilter=0 biotype gtf
@@ -296,7 +296,7 @@ cluster::coexpression(){
 			-i <countsdir>| path to
 			-o <outdir>   | path to
 		EOF
-		return 0
+		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory outdir tmpdir countsdir biotype gtf clusterfilter=0
@@ -315,7 +315,7 @@ cluster::coexpression(){
 			i)	((++mandatory)); countsdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			l)	((++mandatory)); _idfiles_coexpression=$OPTARG;;
-			*)	_usage; return 1;;
+			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 7 ]] && _usage && return 1
