@@ -88,7 +88,7 @@ commander::makecmd(){
 	while getopts ':a:o:s:c' arg; do
 		case $arg in
 			a)	mandatory=1; _cmds_makecmd=$OPTARG;;
-			s)	sep=$(echo -e "${OPTARG:- }");; # echo -e to make e.g. '\t' possible
+			s)	sep=$(echo -e "$OPTARG");; # echo -e to make e.g. '\t' possible
 			o)	suffix=' > '"$OPTARG";;
 			c)	[[ ! $mandatory ]] && _usage
 				shift $((OPTIND-1)) # remove '-a <cmd>' '-s <char> '-o <file>' '-c' from $@
@@ -176,9 +176,15 @@ commander::runcmd(){
 					for i in "${!_cmds_runcmd[@]}"; do
 						sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
 						echo "#!/usr/bin/env bash" > "$sh"
-						echo "set -o pipefail" >> "$sh"
-						echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh" # do not use set -e, to ignore sigpipe caused by e.g. samtools view | head
-						[[ $cenv ]] && echo "source $CONDA_PREFIX/bin/activate $cenv" >> "$sh"
+						#echo "set -o pipefail" >> "$sh"
+						#echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh" # do not use set -e, to ignore sigpipe caused by e.g. samtools view | head
+						#[[ $cenv ]] && echo "source $CONDA_PREFIX/bin/activate $cenv" >> "$sh"
+						if [[ $cenv ]]; then
+							echo "source '$BASHBONE_DIR/activate.sh' -c true" >> "$sh"
+							echo "conda activate $cenv" >> "$sh"
+						else
+							echo "source '$BASHBONE_DIR/activate.sh' -c false" >> "$sh"
+						fi
 						printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 						echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 						echo "$sh"
@@ -189,10 +195,16 @@ commander::runcmd(){
 				else
 					for i in "${!_cmds_runcmd[@]}"; do
 						sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
-						echo "#!/usr/bin/env bash" > "$sh"
-						echo "set -o pipefail" >> "$sh"
-						echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh"
-						[[ $cenv ]] && echo "source $CONDA_PREFIX/bin/activate $cenv" >> "$sh"
+						# echo "#!/usr/bin/env bash" > "$sh"
+						# echo "set -o pipefail" >> "$sh"
+						# echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh"
+						# [[ $cenv ]] && echo "source $CONDA_PREFIX/bin/activate $cenv" >> "$sh"
+						if [[ $cenv ]]; then
+							echo "source '$BASHBONE_DIR/activate.sh' -c true" >> "$sh"
+							echo "conda activate $cenv" >> "$sh"
+						else
+							echo "source '$BASHBONE_DIR/activate.sh' -c false" >> "$sh"
+						fi
 						printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 						echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 						echo "$sh"
@@ -273,9 +285,15 @@ commander::qsubcmd(){
 					fi
 					sh="$logdir/job.$jobname.$id.sh"
 					echo "#!/usr/bin/env bash" > "$sh"
-					echo "set -o pipefail" >> "$sh"
-					echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then echo \"$jobname.$id exited with exit code \$e\" >> \"$ex\"; exit \$e; fi' ERR" >> "$sh"
-					[[ $cenv ]] && echo "source $CONDA_PREFIX/bin/activate $cenv" >> "$sh"
+					#echo "set -o pipefail" >> "$sh"
+					#echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then echo \"$jobname.$id exited with exit code \$e\" >> \"$ex\"; exit \$e; fi' ERR" >> "$sh"
+					#[[ $cenv ]] && echo "source $CONDA_PREFIX/bin/activate $cenv" >> "$sh"
+					if [[ $cenv ]]; then
+						echo "source '$BASHBONE_DIR/activate.sh' -c true" >> "$sh"
+						echo "conda activate $cenv" >> "$sh"
+					else
+						echo "source '$BASHBONE_DIR/activate.sh' -c false" >> "$sh"
+					fi
 					printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
 					echo "echo '$jobname.$id exited with exit code 0' >> '$ex'" >> "$sh"
 					echo "exit 0" >> "$sh"
@@ -286,6 +304,7 @@ commander::qsubcmd(){
 				if $benchmark; then
 					TIMEFORMAT=':BENCHMARK: runtime %3lR [hours][minutes]seconds' # different to /usr/bin/time, bash builtin time can handle: time echo "sleep 2" | bash
 					time echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $penv ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -E '/exited/!d;/Job [0-9]+\./{s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/};t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/' | tee -i $ex
+					# in case of job exit code > 0, leads to *** longjmp causes uninitialized stack frame ***: bash terminated
 				else
 					echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $penv ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -E '/exited/!d;/Job [0-9]+\./{s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/};t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/' | tee -i $ex
 				fi
