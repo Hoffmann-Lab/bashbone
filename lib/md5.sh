@@ -10,6 +10,9 @@ md5gtf=MD5SUM
 #genome.fa.segemehl.idx
 md5segemehl=MD5SUM
 
+#genome.fa.segemehl.ctidx
+md5segemehlbs=MD5SUM
+
 #genome.fa.star.idx/SA
 md5star=MD5SUM
 
