@@ -147,6 +147,7 @@ expression::diego(){
 								-d $((min<3?min:3))
 								-a "$odir/input.sj.tsv"
 								-b "$odir/groups.tsv"
+								-q 0.05
 								-x $c
 								> "$odir/diego.sj.tsv"
 						CMD
@@ -155,6 +156,7 @@ expression::diego(){
 								-d $((min<3?min:3))
 								-a "$odir/input.sj.tsv"
 								-b "$odir/groups.tsv"
+								-q 0.05
 								-x $c
 								-e
 								-f "$odir/dendrogram.sj"
@@ -174,6 +176,7 @@ expression::diego(){
 							-d $((min<3?min:3))
 							-a "$odir/input.ex.tsv"
 							-b "$odir/groups.tsv"
+							-q 0.05
 							-x $c
 							> "$odir/diego.ex.tsv"
 					CMD
@@ -182,6 +185,7 @@ expression::diego(){
 							-d $((min<3?min:3))
 							-a "$odir/input.ex.tsv"
 							-b "$odir/groups.tsv"
+							-q 0.05
 							-x $c
 							-e
 							-f "$odir/dendrogram.ex"
