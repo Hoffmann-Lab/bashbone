@@ -136,7 +136,7 @@ for i in $(seq 1 $#); do
 done
 
 fastqdump(){
-	cmd="fastq-dump --split-3"
+	local id cmd="fastq-dump --split-3"
 	[[ $($cmd 2>&1 | grep -c unrecognized) -gt 0 ]] && cmd="fastq-dump --split-e"
 	for id in ${srr[@]}; do
 		# may add Not-filtered and 0-control-bits and barcode $ri[:N:0:$sg]
@@ -148,6 +148,7 @@ fastqdump(){
 }
 
 fasterqdump(){
+	local id
 	for id in ${srr[@]}; do
 		echo "fasterq-dump -t $tmp -p -f -P -O '$outdir' '$id'" >&2
 		echo -ne "fasterq-dump -t $tmp -p -f -P -O '$outdir' '$id'\0"
@@ -156,12 +157,13 @@ fasterqdump(){
 }
 
 ftpdump_wget(){
+	local params id url i=-1
 	$resume && params="-c" || params=""
 	for id in ${srr[@]}; do # do not quote. in case srr=("$(fastqdump ...)") terminates succesfully, srr==("") -> id==""
 		url=$([[ $(echo -n $id | wc -c) -lt 10 ]] && echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$id || echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$(printf '%03i' $(echo ${id:9} | sed 's/^0*//'))/$id)
-		# colliding .listing files of parallel instances have an observed impact on resumeable downloads and propably also on fetching all files (true for sure when using --recursive)
+		# attemp to tackle colliding .listing files by sleep
 		echo "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping --recursive --no-directories --no-parent --level=1 --reject 'index.htm*' --accept-regex '$id.*\.fastq\.gz' '$url/'" >&2
-		echo -ne "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping --recursive --no-directories --no-parent --level=1 --reject 'index.htm*' --accept-regex '$id.*\.fastq\.gz' '$url/'\0"
+		echo -ne "sleep $((++i%instances*2)); wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping --recursive --no-directories --no-parent --level=1 --reject 'index.htm*' --accept-regex '$id.*\.fastq\.gz' '$url/'\0"
 		# --glob has the same listing problem and additionally adds risk for 404 due to wildcards not supported in HTTP (despite of ftp url, where glob should work)
 		# echo "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping --glob=on '$url/$id*.fastq.gz'" >&2
 		# echo -ne "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping '$url/$id*.fastq.gz'\0"
@@ -170,6 +172,7 @@ ftpdump_wget(){
 }
 
 ftpdump_curl(){
+	local id params url
 	$resume && params="-C -" || params=""
 	for id in ${srr[@]}; do # do not quote. in case srr=("$(fastqdump ...)") terminates succesfully, srr==("") -> id==""
 		url=$([[ $(echo -n $id | wc -c) -lt 10 ]] && echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$id || echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$(printf '%03i' $(echo ${id:9} | sed 's/^0*//'))/$id)
