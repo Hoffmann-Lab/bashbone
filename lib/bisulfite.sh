@@ -1,7 +1,91 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
+bisulfite::mspicut() {
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip> | true/false return
+			-s <softskip> | true/false only print commands
+			-t <threads>  | number of
+			-d <length>   | maximum of diversity adapters
+			-o <outdir>   | path to
+			-1 <fastq1>   | array of
+			-2 <fastq2>   | array of
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads outdir diversity=0
+	declare -n _fq1_mspicut _fq2_mspicut
+	while getopts 'S:s:t:d:o:1:2:' arg; do
+		case $arg in
+			S) $OPTARG && return 0;;
+			s) $OPTARG && skip=true;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			d) diversity=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			1) ((++mandatory)); _fq1_mspicut=$OPTARG;;
+			2) _fq2_mspicut=$OPTARG;;
+			*) _usage;;
+		esac
+	done
+	[[ $mandatory -lt 3 ]] && _usage
+
+	commander::printinfo "selecting msp1 cut reads"
+
+	declare -a cmd1
+	local i o1 o2 e1 e2
+	[[ $n -gt 2 ]] && n=2 # since only the best matching adapter is removed, run cutadapt twice
+	for i in "${!_fq1_mspicut[@]}"; do
+		helper::basename -f "${_fq1_mspicut[$i]}" -o o1 -e e1
+		e1=$(echo $e1 | cut -d '.' -f 1)
+		o1="$outdir/$o1.$e1.gz"
+
+
+		if [[ "${_fq2_mspicut[$i]}" ]]; then
+			helper::basename -f "${_fq2_mspicut[$i]}" -o o2 -e e2
+			e2=$(echo $e2 | cut -d '.' -f 1)
+			o2="$outdir/$o2.$e2.gz"
+
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				rrbsMspIselection.sh
+				-t $threads
+				-d $diversity
+				-i "${_fq1_mspicut[$i]}"
+				-j "${_fq2_mspicut[$i]}"
+				-o "$o1"
+				-p "$o2"
+			CMD
+			_fq1_mspicut[$i]="$o1"
+			_fq2_mspicut[$i]="$o2"
+		else
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				rrbsMspIselection.sh
+				-t $threads
+				-d $diversity
+				-i "${_fq1_mspicut[$i]}"
+				-o "$o1"
+			CMD
+			_fq1_mspicut[$i]="$o1"
+		fi
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+	else
+		commander::runcmd -v -b -t 1 -a cmd1
+	fi
+
+	return 0
+}
+
 bisulfite::segemehl() {
+	declare -a tdirs
+	_cleanup::bisulfite::segemehl(){
+		rm -rf "${tdirs[@]}"
+	}
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -17,16 +101,17 @@ bisulfite::segemehl() {
 			-y <gaidx>      | path to
 			-m <mode>       | lister (1), cokus (2) - default: 1
 			-o <outdir>     | path to
+			-p <tmpdir>     | path to
 			-1 <fastq1>     | array of
 			-2 <fastq2>     | array of
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome gaidx ctidx outdir mode=1 accuracy insertsize
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gaidx ctidx outdir tmpdir mode=1 accuracy insertsize
 	declare -n _fq1_segemehl _fq2_segemehl _mapper_segemehl
 	declare -g -a segemehl=()
-	while getopts 'S:s:5:t:a:i:g:x:y:m:r:o:1:2:' arg; do
+	while getopts 'S:s:5:t:a:i:g:x:y:m:r:o:p:1:2:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -39,6 +124,7 @@ bisulfite::segemehl() {
 			x)	((++mandatory)); ctidx="$OPTARG";;
 			y)	((++mandatory)); gaidx="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG/segemehl"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			r)	((++mandatory))
 				_mapper_segemehl=$OPTARG
 				_mapper_segemehl+=(segemehl)
@@ -48,7 +134,7 @@ bisulfite::segemehl() {
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage
+	[[ $mandatory -lt 8 ]] && _usage
 
 	commander::printinfo "bisufite mapping segemehl"
 
@@ -82,9 +168,12 @@ bisulfite::segemehl() {
 		o="$outdir/$o"
 		params=""
 		[[ $accuracy ]] && params+=" -A $accuracy"
+		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.segemehl)")
 		if [[ ${_fq2_segemehl[$i]} ]]; then
 			[[ $insertsize ]] && params+=" -I $insertsize"
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				cd "${tdirs[-1]}"
+			CMD
 				segemehl
 				$params
 				-F $mode
@@ -98,7 +187,9 @@ bisulfite::segemehl() {
 				-o "$o.bam"
 			CMD
 		else
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				cd "${tdirs[-1]}"
+			CMD
 				segemehl
 				$params
 				-F $mode
