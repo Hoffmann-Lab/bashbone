@@ -34,7 +34,7 @@ usage(){
 		  - ebi uk mirror is used as fallback upon fastq-dump errors (not true for fasterq-dump)
 
 		VERSION
-		0.1.2
+		0.1.3
 
 		REQUIREMENTS
 		  - esearch (from eutilities https://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/)
@@ -52,7 +52,8 @@ usage(){
 		            HINT: use -p 1 in a second run to ensure all files were downloaded correctly
 		-n        : optional, no fallback
 		-t [path] : optional, path to temporary directory ("$PWD")
-		-e        : optional, priorize ebi uk mirror utilizing wget
+		-e        : optional, priorize ebi uk mirror utilizing wget (may used together with -c)
+		-c        : experimental! optional, use curl instead of wget when downloading from ebi uk mirror
 		-f        : optional, switch to fasterq-dump
 		            NOTE: not yet recommended!
 		              - uncompressed output
@@ -69,7 +70,7 @@ usage(){
 }
 
 unset OPTIND
-while getopts o:p:t:d:sfenh ARG; do
+while getopts o:p:t:d:sfecnh ARG; do
 	case $ARG in
 		o) outfile="$OPTARG";;
 		p) instances="$OPTARG";;
@@ -77,6 +78,7 @@ while getopts o:p:t:d:sfenh ARG; do
 		d) outdir="$OPTARG";;
 		f) faster=true;;
 		e) ebi=true;;
+		c) method=curl;;
 		s) nodownload=true;;
 		n) nofallback=true;;
 		h) (usage); exit 0;;
@@ -95,6 +97,7 @@ threads=${threads:-2}
 tmp="$(mktemp -d -p "${tmp:-$PWD}")"
 faster=${faster:-false}
 ebi=${ebi:-false}
+method=${method:-wget}
 nodownload=${nodownload:-false}
 nofallback=${nofallback:-false}
 outfile="${outfile:-/dev/null}"
@@ -152,14 +155,16 @@ fasterqdump(){
 	return 0
 }
 
-ftpdump(){
+ftpdump_wget(){
 	$resume && params="-c" || params=""
 	for id in ${srr[@]}; do # do not quote. in case srr=("$(fastqdump ...)") terminates succesfully, srr==("") -> id==""
 		url=$([[ $(echo -n $id | wc -c) -lt 10 ]] && echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$id || echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$(printf '%03i' $(echo ${id:9} | sed 's/^0*//'))/$id)
 		# colliding .listing files of parallel instances have an observed impact on resumeable downloads and propably also on fetching all files (true for sure when using --recursive)
-		# --recursive --no-directories --no-parent --level=1 --reject 'index.htm*' --accept-regex '$id.*\.fastq\.gz' "$url/"
-		echo "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping --glob=on '$url/$id*.fastq.gz'" >&2
-		echo -ne "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping '$url/$id*.fastq.gz'\0"
+		echo "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping --recursive --no-directories --no-parent --level=1 --reject 'index.htm*' --accept-regex '$id.*\.fastq\.gz' '$url/'" >&2
+		echo -ne "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping --recursive --no-directories --no-parent --level=1 --reject 'index.htm*' --accept-regex '$id.*\.fastq\.gz' '$url/'\0"
+		# --glob has the same listing problem and additionally adds risk for 404 due to wildcards not supported in HTTP (despite of ftp url, where glob should work)
+		# echo "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping --glob=on '$url/$id*.fastq.gz'" >&2
+		# echo -ne "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping '$url/$id*.fastq.gz'\0"
 	done | xargs -0 -P $instances -I {} bash -c {} || return 1
 	return 0
 }
@@ -177,24 +182,6 @@ ftpdump_curl(){
 	return 0
 }
 
-ftpdump_curlwget(){
-	$resume && params="-c" || params=""
-	for id in ${srr[@]}; do # do not quote. in case srr=("$(fastqdump ...)") terminates succesfully, srr==("") -> id==""
-		url=$([[ $(echo -n $id | wc -c) -lt 10 ]] && echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$id || echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$(printf '%03i' $(echo ${id:9} | sed 's/^0*//'))/$id)
-		files=($(curl -s -l "$url/" | grep $id*.fastq.gz))
-		# -l ignores timeouts. thus fetching all files often fails. otherwise this line would be a huge bottle neck if not parallelized
-		if [[ $files ]]; then
-			for f in "${files[@]}"; do
-				echo "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping '$url/$f'" >&2
-				echo -ne "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping '$url/$f'\0"
-			done
-		else
-			echo "CAN NOT FIND $url" >&2
-		fi
-	done | xargs -0 -P $instances -I {} bash -c {} || return 1
-	return 0
-}
-
 $nodownload && exit 0
 
 $faster && [[ $(command -v fasterq-dump > /dev/null; echo $?) -eq 0 ]] && {
@@ -202,17 +189,7 @@ $faster && [[ $(command -v fasterq-dump > /dev/null; echo $?) -eq 0 ]] && {
 }
 
 $ebi || [[ $(command -v fastq-dump > /dev/null; echo $?) -gt 0 ]] && {
-	ftpdump && exit 0 || die "UNFORSEEN ERROR"
-
-	# bad alternative
-	# $nofallback && {
-	# 	ftpdump_curlwget && exit 0 || die "UNFORSEEN ERROR"
-	# } || {
-	# 	srr=("$(ftpdump_curlwget 2> >(tee /dev/fd/2 | awk -F '/' -v x="$(basename "$0")" '/CAN NOT FIND/{print "\nDONT WORRY! "x" WILL RETRY TO DOWNLOAD "$NF" FROM A DIFFERNT SOURCE" > "/dev/fd/2"; print $NF}') | awk '{if(/^SRR[0-9]+$/){print}else{print > "/dev/fd/2"}}')")
-	# 	[[ $(command -v fastq-dump > /dev/null; echo $?) -eq 0 ]] && {
-	# 		fastqdump && exit 0 || die "UNFORSEEN ERROR"
-	# 	}
-	# }
+	ftpdump_$method && exit 0 || die "UNFORSEEN ERROR"
 }
 
 # redirect stderr to subshell via process substitution to be used as stdout
@@ -225,5 +202,5 @@ $nofallback && {
 } || {
 	srr=("$(fastqdump 2> >(tee /dev/fd/2 | awk -v x="$(basename "$0")" '/failed SRR[0-9]+$/{print "\nDONT WORRY! "x" WILL RETRY TO DOWNLOAD "$NF" FROM A DIFFERNT SOURCE" > "/dev/fd/2"; print $NF}') | awk '{if(/^SRR[0-9]+$/){print}else{print > "/dev/fd/2"}}')")
 	resume=false
-	ftpdump && exit 0 || die "UNFORSEEN ERROR"
+	ftpdump_$method && exit 0 || die "UNFORSEEN ERROR"
 }
