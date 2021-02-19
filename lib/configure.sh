@@ -87,7 +87,7 @@ configure::instances_by_threads(){
 	local OPTIND arg instances ithreads=1 maxthreads
 	while getopts 'i:t:T:' arg; do
 		case $arg in
-			i) instances=$OPTARG;;
+			i) instances=$((OPTARG==0?1:OPTARG));;
 			t) ithreads=$OPTARG;;
 			T) maxthreads=$OPTARG;;
 			*) _usage;;
@@ -123,7 +123,7 @@ configure::memory_by_instances(){
 	local OPTIND arg mandatory instances maxthreads maxmemory
 	while getopts 'i:T:M:' arg; do
 		case $arg in
-			i) ((++mandatory)); instances=$OPTARG;;
+			i) ((++mandatory)); instances=$((OPTARG==0?1:OPTARG));;
 			T) maxthreads=$OPTARG;;
 			M) maxmemory=$OPTARG;;
 			*) _usage;;
@@ -199,7 +199,7 @@ configure::jvm(){
 	local OPTIND arg instances ithreads=1 maxthreads memory=1 maxmemory
 	while getopts 'i:t:T:m:M:' arg; do
 		case $arg in
-			i)	instances=$OPTARG;;
+			i)	instances=$((OPTARG==0?1:OPTARG));;
 			t)	ithreads=$OPTARG;;
 			T)	maxthreads=$OPTARG;;
 			m)	memory=$OPTARG;;
@@ -207,6 +207,7 @@ configure::jvm(){
 			*)	_usage
 		esac
 	done
+	[[ $instances -eq 0 ]] && instances=1
 
 	local m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
 	[[ ! $maxmemory ]] && maxmemory=$m
