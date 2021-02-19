@@ -63,7 +63,7 @@ variants::haplotypecaller() {
 		declare -n _bams_haplotypecaller=$m
 		((instances+=${#_bams_haplotypecaller[@]}))
 	done
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 1 -T $threads)
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
 
 	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6
 	for m in "${_mapper_haplotypecaller[@]}"; do
@@ -107,6 +107,7 @@ variants::haplotypecaller() {
 						--smith-waterman FASTEST_AVAILABLE
 						--max-reads-per-alignment-start 0
 						--min-base-quality-score 20
+						--standard-min-confidence-threshold-for-calling 20
 						--native-pair-hmm-threads $mthreads
 						--max-alternate-alleles 3
 						--all-site-pls true
