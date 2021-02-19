@@ -237,8 +237,8 @@ commander::qsubcmd(){
 			-o <path>      | shared among machines for scripts, logs and exit codes
 			-r             | override existing logs
 			-i <instances> | number of parallel instances
-			-t <threads>   | to be allocated per instance
 			-p <env>       | name of parallel sge environment
+			-t <threads>   | to be allocated per instance in parallel environment
 			-a <cmds>      | ALWAYS LAST OPTION
 			                 array of
 			example:
@@ -257,14 +257,14 @@ commander::qsubcmd(){
 			w)	dowait="y";;
 			r)	override=true;;
 			c)	cenv=$OPTARG;;
-			t)	((++mandatory)); threads=$OPTARG;;
+			t)	threads=$OPTARG;;
 			i)	instances=$OPTARG;;
 			o)	((++mandatory)); logdir="$OPTARG"; mkdir -p "$logdir";;
 			l)	complexes+=("-l $OPTARG");;
-			p)	((++mandatory)); penv="-pe $OPTARG";;
+			p)	penv="-pe $OPTARG";;
 			n)	jobname="$OPTARG";;
 			a)	_cmds_qsubcmd=$OPTARG
-				[[ $mandatory -lt 3 ]] && _usage
+				[[ $mandatory -lt 1 ]] && _usage
 				[[ $_cmds_qsubcmd ]] || return 0
 
 				$verbose && {
