@@ -57,9 +57,9 @@ tmp="$(mktemp $params shufnsplit.XXXXXXXXXX)"
 
 ${z:-false} && {
 	if [[ $j ]]; then
-		[[ $(which pigz 2> /dev/null) ]] && z="pigz -k -c -p $(((t+3)/2))" || z="gzip -k -c"
+		pigz -h 2> /dev/null && z="pigz -k -c -p $(((t+3)/4))" || z="gzip -k -c"
 	else
-		[[ $(which pigz 2> /dev/null) ]] && z="pigz -k -c -p $(((t+1)/4))" || z="gzip -k -c"
+		pigz -h 2> /dev/null && z="pigz -k -c -p $(((t+1)/2))" || z="gzip -k -c"
 	fi
 	e=".fastq.gz"
 } || {
