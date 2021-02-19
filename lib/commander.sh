@@ -237,6 +237,7 @@ commander::qsubcmd(){
 			-o <path>      | shared among machines for scripts, logs and exit codes
 			-r             | override existing logs
 			-i <instances> | number of parallel instances
+			-q <queue>     | name of sge queue
 			-p <env>       | name of parallel sge environment
 			-t <threads>   | to be allocated per instance in parallel environment
 			-a <cmds>      | ALWAYS LAST OPTION
@@ -247,10 +248,10 @@ commander::qsubcmd(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv logdir complex
+	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv queue logdir complex params
 	declare -n _cmds_qsubcmd # be very careful with circular name reference
 	declare -a mapdata complexes
-	while getopts 'vbwrt:i:o:l:p:c:n:a:' arg; do
+	while getopts 'vbwrt:i:o:l:p:q:c:n:a:' arg; do
 		case $arg in
 			v)	verbose=true;;
 			b)	benchmark=true;;
@@ -261,10 +262,11 @@ commander::qsubcmd(){
 			i)	instances=$OPTARG;;
 			o)	((++mandatory)); logdir="$OPTARG"; mkdir -p "$logdir";;
 			l)	complexes+=("-l $OPTARG");;
-			p)	penv="-pe $OPTARG";;
+			p)	((++mandatory)); penv="-pe $OPTARG";;
+			q)	((++mandatory)); queue="-q $OPTARG";;
 			n)	jobname="$OPTARG";;
 			a)	_cmds_qsubcmd=$OPTARG
-				[[ $mandatory -lt 1 ]] && _usage
+				[[ $mandatory -lt 2 ]] && _usage
 				[[ $_cmds_qsubcmd ]] || return 0
 
 				$verbose && {
@@ -272,7 +274,7 @@ commander::qsubcmd(){
 					commander::printcmd -a _cmds_qsubcmd
 				}
 
-				[[ $penv ]] && penv+=" $threads"
+				[[ $penv ]] && params="$penv $threads" || params="$queue"
 				[[ $jobname ]] || jobname=$(mktemp -u -p "$logdir" XXXXXXXXXX)
 				local ex="$logdir/exitcodes.$jobname"
 				local log="$logdir/job.$jobname.\$TASK_ID.log" # not SGE_TASK_ID
@@ -303,10 +305,10 @@ commander::qsubcmd(){
 				[[ $instances ]] || instances=$id
 				if $benchmark; then
 					TIMEFORMAT=':BENCHMARK: runtime %3lR [hours][minutes]seconds' # different to /usr/bin/time, bash builtin time can handle: time echo "sleep 2" | bash
-					time echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $penv ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
+					time echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
 					# in case of job exit code > 0, leads to *** longjmp causes uninitialized stack frame ***: bash terminated
 				else
-					echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $penv ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
+					echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
 				fi
 				return $?
 			;;
