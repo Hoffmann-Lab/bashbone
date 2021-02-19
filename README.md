@@ -129,7 +129,7 @@ x.print
 ## Base installation of programming languages and libraries to a get enclosed scripts to operate.
 
 ```bash
-setup -i conda -d <path/to/installation>
+./setup.sh -i conda -d <path/to/installation>
 source <path/of/installation/latest/bashbone/activate.sh>
 bashbone -h
 ```
@@ -149,7 +149,7 @@ bashbone -s
 ## Full installation of all third party tools used in bashbone functions
 
 ```bash
-setup -i all -d <path/to/installation>
+./setup.sh -i all -d <path/to/installation>
 source <path/of/installation/latest/bashbone/activate.sh>
 bashbone -h
 ```
@@ -157,7 +157,7 @@ bashbone -h
 ### Upgrade to a newer release (sources only)
 
 ```bash
-setup -i upgrade -d <path/of/installation>
+./setup.sh -i upgrade -d <path/of/installation>
 ```
 
 ### Update tools
@@ -165,13 +165,13 @@ setup -i upgrade -d <path/of/installation>
 The setup routine will always install the latest software via conda, which can be updated by running the related setup functions again.
 
 ```bash
-setup -i conda_tools -d <path/of/installation>
+./setup.sh -i conda_tools -d <path/of/installation>
 ```
 
 Trimmomatic, segemehl, STAR-Fusion and GEM will be installed next to the conda environments. If new releases are available, they will be automatically fetched and installed upon running the related setup functions again.
 
 ```bash
-setup -i trimmomatic,segemehl,starfusion,gem -d <path/of/installation>
+./setup.sh -i trimmomatic,segemehl,starfusion,gem -d <path/of/installation>
 ```
 
 # Usage
@@ -250,12 +250,18 @@ Then the info file should consist of:
 
 ## Adapter sequences
 
-Sequences can be found in the Illumina Adapter Sequences Document (<https://www.illumina.com/search.html?q=Illumina Adapter Sequences Document&filter=manuals&p=1>), the resource of Trimmomatic (<https://github.com/timflutre/trimmomatic/tree/master/adapters>), FastQC respectively (<https://github.com/s-andrews/FastQC/blob/master/Configuration/contaminant_list.txt>).
-<br>
-Nextera Transposase Sequence: CTGTCTCTTATACACATCT
-<br>
-Illumina Universal Adapter: ATGTGTATAAGAGACA
+Sequences can be found in the Illumina Adapter Sequences Document (<https://www.illumina.com/search.html?q=Illumina Adapter Sequences Document>) and the resource of Trimmomatic (<https://github.com/timflutre/trimmomatic/tree/master/adapters>), FastQC respectively (<https://github.com/s-andrews/FastQC/blob/master/Configuration>).
 
+The following excerpt is independent of the indexing type, i.e. single, unique dual (UD) or combinatorial dual (CD).
+
+Nextera (Transposase Sequence), TruSight, AmpliSeq, stranded total/mRNA Prep, Ribo-Zero Plus: CTGTCTCTTATACACATCT
+
+TruSeq (Universal) Adapter with A prefix due to 3' primer A-tailing : AGATCGGAAGAGC
+
+      - full DNA & RNA - R1: AGATCGGAAGAGCACACGTCTGAACTCCAGTCA R2: AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT
+      - full DNA MethC - R1: AGATCGGAAGAGCACACGTCTGAAC R2: AGATCGGAAGAGCGTCGTGTAGGGA
+
+TruSeq Small RNA: TGGAATTCTCGGGTGCCAAGG
 
 ## Example
 
