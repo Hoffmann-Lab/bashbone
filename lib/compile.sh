@@ -34,6 +34,7 @@ compile::all(){
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 	compile::bashbone -i "$insdir" -t $threads
+	compile::tools -i "$insdir" -t $threads
 	compile::conda -i "$insdir" -t $threads
 	compile::conda_tools -i "$insdir" -t $threads
 	compile::java -i "$insdir" -t $threads
@@ -66,10 +67,26 @@ compile::bashbone() {
 	return 0
 }
 
+compile::tools() {
+	local insdir threads i src=$(dirname $(readlink -e $0))
+
+	commander::printinfo "installing statically pre-compiled tools"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	mkdir -p $insdir/latest
+	for i in $(find "$src/tools" -mindepth 1 -maxdepth 1 -type d); do
+		cp -r "$i" "$insdir/$(basename "$i")"
+		ln -sfn "$insdir/$(basename "$i")/bin" "$insdir/latest/$(basename "$i" | cut -d '-' -f 1)"
+	done
+
+	return 0
+}
+
 compile::upgrade(){
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 	compile::bashbone -i "$insdir" -t $threads
+	compile::tools -i "$insdir" -t $threads
 	compile::conda_tools -i "$insdir" -t $threads -u true
 
 	return 0
@@ -81,7 +98,7 @@ compile::conda(){
 		rm -rf "$tmpdir"
 	}
 
-	local insdir threads url version n bin
+	local insdir threads url n bin
 	commander::printinfo "installing conda"
 	compile::_parse -r insdir -s threads "$@"
 	url="https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh"
@@ -172,7 +189,7 @@ compile::conda(){
 }
 
 compile::conda_tools() {
-	local insdir threads upgrade=false url version tool n bin doclean=false
+	local insdir threads upgrade=false tool n bin doclean=false
 	declare -A envs
 
 	compile::_parse -r insdir -s threads -c upgrade "$@"
@@ -251,8 +268,6 @@ compile::conda_tools() {
 
 	tool=platypus-variant
 	n=platypus
-	n=${tool/=*/}
-	n=${n//[^[:alpha:]]/}
 	$upgrade && ${envs[$n]:=false} || {
 		doclean=true
 
@@ -310,7 +325,7 @@ compile::_javawrapper() {
 	[[ $3 ]] && java="$3"
 	cat <<- EOF > "$1" || return 1
 		#!/usr/bin/env bash
-		java=$java
+		java="$java"
 		[[ \$JAVA_HOME && -e "\$JAVA_HOME/bin/java" ]] && java="\$JAVA_HOME/bin/java"
 		declare -a jvm_mem_args jvm_prop_args pass_args
 		for arg in \$@; do
