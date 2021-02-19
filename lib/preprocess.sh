@@ -48,7 +48,7 @@ preprocess::fastqc() {
 			-outdir "$outdir"
 			"$f" 2>&1
 		CMD
-			sed -u '${/Analysis complete/!{q 1}}'
+			sed -u '/Exception/{q 1};${/Analysis complete/!{q 1}}'
 		CMD
 	done
 
@@ -69,18 +69,20 @@ preprocess::rmpolynt(){
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-o <outdir>   | path to
+			-d <dinucs>   | true/false trim di-nucleotide ends
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir
+	local OPTIND arg mandatory skip=false dinuc=true threads outdir
 	declare -n _fq1_rmpolynuc _fq2_rmpolynuc
-	while getopts 'S:s:a:A:t:o:1:2:' arg; do
+	while getopts 'S:s:d:t:o:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
+			d) dinuc=$OPTARG;;
 			t) ((++mandatory)); threads=$OPTARG;;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			1) ((++mandatory)); _fq1_rmpolynuc=$OPTARG;;
@@ -99,9 +101,11 @@ preprocess::rmpolynt(){
 	for i in A C G T; do
 		poly+=("$(printf "$i%.0s" {1..100})X")
 	done
-	for i in AB CD GH TV; do #iupac
-		poly+=("$(printf "$i%.0s" {1..100})X")
-	done
+	if $dinuc; then
+		for i in AB CD GH TV; do #iupac
+			poly+=("$(printf "$i%.0s" {1..100})X")
+		done
+	fi
 
 	preprocess::cutadapt \
 		-S false \
@@ -151,32 +155,32 @@ preprocess::cutadapt(){
 
 	commander::printinfo "adapter clipping"
 
-	local instances ithreads
-	# parallelized cutadapt is faster on parallel data than max threads -> use max 10 per instance
-	# cutadapt cannot handle more than 64 threads
-	read -r instances ithreads < <(configure::instances_by_threads -i ${#_fq1_cutadapt[@]} -t 10 -T $threads)
-
-	declare -a cmd1 cmd2
-	local i o1 o2 n=$((${#_adaptera_cutadapt[@]}))
+	declare -a cmd1
+	local i o1 e1 o2 e2 n=$((${#_adaptera_cutadapt[@]}))
 	[[ $n -gt 2 ]] && n=2 # since only the best matching adapter is removed, run cutadapt twice
 	for i in "${!_fq1_cutadapt[@]}"; do
-		o1="$outdir"/$(basename "${_fq1_cutadapt[$i]}")
-		o2="$outdir"/$(basename "${_fq2_cutadapt[$i]}")
+		helper::basename -f "${_fq1_cutadapt[$i]}" -o o1 -e e1
+		e1=$(echo $e1 | cut -d '.' -f 1)
+		o1="$outdir/$o1.$e1.gz"
+
 		if [[ "${_fq2_cutadapt[$i]}" ]]; then
+			helper::basename -f "${_fq2_cutadapt[$i]}" -o o2 -e e2
+			e2=$(echo $e2 | cut -d '.' -f 1)
+			o2="$outdir/$o2.$e2.gz"
+
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				cutadapt
 				${_adaptera_cutadapt[@]/#/-a }
 				${_adapterA_cutadapt[@]/#/-A }
 				-n $n
 				--trim-n
-				-j $ithreads
+				-j $threads
 				-m 18
 				-O 5
-				-o "$o1"
-				-p "$o2"
+				-o >(pigz -p $(((threads+1)/2)) -c > "$o1")
+				-p >(pigz -p $(((threads+1)/2)) -c > "$o2")
 				"${_fq1_cutadapt[$i]}" "${_fq2_cutadapt[$i]}"
 			CMD
-			helper::makezipcmd -a cmd2 -t $threads -c "${_fq1_cutadapt[$i]}" -c "${_fq2_cutadapt[$i]}" -z o1 -z o2
 			_fq1_cutadapt[$i]="$o1"
 			_fq2_cutadapt[$i]="$o2"
 		else
@@ -188,20 +192,17 @@ preprocess::cutadapt(){
 				-j $threads
 				-m 18
 				-O 5
-				-o "$o1"
+				-o >(pigz -p $threads -c > "$o1")
 				"${_fq1_cutadapt[$i]}"
 			CMD
-			helper::makezipcmd -a cmd2 -t $threads -c "${_fq1_cutadapt[$i]}" -z o1
 			_fq1_cutadapt[$i]="$o1"
 		fi
 	done
 
 	if $skip; then
 		commander::printcmd -a cmd1
-		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c cutadapt -v -b -t $instances -a cmd1
-		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -c cutadapt -v -b -t 1 -a cmd1
 	fi
 
 	return 0
@@ -291,7 +292,7 @@ preprocess::trimmomatic() {
 	done
 
 	local instances ithreads jmem jgct jcgct
-	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i ${#_fq1_trimmomatic[@]} -T $threads)
+	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads)
 
 	# trimmomatic bottleneck are number of used compression threads (4) - thus use pigz
 	declare -a cmd2 cmd3
@@ -315,12 +316,13 @@ preprocess::trimmomatic() {
 				-XX:ConcGCThreads=$jcgct
 				-Djava.io.tmpdir="$tmpdir"
 				PE
-				-threads $ithreads
+				-threads $threads
 				-${phred["${_fq1_trimmomatic[$i]}"]}
 				"${_fq1_trimmomatic[$i]}" "${_fq2_trimmomatic[$i]}"
-				>(pigz -p $ithreads -c > "$o1") >(pigz -p $ithreads -c > "$os1")
-				>(pigz -p $ithreads -c > "$o2") >(pigz -p $ithreads -c > "$os2")
+				>(pigz -p $(((threads+1)/2)) -c > "$o1") >(pigz -p $(((threads+1)/2)) -c > "$os1")
+				>(pigz -p $(((threads+1)/2)) -c > "$o2") >(pigz -p $(((threads+1)/2)) -c > "$os2")
 				SLIDINGWINDOW:5:22
+				LEADING:20
 				MINLEN:18
 				TOPHRED33
 			CMD
@@ -334,11 +336,12 @@ preprocess::trimmomatic() {
 				-XX:ConcGCThreads=$jcgct
 				-Djava.io.tmpdir="$tmpdir"
 				SE
-				-threads $ithreads
+				-threads $threads
 				-${phred["${_fq1_trimmomatic[$i]}"]}
 				"${_fq1_trimmomatic[$i]}"
-				>(pigz -p $ithreads -c > "$o1")
+				>(pigz -p $threads -c > "$o1")
 				SLIDINGWINDOW:5:22
+				LEADING:20
 				MINLEN:18
 				TOPHRED33
 			CMD
@@ -349,7 +352,7 @@ preprocess::trimmomatic() {
 	if $skip; then
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -t 1 -a cmd2
 	fi
 
 	return 0
@@ -394,57 +397,73 @@ preprocess::rcorrector(){
 	commander::printinfo "correcting read errors"
 
 	declare -a cmd1 cmd2
-	local i o1 b1 e1 o2 b2 e2
+	local i o1 e1 o2 e2
 	for i in "${!_fq1_rcorrector[@]}"; do
-		o1="$outdir"/$(basename "${_fq1_rcorrector[$i]}")
-		helper::basename -f "${_fq1_rcorrector[$i]}" -o b1 -e e1
-		b1="$outdir"/"$b1"
+		helper::basename -f "${_fq1_rcorrector[$i]}" -o o1 -e e1
+		e1=$(echo $e1 | cut -d '.' -f 1)
+		o1="$outdir/$o1"
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rcorrector)")
 		if [[ ${_fq2_rcorrector[$i]} ]]; then
-			o2="$outdir"/$(basename "${_fq2_rcorrector[$i]}")
-			helper::basename -f "${_fq2_rcorrector[$i]}" -o b2 -e e2
-			b2="$outdir"/"$b2"
+			helper::basename -f "${_fq2_rcorrector[$i]}" -o o2 -e e2
+			e2=$(echo $e2 | cut -d '.' -f 1)
+			o2="$outdir/$o2"
 
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-				cd "${tdirs[-1]}"
-			CMD
-				run_rcorrector.pl
-				-1 "${_fq1_rcorrector[$i]}"
-				-2 "${_fq2_rcorrector[$i]}"
-				-od "$outdir"
-				-t $threads
-			CMD
-				mv "$b1".cor.fq* "$o1"
-			CMD
-				mv "$b2".cor.fq* "$o2"
-			CMD
+			readlink -e "${_fq1_rcorrector[$i]}" | file -f - | grep -qF 'compressed' && {
+				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					cd "${tdirs[-1]}"
+				CMD
+					run_rcorrector.pl
+					-1 "${_fq1_rcorrector[$i]}"
+					-2 "${_fq2_rcorrector[$i]}"
+					-od "$outdir"
+					-t $threads
+				CMD
+					mv "$o1.cor.fq.gz" "$o1.$e1.gz"
+				CMD
+					mv "$o2.cor.fq.gz" "$o2.$e2.gz"
+				CMD
+			} || {
+				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
+					cd "${tdirs[-1]}"
+				CMD
+					exec 11>&1; exec 12>&1
+				CMD
+					ln -sfn "/dev/fd/11" "$(basename "$o1").cor.fq"
+				CMD
+					ln -sfn "/dev/fd/12" "$(basename "$o2").cor.fq"
+				CMD
+					run_rcorrector.pl
+					-1 "${_fq1_rcorrector[$i]}"
+					-2 "${_fq2_rcorrector[$i]}"
+					-od "${tdirs[-1]}"
+					-t $threads
+					11> >(pigz -p $(((threads+1)/2)) -c > "$o1.$e1.gz")
+					12> >(pigz -p $(((threads+1)/2)) -c > "$o2.$e2.gz")
+				CMD
+					exec 11>&-; exec 12>&-
+				CMD
+			}
 
-			helper::makezipcmd -a cmd2 -t $threads -c "${_fq1_rcorrector[$i]}" -c "${_fq2_rcorrector[$i]}" -z o1 -z o2
-			_fq1_rcorrector[$i]="$o1"
-			_fq2_rcorrector[$i]="$o2"
+			_fq1_rcorrector[$i]="$o1.$e1.gz"
+			_fq2_rcorrector[$i]="$o2.$e2.gz"
 		else
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				cd "${tdirs[-1]}"
 			CMD
 				run_rcorrector.pl
 				-s "${_fq1_rcorrector[$i]}"
-				-od "$outdir"
+				-stdout
 				-t $threads
+				> >(pigz -p $threads -c > "$o1.$e1.gz")
 			CMD
-				mv "$b1".cor.fq* "$o1"
-			CMD
-
-			helper::makezipcmd -a cmd2 -t $threads -c "${_fq1_rcorrector[$i]}" -z o1
-			_fq1_rcorrector[$i]="$o1"
+			_fq1_rcorrector[$i]="$o1.$e1.gz"
 		fi
 	done
 
 	if $skip; then
 		commander::printcmd -a cmd1
-		commander::printcmd -a cmd2
 	else
 		commander::runcmd -c rcorrector -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t 1 -a cmd2
 	fi
 
 	return 0
@@ -498,114 +517,88 @@ preprocess::sortmerna(){
 	local sortmernaref=$(for i in $insdir/rRNA_databases/*.fasta; do echo $i,$insdir/index/$(basename $i .fasta)-L18; done | xargs -echo | sed 's/ /:/g')
 
 	declare -a cmd1 cmd2 cmd3
-	local i catcmd tmp o1 o2 or1 or2 b1 b2 e1 e2 instances=$threads
+	local i catcmd tmp o1 o2 or1 or2 e1 e2
 	for i in "${!_fq1_sortmerna[@]}"; do
-		helper::basename -f "${_fq1_sortmerna[$i]}" -o b1 -e e1
-		e1=${e1%.*} # trim potential compressing extension
+		helper::basename -f "${_fq1_sortmerna[$i]}" -o o1 -e e1
+		e1=$(echo $e1 | cut -d '.' -f 1)
+
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sortmerna)")
-		tmp="${tdirs[-1]}/tmp.$b1.$e1"
-		tmpo="${tdirs[-1]}/$b1"
-		tmpr="${tdirs[-1]}/rRNA.$b1"
-		o1="$outdir/$b1.$e1.gz"
-		or1="$outdir/rRNA.$b1.$e1.gz"
+		tmp="${tdirs[-1]}/$o1"
+
+		or1="$outdir/rRNA.$o1.$e1.gz"
+		o1="$outdir/$o1.$e1.gz"
+
+		helper::makecatcmd -c catcmd -f "${_fq1_sortmerna[$i]}"
 
 		# sortmerna v2.1 input must not be compressed (v.3.* creates empty files)
 		# outfile gets extension from input file
 		# in.fq.bz2 > in.fq + rRNA.out|out -> rRNA.out.fq|out.fq -> rRNA.out.fq.gz|out.fq.gz
 		if [[ ${_fq2_sortmerna[$i]} ]]; then
-			helper::basename -f "${_fq2_sortmerna[$i]}" -o b2 -e e2
-			e2=${e2%.*}
-			o2="$outdir/$b2.$e2.gz"
-			or2="$outdir/rRNA.$b2.$e2.gz"
+			helper::basename -f "${_fq2_sortmerna[$i]}" -o o2 -e e2
+			e2=$(echo $e2 | cut -d '.' -f 1)
+			or2="$outdir/rRNA.$o2.$e2.gz"
+			o2="$outdir/$o2.$e2.gz"
 
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-				mergefq.sh
-				-t $ithreads
-				-m ${memory}M
-				-d "${tdirs[-1]}"
-				-i "${_fq1_sortmerna[$i]}"
-				-j "${_fq2_sortmerna[$i]}"
-				-o "$tmp"
+			commander::makecmd -a cmd1 -s '|' -o "$tmp.merged.$e1" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
+				paste <($catcmd "${_fq1_sortmerna[$i]}") <($catcmd "${_fq2_sortmerna[$i]}")
 			CMD
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+				paste - - - - - - - -
+			CMD
+				awk -F '\t' -v OFS='\n' '{print $1,$3,$5,$7; print $2,$4,$6,$8}'
+			CMD
+
+			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
+				exec 11>&1; exec 12>&1
+			CMD
+				ln -sfn /dev/fd/11 "$tmp.ok.$e1"
+			CMD
+				ln -sfn /dev/fd/12 "$tmp.rRNA.$e1"
+			CMD
 				sortmerna
 				--ref "$sortmernaref"
-				--reads "$tmp"
+				--reads "$tmp.merged.$e1"
 				--fastx
 				--paired_out
-				--aligned "$tmpr"
-				--other "$tmpo"
+				--aligned "$tmp.rRNA"
+				--other "$tmp.ok"
 				-a $threads
+				11> >(paste - - - - | awk -F '\t' -v OFS='\n' '{if(NR%2==1){print \$1,\$2,\$3,\$4 > "/dev/fd/1"}else{print \$1,\$2,\$3,\$4 > "/dev/fd/2"}}' > >(pigz -p $(((threads+1)/2)) -c > "$o1") 2> >(pigz -p $(((threads+1)/2)) -c > "$o2"))
+				12> >(paste - - - - | awk -F '\t' -v OFS='\n' '{if(NR%2==1){print \$1,\$2,\$3,\$4 > "/dev/fd/1"}else{print \$1,\$2,\$3,\$4 > "/dev/fd/2"}}' > >(pigz -p $(((threads+1)/2)) -c > "$or1") 2> >(pigz -p $(((threads+1)/2)) -c > "$or2"))
 			CMD
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
-				mergefq.sh
-				-t $threads
-				-u 1
-				-i "$tmpo".$e1
-				-z
-				-o "$o1"
+				rm -f "$tmp.merged.$e1"; exec 11>&-; exec 12>&-
 			CMD
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
-				mergefq.sh
-				-t $threads
-				-u 2
-				-i "$tmpo".$e2
-				-z
-				-o "$o2"
-			CMD
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
-				mergefq.sh
-				-t $threads
-				-u 1
-				-i "$tmpr".$e1
-				-z
-				-o "$or1"
-			CMD
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
-				mergefq.sh
-				-t $threads
-				-u 2
-				-i "$tmpr".$e2
-				-z
-				-o "$or2"
-			CMD
+
 			_fq1_sortmerna[$i]="$o1"
 			_fq2_sortmerna[$i]="$o2"
 		else
-			instances=$threads
 
 			helper::makecatcmd -c catcmd -f "${_fq1_sortmerna[$i]}"
 			[[ $catcmd == "cat" ]] && {
 				tmp="${_fq1_sortmerna[$i]}"
 			} || {
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-					$catcmd "${_fq1_sortmerna[$i]}" > $tmp
+					$catcmd "${_fq1_sortmerna[$i]}" > "$tmp.$e1"
 				CMD
 			}
 
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+				ln -sfn /dev/fd/1 "$tmp.ok.$e1"
+			CMD
+				ln -sfn /dev/fd/2 "$tmp.rRNA.$e1"
+			CMD
 				sortmerna
 				--ref "$sortmernaref"
-				--reads "$tmp"
+				--reads "$tmp.$e1"
 				--fastx
-				--aligned "$tmpr"
-				--other "$tmpo"
+				--aligned "$tmp.rRNA"
+				--other "$tmp.ok"
 				-a $threads
+				> >(pigz -p $threads -c > "$o1")
+				2> >(pigz -p $threads -c > "$or1")
 			CMD
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
-				pigz
-				-p $threads
-				-k
-				-c
-				"$tmpr".$e1 > "$or1"
+				rm -f "$tmp.$e1"
 			CMD
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
-				pigz
-				-p $threads
-				-k
-				-c
-				"$tmpo".$e1 > "$o1"
-			CMD
+
 			_fq1_sortmerna[$i]="$o1"
 		fi
 	done
@@ -613,11 +606,9 @@ preprocess::sortmerna(){
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd1
 		commander::runcmd -v -b -t 1 -a cmd2
-		commander::runcmd -v -b -t 1 -a cmd3
 	fi
 
 	return 0
