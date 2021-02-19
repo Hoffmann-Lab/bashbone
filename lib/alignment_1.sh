@@ -155,7 +155,7 @@ alignment::star() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false params=''
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false inparams=''
 	declare -n _fq1_star _fq2_star _mapper_star
 	declare -g -a star=()
 	while getopts 'S:s:5:t:g:f:x:a:n:i:r:o:p:1:2:c:' arg; do
@@ -178,7 +178,7 @@ alignment::star() {
 			;;
 			1)	((++mandatory)); _fq1_star=$OPTARG;;
 			2)	_fq2_star=$OPTARG;;
-			c)	params="$OPTARG";;
+			c)	inparams="$OPTARG";;
 			*)	_usage;;
 		esac
 	done
@@ -235,13 +235,13 @@ alignment::star() {
 	fi
 
 	declare -a cmd1
-	local a o e extractcmd
+	local params a o e extractcmd
 	for i in "${!_fq1_star[@]}"; do
 		helper::basename -f "${_fq1_star[$i]}" -o o -e e
 		o="$outdir/$o"
 		tdirs+=("$(mktemp -u -d -p "$tmpdir" cleanup.XXXXXXXXXX.star)")
 
-		params+=' --outSAMmapqUnique 60' #use 60 instead of default 255 - necessary for gatk implemented MappingQualityAvailableReadFilter
+		params="$inparams --outSAMmapqUnique 60" #use 60 instead of default 255 - necessary for gatk implemented MappingQualityAvailableReadFilter
 		helper::makecatcmd -c extractcmd -f "${_fq1_star[$i]}"
 		[[ $extractcmd != "cat" ]] && params+=" --readFilesCommand '$extractcmd'"
 		[[ $accuracy ]] && params+=' --outFilterMismatchNoverReadLmax '$(echo $accuracy | awk '{print $1/100}')
@@ -484,6 +484,7 @@ alignment::bwa() {
 		commander::printcmd -a cmd2
 	else
 		commander::runcmd -c bwa -v -b -t 1 -a cmd1
+		commander::runcmd -c bwa -v -b -t $instances -a cmd2
 	fi
 
 	return 0
