@@ -49,6 +49,7 @@ compile::all(){
 	compile::idr -i "$insdir" -t $threads
 	compile::newicktopdf -i "$insdir" -t $threads
 	compile::ssgsea -i "$insdir" -t $threads
+	compile::bgztail -i "$insdir" -t $threads
 
 	return 0
 }
@@ -443,6 +444,7 @@ compile::starfusion() {
 	tar -xzf $insdir/starfusion.tar.gz -C $insdir
 	rm $insdir/starfusion.tar.gz
 	cd $(ls -dv $insdir/STAR-Fusion-*/ | tail -1)
+	mkdir -p $insdir/latest
 	ln -sfn $PWD $insdir/latest/starfusion
 
 	return 0
@@ -584,6 +586,27 @@ compile::ssgsea() {
 	find . -type f -name "*.R" -exec chmod 755 {} \;
 	mkdir -p $insdir/latest
 	ln -sfn $PWD $insdir/latest/ssgseabroad
+
+	return 0
+}
+
+compile::bgztail() {
+	local insdir threads url
+
+	commander::printinfo "installing bgztail"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+
+	url='https://github.com/'$(curl -s https://github.com/circulosmeos/bgztail/releases | grep -oE 'circulosmeos/bgztail/\S+v[0-9\.]+\.tar\.gz' | sort -Vr | head -1)
+	wget -q $url -O $insdir/bgztail.tar.gz
+	tar -xzf $insdir/bgztail.tar.gz -C $insdir
+	rm $insdir/bgztail.tar.gz
+	cd $(ls -dv $insdir/bgztail-*/ | tail -1)
+	mkdir -p bin
+	mv bgztail bin
+	chmod 755 bin/bgztail
+	mkdir -p $insdir/latest
+	ln -sfn $PWD/bin $insdir/latest/bgztail
 
 	return 0
 }
