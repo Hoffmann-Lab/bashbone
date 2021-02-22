@@ -204,14 +204,15 @@ compile::conda_tools() {
 	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq arriba picard bamutil macs2 peakachu diego gatk4 freebayes varscan igv intervene raxml metilene; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
-		$upgrade && ${envs[$n]:=false} && continue
-		doclean=true
+		$upgrade && ${envs[$n]:=false} || {
+			doclean=true
 
-		commander::printinfo "setup conda $n env"
-		conda create -y -n $n #python=3
-		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+			commander::printinfo "setup conda $n env"
+			conda create -y -n $n #python=3
+			conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+		}
 		# link commonly used base binaries into env
-		for bin in perl samtools bcftools bedtools vcfsamplediff; do
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
 			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	done
@@ -231,10 +232,10 @@ compile::conda_tools() {
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			perl perl-file-path perl-getopt-long perl-set-intervaltree perl-carp perl-carp-assert perl-data-dumper perl-findbin perl-db-file perl-io-gzip perl-json-xs perl-uri perl-list-moreutils perl-list-util perl-storable \
 			igv-reports star gmap bowtie bbmap samtools blast
-		for bin in perl samtools bcftools bedtools vcfsamplediff; do
-			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
 	}
+	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	done
 
 	# customized env setupus
 
@@ -247,10 +248,10 @@ compile::conda_tools() {
 		commander::printinfo "setup conda $n env"
 		conda create -y -n $n #python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java readline=6
-		for bin in perl samtools bcftools bedtools vcfsamplediff; do
-			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
 	}
+	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	done
 
 	tool=snpeff
 	n=${tool/=*/}
@@ -261,10 +262,10 @@ compile::conda_tools() {
 		commander::printinfo "setup conda $n env"
 		conda create -y -n $n #python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
-		for bin in perl samtools bcftools bedtools vcfsamplediff; do
-			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
 	}
+	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	done
 
 	tool=platypus-variant
 	n=platypus
@@ -274,10 +275,10 @@ compile::conda_tools() {
 		commander::printinfo "setup conda $n env"
 		conda create -y -n $n #python=2
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
-		for bin in perl samtools bcftools bedtools vcfsamplediff; do
-			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
 	}
+	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	done
 
 	# this is a pipeline itself with own genome and databases and thus will not be part of bashbone
 	# commander::printinfo "setup conda fusion-catcher env"
