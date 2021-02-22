@@ -399,8 +399,8 @@ alignment::bwa() {
 		o1="$outdir/$o1"
 		o2="$outdir/$o2"
 
-		helper::makecatcmd -c catcmd -f ${_fq1_bwa[$i]}
-		readlength=$($catcmd $f | head -800 | awk 'NR%4==2{l+=length($0)}END{printf("%d",l/(NR/4))}')
+		helper::makecatcmd -c catcmd -f "${_fq1_bwa[$i]}"
+		readlength=$($catcmd "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%d",l/(NR/4))}')
 
 		if $forcemem || [[ $readlength -gt 70 ]]; then
 			# minOUTscore:30 @ MM/indelpenalty:4/6 -> (100-30)/4=~17% errors -> increase minOUTscore
@@ -415,9 +415,9 @@ alignment::bwa() {
 						-a
 						-t $threads
 						"$idxprefix"
-						${_fq1_bwa[$i]} ${_fq2_bwa[$i]}
+						"${_fq1_bwa[$i]}" "${_fq2_bwa[$i]}"
 				CMD
-					samtools view -@ $threads -b > $o1.bam
+					samtools view -@ $threads -b > "$o1.bam"
 				CMD
 			else
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -427,9 +427,9 @@ alignment::bwa() {
 						-a
 						-t $threads
 						"$idxprefix"
-						${_fq1_bwa[$i]}
+						"${_fq1_bwa[$i]}"
 				CMD
-					samtools view -@ $threads -b > $o1.bam
+					samtools view -@ $threads -b > "$o1.bam"
 				CMD
 			fi
 		else
@@ -438,40 +438,40 @@ alignment::bwa() {
 					bwa	aln
 						-t $threads
 						"$idxprefix"
-						${_fq1_bwa[$i]}
-					> $o1.sai
+						"${_fq1_bwa[$i]}"
+					> "$o1.sai"
 				CMD
 					bwa	aln
 						-t $threads
 						"$idxprefix"
-						${_fq2_bwa[$i]}
-					> $o2.sai
+						"${_fq2_bwa[$i]}"
+					> "$o2.sai"
 				CMD
 				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bwa sampe
 						-r '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
 						"$idxprefix"
-						$o1.sai $o2.sai
-						${fastq1[$i]} ${fastq2[$i]}
+						"$o1.sai" "$o2.sai"
+						"${fastq1[$i]}" "${fastq2[$i]}"
 				CMD
-					samtools view -@ $ithreads -b > $o1.bam
+					samtools view -@ $ithreads -b > "$o1.bam"
 				CMD
 			else
 				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
 					bwa	aln
 						-t $threads
 						"$idxprefix"
-						${_fq1_bwa[$i]}
-					> $o1.sai
+						"${_fq1_bwa[$i]}"
+					> "$o1.sai"
 				CMD
 				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bwa samse
 						-r '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
 						"$idxprefix"
-						$o1.sai
-						${fastq1[$i]}
+						"$o1.sai"
+						"${fastq1[$i]}"
 				CMD
-					samtools view -@ $ithreads -b > $o1.bam
+					samtools view -@ $ithreads -b > "$o1.bam"
 				CMD
 			fi
 		fi
