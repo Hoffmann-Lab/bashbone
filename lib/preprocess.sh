@@ -177,9 +177,10 @@ preprocess::cutadapt(){
 				-j $threads
 				-m 18
 				-O 5
-				-o >(pigz -p $(((threads+1)/2)) -c > "$o1")
-				-p >(pigz -p $(((threads+1)/2)) -c > "$o2")
+				-o >(bgzip -@ $(((threads+1)/2)) -c > "$o1")
+				-p >(bgzip -@ $(((threads+1)/2)) -c > "$o2")
 				"${_fq1_cutadapt[$i]}" "${_fq2_cutadapt[$i]}"
+				| cat
 			CMD
 			_fq1_cutadapt[$i]="$o1"
 			_fq2_cutadapt[$i]="$o2"
@@ -192,8 +193,9 @@ preprocess::cutadapt(){
 				-j $threads
 				-m 18
 				-O 5
-				-o >(pigz -p $threads -c > "$o1")
+				-o >(bgzip -@ $threads -c > "$o1")
 				"${_fq1_cutadapt[$i]}"
+				| cat
 			CMD
 			_fq1_cutadapt[$i]="$o1"
 		fi
@@ -294,7 +296,7 @@ preprocess::trimmomatic() {
 	local instances ithreads jmem jgct jcgct
 	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads)
 
-	# trimmomatic bottleneck are number of used compression threads (4) - thus use pigz
+	# trimmomatic bottleneck are number of used compression threads (4)
 	declare -a cmd2 cmd3
 	local i o1 o2 e1 e2
 	for i in "${!_fq1_trimmomatic[@]}"; do
@@ -319,12 +321,13 @@ preprocess::trimmomatic() {
 				-threads $threads
 				-${phred["${_fq1_trimmomatic[$i]}"]}
 				"${_fq1_trimmomatic[$i]}" "${_fq2_trimmomatic[$i]}"
-				>(pigz -p $(((threads+1)/2)) -c > "$o1") >(pigz -p $(((threads+1)/2)) -c > "$os1")
-				>(pigz -p $(((threads+1)/2)) -c > "$o2") >(pigz -p $(((threads+1)/2)) -c > "$os2")
+				>(bgzip -@ $(((threads+1)/2)) -c > "$o1") >(bgzip -@ $(((threads+1)/2)) -c > "$os1")
+				>(bgzip -@ $(((threads+1)/2)) -c > "$o2") >(bgzip -@ $(((threads+1)/2)) -c > "$os2")
 				SLIDINGWINDOW:5:22
 				LEADING:20
 				MINLEN:18
 				TOPHRED33
+				| cat
 			CMD
 			_fq1_trimmomatic[$i]="$o1"
 			_fq2_trimmomatic[$i]="$o2"
@@ -339,11 +342,12 @@ preprocess::trimmomatic() {
 				-threads $threads
 				-${phred["${_fq1_trimmomatic[$i]}"]}
 				"${_fq1_trimmomatic[$i]}"
-				>(pigz -p $threads -c > "$o1")
+				>(bgzip -@ $threads -c > "$o1")
 				SLIDINGWINDOW:5:22
 				LEADING:20
 				MINLEN:18
 				TOPHRED33
+				| cat
 			CMD
 			_fq1_trimmomatic[$i]="$o1"
 		fi
@@ -437,8 +441,9 @@ preprocess::rcorrector(){
 					-2 "${_fq2_rcorrector[$i]}"
 					-od "${tdirs[-1]}"
 					-t $threads
-					11> >(pigz -p $(((threads+1)/2)) -c > "$o1.$e1.gz")
-					12> >(pigz -p $(((threads+1)/2)) -c > "$o2.$e2.gz")
+					11> >(bgzip -@ $(((threads+1)/2)) -c > "$o1.$e1.gz")
+					12> >(bgzip -@ $(((threads+1)/2)) -c > "$o2.$e2.gz")
+					| cat
 				CMD
 					exec 11>&-; exec 12>&-
 				CMD
@@ -454,7 +459,8 @@ preprocess::rcorrector(){
 				-s "${_fq1_rcorrector[$i]}"
 				-stdout
 				-t $threads
-				> >(pigz -p $threads -c > "$o1.$e1.gz")
+				> >(bgzip -@ $threads -c > "$o1.$e1.gz")
+				| cat
 			CMD
 			_fq1_rcorrector[$i]="$o1.$e1.gz"
 		fi
@@ -547,6 +553,9 @@ preprocess::sortmerna(){
 				awk -F '\t' -v OFS='\n' '{print $1,$3,$5,$7; print $2,$4,$6,$8}'
 			CMD
 
+			# alternative:
+			# 11> >(sed -E '/^\s*$/d' | paste - - - - | awk -F '\t' -v OFS='\n' '{if(NR%2==1){print \$1,\$2,\$3,\$4 > "/dev/fd/1"}else{print \$1,\$2,\$3,\$4 > "/dev/fd/2"}}' > >(bgzip -@ $(((threads+1)/2)) -c > "$o1") 2> >(bgzip -@ $(((threads+1)/2)) -c > "$o2"))
+			# 12> >(sed -E '/^\s*$/d' | paste - - - - | awk -F '\t' -v OFS='\n' '{if(NR%2==1){print \$1,\$2,\$3,\$4 > "/dev/fd/1"}else{print \$1,\$2,\$3,\$4 > "/dev/fd/2"}}' > >(bgzip -@ $(((threads+1)/2)) -c > "$or1") 2> >(bgzip -@ $(((threads+1)/2)) -c > "$or2"))
 			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 				exec 11>&1; exec 12>&1
 			CMD
@@ -562,29 +571,34 @@ preprocess::sortmerna(){
 				--aligned "$tmp.rRNA"
 				--other "$tmp.ok"
 				-a $threads
-				11> >(paste - - - - | awk -F '\t' -v OFS='\n' '{if(NR%2==1){print \$1,\$2,\$3,\$4 > "/dev/fd/1"}else{print \$1,\$2,\$3,\$4 > "/dev/fd/2"}}' > >(pigz -p $(((threads+1)/2)) -c > "$o1") 2> >(pigz -p $(((threads+1)/2)) -c > "$o2"))
-				12> >(paste - - - - | awk -F '\t' -v OFS='\n' '{if(NR%2==1){print \$1,\$2,\$3,\$4 > "/dev/fd/1"}else{print \$1,\$2,\$3,\$4 > "/dev/fd/2"}}' > >(pigz -p $(((threads+1)/2)) -c > "$or1") 2> >(pigz -p $(((threads+1)/2)) -c > "$or2"))
+				11> >(sed -E '/^\s*$/d' | paste - - - - | tee >(sed -n '1~2{s/\t/\n/gp}' | bgzip -@ $(((threads+1)/2)) -c > "$o1") >(sed -n '2~2{s/\t/\n/gp}' | bgzip -@ $(((threads+1)/2)) -c > "$o2") > /dev/null)
+				12> >(sed -E '/^\s*$/d' | paste - - - - | tee >(sed -n '1~2{s/\t/\n/gp}' | bgzip -@ $(((threads+1)/2)) -c > "$or1") >(sed -n '2~2{s/\t/\n/gp}' | bgzip -@ $(((threads+1)/2)) -c > "$or2") > /dev/null)
+				| cat
 			CMD
 				rm -f "$tmp.merged.$e1"; exec 11>&-; exec 12>&-
 			CMD
+			# attention: sometimes sortmerna inserts empty lines - use sed /^\s*$/d
 
 			_fq1_sortmerna[$i]="$o1"
 			_fq2_sortmerna[$i]="$o2"
 		else
-
 			helper::makecatcmd -c catcmd -f "${_fq1_sortmerna[$i]}"
 			[[ $catcmd == "cat" ]] && {
-				tmp="${_fq1_sortmerna[$i]}"
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+					ln -sfn "${_fq1_sortmerna[$i]}" "$tmp.$e1"
+				CMD
 			} || {
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 					$catcmd "${_fq1_sortmerna[$i]}" > "$tmp.$e1"
 				CMD
 			}
 
-			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-				ln -sfn /dev/fd/1 "$tmp.ok.$e1"
+			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD CMD {COMMANDER[4]}<<- CMD
+				exec 11>&1; exec 12>&1
 			CMD
-				ln -sfn /dev/fd/2 "$tmp.rRNA.$e1"
+				ln -sfn /dev/fd/11 "$tmp.ok.$e1"
+			CMD
+				ln -sfn /dev/fd/12 "$tmp.rRNA.$e1"
 			CMD
 				sortmerna
 				--ref "$sortmernaref"
@@ -593,10 +607,10 @@ preprocess::sortmerna(){
 				--aligned "$tmp.rRNA"
 				--other "$tmp.ok"
 				-a $threads
-				> >(pigz -p $threads -c > "$o1")
-				2> >(pigz -p $threads -c > "$or1")
+				11> >(sed -E '/^\s*$/d' | bgzip -@ $threads -c > "$o1")
+				12> >(sed -E '/^\s*$/d' | bgzip -@ $threads -c > "$or1")
 			CMD
-				rm -f "$tmp.$e1"
+				rm -f "$tmp.$e1"; exec 11>&-; exec 12>&-
 			CMD
 
 			_fq1_sortmerna[$i]="$o1"
