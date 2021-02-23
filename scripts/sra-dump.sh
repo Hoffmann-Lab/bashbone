@@ -114,7 +114,7 @@ resume=true
 # or use vdb-config
 # set timeout to 10 seconds
 # vdb-config -s /http/timeout/read=10000
-
+# to disable caching: /repository/user/cache-disabled = "true"
 [[ -s "$HOME/.ncbi/user-settings.mkfg" ]] && {
 	mapfile mkfg < "$HOME/.ncbi/user-settings.mkfg"
 	sed -i -nE '\@/repository/user/main/public/root\s*=.+@{H; s@(/repository/user/main/public/root\s*=\s*).+@\1"'$tmp'"@}; p; ${x; \@^$@{s@$@/repository/user/main/public/root = "'$tmp'"@p}}' "$HOME/.ncbi/user-settings.mkfg"
