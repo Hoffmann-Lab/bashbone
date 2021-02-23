@@ -31,30 +31,32 @@ usage(){
 		  - initially, information for given accession numbers will be printed to stderr
 		  - support for parallel download instances
 		  - if installed, sra-toolkit via ncbi gov resource is priorized over retrieval via ebi uk mirror
-		  - ebi uk mirror is used as fallback upon fastq-dump errors (not true for fasterq-dump)
+		  - ebi uk mirror is used as fallback upon fastq-dump errors
 
 		VERSION
-		0.1.3
+		0.1.4
 
 		REQUIREMENTS
+		Depends on chosen options
 		  - esearch (from eutilities https://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/)
-		  - fastq-dump/fasterq-dump (optional, from stra-toolkit https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/)
-		  - wget
+		  - pigz (for threads > 1) and fastq-dump/fasterq-dump (from stra-toolkit https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/)
+		  - wget or curl
 
 		SYNOPSIS
 		$(basename "$0") [OPTIONS] [GSM|SRR|SRX|SRP] [GSM|SRR|SRX|SRP] [..]
 
 		OPTIONS
-		-s        : optional, show received information for given accession numbers and exit
-		-o [file] : optional, additionally print information for given accession numbers to file
-		-d [path] : optional, download into this directory
-		-p [num]  : optional, number of maximum parallel download instances (2)
+		-s        : show received information for given accession numbers and exit
+		-o [file] : additionally print information for given accession numbers to file
+		-d [path] : download into this directory
+		-p [num]  : number of maximum parallel download instances (default: 2)
 		            HINT: use -p 1 in a second run to ensure all files were downloaded correctly
-		-n        : optional, no fallback
-		-t [path] : optional, path to temporary directory ("$PWD")
-		-e        : optional, priorize ebi uk mirror utilizing wget (may used together with -c)
-		-c        : experimental! optional, use curl instead of wget when downloading from ebi uk mirror
-		-f        : optional, switch to fasterq-dump
+		-n        : no ebi mirror fallback upon fastq-dump failure
+		-t [num]  : pigz compression threads per download (default: no pigz)
+		-m [path] : path to temporary directory (default: "$PWD")
+		-e        : priorize ebi uk mirror utilizing wget
+		-c        : experimental! priorize ebi uk mirror utilizing curl
+		-f        : experimental! switch to fasterq-dump
 		            NOTE: not yet recommended!
 		              - uncompressed output
 		              - misconfigured read deflines
@@ -70,15 +72,16 @@ usage(){
 }
 
 unset OPTIND
-while getopts o:p:t:d:sfecnh ARG; do
+while getopts o:p:m:t:d:sfecnh ARG; do
 	case $ARG in
 		o) outfile="$OPTARG";;
 		p) instances="$OPTARG";;
-		t) tmp="$OPTARG";;
+		t) threads="$OPTARG";;
+		m) tmp="$OPTARG";;
 		d) outdir="$OPTARG";;
 		f) faster=true;;
-		e) ebi=true;;
-		c) method=curl;;
+		e) ebi=true; method=wget;;
+		c) ebi=true; method=curl;;
 		s) nodownload=true;;
 		n) nofallback=true;;
 		h) (usage); exit 0;;
@@ -93,8 +96,8 @@ shift $((OPTIND-1))
 
 declare -a srr title
 instances=${instances:-2}
-threads=${threads:-2}
-tmp="$(mktemp -d -p "${tmp:-$PWD}")"
+threads=${threads:-1}
+tmp="$(mktemp -d -p "${tmp:-$PWD}" tmp.XXXXXXXXXX.sradump)"
 faster=${faster:-false}
 ebi=${ebi:-false}
 method=${method:-wget}
@@ -135,14 +138,29 @@ for i in $(seq 1 $#); do
 	}
 done
 
-fastqdump(){
+fastqdump_sngl(){
 	local id cmd="fastq-dump --split-3"
 	[[ $($cmd 2>&1 | grep -c unrecognized) -gt 0 ]] && cmd="fastq-dump --split-e"
 	for id in ${srr[@]}; do
 		# may add Not-filtered and 0-control-bits and barcode $ri[:N:0:$sg]
 		# with accession, id and if available cellid:lane:tile:x:y
-		echo "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --gzip -O '$outdir' '$id'" >&2
-		echo -ne "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --gzip -O '$outdir' '$id'\0"
+		echo "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --gzip -O '$outdir' $id" >&2
+		echo -ne "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --gzip -O '$outdir' $id\0"
+	done | xargs -0 -P $instances -I {} bash -c {} || return 1
+	return 0
+}
+
+fastqdump_mult(){
+	local id cmd="fastq-dump --split-3"
+	[[ $($cmd 2>&1 | grep -c unrecognized) -gt 0 ]] && cmd="fastq-dump --split-e"
+	for id in ${srr[@]}; do
+		if [[ $($cmd --defline-seq '@$ac.$si[.$sn] \$ri' --defline-qual '+' -X 1 --stdout "$id" 2>/dev/null | wc -l || return 1) -gt 4 ]]; then
+			echo "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --stdout '$id' | paste - - - - | tee >(sed -n '1~2{s/\\\t/\\\n/gp}' | pigz -p $(((threads+1)/2)) -c > '$outdir/${id}_1.fastq.gz') >(sed -n '2~2{s/\\\t/\\\n/gp}' | pigz -p $(((threads+1)/2)) -c > '$outdir/${id}_2.fastq.gz') > /dev/null | cat" >&2
+			echo -ne "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --stdout $id | paste - - - - | tee >(sed -n '1~2{s/\\\t/\\\n/gp}' | pigz -p $(((threads+1)/2)) -c > '$outdir/${id}_1.fastq.gz') >(sed -n '2~2{s/\\\t/\\\n/gp}' | pigz -p $(((threads+1)/2)) -c > '$outdir/${id}_2.fastq.gz') > /dev/null | cat\0"
+		else
+			echo "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --stdout $id > >(pigz -p $threads -c > '$outdir/$id.fastq.gz') | cat" >&2
+			echo -ne "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --stdout $id > >(pigz -p $threads -c > '$outdir/$id.fastq.gz') | cat\0"
+		fi
 	done | xargs -0 -P $instances -I {} bash -c {} || return 1
 	return 0
 }
@@ -200,10 +218,11 @@ $ebi || [[ $(command -v fastq-dump > /dev/null; echo $?) -gt 0 ]] && {
 # print message in awk to stderr and check if accession number is truely SRR by second awk command utilizing regex
 # second awk print SSR ids to stdout or other ID to stderr
 # finally, srr array holds SRR numbers to be re-downloaded via ftpdump
+compression=$([[ $threads -eq 1 ]] && echo sngl || echo mult)
 $nofallback && {
-	fastqdump && exit 0 || die "UNFORSEEN ERROR"
+	fastqdump_$compression && exit 0 || die "UNFORSEEN ERROR"
 } || {
-	srr=("$(fastqdump 2> >(tee /dev/fd/2 | awk -v x="$(basename "$0")" '/failed SRR[0-9]+$/{print "\nDONT WORRY! "x" WILL RETRY TO DOWNLOAD "$NF" FROM A DIFFERNT SOURCE" > "/dev/fd/2"; print $NF}') | awk '{if(/^SRR[0-9]+$/){print}else{print > "/dev/fd/2"}}')")
+	srr=("$(fastqdump_$compression 2> >(tee /dev/fd/2 | awk -v x="$(basename "$0")" '/failed SRR[0-9]+$/{print "\nDONT WORRY! "x" WILL RETRY TO DOWNLOAD "$NF" FROM A DIFFERNT SOURCE" > "/dev/fd/2"; print $NF}') | awk '{if(/^SRR[0-9]+$/){print}else{print > "/dev/fd/2"}}')")
 	resume=false
 	ftpdump_$method && exit 0 || die "UNFORSEEN ERROR"
 }
