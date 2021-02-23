@@ -42,7 +42,7 @@ genome::mkdict() {
 		commander::printinfo "checking md5 sums"
 
 		local instances ithreads jmem jgct jcgct
-		read -r instances ithreads jmem jgct jcgct < <(configure::jvm -T $threads)
+		read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads)
 		declare -a cmd1 cmd2
 
 		dict="$(mktemp -u -p "$tmpdir" cleanup.XXXXXXXXXX.dict)"
