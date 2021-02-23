@@ -255,10 +255,9 @@ variants::mutect() {
 
 	local minstances mthreads jmem jgct jcgct minstances2 mthreads2 jmem2 jgct2 jcgct2
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
-	read -r minstances2 mthreads2 jmem2 jgct2 jcgct2 < <(configure::jvm -T $threads -m 4000)
-
 	local params params2 m i o t nslice slice odir tdir ithreads instances=$((${#_mapper_mutect[@]}*${#_tidx_mutect[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
+	read -r minstances2 mthreads2 jmem2 jgct2 jcgct2 < <(configure::jvm -i $instances -T $threads)
 
 	[[ $pondb ]] && params="-pon '$pondb'"
 	[[ -s "$genome.af_only_gnomad.vcf.gz" ]] && params+=" --germline-resource '$genome.af_only_gnomad.vcf.gz'"
