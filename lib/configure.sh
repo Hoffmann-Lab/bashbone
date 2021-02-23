@@ -207,7 +207,6 @@ configure::jvm(){
 			*)	_usage
 		esac
 	done
-	[[ $instances -eq 0 ]] && instances=1
 
 	local m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
 	[[ ! $maxmemory ]] && maxmemory=$m
@@ -220,6 +219,7 @@ configure::jvm(){
 	local jmem jgct jcgct
 	local maxinstances=$((maxmemory/memory))
 	[[ $maxinstances -gt $(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) ]] && maxinstances=$(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) #+10 for better approximation
+	[[ ! $instances ]] && instances=$maxinstances
 	[[ $instances -gt $maxthreads ]] && instances=$maxthreads
 	[[ $instances -gt $maxinstances ]] && instances=$maxinstances
 
