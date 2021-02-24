@@ -233,17 +233,17 @@ commander::qsubcmd(){
 			-w             | do wait for jobs and receive a non-null exit code if a single job fails
 			-n <name>      | prefix of logs and jobs to wait for - should be unique
 			-c <env>       | run with conda
-			-l <complex>   | sge digestable list of consumables as key="value" pairs (see qconf -sc or -mc)
+			-l <complex>   | sge digestable list of consumables as key="value" pairs (see qconf -sc or qconf -mc)
 			-o <path>      | shared among machines for scripts, logs and exit codes
 			-r             | override existing logs
-			-i <instances> | number of parallel instances
+			-i <instances> | number of parallel instances (in- or decrease afterwards via qalter -tc <instances> <name>)
 			-q <queue>     | name of sge queue
 			-p <env>       | name of parallel sge environment
 			-t <threads>   | to be allocated per instance in parallel environment
 			-a <cmds>      | ALWAYS LAST OPTION
 			                 array of
 			example:
-			${FUNCNAME[1]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c segemehl -p threads -t 4 -w -o ~/logs -a cmd
+			${FUNCNAME[1]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c base -p threads -t 4 -i 2 -w -o ~/logs -a cmd
 		EOF
 		return 1
 	}
