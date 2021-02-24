@@ -523,7 +523,7 @@ variants::bcftools() {
 
 	local m=${_mapper_bcftools[0]}
 	declare -n _bams_bcftools=$m
-	[[ ! $_tidx_bcftools ]] && _tidx_bcftools=(${!_bams_bcftools[@]}) # use all indices for germline calling
+	[[ ! $_tidx_bcftools ]] && unset _tidx_bcftools && declare -a _tidx_bcftools=(${!_bams_bcftools[@]}) # use all indices for germline calling
 
 	local ithreads i memory instances=$((${#_mapper_bcftools[@]}*${#_tidx_bcftools[@]}))
 	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads) # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
@@ -771,7 +771,7 @@ variants::freebayes() {
 
 	local m=${_mapper_freebayes[0]}
 	declare -n _bams_freebayes=$m
-	[[ ! $_tidx_freebayes ]] && _tidx_freebayes=(${!_bams_freebayes[@]}) # use all indices for germline calling
+	[[ ! $_tidx_freebayes ]] && unset _tidx_freebayes && declare -a _tidx_freebayes=(${!_bams_freebayes[@]}) # use all indices for germline calling
 
 	local ithreads i memory instances=$((${#_mapper_freebayes[@]}*${#_tidx_freebayes[@]}))
 	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads) # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
@@ -991,7 +991,7 @@ variants::varscan() {
 
 	local m=${_mapper_varscan[0]}
 	declare -n _bams_varscan=$m
-	[[ ! $_tidx_varscan ]] && _tidx_varscan=(${!_bams_varscan[@]}) # use all indices for germline calling
+	[[ ! $_tidx_varscan ]] && unset _tidx_varscan && declare -a _tidx_varscan=(${!_bams_varscan[@]}) # use all indices for germline calling
 
 	local minstances mthreads jmem jgct jcgct ithreads i memory instances=$((${#_mapper_varscan[@]}*${#_tidx_varscan[@]}))
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m 2048) # good estimate for varscan
@@ -1259,7 +1259,7 @@ variants::vardict() {
 
 	local m=${_mapper_vardict[0]}
 	declare -n _bams_vardict=$m
-	[[ ! $_tidx_vardict ]] && _tidx_vardict=(${!_bams_vardict[@]}) # use all indices for germline calling
+	[[ ! $_tidx_vardict ]] && unset _tidx_vardict && declare -a _tidx_vardict=(${!_bams_vardict[@]}) # use all indices for germline calling
 
 	local minstances mthreads jmem jgct jcgct ithreads i memory1 memory2 instances=$((${#_mapper_vardict[@]}*${#_tidx_vardict[@]}))
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m 4096) # good estimate for 10k chunks
@@ -1325,6 +1325,8 @@ variants::vardict() {
 				if [[ $_nidx_vardict ]]; then # somatic
 					nf="${_bams_vardict[${_nidx_vardict[$i]}]}"
 					# prefer -fisher option (vardict skips corrupt sites) over vardict | testsomatic.R | var2vcf_paired.pl , due to R: Error in fisher.test
+					# use -X 0 to not combine snps within 3 bp window into indel or complex, which in addiation reduces the risk of StringIndexOutOfBoundsException
+					# vardict will fail upon > 10 errors per region
 					commander::makecmd -a cmd1 -s '|' -o "$slice.vcf" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
 						JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir' -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
 						vardict-java
@@ -1336,6 +1338,7 @@ variants::vardict() {
 							-th 1
 							-q 20
 							-U
+							-X 0
 							-fisher
 							-v
 							-c 1
@@ -1371,6 +1374,7 @@ variants::vardict() {
 						-th 1
 						-q 20
 						-U
+						-X 0
 						-fisher
 						-v
 						-c 1
@@ -1520,7 +1524,7 @@ variants::platypus() {
 
 	local m=${_mapper_platypus[0]}
 	declare -n _bams_platypus=$m
-	[[ ! $_tidx_platypus ]] && _tidx_platypus=(${!_bams_platypus[@]}) # use all indices for germline calling
+	[[ ! $_tidx_platypus ]] && unset _tidx_platypus && declare -a _tidx_platypus=(${!_bams_platypus[@]}) # use all indices for germline calling
 
 	local ithreads i memory instances=$((${#_mapper_platypus[@]}*${#_tidx_platypus[@]}))
 	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads) # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
