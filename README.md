@@ -53,8 +53,16 @@ Copyleft (C) 2020, Konstantin Riege
 
 # Download
 
+This will download you a copy which includes the latest developments
+
 ```bash
 git clone --recursive https://github.com/koriege/bashbone.git
+```
+
+To check out the latest release (irregularly compiled) do
+
+```bash
+cd bashbone
 git checkout $(git describe --tags)
 ```
 
@@ -65,7 +73,7 @@ Please see installation section to get all third-party tools set-upped and subse
 Load the library and list available functions. Each function comes with a usage.
 
 ```bash
-source activate.sh
+source ./activate.sh
 bashbone -h
 ```
 
