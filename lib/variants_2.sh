@@ -1262,7 +1262,7 @@ variants::vardict() {
 	[[ ! $_tidx_vardict ]] && unset _tidx_vardict && declare -a _tidx_vardict=(${!_bams_vardict[@]}) # use all indices for germline calling
 
 	local minstances mthreads jmem jgct jcgct ithreads i memory1 memory2 instances=$((${#_mapper_vardict[@]}*${#_tidx_vardict[@]}))
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m 4096) # good estimate for 10k chunks
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m 2096) # good estimate for 10k chunks
 	read -r i memory1 < <(configure::memory_by_instances -i $((minstances*instances)) -T $threads) # for bcftools sort of initial vcf slices
 	read -r i memory2 < <(configure::memory_by_instances -i $((instances*4)) -T $threads) # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
@@ -1473,6 +1473,243 @@ variants::vardict() {
 		commander::runcmd -v -b -t $threads -a cmd5
 		commander::runcmd -v -b -t $threads -a cmd6
 		commander::runcmd -v -b -t $instances -a cmd7
+	fi
+
+	return 0
+}
+
+variants::vardict_threads() {
+	# may be used as fallback for low memory systems < 40gb or to reduce disk i/o
+	# use one region file and multiple threads on it
+	# -> something limits parallelization to ~14 threads. chunks may not be the reason: tested with up to 100k
+	# memory footprint raises with multiple threads
+	declare -a tdirs
+	_cleanup::variants::vardict(){
+		rm -rf "${tdirs[@]}"
+	}
+
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip>  | true/false return
+			-s <softskip>  | true/false only print commands
+			-t <threads>   | number of
+			-g <genome>    | path to
+			-d <dbsnp>     | path to
+			-r <mapper>    | array of sorted, indexed bams within array of
+			-1 <normalidx> | array of (for somatic calling. requieres -2)
+			-2 <tumoridx>  | array of
+			-p <tmpdir>    | path to
+			-o <outdir>    | path to
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads genome dbsnp tmpdir outdir
+	declare -n _mapper_vardict _nidx_vardict _tidx_vardict
+	while getopts 'S:s:t:g:d:m:r:1:2:c:p:o:' arg; do
+		case $arg in
+			S) $OPTARG && return 0;;
+			s) $OPTARG && skip=true;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			g) ((++mandatory)); genome="$OPTARG";;
+			d) dbsnp="$OPTARG";;
+			r) ((++mandatory)); _mapper_vardict=$OPTARG;;
+			1) _nidx_vardict=$OPTARG;;
+			2) _tidx_vardict=$OPTARG;;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*) _usage;;
+		esac
+	done
+	[[ $mandatory -lt 5 ]] && _usage
+
+	commander::printinfo "calling variants vardict"
+
+	local m=${_mapper_vardict[0]}
+	declare -n _bams_vardict=$m
+	[[ ! $_tidx_vardict ]] && unset _tidx_vardict && declare -a _tidx_vardict=(${!_bams_vardict[@]}) # use all indices for germline calling
+
+	local minstances mthreads jmem jgct jcgct ithreads i memory1 memory2 instances=$((${#_mapper_vardict[@]}*${#_tidx_vardict[@]}))
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads -m 4096) # good estimate for 10k chunks unless -i 1 is used
+	read -r i memory1 < <(configure::memory_by_instances -i $instances -T $threads) # for bcftools sort of initial vcf slices
+	read -r i memory2 < <(configure::memory_by_instances -i $((instances*4)) -T $threads) # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
+
+	tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
+	declare -a cmd1slice
+	commander::makecmd -a cmd1slice -s ' ' -o "${tdirs[0]}/regions.bed" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+		perl -M'List::Util qw(max)' -lane '
+			$i=0;
+			for (map {$_*10000} 1..($F[1]-1)/10000){
+				$i=$_;
+				print join"\t",($F[0],max(0,$_-10000-100),$_-1);
+			}
+			print join"\t",($F[0],$i-100,$F[1]-1) if $i<$F[1]-1;
+		'
+	CMD
+		"$genome.fai"
+	CMD
+
+	if $skip; then
+		commander::printcmd -a cmd1slice
+	else
+		commander::runcmd -v -b -t $threads -a cmd1slice
+	fi
+
+	local m i f nf o t e odir tdir
+	declare -a cmd1 cmd2 cmd3 cmd4 cmd5 cmd6
+	for m in "${_mapper_vardict[@]}"; do
+		declare -n _bams_vardict=$m
+		tdir="$tmpdir/$m"
+		odir="$outdir/$m/vardict"
+		mkdir -p "$odir" "$tdir"
+
+		for i in "${!_tidx_vardict[@]}"; do
+			f="${_bams_vardict[${_tidx_vardict[$i]}]}"
+			o="$(basename "$f")"
+			t="$tdir/${o%.*}"
+			o="$odir/${o%.*}"
+			tomerge=()
+
+			if [[ $_nidx_vardict ]]; then # somatic
+				nf="${_bams_vardict[${_nidx_vardict[$i]}]}"
+				# prefer -fisher option (vardict skips corrupt sites) over vardict | testsomatic.R | var2vcf_paired.pl , due to R: Error in fisher.test
+				# use -X 0 to not combine snps within 3 bp window into indel or complex, which in addiation reduces the risk of StringIndexOutOfBoundsException
+				# vardict will fail upon > 10 errors per region
+				commander::makecmd -a cmd1 -s '|' -o "$t.toreheader" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
+					JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir' -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
+					vardict-java
+						-G $genome
+						-f 0.1
+						-V 0.05
+						-F 0x200
+						-N TUMOR
+						-th $threads
+						-q 20
+						-U
+						-X 0
+						-fisher
+						-v
+						-c 1
+						-S 2
+						-E 3
+						-b "$f|$nf"
+						"${tdirs[0]}/regions.bed"
+				CMD
+					var2vcf_paired.pl
+						-q 20
+						-Q 0
+						-d 10
+						-v 3
+						-F 0.3
+						-f 0.1
+						-M
+						-A
+						-N "TUMOR|NORMAL"
+				CMD
+					awk -v OFS='\t' '{if(/^#CHROM/){s=1}; if(s){t=$11; $11=$10; $10=t}; print}'
+				CMD
+				#	grep -E '(^#|STATUS=[^;]*[sS]omatic)' > "$slice.vcf"
+				#CMD # do not hard filter here. vcfix.pl adds vcfix_somatic FILTER tag if STATUS=[^;]*[sS]omatic
+			else
+				# prefer -fisher option (vardict skips corrupt sites) over vardict | teststrandbias.R | var2vcf_valid.pl , due to R: Error in fisher.test
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir' -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
+					vardict-java
+					-G $genome
+					-f 0.1
+					-F 0x200
+					-N SAMPLE
+					-th $threads
+					-q 20
+					-U
+					-X 0
+					-fisher
+					-v
+					-c 1
+					-S 2
+					-E 3
+					-b "$f"
+					"${tdirs[0]}/regions.bed"
+				CMD
+					var2vcf_valid.pl
+						-q 20
+						-Q 0
+						-d 10
+						-v 2
+						-F 0.3
+						-f 0.1
+						-A
+						-E
+						-N SAMPLE
+					> "$t.toreheader"
+				CMD
+			fi
+			# -A print all variants at the same site. otherwise reported one is chosen by MAF.
+			# note: this does not always mean multiple alleles per se (like bcftools norm), but sometimes duplicons with slightly differnt format and info fields
+
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
+			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				bcftools reheader -f "$genome.fai" -o "$t.vcf" "$t.toreheader"
+			CMD
+				bcftools sort -T "${tdirs[-1]}" -m ${memory1}M -o "$o.vcf" "$t.vcf"
+			CMD
+
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+				vcfix.pl -i "$o.vcf" > "$o.fixed.vcf"
+			CMD
+
+			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				bcftools norm -f "$genome" -c s -m-both "$o.fixed.vcf"
+			CMD
+				vcfix.pl -i - > "$o.fixed.nomulti.vcf"
+			CMD
+
+			if [[ $dbsnp ]]; then
+				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					vcffixup "$o.fixed.nomulti.vcf"
+				CMD
+					vt normalize -q -n -r "$genome" -
+				CMD
+					vcfixuniq.pl
+				CMD
+					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$o.fixed.nomulti.normed.vcf"
+				CMD
+			else
+				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					vcffixup "$o.fixed.nomulti.vcf"
+				CMD
+					vt normalize -q -n -r "$genome" -
+				CMD
+					vcfixuniq.pl > "$o.fixed.nomulti.normed.vcf"
+				CMD
+			fi
+
+			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
+				commander::makecmd -a cmd6 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
+				CMD
+					tabix -f -p vcf "$o.$e.gz"
+				CMD
+			done
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+		commander::printcmd -a cmd4
+		commander::printcmd -a cmd5
+		commander::printcmd -a cmd6
+	else
+		commander::runcmd -c vardict -v -b -t 1 -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -v -b -t $threads -a cmd5
+		commander::runcmd -v -b -t $instances -a cmd6
 	fi
 
 	return 0
