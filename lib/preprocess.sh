@@ -593,7 +593,7 @@ preprocess::sortmerna(){
 				CMD
 			}
 
-			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD CMD {COMMANDER[4]}<<- CMD
+			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 				exec 11>&1; exec 12>&1
 			CMD
 				ln -sfn /dev/fd/11 "$tmp.ok.$e1"
@@ -609,6 +609,7 @@ preprocess::sortmerna(){
 				-a $threads
 				11> >(sed -E '/^\s*$/d' | bgzip -@ $threads -c > "$o1")
 				12> >(sed -E '/^\s*$/d' | bgzip -@ $threads -c > "$or1")
+				| cat
 			CMD
 				rm -f "$tmp.$e1"; exec 11>&-; exec 12>&-
 			CMD
