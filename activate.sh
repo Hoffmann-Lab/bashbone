@@ -101,10 +101,10 @@ trap 'declare -F _cleanup::${FUNCNAME[0]} &> /dev/null && _cleanup::${FUNCNAME[0
 if [[ $- =~ i ]]; then
 	# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte and other functions
 	# although errtrace ignores errors upon 'while until for if || &&' in interactive shell it still triggers ERR trap on function definition line i.e. at LINENO==0 where error occured
-	trap 'e=$?; if [[ $e -ne 141 && $e -ne 111 ]]; then if [[ $LINENO -gt 0 && ${FUNCNAME[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; return $e; else unset BASHBONE_TRAPPED; fi; fi' ERR
+	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ $LINENO -gt 0 && ${FUNCNAME[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; return $e; else unset BASHBONE_TRAPPED; fi; fi' ERR
 else
-	# xargs creates funcname main for executing script
-	trap 'e=$?; if [[ $e -ne 141 && $e -ne 111 ]]; then if [[ ${FUNCNAME[0]} && "${FUNCNAME[0]}" != "main" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; return $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "${BASH_SOURCE[0]}" -w "$BASHBONE_WORKDIR"; exit $e; fi; fi' ERR
+	# xargs creates funcname main for executing script. to prevent xargs in commander to continue despite of an error, set exit code to 255 so that xargs will stop immediately
+	trap 'e=$?; if [[ $e -ne 141 ]]; then e=255; if [[ ${FUNCNAME[0]} && "${FUNCNAME[0]}" != "main" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; return $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "${BASH_SOURCE[0]}" -w "$BASHBONE_WORKDIR"; exit $e; fi; fi' ERR
 fi
 trap 'BASHBONE_ERROR="killed"' INT TERM
 
