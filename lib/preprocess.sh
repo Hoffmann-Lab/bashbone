@@ -487,7 +487,6 @@ preprocess::sortmerna(){
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
-			-m <memory>   | amount of
 			-i <insdir>   | base path to
 			-o <outdir>   | path to
 			-p <tmpdir>   | path to
@@ -497,14 +496,13 @@ preprocess::sortmerna(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory outdir tmpdir
+	local OPTIND arg mandatory skip=false threads outdir tmpdir
 	declare -n _fq1_sortmerna _fq2_sortmerna
-	while getopts 'S:s:t:m:i:o:p:1:2:' arg; do
+	while getopts 'S:s:t:i:o:p:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
-			m) ((++mandatory)); memory=$OPTARG;;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_sortmerna=$OPTARG;;
@@ -512,12 +510,9 @@ preprocess::sortmerna(){
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "filtering rRNA fragments"
-
-	local instances ithreads
-	read -r instances ithreads < <(configure::instances_by_memory -T $threads -m $memory)
 
 	local insdir=$(dirname $(dirname $(which sortmerna)))
 	local sortmernaref=$(for i in $insdir/rRNA_databases/*.fasta; do echo $i,$insdir/index/$(basename $i .fasta)-L18; done | xargs -echo | sed 's/ /:/g')
