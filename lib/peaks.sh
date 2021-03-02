@@ -88,6 +88,7 @@ peaks::macs(){
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
 			-m <memory>     | amount of
+			-M <maxmemory>  | amount of
 			-f <size>       | assumed mean fragment
 			-g <genome>     | path to
 			-q <ripseq>     | true/false
@@ -104,14 +105,15 @@ peaks::macs(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false ripseq=false genome threads memory fragmentsize outdir tmpdir strict=false
+	local OPTIND arg mandatory skip=false skipmd5=false ripseq=false genome threads memory maxmemory fragmentsize outdir tmpdir strict=false
 	declare -n _mapper_macs _macs _nidx_macs _nridx_macs _tidx_macs _ridx_macs _pidx_macs
-	while getopts 'S:s:t:m:g:f:q:r:a:b:i:j:k:o:p:z:' arg; do
+	while getopts 'S:s:t:m:M:g:f:q:r:a:b:i:j:k:o:p:z:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			r)	((++mandatory)); _mapper_macs=$OPTARG;;
 			f)	((++mandatory)); fragmentsize=$OPTARG;;
@@ -155,9 +157,9 @@ peaks::macs(){
 	local instances ithreads
 	if [[ $buffer -lt 100000 ]]; then
 		params+=" --buffer-size $buffer"
-		read -r instances ithreads < <(configure::instances_by_memory -T $threads -m $memory)
+		read -r instances ithreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
 	else
-		read -r instances ithreads < <(configure::instances_by_memory -T $threads -m $(( (numchr*buffer*mult)/1024/1024 )))
+		read -r instances ithreads < <(configure::instances_by_memory -T $threads -m $(( (numchr*buffer*mult)/1024/1024 )) -M "$maxmemory")
 	fi
 
 	if $strict; then
@@ -323,6 +325,8 @@ peaks::gem(){
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
+			-m <memory>     | amount of
+			-M <maxmemory>  | amount of
 			-g <genome>     | path to
 			-f <gtf>        | path to
 			-q <ripseq>     | true/false
@@ -341,14 +345,15 @@ peaks::gem(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false ripseq=false threads memory genome gtf outdir tmpdir strict=false
+	local OPTIND arg mandatory skip=false skipmd5=false ripseq=false threads memory maxmemory genome gtf outdir tmpdir strict=false
 	declare -n _mapper_gem _strandness_gem _gem _nidx_gem _nridx_gem _tidx_gem _ridx_gem _pidx_gem
-	while getopts 'S:s:t:m:g:f:q:r:x:a:b:i:j:k:o:p:z:' arg; do
+	while getopts 'S:s:t:m:M:g:f:q:r:x:a:b:i:j:k:o:p:z:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			f)	((++mandatory)); gtf="$OPTARG";;
 			r)	((++mandatory)); _mapper_gem=$OPTARG;;
@@ -376,7 +381,7 @@ peaks::gem(){
 	commander::printinfo "preparing genome"
 
 	local minstances mthreads jmem jgct jcgct instances=$(( ${#_nidx_gem[@]} * ${#_mapper_gem[@]} ))
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i $instances -T $threads -m $memory)
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i $instances -T $threads -m $memory -M "$maxmemory")
 
 	declare -n _bams_gem=${_mapper_gem[0]}
 	local params='' params2='' nf="${_bams_gem[${_nidx_gem[0]}]}"
@@ -625,7 +630,7 @@ peaks::peakachu() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false genome threads memory fragmentsize outdir
+	local OPTIND arg mandatory skip=false skipmd5=false genome threads fragmentsize outdir
 	declare -n _mapper_peakachu _peakachu _nidx_peakachu _nridx_peakachu _tidx_peakachu _ridx_peakachu _pidx_peakachu
 	while getopts 'S:s:t:f:r:a:b:i:j:k:o:' arg; do
 		case $arg in
@@ -779,7 +784,7 @@ peaks::m6aviewer() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false genome threads memory fragmentsize outdir
+	local OPTIND arg mandatory skip=false skipmd5=false genome threads fragmentsize outdir
 	declare -n _mapper_m6aviewer _m6aviewer _nidx_m6aviewer _nridx_m6aviewer _tidx_m6aviewer _ridx_m6aviewer _pidx_m6aviewer
 	while getopts 'S:s:t:f:r:a:b:i:j:k:o:' arg; do
 		case $arg in
