@@ -50,7 +50,7 @@ expression::diego(){
 		esac
 	done
 	[[ $mandatory -lt 6 ]] && _usage
-	$exonmode && [[ ! $_strandness_diego ]] && _usage
+	$exonmode && [[ ${#_strandness_diego[@]} -eq 0 ]] && _usage
 	$exonmode && [[ ! $countsdir ]] && _usage
 
 	commander::printinfo "differential splice junction analyses"
