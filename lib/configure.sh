@@ -131,8 +131,13 @@ configure::memory_by_instances(){
 	done
 	[[ $mandatory -lt 1 ]] && _usage
 
-	local m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
-	[[ ! $maxmemory ]] && maxmemory=$m
+
+	local m
+	if [[ ! $maxmemory ]]; then
+		m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+		maxmemory=$m
+	fi
+	m=$(grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
 	local t=$(grep -cF processor /proc/cpuinfo)
 	[[ ! $maxthreads ]] && maxthreads=$t
@@ -167,8 +172,12 @@ configure::instances_by_memory(){
 	done
 	[[ $mandatory -lt 1 ]] && _usage
 
-	local m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
-	[[ ! $maxmemory ]] && maxmemory=$m
+	local m
+	if [[ ! $maxmemory ]]; then
+		m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+		maxmemory=$m
+	fi
+	m=$(grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
 	local t=$(grep -cF processor /proc/cpuinfo)
 	[[ ! $maxthreads ]] && maxthreads=$t
@@ -208,8 +217,12 @@ configure::jvm(){
 		esac
 	done
 
-	local m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
-	[[ ! $maxmemory ]] && maxmemory=$m
+	local m
+	if [[ ! $maxmemory ]]; then
+		m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+		maxmemory=$m
+	fi
+	m=$(grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
 	local t=$(grep -cF processor /proc/cpuinfo)
 	[[ ! $maxthreads ]] && maxthreads=$t
