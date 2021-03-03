@@ -118,6 +118,7 @@ bashbone(){
 
 			Usage:
 			-h | help
+			-r | readme
 			-c | activate conda if installed
 			-s | stop conda if activated
 			-u | list scripts for users
@@ -132,9 +133,10 @@ bashbone(){
 	}
 
 	local OPTIND arg
-	while getopts 'hcsuvledax' arg; do
+	while getopts 'hrcsuvledax' arg; do
 		case $arg in
 		h)	_usage; return 0;;
+		r)	mdless -P $BASHBONE_DIR/README.md | less; return 0;;
 		c)	source $BASHBONE_TOOLSDIR/conda/bin/activate base &> /dev/null;	commander::printinfo "utilizing $(conda --version)"; return 0;;
 		s)	while [[ -n $CONDA_PREFIX ]]; do conda deactivate &> /dev/null; done; return 0;;
 		u)	find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n"; find "$BASHBONE_DIR/scripts/" -type f -name "*.pl" -printf "%f\n" -o -name "*.sh" -printf "%f\n" | rev | sort | rev; return 0;;
