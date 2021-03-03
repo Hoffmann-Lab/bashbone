@@ -50,6 +50,7 @@ compile::all(){
 	compile::newicktopdf -i "$insdir" -t $threads
 	compile::ssgsea -i "$insdir" -t $threads
 	compile::bgztail -i "$insdir" -t $threads
+	compile::mdless -i "$insdir" -t $threads
 
 	return 0
 }
@@ -607,6 +608,25 @@ compile::bgztail() {
 	chmod 755 bin/bgztail
 	mkdir -p $insdir/latest
 	ln -sfn $PWD/bin $insdir/latest/bgztail
+
+	return 0
+}
+
+compile::mdless() {
+	local insdir threads url
+
+	commander::printinfo "installing mdless"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+
+	url='https://github.com/'$(curl -s https://github.com/ttscoff/mdless/releases | grep -oE 'ttscoff/mdless/\S+\/[0-9\.]+\.tar\.gz' | sort -Vr | head -1)
+	wget -q $url -O $insdir/mdless.tar.gz
+	tar -xzf $insdir/mdless.tar.gz -C $insdir
+	rm $insdir/mdless.tar.gz
+	cd $(ls -dv $insdir/mdless-*/bin | tail -1)
+	sed -i 's@require@$LOAD_PATH.unshift File.expand_path("../../lib", __FILE__)\nrequire@' mdless
+	mkdir -p $insdir/latest
+	ln -sfn $PWD $insdir/latest/mdless
 
 	return 0
 }
