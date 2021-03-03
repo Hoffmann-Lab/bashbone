@@ -41,7 +41,7 @@ my %header = (
     ASF => '##FORMAT=<ID=ASF,Number=1,Type=Float,Description="Alt strand specific reads fraction: min(fwd,rev)/max(fwd/rev)">',
     RSF => '##FORMAT=<ID=RSF,Number=1,Type=Float,Description="Ref strand specific reads fraction: min(fwd,rev)/max(fwd/rev)">',
     vcfix_germlinerisk => '##FILTER=<ID=vcfix_germlinerisk,Description="if paired vcf, not marked as vcfix_somatic and vcfsamplediff reported germline">',
-    vcfix_strandbias => '##FILTER=<ID=vcfix_strandbias,Description="ASF < 0.3">',
+    vcfix_strandbias => '##FILTER=<ID=vcfix_strandbias,Description="ASF < 0.2">',
     vcfix_lowcov => '##FILTER=<ID=vcfix_lowcov,Description="COV < 10">',
     vcfix_lowqual => '##FILTER=<ID=vcfix_lowqual,Description="QUAL < 5">',
     vcfix_somatic => '##FILTER=<ID=vcfix_somatic,Description="if paired vcf, site is somatic according to the caller or vcfix QUAL and MAF fraction filter">',
@@ -403,10 +403,9 @@ my $germline;
                     }
                 }
                 if($germline || $s > $normals){
-                    $filter{"vcfix_strandbias"}=1 if $asf < 0.3;
+                    $filter{"vcfix_strandbias"}=1 if $asf < 0.2;
+					$filter{"vcfix_lowcov"}=1 if $cov < 10;
                 }
-                $filter{"vcfix_lowcov"}=1 if $cov < 10;
-
 
                 $l[$s] = join ':' , @v;
             }
@@ -437,7 +436,7 @@ my $germline;
             $filter{"vcfix_somatic"}=1 if $somatic;
 
             $filter{$_}=1 for split/;/,$l[6];
-            delete $filter{"."}; # vcfix_dp4bias
+            delete $filter{"."};
             my @filter = sort {$a cmp $b} keys %filter;
 
             $l[6] = join";",@filter;
