@@ -9,6 +9,7 @@ bisulfite::mspicut() {
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-d <length>   | maximum of diversity adapters
+			-c <number>   | bases to clip from R2 start (default: 2)
 			-o <outdir>   | path to
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
@@ -16,14 +17,15 @@ bisulfite::mspicut() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir diversity=0
+	local OPTIND arg mandatory skip=false threads outdir diversity=0 clip=2
 	declare -n _fq1_mspicut _fq2_mspicut
-	while getopts 'S:s:t:d:o:1:2:' arg; do
+	while getopts 'S:s:t:d:c:o:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
 			d) diversity=$OPTARG;;
+			c) clip=$OPTARG;;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			1) ((++mandatory)); _fq1_mspicut=$OPTARG;;
 			2) _fq2_mspicut=$OPTARG;;
@@ -56,7 +58,9 @@ bisulfite::mspicut() {
 				-j "${_fq2_mspicut[$i]}"
 				-o "$o1"
 				-p "$o2"
+				-c $clip
 			CMD
+			# do not clip off 2 nt from R2 starts, it will be done by cutadapt in case of nomspi=true (required for multi enzyme digestion)
 			_fq1_mspicut[$i]="$o1"
 			_fq2_mspicut[$i]="$o2"
 		else
