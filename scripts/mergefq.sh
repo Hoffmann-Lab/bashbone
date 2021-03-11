@@ -4,10 +4,10 @@
 usage(){
 cat <<- EOF
 	DESCRIPTION
-	$(basename $0) merges or unmerges paired fastq(.gz|.bz2) files
+	$(basename $0) merges and sorts by read name or unmerges paired fastq(.gz|.bz2) files
 
 	VERSION
-	0.1.0
+	0.1.1
 
 	SYNOPSIS MERGE
 	$(basename $0) -[tmd] <value> -i <fastq1> -j <fastq2> -o <fastq>
@@ -45,9 +45,9 @@ t=$(cat /proc/cpuinfo | grep -cF processor 2> /dev/null || echo 1)
 m=$(grep -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.8/1024)}' 2> /dev/null || echo "2G")
 while getopts i:j:o:u:d:t:m:zh ARG; do
 	case $ARG in
-		i) i="$OPTARG";;
-		j) j="$OPTARG";;
-		o) o="$OPTARG";;
+		i) i="$OPTARG"; readlink -e "$i" &> /dev/null || { echo "error. can not find $i" >&2; exit 1; };;
+		j) j="$OPTARG"; readlink -e "$j" &> /dev/null || { echo "error. can not find $j" >&2; exit 1; };;
+		o) o="$OPTARG"; mkdir -p "$(dirname "$o")" || { echo "error. can write to $o" >&2; exit 1; };;
 		u) u=$OPTARG;;
 		d) d="$OPTARG";;
 		t) t=$OPTARG;;
@@ -63,7 +63,7 @@ if [[ $# -eq 0 ]] || [[ $h ]] || [[ ! $i ]] || [[ ! $o ]] || [[ $u -gt 2 ]]; the
 fi
 
 if [[ $z ]]; then
-	[[ $(which pigz 2> /dev/null) ]] && z="pigz -k -c -p $t" || z="gzip -k -c"
+	pigz -h &> /dev/null && z="pigz -k -c -p $t" || z="gzip -k -c"
 else
 	z='cat'
 fi
@@ -72,12 +72,13 @@ open=$(readlink -e "$i" | file -f - | grep -Eo '(gzip|bzip)' && echo -cd || echo
 
 if [[ $u -gt 0 ]]; then
 	if [[ $u -eq 2 ]]; then
-		exec $open "$i" | sed -E '/^\s*$/d' | paste - - - - | sed -n '2~2p' | tr '\t' '\n' | $z > "$o"
+		$open "$i" | sed -E '/^\s*$/d' | paste - - - - | sed -n '2~2p' | tr '\t' '\n' | $z > "$o"
 	else
-		exec $open "$i" | sed -E '/^\s*$/d' | paste - - - - | sed -n '1~2p' | tr '\t' '\n' | $z > "$o"
+		$open "$i" | sed -E '/^\s*$/d' | paste - - - - | sed -n '1~2p' | tr '\t' '\n' | $z > "$o"
 	fi
 else
-	exec $open "$i" "$j" | sed -E '/^\s*$/d' | paste - - - - | LC_ALL=C sort -k1,1 -S $m -T "$d" --parallel=$t | tr '\t' '\n' | $z > "$o"
+	#paste <($open "$i") <($open "$j") | paste - - - - - - - - | awk -F '\t' -v OFS='\n' '{print $1,$3,$5,$7; print $2,$4,$6,$8}' | $z > "$o"
+	$open "$i" "$j" | sed -E '/^\s*$/d' | paste - - - - | LC_ALL=C sort -k1,1 -S $m -T "$d" --parallel=$t | tr '\t' '\n' | $z > "$o"
 fi
 
-exit 0
+exit $((${PIPESTATUS[@]/%/+}0))

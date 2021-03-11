@@ -195,7 +195,7 @@ commander::runcmd(){
 				else
 					for i in "${!_cmds_runcmd[@]}"; do
 						sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
-						# echo "#!/usr/bin/env bash" > "$sh"
+						echo "#!/usr/bin/env bash" > "$sh"
 						# echo "set -o pipefail" >> "$sh"
 						# echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh"
 						# [[ $cenv ]] && echo "source $CONDA_PREFIX/bin/activate $cenv" >> "$sh"
@@ -233,38 +233,40 @@ commander::qsubcmd(){
 			-w             | do wait for jobs and receive a non-null exit code if a single job fails
 			-n <name>      | prefix of logs and jobs to wait for - should be unique
 			-c <env>       | run with conda
-			-l <complex>   | sge digestable list of consumables as key="value" pairs (see qconf -sc or -mc)
+			-l <complex>   | sge digestable list of consumables as key="value" pairs (see qconf -sc or qconf -mc)
 			-o <path>      | shared among machines for scripts, logs and exit codes
 			-r             | override existing logs
-			-i <instances> | number of parallel instances
-			-t <threads>   | to be allocated per instance
+			-i <instances> | number of parallel instances (in- or decrease afterwards via qalter -tc <instances> <name>)
+			-q <queue>     | name of sge queue
 			-p <env>       | name of parallel sge environment
+			-t <threads>   | to be allocated per instance in parallel environment
 			-a <cmds>      | ALWAYS LAST OPTION
 			                 array of
 			example:
-			${FUNCNAME[1]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c segemehl -p threads -t 4 -w -o ~/logs -a cmd
+			${FUNCNAME[1]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c base -p threads -t 4 -i 2 -w -o ~/logs -a cmd
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv logdir complex
+	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv queue logdir complex params
 	declare -n _cmds_qsubcmd # be very careful with circular name reference
 	declare -a mapdata complexes
-	while getopts 'vbwrt:i:o:l:p:c:n:a:' arg; do
+	while getopts 'vbwrt:i:o:l:p:q:c:n:a:' arg; do
 		case $arg in
 			v)	verbose=true;;
 			b)	benchmark=true;;
 			w)	dowait="y";;
 			r)	override=true;;
 			c)	cenv=$OPTARG;;
-			t)	((++mandatory)); threads=$OPTARG;;
+			t)	threads=$OPTARG;;
 			i)	instances=$OPTARG;;
 			o)	((++mandatory)); logdir="$OPTARG"; mkdir -p "$logdir";;
 			l)	complexes+=("-l $OPTARG");;
 			p)	((++mandatory)); penv="-pe $OPTARG";;
+			q)	((++mandatory)); queue="-q $OPTARG";;
 			n)	jobname="$OPTARG";;
 			a)	_cmds_qsubcmd=$OPTARG
-				[[ $mandatory -lt 3 ]] && _usage
+				[[ $mandatory -lt 2 ]] && _usage
 				[[ $_cmds_qsubcmd ]] || return 0
 
 				$verbose && {
@@ -272,7 +274,7 @@ commander::qsubcmd(){
 					commander::printcmd -a _cmds_qsubcmd
 				}
 
-				[[ $penv ]] && penv+=" $threads"
+				[[ $penv ]] && params="$penv $threads" || params="$queue"
 				[[ $jobname ]] || jobname=$(mktemp -u -p "$logdir" XXXXXXXXXX)
 				local ex="$logdir/exitcodes.$jobname"
 				local log="$logdir/job.$jobname.\$TASK_ID.log" # not SGE_TASK_ID
@@ -281,138 +283,34 @@ commander::qsubcmd(){
 				for i in "${!_cmds_qsubcmd[@]}"; do
 					id=$((i+1))
 					if $override; then
-						rm -f "$logdir/job.$jobname.$id.log"
+						rm -f "$logdir/job.$jobname.$id.log" "$ex"
 					fi
 					sh="$logdir/job.$jobname.$id.sh"
-					echo "#!/usr/bin/env bash" > "$sh"
-					#echo "set -o pipefail" >> "$sh"
-					#echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then echo \"$jobname.$id exited with exit code \$e\" >> \"$ex\"; exit \$e; fi' ERR" >> "$sh"
-					#[[ $cenv ]] && echo "source $CONDA_PREFIX/bin/activate $cenv" >> "$sh"
+					cat <<- EOF > "$sh"
+						#!/usr/bin/env bash
+						exit::$jobname.$id(){
+							echo "$jobname.$id exited with exit code \$1" >> "$ex"
+						}
+					EOF
 					if [[ $cenv ]]; then
-						echo "source '$BASHBONE_DIR/activate.sh' -c true" >> "$sh"
+						echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id" >> "$sh"
 						echo "conda activate $cenv" >> "$sh"
 					else
-						echo "source '$BASHBONE_DIR/activate.sh' -c false" >> "$sh"
+						echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id" >> "$sh"
 					fi
 					printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
-					echo "echo '$jobname.$id exited with exit code 0' >> '$ex'" >> "$sh"
-					echo "exit 0" >> "$sh"
 					chmod 755 "$sh"
 				done
 
 				[[ $instances ]] || instances=$id
 				if $benchmark; then
 					TIMEFORMAT=':BENCHMARK: runtime %3lR [hours][minutes]seconds' # different to /usr/bin/time, bash builtin time can handle: time echo "sleep 2" | bash
-					time echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $penv ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -E '/exited/!d;/Job [0-9]+\./{s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/};t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/' | tee -i $ex
+					time echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
 					# in case of job exit code > 0, leads to *** longjmp causes uninitialized stack frame ***: bash terminated
 				else
-					echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $penv ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -E '/exited/!d;/Job [0-9]+\./{s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/};t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/' | tee -i $ex
+					echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
 				fi
 				return $?
-			;;
-			*)	_usage;;
-		esac
-	done
-
-	_usage
-}
-
-commander::qsubcmd_2(){
-	local jobname tmpdir
-	_cleanup::commander::qsubcmd_alt(){
-		$dowait && qdel -f "$jobname.*" &> /dev/null || true
-		rm -rf "$tmpdir"
-	}
-
-	_usage(){
-		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-v           | verbose on
-			-b           | benchmark on
-			-w           | do wait for jobs
-			-n <name>    | prefix of logs and jobs to wait for - should be unique
-			-c <env>     | run with conda
-			-l <complex> | sge digestable list of consumables as key="value" pairs (see qconf -sc or -mc)
-			-o <path>    | shared among machines for exit codes and logs
-			-r           | override existing logs
-			-t <threads> | to be allocated per instance - number of parallel instances depends on -l, -a and number/power of machines
-			-p <env>     | name of parallel sge environment
-			-a <cmds>    | ALWAYS LAST OPTION
-			               array of
-			example:
-			${FUNCNAME[1]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c segemehl -p threads -t 4 -w -o ~/logs -a cmd
-		EOF
-		return 1
-	}
-
-	local OPTIND arg threads=1 verbose=false benchmark=false dowait=false override=false cenv penv logdir complex
-	declare -n _cmds_qsubcmd # be very careful with circular name reference
-	declare -a mapdata complexes
-	while getopts 'vbwrt:o:l:p:c:n:a:' arg; do
-		case $arg in
-			v)	verbose=true;;
-			b)	benchmark=true;;
-			w)	dowait=true;;
-			r)	override=true;;
-			c)	cenv=$OPTARG;;
-			t)	threads=$OPTARG;;
-			o)	logdir="$OPTARG"; mkdir -p "$logdir";;
-			l)	complexes+=("-l $OPTARG");;
-			p)	penv="-pe $OPTARG";;
-			n)	jobname="$OPTARG";;
-			a)	_cmds_qsubcmd=$OPTARG
-				[[ $_cmds_qsubcmd ]] || return 0
-
-				$verbose && {
-					commander::printinfo "running commands of array ${!_cmds_qsubcmd}"
-					commander::printcmd -a _cmds_qsubcmd
-				}
-				[[ $penv ]] && penv+=" $threads"
-
-				local i sh ex log
-				tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
-				if [[ $logdir ]]; then
-					ex="$logdir/exitcodes.$jobname"
-					rm -f $ex
-				else
-					commander::warn "no shared directory supplied. ${FUNCNAME[0]} always succeeds."
-				fi
-				[[ $jobname ]] || jobname="${tmpdir#*.}"
-
-
-				jobname="job.$jobname" # ensure first character to be a letter
-				for i in "${!_cmds_qsubcmd[@]}"; do
-					if [[ $logdir ]]; then
-						log="$logdir/$jobname.$i.log"
-						$override && rm -f "$log"
-					else
-						log="/dev/null"
-					fi
-					sh="$tmpdir/$jobname.$i.sh"
-					echo "#!/usr/bin/env bash" > "$sh"
-					echo "set -o pipefail" >> "$sh"
-					echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then echo \$e >> \"$ex\"; exit \$e; fi' ERR" >> "$sh"
-					[[ $cenv ]] && echo "source $CONDA_PREFIX/bin/activate $cenv" >> "$sh"
-					printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
-					[[ $logdir ]] && echo "echo 0 >> '$ex'" >> "$sh"
-					echo "exit 0" >> "$sh"
-
-					$verbose && commander::printinfo qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh"
-					qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -e "$log" -o "$log" -N $jobname.$i "$sh" > /dev/null
-				done
-				$dowait && {
-					if $benchmark; then
-						$(command -v time) -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" \
-						qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
-					else
-						qsub $penv ${complexes[@]} -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -b y -sync y -e /dev/null -o /dev/null -hold_jid "$jobname.*" -N $jobname.wait true > /dev/null
-					fi
-					if [[ $logdir ]]; then
-						mapfile -t mapdata < "$ex"
-						return $((${mapdata[@]/%/+}0 > 0 ? 1 : 0))
-					fi
-				}
-				return 0
 			;;
 			*)	_usage;;
 		esac

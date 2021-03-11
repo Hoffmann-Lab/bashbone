@@ -49,6 +49,15 @@ while getopts ':i:c:x:h' arg; do
 	esac
 done
 
+set -o pipefail -o errtrace -o functrace # traces enable trap to know local scope of functions and shubshells that inherit ERR trap (-o errtrace) and RETURN and DEBUG trap (-o functrace)
+shopt -s extdebug # do not shopt -u extdebug, otherwise set -E -o pipefail configuration will be nuked
+shopt -s extglob
+shopt -s expand_aliases
+ulimit -n $(ulimit -Hn)
+export MALLOC_ARENA_MAX=4
+BASHBONE_ERROR="environment setup failed. use -i [path] to point towards a custom installation directory"
+
+
 _IFS=$IFS
 IFS=$'\n'
 for f in "$BASHBONE_DIR/lib/"*.sh; do
@@ -60,36 +69,6 @@ done
 IFS=$_IFS
 BASHBONE_VERSION=$version
 
-set -E -o pipefail -o functrace # -E allows simple trap bubbeling and -o functrace enables inheritance of RETURN and DEBUG trap
-shopt -s extdebug # do not shopt -u extdebug, otherwise set -E -o pipefail configuration will be nuked
-shopt -s extglob
-shopt -s expand_aliases
-ulimit -n $(ulimit -Hn)
-export MALLOC_ARENA_MAX=4
-BASHBONE_ERROR="environment setup failed. use -i [path] to point towards a custom installation directory"
-td="$(readlink -e "$BASHBONE_TOOLSDIR/latest")"
-# better stay off custom java path to avoid conflicts with conda openjdk and pre-compiled jars requesting specific versions (IncompatibleClassChangeError)
-# [[ $td && -e $td/java ]] && export JAVA_HOME=$(dirname $(readlink -e $td/java))
-[[ $td ]] && export PATH="$(readlink -e "$td/"!(java) | xargs -echo | sed 's/ /:/g'):$PATH"
-export PATH="$(readlink -e "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):$PATH"
-if [[ $BASHBONE_EXITFUN ]]; then
-	trap 'e=$?; sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::exit -p $$ -f $BASHBONE_EXITFUN $e' EXIT
-else
-	trap 'sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::exit -p $$' EXIT
-fi
-# make use of local scope during trace to trigger tmp file deletion etc.
-trap 'declare -F _cleanup::${FUNCNAME[0]} &> /dev/null && _cleanup::${FUNCNAME[0]}' RETURN
-# check execution from terminal (use return only) or a script/subshell (use return and exit)
-# error traps must not be splited into muliple lines to hold correct lineno
-if [[ $- =~ i ]]; then
-	# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte and other functions
-	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ ${BASH_SOURCE[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]} -w "$BASHBONE_WORKDIR"; return $e; else unset BASHBONE_TRAPPED; fi; fi' ERR
-else
-	# if activate used within script or subshell, traps will be nuked anyways, thus allow tracing for all functions
-	# dont call exit directly. allow for back trace through all functions. local scopes are available
-	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ "${BASH_SOURCE[0]}" == "$0" && "${FUNCNAME[0]}" == "main" ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "$0" -w "$BASHBONE_WORKDIR"; exit $e; else sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f ${FUNCNAME[0]} -w "$BASHBONE_WORKDIR"; return $e; fi; fi' ERR
-fi
-trap 'BASHBONE_ERROR="killed"' INT TERM
 
 if ${BASHBONE_CONDA:-false}; then
 	BASHBONE_ERROR="conda activation failed. use -c false to disable conda activation"
@@ -103,6 +82,33 @@ else
 	}
 fi
 
+
+# better stay off custom java path to avoid conflicts with conda openjdk and pre-compiled jars requesting specific versions (IncompatibleClassChangeError)
+# [[ $td && -e $td/java ]] && export JAVA_HOME=$(dirname $(readlink -e $td/java))
+td="$(readlink -e "$BASHBONE_TOOLSDIR/latest")"
+[[ $td ]] && export PATH="$(readlink -e "$td/"!(java) | xargs -echo | sed 's/ /:/g'):$PATH"
+export PATH="$(readlink -e "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):$PATH"
+
+
+if [[ $BASHBONE_EXITFUN ]]; then
+	trap 'e=$?; sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::exit -p $$ -f $BASHBONE_EXITFUN $e' EXIT
+else
+	trap 'sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::exit -p $$' EXIT
+fi
+# make use of local scope during functrace to trigger tmp file deletion etc.
+trap 'declare -F _cleanup::${FUNCNAME[0]} &> /dev/null && _cleanup::${FUNCNAME[0]}' RETURN
+# error traps must not be splited into muliple lines to hold correct lineno
+if [[ $- =~ i ]]; then
+	# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte and other functions
+	# although errtrace ignores errors upon 'while until for if || &&' in interactive shell it still triggers ERR trap on function definition line i.e. at LINENO==0 where error occured
+	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ $LINENO -gt 0 && ${FUNCNAME[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; return $e; else unset BASHBONE_TRAPPED; fi; fi' ERR
+else
+	# xargs creates funcname main for executing script. to prevent xargs in commander to continue despite of an error, set exit code to 255 so that xargs will stop immediately
+	trap 'e=$?; if [[ $e -ne 141 ]]; then e=255; if [[ ${FUNCNAME[0]} && "${FUNCNAME[0]}" != "main" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; return $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "${BASH_SOURCE[0]}" -w "$BASHBONE_WORKDIR"; exit $e; fi; fi' ERR
+fi
+trap 'BASHBONE_ERROR="killed"' INT TERM
+
+
 bashbone(){
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
@@ -112,8 +118,11 @@ bashbone(){
 
 			Usage:
 			-h | help
+			-r | readme
 			-c | activate conda if installed
 			-s | stop conda if activated
+			-u | list scripts for users
+			-v | list scripts for experienced users
 			-l | list functions for users
 			-e | list functions for experienced users
 			-d | list functions for developers
@@ -124,11 +133,14 @@ bashbone(){
 	}
 
 	local OPTIND arg
-	while getopts 'hcsledax' arg; do
+	while getopts 'hrcsuvledax' arg; do
 		case $arg in
 		h)	_usage; return 0;;
+		r)	mdless -P $BASHBONE_DIR/README.md | less; return 0;;
 		c)	source $BASHBONE_TOOLSDIR/conda/bin/activate base &> /dev/null;	commander::printinfo "utilizing $(conda --version)"; return 0;;
 		s)	while [[ -n $CONDA_PREFIX ]]; do conda deactivate &> /dev/null; done; return 0;;
+		u)	find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n"; find "$BASHBONE_DIR/scripts/" -type f -name "*.pl" -printf "%f\n" -o -name "*.sh" -printf "%f\n" | rev | sort | rev; return 0;;
+		v)	find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n"; find "$BASHBONE_DIR/scripts/" -type f -printf "%f\n" | rev | sort | rev; return 0;;
 		l)	declare -F | grep -oE '\S+::\S+' | grep -vF -e ::_ -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
 		e)	declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
 		d)	declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper::_ | grep -F -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;

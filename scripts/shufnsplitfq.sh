@@ -14,8 +14,8 @@ cat <<- EOF
 
 	OPTIONS
 	-h          | this help
-	-1 <path>   | input single or first fastq(.gz|.bz2)
-	-2 <path>   | input second mate fastq(.gz|.bz2)
+	-1 <path>   | input SE or first mate fastq(.gz|.bz2)
+	-2 <path>   | input mate pair fastq(.gz|.bz2)
 	-z          | compress output using pigz with [-t] threads (fallback: gzip)
 	-t <value>  | compression threads (default: $t)
 	-o <path>   | prefix of output fastq, extended by [1|2].(R1.|R2.)fastq(.gz)
@@ -57,9 +57,9 @@ tmp="$(mktemp $params shufnsplit.XXXXXXXXXX)"
 
 ${z:-false} && {
 	if [[ $j ]]; then
-		[[ $(which pigz 2> /dev/null) ]] && z="pigz -k -c -p $(((t+3)/2))" || z="gzip -k -c"
+		pigz -h 2> /dev/null && z="pigz -k -c -p $(((t+3)/4))" || z="gzip -k -c"
 	else
-		[[ $(which pigz 2> /dev/null) ]] && z="pigz -k -c -p $(((t+1)/4))" || z="gzip -k -c"
+		pigz -h 2> /dev/null && z="pigz -k -c -p $(((t+1)/2))" || z="gzip -k -c"
 	fi
 	e=".fastq.gz"
 } || {

@@ -34,6 +34,7 @@ compile::all(){
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 	compile::bashbone -i "$insdir" -t $threads
+	compile::tools -i "$insdir" -t $threads
 	compile::conda -i "$insdir" -t $threads
 	compile::conda_tools -i "$insdir" -t $threads
 	compile::java -i "$insdir" -t $threads
@@ -48,6 +49,8 @@ compile::all(){
 	compile::idr -i "$insdir" -t $threads
 	compile::newicktopdf -i "$insdir" -t $threads
 	compile::ssgsea -i "$insdir" -t $threads
+	compile::bgztail -i "$insdir" -t $threads
+	compile::mdless -i "$insdir" -t $threads
 
 	return 0
 }
@@ -66,10 +69,26 @@ compile::bashbone() {
 	return 0
 }
 
+compile::tools() {
+	local insdir threads i src=$(dirname $(readlink -e $0))
+
+	commander::printinfo "installing statically pre-compiled tools"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+	mkdir -p $insdir/latest
+	for i in $(find "$src/tools" -mindepth 1 -maxdepth 1 -type d); do
+		cp -r "$i" "$insdir/$(basename "$i")"
+		ln -sfn "$insdir/$(basename "$i")/bin" "$insdir/latest/$(basename "$i" | cut -d '-' -f 1)"
+	done
+
+	return 0
+}
+
 compile::upgrade(){
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 	compile::bashbone -i "$insdir" -t $threads
+	compile::tools -i "$insdir" -t $threads
 	compile::conda_tools -i "$insdir" -t $threads -u true
 
 	return 0
@@ -81,7 +100,7 @@ compile::conda(){
 		rm -rf "$tmpdir"
 	}
 
-	local insdir threads url version n bin
+	local insdir threads url n bin
 	commander::printinfo "installing conda"
 	compile::_parse -r insdir -s threads "$@"
 	url="https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh"
@@ -172,7 +191,7 @@ compile::conda(){
 }
 
 compile::conda_tools() {
-	local insdir threads upgrade=false url version tool n bin doclean=false
+	local insdir threads upgrade=false tool n bin doclean=false
 	declare -A envs
 
 	compile::_parse -r insdir -s threads -c upgrade "$@"
@@ -187,14 +206,15 @@ compile::conda_tools() {
 	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq arriba picard bamutil macs2 peakachu diego gatk4 freebayes varscan igv intervene raxml metilene; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
-		$upgrade && ${envs[$n]:=false} && continue
-		doclean=true
+		$upgrade && ${envs[$n]:=false} || {
+			doclean=true
 
-		commander::printinfo "setup conda $n env"
-		conda create -y -n $n #python=3
-		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+			commander::printinfo "setup conda $n env"
+			conda create -y -n $n #python=3
+			conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+		}
 		# link commonly used base binaries into env
-		for bin in perl samtools bcftools bedtools vcfsamplediff; do
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
 			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	done
@@ -214,10 +234,10 @@ compile::conda_tools() {
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 			perl perl-file-path perl-getopt-long perl-set-intervaltree perl-carp perl-carp-assert perl-data-dumper perl-findbin perl-db-file perl-io-gzip perl-json-xs perl-uri perl-list-moreutils perl-list-util perl-storable \
 			igv-reports star gmap bowtie bbmap samtools blast
-		for bin in perl samtools bcftools bedtools vcfsamplediff; do
-			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
 	}
+	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	done
 
 	# customized env setupus
 
@@ -230,10 +250,10 @@ compile::conda_tools() {
 		commander::printinfo "setup conda $n env"
 		conda create -y -n $n #python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java readline=6
-		for bin in perl samtools bcftools bedtools vcfsamplediff; do
-			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
 	}
+	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	done
 
 	tool=snpeff
 	n=${tool/=*/}
@@ -244,25 +264,23 @@ compile::conda_tools() {
 		commander::printinfo "setup conda $n env"
 		conda create -y -n $n #python=3
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
-		for bin in perl samtools bcftools bedtools vcfsamplediff; do
-			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
 	}
+	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	done
 
 	tool=platypus-variant
 	n=platypus
-	n=${tool/=*/}
-	n=${n//[^[:alpha:]]/}
 	$upgrade && ${envs[$n]:=false} || {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
 		conda create -y -n $n #python=2
 		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
-		for bin in perl samtools bcftools bedtools vcfsamplediff; do
-			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
 	}
+	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	done
 
 	# this is a pipeline itself with own genome and databases and thus will not be part of bashbone
 	# commander::printinfo "setup conda fusion-catcher env"
@@ -310,7 +328,7 @@ compile::_javawrapper() {
 	[[ $3 ]] && java="$3"
 	cat <<- EOF > "$1" || return 1
 		#!/usr/bin/env bash
-		java=$java
+		java="$java"
 		[[ \$JAVA_HOME && -e "\$JAVA_HOME/bin/java" ]] && java="\$JAVA_HOME/bin/java"
 		declare -a jvm_mem_args jvm_prop_args pass_args
 		for arg in \$@; do
@@ -427,6 +445,7 @@ compile::starfusion() {
 	tar -xzf $insdir/starfusion.tar.gz -C $insdir
 	rm $insdir/starfusion.tar.gz
 	cd $(ls -dv $insdir/STAR-Fusion-*/ | tail -1)
+	mkdir -p $insdir/latest
 	ln -sfn $PWD $insdir/latest/starfusion
 
 	return 0
@@ -568,6 +587,46 @@ compile::ssgsea() {
 	find . -type f -name "*.R" -exec chmod 755 {} \;
 	mkdir -p $insdir/latest
 	ln -sfn $PWD $insdir/latest/ssgseabroad
+
+	return 0
+}
+
+compile::bgztail() {
+	local insdir threads url
+
+	commander::printinfo "installing bgztail"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+
+	url='https://github.com/'$(curl -s https://github.com/circulosmeos/bgztail/releases | grep -oE 'circulosmeos/bgztail/\S+v[0-9\.]+\.tar\.gz' | sort -Vr | head -1)
+	wget -q $url -O $insdir/bgztail.tar.gz
+	tar -xzf $insdir/bgztail.tar.gz -C $insdir
+	rm $insdir/bgztail.tar.gz
+	cd $(ls -dv $insdir/bgztail-*/ | tail -1)
+	mkdir -p bin
+	mv bgztail bin
+	chmod 755 bin/bgztail
+	mkdir -p $insdir/latest
+	ln -sfn $PWD/bin $insdir/latest/bgztail
+
+	return 0
+}
+
+compile::mdless() {
+	local insdir threads url
+
+	commander::printinfo "installing mdless"
+	compile::_parse -r insdir -s threads "$@"
+	source $insdir/conda/bin/activate base
+
+	url='https://github.com/'$(curl -s https://github.com/ttscoff/mdless/releases | grep -oE 'ttscoff/mdless/\S+\/[0-9\.]+\.tar\.gz' | sort -Vr | head -1)
+	wget -q $url -O $insdir/mdless.tar.gz
+	tar -xzf $insdir/mdless.tar.gz -C $insdir
+	rm $insdir/mdless.tar.gz
+	cd $(ls -dv $insdir/mdless-*/bin | tail -1)
+	sed -i 's@require@$LOAD_PATH.unshift File.expand_path("../../lib", __FILE__)\nrequire@' mdless
+	mkdir -p $insdir/latest
+	ln -sfn $PWD $insdir/latest/mdless
 
 	return 0
 }

@@ -56,6 +56,7 @@ variants::panelofnormals() {
 			-t <threads>   | number of
 			-g <genome>    | path to
 			-m <memory>    | amount of
+			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
@@ -64,14 +65,15 @@ variants::panelofnormals() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome tmpdir outdir
 	declare -n _mapper_panelofnormals _bamslices_panelofnormals
-	while getopts 'S:s:t:g:m:r:c:p:o:' arg; do
+	while getopts 'S:s:t:g:m:M:r:c:p:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
 			m) ((++mandatory)); memory=$OPTARG;;
+			M) maxmemory=$OPTARG;;
 			g) ((++mandatory)); genome="$OPTARG";;
 			r) ((++mandatory)); _mapper_panelofnormals=$OPTARG;;
 			c) ((++mandatory)); _bamslices_panelofnormals=$OPTARG;;
@@ -85,13 +87,14 @@ variants::panelofnormals() {
 	commander::printinfo "calling panel of normals"
 
 	local minstances mthreads jmem jgct jcgct
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
 	local m i o t e slice odir instances ithreads odir tdir
 	for m in "${_mapper_panelofnormals[@]}"; do
 		declare -n _bams_panelofnormals=$m
 		((instances+=${#_bams_panelofnormals[@]}))
 	done
+	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
 
 	declare -a tomerge cmd1 cmd2 cmd3
@@ -122,11 +125,16 @@ variants::panelofnormals() {
 						-A Coverage
 						-A DepthPerAlleleBySample
 						-A StrandBiasBySample
+						--smith-waterman FASTEST_AVAILABLE
+						--f1r2-median-mq 0
+						--f1r2-min-bq 20
+						--callable-depth 10
 						--min-base-quality-score 20
 						--native-pair-hmm-threads $mthreads
 						-verbosity INFO
 						--tmp-dir "${tdirs[-1]}"
 						--max-mnp-distance 0
+						--ignore-itr-artifacts
 				CMD
 
 				tomerge+=("$slice.vcf")
@@ -178,6 +186,7 @@ variants::makepondb() {
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
+			-M <maxmemory> | amount of
 			-g <genome>    | path to
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-p <tmpdir>    | path to
@@ -186,13 +195,14 @@ variants::makepondb() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir
+	local OPTIND arg mandatory skip=false threads maxmemory genome tmpdir outdir
 	declare -n _mapper_makepondb
-	while getopts 'S:s:t:g:r:p:o:' arg; do
+	while getopts 'S:s:t:M:g:r:p:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
+			M) maxmemory=$OPTARG;;
 			g) ((++mandatory)); genome="$OPTARG";;
 			r) ((++mandatory)); _mapper_makepondb=$OPTARG;;
 			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
@@ -205,7 +215,7 @@ variants::makepondb() {
 	commander::printinfo "creating panel of normals database"
 
 	local minstances mthreads jmem jgct jcgct
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -i ${#_mapper_makepondb[@]} -m 4000)
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i ${#_mapper_makepondb[@]} -T $threads -M "$maxmemory")
 
 	local m i o t odir params
 	declare -a cmd1 cmd2 cmd3

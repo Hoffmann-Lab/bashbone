@@ -87,7 +87,7 @@ configure::instances_by_threads(){
 	local OPTIND arg instances ithreads=1 maxthreads
 	while getopts 'i:t:T:' arg; do
 		case $arg in
-			i) instances=$OPTARG;;
+			i) instances=$((OPTARG==0?1:OPTARG));;
 			t) ithreads=$OPTARG;;
 			T) maxthreads=$OPTARG;;
 			*) _usage;;
@@ -123,7 +123,7 @@ configure::memory_by_instances(){
 	local OPTIND arg mandatory instances maxthreads maxmemory
 	while getopts 'i:T:M:' arg; do
 		case $arg in
-			i) ((++mandatory)); instances=$OPTARG;;
+			i) ((++mandatory)); instances=$((OPTARG==0?1:OPTARG));;
 			T) maxthreads=$OPTARG;;
 			M) maxmemory=$OPTARG;;
 			*) _usage;;
@@ -131,8 +131,13 @@ configure::memory_by_instances(){
 	done
 	[[ $mandatory -lt 1 ]] && _usage
 
-	local m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
-	[[ ! $maxmemory ]] && maxmemory=$m
+
+	local m
+	if [[ ! $maxmemory ]]; then
+		m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+		maxmemory=$m
+	fi
+	m=$(grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
 	local t=$(grep -cF processor /proc/cpuinfo)
 	[[ ! $maxthreads ]] && maxthreads=$t
@@ -167,8 +172,12 @@ configure::instances_by_memory(){
 	done
 	[[ $mandatory -lt 1 ]] && _usage
 
-	local m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
-	[[ ! $maxmemory ]] && maxmemory=$m
+	local m
+	if [[ ! $maxmemory ]]; then
+		m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+		maxmemory=$m
+	fi
+	m=$(grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
 	local t=$(grep -cF processor /proc/cpuinfo)
 	[[ ! $maxthreads ]] && maxthreads=$t
@@ -199,7 +208,7 @@ configure::jvm(){
 	local OPTIND arg instances ithreads=1 maxthreads memory=1 maxmemory
 	while getopts 'i:t:T:m:M:' arg; do
 		case $arg in
-			i)	instances=$OPTARG;;
+			i)	instances=$((OPTARG==0?1:OPTARG));;
 			t)	ithreads=$OPTARG;;
 			T)	maxthreads=$OPTARG;;
 			m)	memory=$OPTARG;;
@@ -208,8 +217,12 @@ configure::jvm(){
 		esac
 	done
 
-	local m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
-	[[ ! $maxmemory ]] && maxmemory=$m
+	local m
+	if [[ ! $maxmemory ]]; then
+		m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+		maxmemory=$m
+	fi
+	m=$(grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
 	local t=$(grep -cF processor /proc/cpuinfo)
 	[[ ! $maxthreads ]] && maxthreads=$t
@@ -219,6 +232,7 @@ configure::jvm(){
 	local jmem jgct jcgct
 	local maxinstances=$((maxmemory/memory))
 	[[ $maxinstances -gt $(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) ]] && maxinstances=$(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) #+10 for better approximation
+	[[ ! $instances ]] && instances=$maxinstances
 	[[ $instances -gt $maxthreads ]] && instances=$maxthreads
 	[[ $instances -gt $maxinstances ]] && instances=$maxinstances
 

@@ -9,6 +9,7 @@ alignment::slice(){
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
 			-m <memory>    | amount of
+			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <slicesinfo>| hash per bam of
 			-p <tmpdir>    | path to
@@ -16,14 +17,15 @@ alignment::slice(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory tmpdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir
 	declare -n _mapper_slice _bamslices_slice
-	while getopts 'S:s:t:m:r:c:p:' arg; do
+	while getopts 'S:s:t:m:M:r:c:p:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			r)	((++mandatory)); _mapper_slice=$OPTARG;;
 			c)	((++mandatory)); _bamslices_slice=$OPTARG;;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
@@ -35,7 +37,7 @@ alignment::slice(){
 	commander::printinfo "slicing alignments"
 
 	local minstances instances mthreads ithreads m
-	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory)
+	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
 	for m in "${_mapper_slice[@]}"; do
 		declare -n _bams_slice=$m
 		((instances+=${#_bams_slice[@]}))
@@ -132,6 +134,7 @@ alignment::rmduplicates(){
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
 			-m <memory>    | amount of
+			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
@@ -140,14 +143,15 @@ alignment::rmduplicates(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory tmpdir outdir regex
+	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir outdir regex
 	declare -n _mapper_rmduplicates _bamslices_rmduplicates
-	while getopts 'S:s:t:m:x:r:c:p:o:' arg; do
+	while getopts 'S:s:t:m:M:x:r:c:p:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			x)	regex="$OPTARG";;
 			r)	((++mandatory)); _mapper_rmduplicates=$OPTARG;;
 			c)	((++mandatory)); _bamslices_rmduplicates=$OPTARG;;
@@ -161,7 +165,7 @@ alignment::rmduplicates(){
 	commander::printinfo "removing duplicates"
 
 	local minstances mthreads ithreads jmem jgct jcgct
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 	local nfh=$(($(ulimit -n)/minstances))
 	[[ ! $nfh ]] || [[ $nfh -le 1 ]] && nfh=$((1024/minstances))
 
@@ -248,6 +252,7 @@ alignment::clipmateoverlaps() {
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
 			-m <memory>    | amount of
+			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-o <outbase>   | path to
@@ -255,15 +260,16 @@ alignment::clipmateoverlaps() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory outdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory outdir
 	declare -n _mapper_clipmateoverlaps _bamslices_clipmateoverlaps
 	declare -A nidx tidx
-	while getopts 'S:s:t:m:r:c:p:o:' arg; do
+	while getopts 'S:s:t:m:M:r:c:p:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			r)	((++mandatory)); _mapper_clipmateoverlaps=$OPTARG;;
 			c)	((++mandatory)); _bamslices_clipmateoverlaps=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
@@ -275,7 +281,7 @@ alignment::clipmateoverlaps() {
 	commander::printinfo "clipping ends of overlapping mate pairs"
 
 	local m i o slice odir instances ithreads minstances mthreads
-	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory)
+	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
 
 	for m in "${_mapper_clipmateoverlaps[@]}"; do
 		declare -n _bams_clipmateoverlaps=$m
@@ -357,6 +363,7 @@ alignment::reorder() {
 			-t <threads>   | number of
 			-g <genome>    | path to
 			-m <memory>    | amount of
+			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
@@ -365,15 +372,16 @@ alignment::reorder() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir i
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome tmpdir outdir i
 	declare -n _mapper_reorder _bamslices_reorder
 	declare -A nidx tidx
-	while getopts 'S:s:t:g:m:r:c:p:o:' arg; do
+	while getopts 'S:s:t:g:m:M:r:c:p:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			r)	((++mandatory)); _mapper_reorder=$OPTARG;;
 			c)	((++mandatory)); _bamslices_reorder=$OPTARG;;
@@ -387,7 +395,7 @@ alignment::reorder() {
 	commander::printinfo "reordering alignments"
 
 	local minstances mthreads jmem jgct jcgct
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
 	local m i o slice odir instances ithreads
 	for m in "${_mapper_reorder[@]}"; do
@@ -465,6 +473,7 @@ alignment::addreadgroup() {
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
 			-m <memory>    | amount of
+			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-1 <normalidx> | array of (requieres -2)
 			-2 <tumoridx>  | array of
@@ -475,15 +484,16 @@ alignment::addreadgroup() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory tmpdir outdir i rgprefix=''
+	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir outdir i rgprefix=''
 	declare -n _mapper_addreadgroup _bamslices_addreadgroup _nidx_addreadgroup _tidx_addreadgroup
 	declare -A nidx tidx
-	while getopts 'S:s:t:m:n:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:m:M:n:r:1:2:c:p:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			n)	rgprefix=$OPTARG;;
 			r)	((++mandatory)); _mapper_addreadgroup=$OPTARG;;
 			1)	_nidx_addreadgroup=$OPTARG;;
@@ -514,7 +524,7 @@ alignment::addreadgroup() {
 	commander::printinfo "replacing read group tags"
 
 	local minstances mthreads jmem jgct jcgct
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
 	local m i o rgprefix slice instances ithreads odir
 	for m in "${_mapper_addreadgroup[@]}"; do
@@ -603,6 +613,7 @@ alignment::splitncigar() {
 			-t <threads>   | number of
 			-g <genome>    | path to
 			-m <memory>    | amount of
+			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
@@ -614,12 +625,13 @@ alignment::splitncigar() {
 	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir i
 	declare -n _mapper_splitncigar _bamslices_splitncigar
 	declare -A nidx tidx
-	while getopts 'S:s:t:g:m:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:g:m:M:r:1:2:c:p:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			r)	((++mandatory)); _mapper_splitncigar=$OPTARG;;
 			c)	((++mandatory)); _bamslices_splitncigar=$OPTARG;;
@@ -633,7 +645,7 @@ alignment::splitncigar() {
 	commander::printinfo "splitting N-cigar alignments"
 
 	local minstances mthreads jmem jgct jcgct
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
 	local m i o slice instances ithreads odir
 	for m in "${_mapper_splitncigar[@]}"; do
@@ -727,6 +739,7 @@ alignment::leftalign() {
 			-t <threads>   | number of
 			-g <genome>    | path to
 			-m <memory>    | amount of
+			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
@@ -735,15 +748,16 @@ alignment::leftalign() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir i
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome tmpdir outdir i
 	declare -n _mapper_leftalign _bamslices_leftalign
 	declare -A nidx tidx
-	while getopts 'S:s:t:g:m:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:g:m:M:r:1:2:c:p:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			r)	((++mandatory)); _mapper_leftalign=$OPTARG;;
 			c)	((++mandatory)); _bamslices_leftalign=$OPTARG;;
@@ -757,7 +771,7 @@ alignment::leftalign() {
 	commander::printinfo "leftaligning alignments"
 
 	local minstances mthreads jmem jgct jcgct
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
 	local m i o slice odir instances ithreads
 	for m in "${_mapper_leftalign[@]}"; do
@@ -847,6 +861,7 @@ alignment::bqsr() {
 			-g <genome>    | path to
 			-d <dbsnp>     | path to
 			-m <memory>    | amount of
+			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
@@ -855,15 +870,16 @@ alignment::bqsr() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory genome dbsnp tmpdir outdir i
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir outdir i
 	declare -n _mapper_bqsr _bamslices_bqsr
 	declare -A nidx tidx
-	while getopts 'S:s:t:g:d:m:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:g:d:m:M:r:1:2:c:p:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			d)	dbsnp="$OPTARG";;
 			r)	((++mandatory)); _mapper_bqsr=$OPTARG;;
@@ -887,7 +903,7 @@ alignment::bqsr() {
 	commander::printinfo "base quality score recalibration"
 
 	local minstances mthreads jmem jgct jcgct
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory)
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
 	local m i o slice odir instances ithreads
 	for m in "${_mapper_bqsr[@]}"; do

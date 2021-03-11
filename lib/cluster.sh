@@ -14,7 +14,7 @@ cluster::coexpression_deseq(){
 			-s <softskip> | true/false only print commands
 			-f <value>    | filter cluster for 0|1|2|20|21
 			-t <threads>  | number of
-			-m <memory>   | amount of
+			-M <maxmemory>| amount of
 			-c <cmpfiles> | array of
 			-l <idfiles>  | array of
 			-r <mapper>   | array of bams within array of
@@ -26,9 +26,9 @@ cluster::coexpression_deseq(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory outdir tmpdir deseqdir countsdir clusterfilter=0 biotype gtf
+	local OPTIND arg mandatory skip=false threads outdir tmpdir deseqdir countsdir clusterfilter=0 biotype gtf
 	declare -n _mapper_coexpression _cmpfiles_coexpression _idfiles_coexpression
-	while getopts 'S:s:f:b:g:t:m:c:r:p:i:j:o:l:' arg; do
+	while getopts 'S:s:f:b:g:t:M:c:r:p:i:j:o:l:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -36,7 +36,7 @@ cluster::coexpression_deseq(){
 			b)	biotype="$OPTARG";;
 			g)	gtf="$OPTARG";;
 			t)	((++mandatory)); threads=$OPTARG;;
-			m)	((++mandatory)); memory=$OPTARG;;
+			M)	((++mandatory)); maxmemory=$OPTARG;;
 			c)	((++mandatory)); _cmpfiles_coexpression=$OPTARG;;
 			r)	((++mandatory)); _mapper_coexpression=$OPTARG;;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
@@ -134,7 +134,7 @@ cluster::coexpression_deseq(){
 			params=FALSE
 			[[ $clusterfilter =~ 2 ]] && params=TRUE
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-				wgcna.R $((memory/1024/2)) ${e^^*} $params "$odir/experiments.filtered.$e" "$odir/$e"
+				wgcna.R $((maxmemory/1024/2)) ${e^^*} $params "$odir/experiments.filtered.$e" "$odir/$e"
 			CMD
 		done
 	done
@@ -289,7 +289,7 @@ cluster::coexpression(){
 			-s <softskip> | true/false only print commands
 			-f <value>    | filter cluster for 0|1|2|20|21
 			-t <threads>  | number of
-			-m <memory>   | amount of
+			-M <maxmemory>| amount of
 			-l <idfiles>  | array of
 			-r <mapper>   | array of bams within array of
 			-p <tmpdir>   | path to
@@ -299,9 +299,9 @@ cluster::coexpression(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory outdir tmpdir countsdir biotype gtf clusterfilter=0
+	local OPTIND arg mandatory skip=false threads maxmemory outdir tmpdir countsdir biotype gtf clusterfilter=0
 	declare -n _mapper_coexpression _idfiles_coexpression
-	while getopts 'S:s:f:b:g:t:m:c:r:p:i:j:o:l:' arg; do
+	while getopts 'S:s:f:b:g:t:M:c:r:p:i:j:o:l:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -309,7 +309,7 @@ cluster::coexpression(){
 			b)	biotype="$OPTARG";;
 			g)	gtf="$OPTARG";;
 			t)	((++mandatory)); threads=$OPTARG;;
-			m)	((++mandatory)); memory=$OPTARG;;
+			M)	((++mandatory)); maxmemory=$OPTARG;;
 			r)	((++mandatory)); _mapper_coexpression=$OPTARG;;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
@@ -412,7 +412,7 @@ cluster::coexpression(){
 		params=FALSE
 		[[ $clusterfilter =~ 2 ]] && params=TRUE
 		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-			wgcna.R $((memory/1024/2)) TPM $params "$odir/experiments.filtered.tpm" "$odir"
+			wgcna.R $((maxmemory/1024/2)) TPM $params "$odir/experiments.filtered.tpm" "$odir"
 		CMD
 	done
 

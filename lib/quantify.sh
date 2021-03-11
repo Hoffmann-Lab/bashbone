@@ -12,7 +12,6 @@ quantify::featurecounts() {
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
-			-5 <skip>     | true/false md5sums, gtf prep respectively
 			-t <threads>  | number of
 			-r <mapper>   | array of bams within array of
 			-x <strandness> | hash per bam of
@@ -25,7 +24,7 @@ quantify::featurecounts() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf level="exon" featuretag="gene_id"
+	local OPTIND arg mandatory skip=false threads outdir tmpdir gtf level="exon" featuretag="gene_id"
 	declare -n _mapper_featurecounts _strandness_featurecounts
 	while getopts 'S:s:t:r:x:g:l:f:p:o:' arg; do
 		case $arg in

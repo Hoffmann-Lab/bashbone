@@ -53,8 +53,16 @@ Copyleft (C) 2020, Konstantin Riege
 
 # Download
 
+This will download you a copy which includes the latest developments
+
 ```bash
-git clone --recursive https://github.com/koriege/bashbone.git
+git clone --recursive https://github.com/Hoffmann-Lab/bashbone
+```
+
+To check out the latest release (irregularly compiled) do
+
+```bash
+cd bashbone
 git checkout $(git describe --tags)
 ```
 
@@ -65,7 +73,7 @@ Please see installation section to get all third-party tools set-upped and subse
 Load the library and list available functions. Each function comes with a usage.
 
 ```bash
-source activate.sh
+source ./activate.sh
 bashbone -h
 ```
 
@@ -129,7 +137,7 @@ x.print
 ## Base installation of programming languages and libraries to a get enclosed scripts to operate.
 
 ```bash
-setup -i conda -d <path/to/installation>
+./setup.sh -i conda -d <path/to/installation>
 source <path/of/installation/latest/bashbone/activate.sh>
 bashbone -h
 ```
@@ -149,7 +157,7 @@ bashbone -s
 ## Full installation of all third party tools used in bashbone functions
 
 ```bash
-setup -i all -d <path/to/installation>
+./setup.sh -i all -d <path/to/installation>
 source <path/of/installation/latest/bashbone/activate.sh>
 bashbone -h
 ```
@@ -157,7 +165,7 @@ bashbone -h
 ### Upgrade to a newer release (sources only)
 
 ```bash
-setup -i upgrade -d <path/of/installation>
+./setup.sh -i upgrade -d <path/of/installation>
 ```
 
 ### Update tools
@@ -165,13 +173,13 @@ setup -i upgrade -d <path/of/installation>
 The setup routine will always install the latest software via conda, which can be updated by running the related setup functions again.
 
 ```bash
-setup -i conda_tools -d <path/of/installation>
+./setup.sh -i conda_tools -d <path/of/installation>
 ```
 
-Trimmomatic, segemehl, STAR-Fusion and GEM will be installed next to the conda environments. If new releases are available, they will be automatically fetched and installed upon running the related setup functions again.
+Trimmomatic, segemehl, STAR-Fusion, GEM and mdless will be installed next to the conda environments. If new releases are available, they will be automatically fetched and installed upon running the related setup functions again.
 
 ```bash
-setup -i trimmomatic,segemehl,starfusion,gem -d <path/of/installation>
+./setup.sh -i trimmomatic,segemehl,starfusion,gem,mdless -d <path/of/installation>
 ```
 
 # Usage
@@ -250,12 +258,18 @@ Then the info file should consist of:
 
 ## Adapter sequences
 
-Sequences can be found in the Illumina Adapter Sequences Document (<https://www.illumina.com/search.html?q=Illumina Adapter Sequences Document&filter=manuals&p=1>), the resource of Trimmomatic (<https://github.com/timflutre/trimmomatic/tree/master/adapters>), FastQC respectively (<https://github.com/s-andrews/FastQC/blob/master/Configuration/contaminant_list.txt>).
-<br>
-Nextera Transposase Sequence: CTGTCTCTTATACACATCT
-<br>
-Illumina Universal Adapter: ATGTGTATAAGAGACA
+Sequences can be found in the Illumina Adapter Sequences Document (<https://www.illumina.com/search.html?q=Illumina Adapter Sequences Document>) and the resource of Trimmomatic (<https://github.com/timflutre/trimmomatic/tree/master/adapters>), FastQC respectively (<https://github.com/s-andrews/FastQC/blob/master/Configuration>).
 
+The following excerpt is independent of the indexing type, i.e. single, unique dual (UD) or combinatorial dual (CD).
+
+Nextera (Transposase Sequence), TruSight, AmpliSeq, stranded total/mRNA Prep, Ribo-Zero Plus: CTGTCTCTTATACACATCT
+
+TruSeq (Universal) Adapter with A prefix due to 3' primer A-tailing : AGATCGGAAGAGC
+
+      - full DNA & RNA - R1: AGATCGGAAGAGCACACGTCTGAACTCCAGTCA R2: AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT
+      - full DNA MethC - R1: AGATCGGAAGAGCACACGTCTGAAC R2: AGATCGGAAGAGCGTCGTGTAGGGA
+
+TruSeq Small RNA: TGGAATTCTCGGGTGCCAAGG
 
 ## Example
 
@@ -315,6 +329,7 @@ cluster::coexpression -t $threads -g $gtf -b protein_coding -f 23 -i /results/co
 | BW            | <https://github.com/lh3/bwa>                                        | 10.1093/bioinformatics/btp324 |
 | BCFtools      | <http://www.htslib.org/doc/bcftools.html>                           | 10.1093/bioinformatics/btr509 |
 | BEDTools      | <https://bedtools.readthedocs.io>                                   | 10.1093/bioinformatics/btq033 |
+| bgztail       | <https://github.com/circulosmeos/bgztail>                           | NA |
 | Cutadapt      | <https://cutadapt.readthedocs.io/en/stable>                         | 10.14806/ej.17.1.200 |
 | DESeq2        | <https://bioconductor.org/packages/release/bioc/html/DESeq2.html>   | 10.1186/s13059-014-0550-8 |
 | DEXSeq        | <https://bioconductor.org/packages/release/bioc/html/DEXSeq.html>   | 10.1101/gr.133744.111 |
@@ -339,6 +354,7 @@ cluster::coexpression -t $threads -g $gtf -b protein_coding -f 23 -i /results/co
 | Rcorrector    | <https://github.com/mourisl/Rcorrector>                             | 10.1186/s13742-015-0089-y |
 | ReSeqC        | <http://rseqc.sourceforge.net>                                      | 10.1093/bioinformatics/bts356 |
 | REVIGO        | <https://code.google.com/archive/p/revigo-standalone>               | 10.1371/journal.pone.0021800 |
+| SAMtools      | <http://www.htslib.org/doc/samtools.html>                           | 10.1093/bioinformatics/btp352 |
 | segemehl      | <http://www.bioinf.uni-leipzig.de/Software/segemehl>                | 10.1186/gb-2014-15-2-r34 <br> 10.1371/journal.pcbi.1000502 |
 | SortMeRNA     | <https://bioinfo.lifl.fr/RNA/sortmerna>                             | 10.1093/bioinformatics/bts611 |
 | STAR          | <https://github.com/alexdobin/STAR>                                 | 10.1093/bioinformatics/bts635 |

@@ -17,35 +17,41 @@ expression::diego(){
 			-5 <skip>       | true/false md5sums, gtf prep respectively
 			-t <threads>    | number of
 			-r <mapper>     | array of bams within array of
-			-x <strandness> | hash per bam of
 			-g <gtf>        | path to
 			-c <cmpfiles>   | array of
-			-i <htscdir>    | absolute output path to
+			-f <fcthreshold>| value of (default: 1)
 			-p <tmpdir>     | path to
 			-o <outdir>     | absolute path to
+			-e <exonmode>   | true/false in addition to splice junction mode (true)
+			-x <strandness> | hash per bam of for exonmode
+			-i <htscdir>    | absolute output path to for exonmode
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads countsdir tmpdir outdir gtf
+	local OPTIND arg mandatory skip=false skipmd5=false threads countsdir tmpdir outdir gtf fcth exonmode=true
 	declare -n _mapper_diego _cmpfiles_diego _strandness_diego
-	while getopts 'S:s:5:t:r:x:g:c:i:p:o:' arg; do
+	while getopts 'S:s:5:t:r:x:g:c:f:e:i:p:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			5)	$OPTARG && skipmd5=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			r)	((++mandatory)); _mapper_diego=$OPTARG;;
-			x)	((++mandatory)); _strandness_diego=$OPTARG;;
+			x)	_strandness_diego=$OPTARG;;
 			g)	((++mandatory)); gtf="$OPTARG";;
 			c)	((++mandatory)); _cmpfiles_diego=$OPTARG;;
-			i)	((++mandatory)); countsdir="$OPTARG";;
+			f)	fcth=$OPTARG;;
+			e)	exonmode=$OPTARG;;
+			i)	countsdir="$OPTARG";;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 8 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
+	$exonmode && [[ ${#_strandness_diego[@]} -eq 0 ]] && _usage
+	$exonmode && [[ ! $countsdir ]] && _usage
 
 	commander::printinfo "differential splice junction analyses"
 
@@ -80,17 +86,19 @@ expression::diego(){
 		commander::runcmd -c htseq -v -b -t $threads -a cmdprep2
 	fi
 
-	quantify::featurecounts \
-		-S false \
-		-s "$skip" \
-		-t $threads \
-		-p $tmpdir \
-		-g "${gtf%.*}.aggregated.gtf" \
-		-l exon \
-		-f exon_id \
-		-o "$countsdir" \
-		-r _mapper_diego \
-		-x _strandness_diego
+	if $exonmode; then
+		quantify::featurecounts \
+			-S false \
+			-s "$skip" \
+			-t $threads \
+			-p $tmpdir \
+			-g "${gtf%.*}.aggregated.gtf" \
+			-l exon \
+			-f exon_id \
+			-o "$countsdir" \
+			-r _mapper_diego \
+			-x _strandness_diego
+	fi
 
 	declare -a cmd1 cmd2 mapdata mappeddirs
 	local m f i c t odir sjfile countfile min sample condition library replicate factors
@@ -108,12 +116,17 @@ expression::diego(){
 					rm -f "$odir/groups.tsv" "$odir/list.sj.tsv" "$odir/list.ex.tsv"
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
+						echo -e "$condition\t$sample.$replicate" >> "$odir/groups.tsv"
+
 						#sjfile=$(find "${mappeddirs[@]}" -maxdepth 1 -name "$sample*.sj" -exec readlink -e {} \; -quit)
 						sjfile="$(find "${mappeddirs[@]}" -maxdepth 1 -name "$sample*.sj" -print -quit)"
-						countfile="$(readlink -e "$countsdir/$m/$sample"*.exoncounts.htsc | head -1)"
 						[[ $sjfile ]] && echo -e "$sample.$replicate\t$sjfile" >> "$odir/list.sj.tsv"
-						echo -e "$sample.$replicate\t$countfile" >> "$odir/list.ex.tsv"
-						echo -e "$condition\t$sample.$replicate" >> "$odir/groups.tsv"
+
+						if $exonmode; then
+							countfile="$(readlink -e "$countsdir/$m/$sample"*.exoncounts.htsc | head -1)"
+							echo -e "$sample.$replicate\t$countfile" >> "$odir/list.ex.tsv"
+						fi
+
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 
 					min=$(cut -d $'\t' -f 1 "$odir/groups.tsv" | sort | uniq -c | column -t | cut -d ' ' -f 1 | sort -k1,1 | head -1)
@@ -147,6 +160,8 @@ expression::diego(){
 								-d $((min<3?min:3))
 								-a "$odir/input.sj.tsv"
 								-b "$odir/groups.tsv"
+								-q 0.05
+								-z ${fcth:=1}
 								-x $c
 								> "$odir/diego.sj.tsv"
 						CMD
@@ -155,37 +170,45 @@ expression::diego(){
 								-d $((min<3?min:3))
 								-a "$odir/input.sj.tsv"
 								-b "$odir/groups.tsv"
+								-q 0.05
+								-z ${fcth:=1}
 								-x $c
 								-e
 								-f "$odir/dendrogram.sj"
 						CMD
 					fi
 
-					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.diego)")
-					commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						cd "${tdirs[-1]}"
-					CMD
-						HTseq2DIEGO.pl
-							-i "$odir/list.ex.tsv"
-							-o "$odir/input.ex.tsv"
-					CMD
-					commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
-						diego.py
-							-d $((min<3?min:3))
-							-a "$odir/input.ex.tsv"
-							-b "$odir/groups.tsv"
-							-x $c
-							> "$odir/diego.ex.tsv"
-					CMD
-					commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
-						diego.py
-							-d $((min<3?min:3))
-							-a "$odir/input.ex.tsv"
-							-b "$odir/groups.tsv"
-							-x $c
-							-e
-							-f "$odir/dendrogram.ex"
-					CMD
+					if $exonmode; then
+						tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.diego)")
+						commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+							cd "${tdirs[-1]}"
+						CMD
+							HTseq2DIEGO.pl
+								-i "$odir/list.ex.tsv"
+								-o "$odir/input.ex.tsv"
+						CMD
+						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+							diego.py
+								-d $((min<3?min:3))
+								-a "$odir/input.ex.tsv"
+								-b "$odir/groups.tsv"
+								-q 0.05
+								-z ${fcth:=1}
+								-x $c
+								> "$odir/diego.ex.tsv"
+						CMD
+						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+							diego.py
+								-d $((min<3?min:3))
+								-a "$odir/input.ex.tsv"
+								-b "$odir/groups.tsv"
+								-q 0.05
+								-z ${fcth:=1}
+								-x $c
+								-e
+								-f "$odir/dendrogram.ex"
+						CMD
+					fi
 				done
 			done
 		done

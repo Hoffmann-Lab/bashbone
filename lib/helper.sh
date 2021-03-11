@@ -75,8 +75,9 @@ helper::makezipcmd(){
 	for i in "${!check_makezipcmd[@]}"; do
 		readlink -e "${check_makezipcmd[$i]}" | file -f - | grep -qE '(gzip|bzip)' || {
 			declare -n _f_makezipcmd=${tozip_makezipcmd[$i]}
+			# pigz -p $threads -k -c "$_f_makezipcmd" > "$_f_makezipcmd.gz"
 			commander::makecmd -a _cmds_makezipcmd -s '|' -c {COMMANDER[0]}<<- CMD
-				pigz -p $threads -k -c "$_f_makezipcmd" > "$_f_makezipcmd.gz"
+				bgzip -@ threads -c < "$_f_makezipcmd" > "$_f_makezipcmd.gz"
 			CMD
 			_f_makezipcmd="$_f_makezipcmd.gz"
 		}

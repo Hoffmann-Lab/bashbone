@@ -68,7 +68,7 @@ alignment::segemehl() {
 			CMD
 			commander::runcmd -v -b -t $threads -a cmdidx
 			thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
-			sed -i "s/md5segemehl=.*/md5segemehl=$thismd5segemehl/" $genome.md5.sh
+			sed -i "s/md5segemehl=.*/md5segemehl=$thismd5segemehl/" "$genome.md5.sh"
 		fi
 	fi
 
@@ -83,7 +83,7 @@ alignment::segemehl() {
 	for i in "${!_fq1_segemehl[@]}"; do
 		helper::basename -f "${_fq1_segemehl[$i]}" -o o -e e
 		o="$outdir/$o"
-		$nosplitaln && params='' || params=" -S $o.sj" #segemehl trims suffix
+		$nosplitaln && params='' || params=" -S '$o.sj'" #segemehl trims suffix
 		[[ $accuracy ]] && params+=" -A $accuracy"
 		if [[ ${_fq2_segemehl[$i]} ]]; then
 			[[ $insertsize ]] && params+=" -I $insertsize"
@@ -98,7 +98,7 @@ alignment::segemehl() {
 				-b
 				-o "$o.bam"
 			CMD
-				ln -sfnr $o.sngl.bed $o.sj
+				ln -sfnr "$o.sngl.bed" "$o.sj"
 			CMD
 		else
 			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -111,7 +111,7 @@ alignment::segemehl() {
 				-b
 				-o "$o.bam"
 			CMD
-				ln -sfnr $o.sngl.bed $o.sj
+				ln -sfnr "$o.sngl.bed" "$o.sj"
 			CMD
 		fi
 		segemehl+=("$o.bam")
@@ -155,7 +155,7 @@ alignment::star() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false params=''
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false inparams=''
 	declare -n _fq1_star _fq2_star _mapper_star
 	declare -g -a star=()
 	while getopts 'S:s:5:t:g:f:x:a:n:i:r:o:p:1:2:c:' arg; do
@@ -178,7 +178,7 @@ alignment::star() {
 			;;
 			1)	((++mandatory)); _fq1_star=$OPTARG;;
 			2)	_fq2_star=$OPTARG;;
-			c)	params="$OPTARG";;
+			c)	inparams="$OPTARG";;
 			*)	_usage;;
 		esac
 	done
@@ -230,21 +230,22 @@ alignment::star() {
 			CMD
 			commander::runcmd -c star -v -b -t $threads -a cmdidx
 			thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
-			sed -i "s/md5star=.*/md5star=$thismd5star/" $genome.md5.sh
+			sed -i "s/md5star=.*/md5star=$thismd5star/" "$genome.md5.sh"
 		fi
 	fi
 
 	declare -a cmd1
-	local a o e extractcmd
+	local params a o e extractcmd
 	for i in "${!_fq1_star[@]}"; do
 		helper::basename -f "${_fq1_star[$i]}" -o o -e e
 		o="$outdir/$o"
 		tdirs+=("$(mktemp -u -d -p "$tmpdir" cleanup.XXXXXXXXXX.star)")
 
-		params+=' --outSAMmapqUnique 60' #use 60 instead of default 255 - necessary for gatk implemented MappingQualityAvailableReadFilter
+		params="$inparams --outSAMmapqUnique 60" #use 60 instead of default 255 - necessary for gatk implemented MappingQualityAvailableReadFilter
 		helper::makecatcmd -c extractcmd -f "${_fq1_star[$i]}"
 		[[ $extractcmd != "cat" ]] && params+=" --readFilesCommand '$extractcmd'"
-		[[ $accuracy ]] && params+=' --outFilterMismatchNoverReadLmax '$(echo $accuracy | awk '{print $1/100}')
+		#[[ $accuracy ]] && params+=' --outFilterMismatchNoverReadLmax '$(echo $accuracy | awk '{print 1-$1/100}')
+		[[ $accuracy ]] && params+=' --outFilterMatchNminOverLread '$(echo $accuracy | awk '{print $1/100}')
 
 		if [[ ${_fq2_star[$i]} ]]; then
 			$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999' || {
@@ -349,7 +350,7 @@ alignment::bwa() {
 			g)	((++mandatory)); genome="$OPTARG";;
 			x)	((++mandatory)); idxprefix="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG/bwa"; mkdir -p "$outdir";;
-			a)	accuracy=$((100-OPTARG));;
+			a)	accuracy=$OPTARG;;
 			f)	forcemem=$OPTARG;;
 			r)	((++mandatory))
 				_mapper_bwa=$OPTARG
@@ -384,7 +385,7 @@ alignment::bwa() {
 			CMD
 			commander::runcmd -c bwa -v -b -t $threads -a cmdidx
 			thismd5bwa=$(md5sum "$idxprefix.bwt" | cut -d ' ' -f 1)
-			sed -i "s/md5bwa=.*/md5bwa=$thismd5bwa/" $genome.md5.sh
+			sed -i "s/md5bwa=.*/md5bwa=$thismd5bwa/" "$genome.md5.sh"
 		fi
 	fi
 
@@ -395,29 +396,28 @@ alignment::bwa() {
 	local i o1 e1 o2 e2 readlength catcmd params
 	for i in "${!_fq1_bwa[@]}"; do
 		helper::basename -f "${_fq1_bwa[$i]}" -o o1 -e e1
-		helper::basename -f "${_fq2_bwa[$i]}" -o o2 -e e2
 		o1="$outdir/$o1"
-		o2="$outdir/$o2"
 
-		helper::makecatcmd -c catcmd -f ${_fq1_bwa[$i]}
-		readlength=$($catcmd $f | head -800 | awk 'NR%4==2{l+=length($0)}END{printf("%d",l/(NR/4))}')
+		helper::makecatcmd -c catcmd -f "${_fq1_bwa[$i]}"
+		readlength=$($catcmd "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%d",l/(NR/4))}')
 
 		if $forcemem || [[ $readlength -gt 70 ]]; then
-			# minOUTscore:30 @ MM/indelpenalty:4/6 -> (100-30)/4=~17% errors -> increase minOUTscore
-			# solve (readlength-x)/5=accuracy -> r/5 - x/5 = a -> x/5 = r/5 - a -> x = (r/5-a)*5
-			# => minOUTscore = $(( readlength - (readlength/5-accuracy)*5 ))
-			[[ $accuracy ]] && params="-T $(( readlength - (readlength/5-accuracy)*5 ))"
+			# minOUTscore:30 @ MM/indelpenalty:4/6 -> (100-30)/5=~14% errors -> increase minOUTscore
+			# 100*(1-95/100)*6 = 25 allowed penalties -> minOUTscore = 70
+			# => minOUTscore = readlength − readlength*(1−accuracy/100)*5
+			[[ $accuracy ]] && params='-T '$(echo $accuracy | awk -v l=$readlength '{printf("%.d",l-l*(1-$1/100)*6)}')
 			if [[ ${_fq2_bwa[$i]} ]]; then
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bwa mem
 						$params
 						-R '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
 						-a
+						-Y
 						-t $threads
 						"$idxprefix"
-						${_fq1_bwa[$i]} ${_fq2_bwa[$i]}
+						"${_fq1_bwa[$i]}" "${_fq2_bwa[$i]}"
 				CMD
-					samtools view -@ $threads -b > $o1.bam
+					samtools view -@ $threads -b > "$o1.bam"
 				CMD
 			else
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -425,53 +425,60 @@ alignment::bwa() {
 						$params
 						-R '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
 						-a
+						-Y
 						-t $threads
 						"$idxprefix"
-						${_fq1_bwa[$i]}
+						"${_fq1_bwa[$i]}"
 				CMD
-					samtools view -@ $threads -b > $o1.bam
+					samtools view -@ $threads -b > "$o1.bam"
 				CMD
 			fi
 		else
+			[[ $accuracy ]] && params='-n '$(echo $accuracy | awk -v l=$readlength '{printf("%.d",l*(1-$1/100))}')
 			if [[ ${_fq2_bwa[$i]} ]]; then
+				helper::basename -f "${_fq2_bwa[$i]}" -o o2 -e e2
+				o2="$outdir/$o2"
+
 				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bwa	aln
+						$params
 						-t $threads
 						"$idxprefix"
-						${_fq1_bwa[$i]}
-					> $o1.sai
+						"${_fq1_bwa[$i]}"
+					> "$o1.sai"
 				CMD
 					bwa	aln
+						$params
 						-t $threads
 						"$idxprefix"
-						${_fq2_bwa[$i]}
-					> $o2.sai
+						"${_fq2_bwa[$i]}"
+					> "$o2.sai"
 				CMD
 				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bwa sampe
 						-r '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
 						"$idxprefix"
-						$o1.sai $o2.sai
-						${fastq1[$i]} ${fastq2[$i]}
+						"$o1.sai" "$o2.sai"
+						"${fastq1[$i]}" "${fastq2[$i]}"
 				CMD
-					samtools view -@ $ithreads -b > $o1.bam
+					samtools view -@ $ithreads -b > "$o1.bam"
 				CMD
 			else
 				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
 					bwa	aln
 						-t $threads
 						"$idxprefix"
-						${_fq1_bwa[$i]}
-					> $o1.sai
+						"${_fq1_bwa[$i]}"
+					> "$o1.sai"
 				CMD
 				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bwa samse
 						-r '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
 						"$idxprefix"
-						$o1.sai
-						${fastq1[$i]}
+						"$o1.sai"
+						"${_fq1_bwa[$i]}"
 				CMD
-					samtools view -@ $ithreads -b > $o1.bam
+					samtools view -@ $ithreads -b > "$o1.bam"
 				CMD
 			fi
 		fi
@@ -484,6 +491,7 @@ alignment::bwa() {
 		commander::printcmd -a cmd2
 	else
 		commander::runcmd -c bwa -v -b -t 1 -a cmd1
+		commander::runcmd -c bwa -v -b -t $instances -a cmd2
 	fi
 
 	return 0
@@ -914,60 +922,51 @@ alignment::add4stats(){
 	return 0
 }
 
-alignment::bamstats(){
+alignment::bamqc(){
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
-			-r <mapper>   | array of sorted, indexed bams within array of
-			-o <outdir>   | path to
+			-r <mapper>   | array of bams within array of
+
+			to create mapping statistics afterwards, please run alignment::add4stats hereafter
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir
-	declare -n _mapper_bamstats
-	while getopts 'S:s:r:t:o:' arg; do
+	local OPTIND arg mandatory skip=false threads
+	declare -n _mapper_bamqc
+	while getopts 'S:s:r:t:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
-			r)	((++mandatory)); _mapper_bamstats=$OPTARG;;
-			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			r)	((++mandatory)); _mapper_bamqc=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 3 ]] && _usage
+	[[ $mandatory -lt 2 ]] && _usage
 
-	commander::printinfo "summarizing mapping stats"
+	commander::printinfo "counting primary and supplementary alignments"
 
-	local m instances ithreads x
-	for m in "${_mapper_bamstats[@]}"; do
-		declare -n _bams_bamstats=$m
-		for i in "${!_bams_bamstats[@]}"; do
-			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
-			x=${#_mi_bamstats[@]}
-			((instances+=x))
-		done
-	done
+	declare -n _bams_bamqc=${_mapper_bamqc[0]}
+	local ithreads instances=$((${#_mapper_bamqc[@]}*${#_bams_bamqc[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	declare -a cmd1
-	for m in "${_mapper_bamstats[@]}"; do
-		declare -n _bams_bamstats=$m
-		for i in "${!_bams_bamstats[@]}"; do
-			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
-			for bam in "${_mi_bamstats[@]}"; do
-				[[ "$bam" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-					samtools flagstat
-						-@ $ithreads
-						"$bam"
-						> "${bam%.*}.flagstat"
-				CMD
-			done
+	local m bam
+	for m in "${_mapper_bamqc[@]}"; do
+		declare -n _bams_bamqc=$m
+		for bam in "${_bams_bamqc[@]}"; do
+			[[ "$bam" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				samtools flagstat
+					-@ $ithreads
+					"$bam"
+					> "${bam%.*}.flagstat"
+			CMD
 		done
 	done
 
@@ -977,13 +976,57 @@ alignment::bamstats(){
 		commander::runcmd -v -b -t $instances -a cmd1
 	fi
 
-	[[ $x -lt 2 ]] && {
-		commander::warn "too few postprocessing steps applied. proceeding without plotting"
-		return 0
+	return 0
+}
+
+alignment::qcstats(){
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip> | true/false return
+			-s <softskip> | true/false only print commands
+			-f <force>    | true/false rerun bamqc
+			-t <threads>  | number of
+			-r <mapper>   | array of bams within array of
+			-o <outdir>   | path to
+		EOF
+		return 1
 	}
 
-	local filter b o all a s c
-	declare -a cmd2
+	local OPTIND arg mandatory skip=false threads outdir force=false
+	declare -n _mapper_bamstats
+	while getopts 'S:s:f:r:t:o:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			f)	force=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_bamstats=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 3 ]] && _usage
+
+	local m i bam
+	declare -a mapper_qcstats
+	for m in "${_mapper_bamstats[@]}"; do
+		declare -n _bams_bamstats=$m
+		for i in "${!_bams_bamstats[@]}"; do
+			declare -n _mi_bamstats=$m$i
+			[[ ${#_mi_bamstats[@]} -eq 0 || "${_bams_bamstats[$i]}" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
+			if $force || [[ ! -s "${_mi_bamstats[0]%.*}.flagstat" ]]; then
+		 		mapper_qcstats+=("$m$i")
+			fi
+			# rescue enables to call add4stats without bamqc after each bam processing step - instead run flagstat on all files in parallel
+		done
+	done
+	alignment::bamqc -S false -s $skip -t $threads -r mapper_qcstats
+
+	commander::printinfo "plotting mapping stats"
+
+	local filter b o all a s c x odir
+	declare -a cmd1
 	for m in "${_mapper_bamstats[@]}"; do
 		declare -n _bams_bamstats=$m
 		odir="$outdir/$m"
@@ -992,6 +1035,10 @@ alignment::bamstats(){
 		for i in "${!_bams_bamstats[@]}"; do
 			[[ "${_bams_bamstats[$i]}" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
 			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
+
+			x=${#_mi_bamstats[@]}
+			[[ $x -eq 0 ]] && continue
+
 			filter=''
 			b="$(basename "${_mi_bamstats[0]}")"
 			b="${b%.*}"
@@ -999,22 +1046,22 @@ alignment::bamstats(){
 			all=''
 			if [[ -s "$outdir/$b.stats" ]]; then # check if there is a preprocessing fastq stats file
 				all=$(tail -1 "$outdir/$b.stats" | cut -f 3)
-				tail -1 "$outdir/$b.stats" > $o
+				tail -1 "$outdir/$b.stats" > "$o"
 			else
-				rm -f $o
+				rm -f "$o"
 			fi
 			for bam in "${_mi_bamstats[@]}"; do
 				[[ ! $filter ]] && filter='mapped' || filter=$(echo "${bam/\.sorted\./.}" | rev | cut -d '.' -f 2 | rev)
-				a=$(grep mapped -m 1 ${bam%.*}.flagstat | cut -d ' ' -f 1)
-				s=$(grep secondary -m 1 ${bam%.*}.flagstat | cut -d ' ' -f 1) # get rid of multicounts - 0 if unique reads in bam only
+				a=$(grep mapped -m 1 "${bam%.*}.flagstat" | cut -d ' ' -f 1)
+				s=$(grep secondary -m 1 "${bam%.*}.flagstat" | cut -d ' ' -f 1) # get rid of multicounts - 0 if unique reads in bam only
 				c=$((a-s))
 				[[ ! $all ]] && all=$c # set all to what was mapped in first file unless preprocessing fastq stats file was found
-				echo -e "$b\t$filter reads\t$c" >> $o
+				echo -e "$b\t$filter reads\t$c" >> "$o"
 			done
 			perl -F'\t' -lane '$all=$F[2] unless $all; $F[0].=" ($all)"; $F[2]=(100*$F[2]/$all); print join"\t",@F' $o | tac | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$odir/mapping.barplot.tsv"
 		done
 
-		commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+		commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 			Rscript - <<< '
 				suppressMessages(library("ggplot2"));
 				suppressMessages(library("scales"));
@@ -1039,10 +1086,14 @@ alignment::bamstats(){
 		CMD
 	done
 
-	if $skip; then
-		commander::printcmd -a cmd2
+	if [[ $x -lt 2 ]]; then
+		commander::warn "too few postprocessing steps applied for plotting"
 	else
-		commander::runcmd -v -b -t $threads -a cmd2
+		if $skip; then
+			commander::printcmd -a cmd1
+		else
+			commander::runcmd -v -b -t $threads -a cmd1
+		fi
 	fi
 
 	return 0
