@@ -2,6 +2,7 @@
 # (c) Konstantin Riege
 
 preprocess::fastqc() {
+	declare -a tdirs
 	_cleanup::preprocess::fastqc(){
 		rm -rf "${tdirs[@]}"
 	}
@@ -38,7 +39,7 @@ preprocess::fastqc() {
 
 	commander::printinfo "calculating qualities"
 
-	declare -a cmd1 tdirs
+	declare -a cmd1
 	local f
 	for f in {"${_fq1_fastqc[@]}","${_fq2_fastqc[@]}"}; do
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fastqc)")
@@ -112,6 +113,7 @@ preprocess::rmpolynt(){
 		-s $skip \
 		-a poly \
 		-A poly \
+		-b false \
 		-t $threads \
 		-o "$outdir" \
 		-1 _fq1_rmpolynuc \
@@ -128,6 +130,7 @@ preprocess::cutadapt(){
 			-s <softskip> | true/false only print commands
 			-a <adapter1> | array of
 			-A <adapter2> | array of
+			-b <rrbs>     | true/false
 			-t <threads>  | number of
 			-o <outdir>   | path to
 			-1 <fastq1>   | array of
@@ -136,14 +139,15 @@ preprocess::cutadapt(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir
+	local OPTIND arg mandatory skip=false threads outdir rrbs=false
 	declare -n _adaptera_cutadapt _adapterA_cutadapt _fq1_cutadapt _fq2_cutadapt
-	while getopts 'S:s:a:A:t:o:1:2:' arg; do
+	while getopts 'S:s:a:A:b:t:o:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			a) ((++mandatory)); _adaptera_cutadapt=$OPTARG;;
 			A) _adapterA_cutadapt=$OPTARG;;
+			b) rrbs=$OPTARG;;
 			t) ((++mandatory)); threads=$OPTARG;;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			1) ((++mandatory)); _fq1_cutadapt=$OPTARG;;
@@ -156,14 +160,22 @@ preprocess::cutadapt(){
 	commander::printinfo "adapter clipping"
 
 	declare -a cmd1
-	local i o1 e1 o2 e2 n=$((${#_adaptera_cutadapt[@]}))
-	[[ $n -gt 2 ]] && n=2 # since only the best matching adapter is removed, run cutadapt twice
+	local i o1 e1 o2 e2 params n=$((${#_adaptera_cutadapt[@]}))
+	[[ $n -gt 2 ]] && n=2 # since only the best matching adapter is removed, one may run cutadapt twice with -n $n
+	if $rrbs; then
+		_adaptera_cutadapt=(${_adaptera_cutadapt[@]/#/NN} ${_adaptera_cutadapt[@]})
+		# add instead of replace - necessary due to NN mismatch if read == ^adapter
+	fi
+
 	for i in "${!_fq1_cutadapt[@]}"; do
 		helper::basename -f "${_fq1_cutadapt[$i]}" -o o1 -e e1
 		e1=$(echo $e1 | cut -d '.' -f 1)
 		o1="$outdir/$o1.$e1.gz"
 
+		$rrbs && params='-O 3' || params='-O 5'
 		if [[ "${_fq2_cutadapt[$i]}" ]]; then
+			$rrbs && params+=' -U 2' # r=NAATT a=TT -> A, r=NNNAATT a=TT -> AA
+
 			helper::basename -f "${_fq2_cutadapt[$i]}" -o o2 -e e2
 			e2=$(echo $e2 | cut -d '.' -f 1)
 			o2="$outdir/$o2.$e2.gz"
@@ -172,11 +184,11 @@ preprocess::cutadapt(){
 				cutadapt
 				${_adaptera_cutadapt[@]/#/-a }
 				${_adapterA_cutadapt[@]/#/-A }
-				-n $n
+				$params
+				-q 20
 				--trim-n
 				-j $threads
 				-m 18
-				-O 5
 				-o >(bgzip -@ $(((threads+1)/2)) -c > "$o1")
 				-p >(bgzip -@ $(((threads+1)/2)) -c > "$o2")
 				"${_fq1_cutadapt[$i]}" "${_fq2_cutadapt[$i]}"
@@ -188,11 +200,11 @@ preprocess::cutadapt(){
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				cutadapt
 				${_adaptera_cutadapt[@]/#/-a }
-				-n $n
+				$params
+				-q 20
 				--trim-n
 				-j $threads
 				-m 18
-				-O 5
 				-o >(bgzip -@ $threads -c > "$o1")
 				"${_fq1_cutadapt[$i]}"
 				| cat
@@ -216,6 +228,7 @@ preprocess::trimmomatic() {
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
+			-b <rrbs>     | true/false
 			-t <threads>  | number of
 			-o <outdir>   | path to
 			-p <tmpdir>   | path to
@@ -225,13 +238,14 @@ preprocess::trimmomatic() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir
+	local OPTIND arg mandatory skip=false threads outdir tmpdir rrbs=false
 	declare -n _fq1_trimmomatic _fq2_trimmomatic
-	while getopts 'S:s:t:m:o:p:1:2:' arg; do
+	while getopts 'S:s:t:b:m:o:p:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
+			b) rrbs=$OPTARG;;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_trimmomatic=$OPTARG;;
@@ -251,7 +265,9 @@ preprocess::trimmomatic() {
 	#https://www.drive5.com/usearch/manual/quality_score.html
 	#od -v -A n -t u1
 	declare -a cmd1
-	local f catcmd
+	local f catcmd params
+	$rrbs || params='LEADING:20'
+
 	for f in "${_fq1_trimmomatic[@]}"; do
 		helper::makecatcmd -c catcmd -f $f
 		commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
@@ -323,8 +339,8 @@ preprocess::trimmomatic() {
 				"${_fq1_trimmomatic[$i]}" "${_fq2_trimmomatic[$i]}"
 				>(bgzip -@ $(((threads+1)/2)) -c > "$o1") >(bgzip -@ $(((threads+1)/2)) -c > "$os1")
 				>(bgzip -@ $(((threads+1)/2)) -c > "$o2") >(bgzip -@ $(((threads+1)/2)) -c > "$os2")
-				SLIDINGWINDOW:5:22
-				LEADING:20
+				$params
+				SLIDINGWINDOW:5:20
 				MINLEN:18
 				TOPHRED33
 				| cat
@@ -343,8 +359,8 @@ preprocess::trimmomatic() {
 				-${phred["${_fq1_trimmomatic[$i]}"]}
 				"${_fq1_trimmomatic[$i]}"
 				>(bgzip -@ $threads -c > "$o1")
-				SLIDINGWINDOW:5:22
-				LEADING:20
+				$params
+				SLIDINGWINDOW:5:20
 				MINLEN:18
 				TOPHRED33
 				| cat
@@ -624,6 +640,43 @@ preprocess::sortmerna(){
 	return 0
 }
 
+preprocess::add4stats(){
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-r <qualdirs>  | array of
+			-a <path>      | to add
+			-1 <fastq1>    | array of
+			-2 <fastq2>    | array of
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory
+	declare -n _qdirs_add4stats _fq1_add4stats _fq2_add4stats
+	while getopts 'r:a:1:2:' arg; do
+		case $arg in
+			r)	((++mandatory)); _qdirs_add4stats=$OPTARG;;
+			a)	((++mandatory)); qdir="$OPTARG";;
+			1)	((++mandatory)); _fq1_add4stats=$OPTARG;;
+			2)	_fq2_add4stats=$OPTARG;;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 3 ]] && _usage
+
+	local f i=${#_qdirs_add4stats[@]}
+	_qdirs_add4stats+=("$qdir")
+	declare -g -a preprocess$i
+	declare -n _pi_add4stats=preprocess$i
+
+	for f in {"${_fq1_add4stats[@]}","${_fq2_add4stats[@]}"}; do
+		_pi_add4stats+=("$f")
+	done
+
+	return 0
+}
+
 preprocess::qcstats(){
 	local tmp
 	_cleanup::preprocess::qcstats(){
@@ -635,6 +688,8 @@ preprocess::qcstats(){
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
+			-f <force>    | true/false rerun fastqc
+			-t <threads>  | number of
 			-i <qualdirs> | array of
 			-o <outdir>   | path to
 			-p <tmpdir>   | path to
@@ -644,13 +699,14 @@ preprocess::qcstats(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false outdir tmpdir
-	declare -n _qualdirs_qcstats
-	declare -n _fq1_qcstats _fq2_qcstats
-	while getopts 'S:s:i:o:p:1:2:' arg; do
+	local OPTIND arg mandatory threads skip=false outdir tmpdir force=false
+	declare -n _qualdirs_qcstats _fq1_qcstats _fq2_qcstats
+	while getopts 'S:s:t:f:i:o:p:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
+			f) force=$OPTARG;;
+			t) ((++mandatory)); threads=$OPTARG;;
 			i) ((++mandatory)); _qualdirs_qcstats=$OPTARG;;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
@@ -659,12 +715,32 @@ preprocess::qcstats(){
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 5 ]] && _usage
 
-	commander::printinfo "summarizing preprocessing stats"
+	declare -a cmdqc
+	local qdir i f b e
+	for i in "${!_qualdirs_qcstats[@]}"; do
+		qdir="${_qualdirs_qcstats[$i]}"
+		declare -n _pi_qcstats=preprocess$i
+		for f in "${_pi_qcstats[@]}"; do
+			helper::basename -f "$f" -o b -e e
+			if $force || [[ ! -s "$qdir/${b}_fastqc.zip" ]]; then
+				commander::makecmd -a cmdqc -s ' ' -c {COMMANDER[0]}<<- CMD
+					fq=("$f");
+					preprocess::fastqc -S false -s $skip -t 1 -p "$tmpdir" -o "$qdir" -1 fq
+				CMD
+				# rescue enables to store quality directories without running fastqc after each fastq processing step - instead run fastqc on all files in parallel
+			fi
+		done
+	done
+	if [[ ${#cmdqc[@]} -gt 0 ]]; then
+		commander::runcmd -b -t $threads -a cmdqc
+	fi
+
+	commander::printinfo "plotting preprocessing stats"
 
 	tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.tsv)"
-	local i o b e c multiplier qdir tool
+	local o c multiplier tool
 	declare -a counts
 	echo -e "sample\ttype\tcount" > "$outdir/preprocessing.barplot.tsv"
 	for i in "${!_fq1_qcstats[@]}"; do
@@ -711,7 +787,7 @@ preprocess::qcstats(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd1
 	fi
 
 	return 0
