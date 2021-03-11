@@ -1021,7 +1021,9 @@ alignment::qcstats(){
 			# rescue enables to call add4stats without bamqc after each bam processing step - instead run flagstat on all files in parallel
 		done
 	done
-	alignment::bamqc -S false -s $skip -t $threads -r mapper_qcstats
+	if [[ ${#mapper_qcstats[@]} -gt 0 ]]; then
+		alignment::bamqc -S false -s $skip -t $threads -r mapper_qcstats
+	fi
 
 	commander::printinfo "plotting mapping stats"
 
