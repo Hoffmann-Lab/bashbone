@@ -70,9 +70,6 @@ variants::haplotypecaller() {
 	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
 
-	local params=''
-	$isdna || params='--dont-use-soft-clipped-bases'
-
 	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6
 	for m in "${_mapper_haplotypecaller[@]}"; do
 		declare -n _bams_haplotypecaller=$m
@@ -112,7 +109,7 @@ variants::haplotypecaller() {
 						-A Coverage
 						-A DepthPerAlleleBySample
 						-A StrandBiasBySample
-						$params
+						--dont-use-soft-clipped-bases true
 						--smith-waterman FASTEST_AVAILABLE
 						--max-reads-per-alignment-start 0
 						--min-base-quality-score 20
@@ -372,7 +369,8 @@ variants::mutect() {
 						--verbosity INFO
 						--tmp-dir "${tdirs[-1]}"
 						--max-mnp-distance 0
-						--ignore-itr-artifacts
+						--ignore-itr-artifacts true
+						--dont-use-soft-clipped-bases true
 				CMD
 				# vs gatk3: removed -cosmic and -dbsnp. The best practice now is to pass in gnomAD as the germline-resource
 
@@ -385,6 +383,8 @@ variants::mutect() {
 				# An other solution would be to raise ulimit to >40k (!) which requires root. fd will not be nuked by garbace collection even if gc threads increased.
 
 				# to apply LearnReadOrientationMode use --f1r2-tar-gz option
+
+				# --dont-use-soft-clipped-bases recommended for RNA based calling due to splitNcigar which elongates both splits towards full length read alignments and mask them\n\t\t\t\t# since we are doing clipmateoverlap, which introduces soft-clips, always enable this option
 
 				if [[ -s "$genome.somatic_common.vcf.gz" ]]; then
 					commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
