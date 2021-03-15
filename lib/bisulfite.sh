@@ -334,6 +334,7 @@ bisulfite::metilene(){
 			-c <cmpfiles> | array of
 			-m <missing>  | values - default: 0.2
 			-r <mapper>   | array of bams within array of
+			-i <methdir>  | path to
 			-o <outdir>   | path to
 			-p <tmpdir>   | path to
 		EOF
