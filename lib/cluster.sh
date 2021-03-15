@@ -12,12 +12,14 @@ cluster::coexpression_deseq(){
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
-			-f <value>    | filter cluster for 0|1|2|20|21
 			-t <threads>  | number of
 			-M <maxmemory>| amount of
 			-c <cmpfiles> | array of
 			-l <idfiles>  | array of
 			-r <mapper>   | array of bams within array of
+			-f <value>    | [0123] filter input for padj < 0.05 (0) log2foldchange > 0.5 (1) basemean > 5 (2) lower 30% percentile (3)
+			-g <gtf>      | path to (optional)
+			-b <biotype>  | within gtf
 			-p <tmpdir>   | path to
 			-i <countsdir>| path to
 			-j <deseqdir> | path to
@@ -43,12 +45,14 @@ cluster::coexpression_deseq(){
 			i)	((++mandatory)); countsdir="$OPTARG";;
 			j)	((++mandatory)); deseqdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			l)	((++mandatory)); _idfiles_coexpression=$OPTARG;;
+			l)	_idfiles_coexpression=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 9 ]] && _usage
+	[[ $mandatory -lt 8 ]] && _usage
 	[[ $biotype && ! $gtf ]] && _usage
+
+	[[ ! $_idfiles_coexpression ]] && unset _idfiles_coexpression && declare -a _idfiles_coexpression
 
 	commander::printinfo "inferring coexpression"
 
@@ -132,7 +136,7 @@ cluster::coexpression_deseq(){
 
 			mkdir -p "$odir/$e"
 			params=FALSE
-			[[ $clusterfilter =~ 2 ]] && params=TRUE
+			[[ $clusterfilter =~ 3 ]] && params=TRUE
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 				wgcna.R $((maxmemory/1024/2)) ${e^^*} $params "$odir/experiments.filtered.$e" "$odir/$e"
 			CMD
@@ -287,11 +291,13 @@ cluster::coexpression(){
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
-			-f <value>    | filter cluster for 0|1|2|20|21
 			-t <threads>  | number of
 			-M <maxmemory>| amount of
 			-l <idfiles>  | array of
 			-r <mapper>   | array of bams within array of
+			-f <value>    | [23] filter input for TPM > 5 (2) lower 30% percentile (3)
+			-g <gtf>      | path to (optional)
+			-b <biotype>  | within gtf
 			-p <tmpdir>   | path to
 			-i <countsdir>| path to
 			-o <outdir>   | path to
@@ -314,12 +320,14 @@ cluster::coexpression(){
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
-			l)	((++mandatory)); _idfiles_coexpression=$OPTARG;;
+			l)	_idfiles_coexpression=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage && return 1
+	[[ $mandatory -lt 6 ]] && _usage && return 1
 	[[ $biotype && ! $gtf ]] && _usage && return 1
+
+	[[ ! $_idfiles_coexpression ]] && unset _idfiles_coexpression && declare -a _idfiles_coexpression
 
 	commander::printinfo "inferring coexpression"
 
@@ -410,7 +418,7 @@ cluster::coexpression(){
 		grep -f "$odir/experiments.filtered.genes" "$odir/experiments.tpm" >> "$odir/experiments.filtered.tpm"
 
 		params=FALSE
-		[[ $clusterfilter =~ 2 ]] && params=TRUE
+		[[ $clusterfilter =~ 3 ]] && params=TRUE
 		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
 			wgcna.R $((maxmemory/1024/2)) TPM $params "$odir/experiments.filtered.tpm" "$odir"
 		CMD
