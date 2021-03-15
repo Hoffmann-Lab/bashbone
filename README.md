@@ -13,7 +13,7 @@ A bash library for workflow and pipeline design within but not restricted to the
 ## For users
 
 - Easily design multi-threaded pipelines to perform NGS related tasks
-- For model AND non-model organisms
+- For model and non-model organisms
 - Availability of many best-practice parameterized and run-time tweaked software wrappers
 - Most software related parameters will be inferred directly from your data so that all functions require just a minimalistic set of input arguments
 - Benefit from a non-root stand-alone installer without need for any prerequisites
@@ -28,21 +28,30 @@ A bash library for workflow and pipeline design within but not restricted to the
   - DNA-Seq protocols
   - Bisulfite converted DNA-Seq protocols
 - Data preprocessing (quality check, adapter clipping, quality trimming, error correction, artificial rRNA depletion)
-- Gene fusion detection
 - Read alignment and post-processing
   - knapsack problem based slicing of alignment files for parallel task execution
   - sorting, filtering, unique alignment extraction, removal of optical duplicates
   - generation of pools and pseudo-replicates
   - read group modification, split N-cigar reads, left-alignment and base quality score recalibration
+- Gene fusion detection
 - Methyl-C calling and prediction of differentially methylated regions
-- Read quantification, TPM and Z-score normalization (automated inference of strand specific library preparation methods)
-- Inference of differential expression as well as co-expression clusters
-- Detection of differential splice junctions and differential exon usage
-- Gene ontology (GO) gene set enrichment and over representation analysis plus semantic similarity based clustering
-- Free implementation of Encode3 best-practice ChIP-Seq Peak calling (automated inference of effective genome sizes)
-- Peak calling from RIP-Seq, MeRIP-Seq, m6A-Seq and other related *IP-Seq data
-- Germline and somatic variant detection from DNA or RNA sequencing experiments plus VCF normalization
-- Tree reconstruction from homozygous sites
+- Expression analysis
+  - Read quantification, TPM and Z-score normalization and heatmap plotting
+  - Inference of strand specific library preparation methods
+  - Inference of differential expression as well as co-expression clusters
+  - Detection of differential splice junctions and differential exon usage
+  - Gene ontology (GO) gene set enrichment and over representation analysis plus semantic similarity based clustering
+- Implementation of Encode3 best-practice ChIP-Seq Peak calling
+  - Peak calling from RIP-Seq, MeRIP-Seq, m6A-Seq and other related *IP-Seq data
+  - Inference of effective genome sizes
+- Variant detection from DNA or RNA sequencing experiments
+  - Integration of multiple solutions for germline and somatic calling
+  - VCF normalization
+  - Tree reconstruction from homozygous sites
+- SSGSEA and survival analysis from TCGA cancer expression data
+- Genome and SRA data retrieval
+  - Genome to transcriptome conversion
+  - Data visualization via IGV batch processing
 
 # License
 
@@ -237,14 +246,14 @@ Assume this input:
 And this desired output (N=2 vs N=2 each):
 
 - wt_vs_A
-- wt_vs_b
+- wt_vs_B
 - A_vs_B
 
 Then the info file should consist of:
 
 - At least 4 columns (`<name>`, `<main-factor>`, `single-end|paired-end`, `<replicate>`)
 - Optionally, additional factors
-- Unique prefixes of input fastq basenames in the first column which expand to the full file name
+- First column needs to consist of unique prefixes of input fastq basenames which can be expand to full file names
 
 |        |     |            |     |        |
 | ---    | --- | ---        | --- | ---    |
@@ -258,7 +267,7 @@ Then the info file should consist of:
 
 ## Adapter sequences
 
-Sequences can be found in the Illumina Adapter Sequences Document (<https://www.illumina.com/search.html?q=Illumina Adapter Sequences Document>) and the resource of Trimmomatic (<https://github.com/timflutre/trimmomatic/tree/master/adapters>), FastQC respectively (<https://github.com/s-andrews/FastQC/blob/master/Configuration>).
+Sequences can be found in the Illumina Adapter Sequences Document (<https://www.illumina.com/search.html?q=Illumina Adapter Sequences Document>) and the resource of Trimmomatic (<https://github.com/usadellab/Trimmomatic/tree/main/adapters>), FastQC respectively (<https://github.com/s-andrews/FastQC/blob/master/Configuration>).
 
 The following excerpt is independent of the indexing type, i.e. single, unique dual (UD) or combinatorial dual (CD).
 
@@ -266,8 +275,9 @@ Nextera (Transposase Sequence), TruSight, AmpliSeq, stranded total/mRNA Prep, Ri
 
 TruSeq (Universal) Adapter with A prefix due to 3' primer A-tailing : AGATCGGAAGAGC
 
-      - full DNA & RNA - R1: AGATCGGAAGAGCACACGTCTGAACTCCAGTCA R2: AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT
-      - full DNA MethC - R1: AGATCGGAAGAGCACACGTCTGAAC R2: AGATCGGAAGAGCGTCGTGTAGGGA
+TruSeq full length DNA & RNA R1: AGATCGGAAGAGCACACGTCTGAACTCCAGTCA R2: AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT
+
+TruSeq full length DNA MethC R1: AGATCGGAAGAGCACACGTCTGAAC R2: AGATCGGAAGAGCGTCGTGTAGGGA
 
 TruSeq Small RNA: TGGAATTCTCGGGTGCCAAGG
 
@@ -278,25 +288,26 @@ Tiny example pipeline to perform gene fusion detection and differential expressi
 ```bash
 source <path/of/installation/latest/bashbone/activate.sh> -c true
 genome=<path/to/fasta>
-genomeidx=<path/to/segemhl.idx>
+genomeidx=<path/to/segemehl.idx>
 gtf=<path/to/gtf>
 declare -a comparisons=($(ls <path/to/sample-info/files*>))
 declare -a fastqs=($(ls <path/to/fastq-gz/files*>))
 declare -a adapters=(AGATCGGAAGAGC)
+declare -a qualdirs
 fragmentsize=200
 threads=4
-memoryPerInstance=2000
+memory=64000
 preprocess::fastqc -t $threads -o results/qualities/raw -p /tmp -1 fastqs
+preprocess::add4stats -r qualdirs -a results/qualities/raw -1 fastqs
 preprocess::trimmomatic -t $threads -1 fastqs
-preprocess::fastqc -t $threads -o results/qualities/trimmed -p /tmp -1 fastqs
+preprocess::add4stats -r qualdirs -a results/qualities/trimmed -1 fastqs
 preprocess::rmpolynt -t $threads -o results/polyntclipped -1 fastqs
-preprocess::fastqc -t $threads -o results/qualities/polyntclipped -p /tmp -1 fastqs
+preprocess::add4stats -r qualdirs -a results/qualities/polyntclipped -1 fastqs
 preprocess::cutadapt -t $threads -o results/adapterclipped -a adapters -1 fastqs
-preprocess::fastqc -t $threads -o results/qualities/adapterclipped -p /tmp -1 fastqs
+preprocess::add4stats -r qualdirs -a results/qualities/adapterclipped -1 fastqs
 preprocess::rcorrector -t $threads -o results/corrected -p /tmp -1 fastqs
-preprocess::sortmerna -t $threads -m $memoryPerInstance -o results/rrnafiltered -p /tmp
-preprocess::fastqc -t $threads -o results/qualities/rrnafiltered -p /tmp -1 fastqs
-declare -a qualdirs=($(ls -d results/qualities/*/))
+preprocess::sortmerna -t $threads -o results/rrnafiltered -p /tmp -1 fastqs
+preprocess::add4stats -r qualdirs -a results/qualities/rrnafiltered -1 fastqs
 preprocess::qcstats -i qualdirs -o results/stats -p /tmp -1 fastqs
 fusions::arriba -t $threads -g $genome -a $gtf -o results/fusions -p /tmp -f $fragmentsize -1 fastqs
 fusions::starfusion -t $threads -g $genome -g $gtf -o results/fusions -1 fastqs
@@ -307,15 +318,14 @@ alignment::postprocess -j uniqify -t $threads -p /tmp -o results/mapped -r mappe
 alignment::add4stats -r mapped
 alignment::postprocess -r sort -t $threads -p /tmp -o results/mapped -r mapped
 alignment::postprocess -r index -t $threads -p /tmp -o results/mapped -r mapped
-alignment::bamstats -t $threads -o results/stats -r mapped
+alignment::qcstats -t $threads -o results/stats -r mapped
 declare -A strandness
 alignment::inferstrandness -t $threads -g $gtf -p /tmp -r mapped -x strandness
 quantify::featurecounts -t $threads -p /tmp -g $gtf -o results/counted -r mapped -x strandness
 quantify::tpm -t $threads -g $gtf -o results/counted -r mapped
-expression::diego -t $threads -g $gtf -c comparisons -i results/counted -j results/mapped -p /tmp -o results/diffexonjunctions -r mapped -x strandness
+expression::diego -t $threads -g $gtf -c comparisons -i results/counted -p /tmp -o results/diffexonjunctions -r mapped -x strandness
 expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o results/diffgenes -r mapped
-declare -a custergenes
-cluster::coexpression -t $threads -g $gtf -b protein_coding -f 23 -i /results/counted -o results/coexpressed -r mapped -l clustergenes
+cluster::coexpression -t $threads -M $memory -g $gtf -b protein_coding -f 02 -i results/counted -o results/coexpressed -r mapped
 ```
 
 # Third-party software
@@ -326,7 +336,7 @@ cluster::coexpression -t $threads -g $gtf -b protein_coding -f 23 -i /results/co
 | ---  | ---    | --- |
 | Arriba        | <https://github.com/suhrig/arriba/>                                 | NA |
 | BamUtil       | <https://genome.sph.umich.edu/wiki/BamUtil>                         | 10.1101/gr.176552.114 |
-| BW            | <https://github.com/lh3/bwa>                                        | 10.1093/bioinformatics/btp324 |
+| BWA           | <https://github.com/lh3/bwa>                                        | 10.1093/bioinformatics/btp324 |
 | BCFtools      | <http://www.htslib.org/doc/bcftools.html>                           | 10.1093/bioinformatics/btr509 |
 | BEDTools      | <https://bedtools.readthedocs.io>                                   | 10.1093/bioinformatics/btq033 |
 | bgztail       | <https://github.com/circulosmeos/bgztail>                           | NA |

@@ -504,6 +504,7 @@ compile::gem() {
 	mkdir -p bin
 	wget -q -O bin/Read_Distribution_default.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_default.txt
 	wget -q -O bin/Read_Distribution_CLIP.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_CLIP.txt
+	wget -q -O bin/Read_Distribution_ChIP-exo.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_ChIP-exo.txt
 	compile::_javawrapper bin/gem $(readlink -e gem.jar) $insdir/latest/java/java
 	mkdir -p $insdir/latest
 	ln -sfn $PWD/bin $insdir/latest/gem
