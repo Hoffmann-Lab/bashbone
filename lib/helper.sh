@@ -31,7 +31,7 @@ helper::makevcfzipcmd() {
 	for f in "${tozip_vcfzip[@]}"; do
 		declare -n _f_vcfzip="$f"
 		readlink -e "$_f_vcfzip" | file -f - | grep -qF 'compressed' || {
-			commander::makecmd -a _cmds_vcfzip -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a _cmds_vcfzip -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				bgzip -f -@ $threads < "$_f_vcfzip" > "$_f_vcfzip.gz"
 			CMD
 				tabix -f -p vcf "$_f_vcfzip.gz"
@@ -76,7 +76,7 @@ helper::makezipcmd(){
 		readlink -e "${check_makezipcmd[$i]}" | file -f - | grep -qE '(gzip|bzip)' || {
 			declare -n _f_makezipcmd=${tozip_makezipcmd[$i]}
 			# pigz -p $threads -k -c "$_f_makezipcmd" > "$_f_makezipcmd.gz"
-			commander::makecmd -a _cmds_makezipcmd -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a _cmds_makezipcmd -s ';' -c {COMMANDER[0]}<<- CMD
 				bgzip -@ threads -c < "$_f_makezipcmd" > "$_f_makezipcmd.gz"
 			CMD
 			_f_makezipcmd="$_f_makezipcmd.gz"

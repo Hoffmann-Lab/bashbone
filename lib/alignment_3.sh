@@ -117,7 +117,7 @@ alignment::mkreplicates() {
 					nrf=${_bams_mkreplicates[${_nridx_mkreplicates[$i]}]}
 					o=$odir/$(echo -e "$(basename $nf)\t$(basename $nrf)" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')
 
-					commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 						samtools merge -f -c -p -@ $ithreads1 $o $nf $nrf
 					CMD
 					_bams_mkreplicates+=("$o")
@@ -126,7 +126,7 @@ alignment::mkreplicates() {
 					tf=${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}
 					rf=${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}
 					o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')
-					commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 						samtools merge -f -c -p -@ $ithreads1 $o $tf $rf
 					CMD
 					_bams_mkreplicates+=("$o")

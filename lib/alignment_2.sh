@@ -100,7 +100,7 @@ alignment::slice(){
 
 			for bed in $(ls -v "$tmpdir/genome/slice".*.bed); do
 				i=$(basename "$bed" .bed | rev | cut -d '.' -f 1 | rev)
-				commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					samtools view
 						-@ $ithreads
 						-L "$bed"
@@ -185,7 +185,7 @@ alignment::rmduplicates(){
 		for i in "${!_bams_rmduplicates[@]}"; do
 			tomerge=()
 			while read -r slice; do
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					picard
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -300,7 +300,7 @@ alignment::clipmateoverlaps() {
 
 			while read -r slice; do
 				# use stdout with bam extension to enfoce bam output
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					bam clipOverlap
 						--in "$slice"
 						--out -.bam
@@ -310,10 +310,9 @@ alignment::clipmateoverlaps() {
 						--stats
 					> "$slice.mateclipped"
 				CMD
-					[[ $? -le 2 ]] && true || false
-				CMD
+				# [[ $? -le 2 ]] && true || false
 
-				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					mv "$slice.mateclipped" "$slice"
 				CMD
 					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
@@ -414,7 +413,7 @@ alignment::reorder() {
 			tomerge=()
 
 			while read -r slice; do
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					picard
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -423,7 +422,7 @@ alignment::reorder() {
 						ReorderSam
 						I="$slice"
 						O="$slice.ordered"
-						R="$genome"
+						SD="$genome"
 						VALIDATION_STRINGENCY=SILENT
 						VERBOSITY=WARNING
 				CMD
@@ -431,6 +430,7 @@ alignment::reorder() {
 				CMD
 					samtools index -@ $mthreads "$slice" "${slice%.*}.bai"
 				CMD
+				# SD (former R) accepts fasta, bam, dict
 
 				tomerge+=("$slice")
 			done < "${_bamslices_reorder[${_bams_reorder[$i]}]}"
@@ -548,7 +548,7 @@ alignment::addreadgroup() {
 			o="$(basename "${_bams_addreadgroup[$i]}")"
 			o="${o%.*}"
 			while read -r slice; do
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					picard
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -672,7 +672,7 @@ alignment::splitncigar() {
 			# only for FR-PE data else produces empty file!	--read-filter MateDifferentStrandReadFilter
 			while read -r slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					gatk
 						--java-options '
 							-Xmx${jmem}m
@@ -791,7 +791,7 @@ alignment::leftalign() {
 
 			while read -r slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					gatk
 						--java-options '
 								-Xmx${jmem}m
@@ -953,7 +953,7 @@ alignment::bqsr() {
 						--tmp-dir "${tdirs[-1]}"
 				CMD
 
-				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 					rm -rf "$slice.bqsr.parts"
 				CMD
 					gatk

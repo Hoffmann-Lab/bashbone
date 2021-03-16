@@ -175,7 +175,7 @@ bisulfite::segemehl() {
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.segemehl)")
 		if [[ ${_fq2_segemehl[$i]} ]]; then
 			[[ $insertsize ]] && params+=" -I $insertsize"
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				cd "${tdirs[-1]}"
 			CMD
 				segemehl
@@ -191,7 +191,7 @@ bisulfite::segemehl() {
 				-o "$o.bam"
 			CMD
 		else
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				cd "${tdirs[-1]}"
 			CMD
 				segemehl
@@ -281,7 +281,7 @@ bisulfite::mecall(){
 			CMD
 
 			# pipe into bgzip is much faster than using bctools sort -O z
-			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				bcftools sort -T "${tdirs[-1]}" -m ${imemory}M "${tdirs[-1]}/$o.vcf.gz" | bgzip -f -@ $ithreads > "$odir/$o.vcf.gz"
 			CMD
 				tabix -f -p vcf "$odir/$o.vcf.gz"
@@ -469,7 +469,7 @@ bisulfite::_metilene(){
 	[[ $trep ]] && params+=" -Y $(echo $trep | awk -v m=$missing '{printf "%.f",$1*(1-m)}')"
 
 	local header="chr start stop q-value mean_$c-mean_$t CpGs p-value_MWU p-value_2DKS mean_$c mean_$t"
-	commander::makecmd -a _cmds1_metilene -s '|' -c {COMMANDER[0]}<<- CMD
+	commander::makecmd -a _cmds1_metilene -s ';' -c {COMMANDER[0]}<<- CMD
 		{	sed 's/ /\t/g' <<< "$header";
 			metilene
 				$params
@@ -482,7 +482,7 @@ bisulfite::_metilene(){
 		} > "$outdir/dmr.full.tsv"
 	CMD
 
-	commander::makecmd -a _cmds2_metilene -s '|' -c {COMMANDER[0]}<<- CMD
+	commander::makecmd -a _cmds2_metilene -s ';' -c {COMMANDER[0]}<<- CMD
 		awk '\$4=="q-value" || \$4<=0.05' "$outdir/dmr.full.tsv" > "$outdir/dmr.tsv"
 	CMD
 

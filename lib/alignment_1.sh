@@ -87,7 +87,7 @@ alignment::segemehl() {
 		[[ $accuracy ]] && params+=" -A $accuracy"
 		if [[ ${_fq2_segemehl[$i]} ]]; then
 			[[ $insertsize ]] && params+=" -I $insertsize"
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				segemehl
 				$params
 				-i "$genomeidx"
@@ -101,7 +101,7 @@ alignment::segemehl() {
 				ln -sfnr "$o.sngl.bed" "$o.sj"
 			CMD
 		else
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				segemehl
 				$params
 				-i "$genomeidx"
@@ -217,7 +217,7 @@ alignment::star() {
 			[[ $genomeseqs -gt 5000 ]] && idxparams+=' --genomeChrBinNbits '$(echo "$genomesize $genomeseqs" | perl -M'List::Util qw(min)' -lane 'printf("%d",min(18, log($F[0]/$F[1])/log(2)))')
 
 			cmdidx=()
-			commander::makecmd -a cmdidx -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				mkdir -p "$genomeidxdir"
 			CMD
 				STAR
@@ -252,7 +252,7 @@ alignment::star() {
 				[[ $insertsize ]] || insertsize=200000
 				params+=" --alignMatesGapMax $insertsize --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
 			}
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				STAR
 				--runMode alignReads
 				$params
@@ -281,7 +281,7 @@ alignment::star() {
 				[[ $insertsize ]] || insertsize=200000
 				params+=" --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
 			}
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				STAR
 				--runMode alignReads
 				$params
@@ -378,7 +378,7 @@ alignment::bwa() {
 		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5bwa" || "$thismd5bwa" != "$md5bwa" ]]; then
 			commander::printinfo "indexing genome for bwa"
 			declare -a cmdidx
-			commander::makecmd -a cmdidx -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				mkdir -p "$(dirname "$idxprefix")"
 			CMD
 				bwa index -p "$idxprefix" "$genome"
@@ -439,7 +439,7 @@ alignment::bwa() {
 				helper::basename -f "${_fq2_bwa[$i]}" -o o2 -e e2
 				o2="$outdir/$o2"
 
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bwa	aln
 						$params
 						-t $threads
@@ -464,7 +464,7 @@ alignment::bwa() {
 					samtools view -@ $ithreads -b > "$o1.bam"
 				CMD
 			else
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					bwa	aln
 						-t $threads
 						"$idxprefix"
@@ -657,7 +657,7 @@ alignment::_uniqify() {
 
 		#extract uniques just by MAPQ
 		[[ "$m" == "star" ]] && params+='-q 60' || params+='-q 1'
-		commander::makecmd -a _cmds2_uniqify -s '&&' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a _cmds2_uniqify -s ';' -c {COMMANDER[0]}<<- CMD
 			samtools view
 				$params
 				-@ $ithreads
@@ -721,7 +721,7 @@ alignment::_sort() {
 
 	_returnfile_sort="$outbase.sorted.bam"
 
-	commander::makecmd -a _cmds1_sort -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+	commander::makecmd -a _cmds1_sort -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 		cd "$tmpdir"
 	CMD
 		samtools sort

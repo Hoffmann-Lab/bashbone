@@ -150,6 +150,8 @@ bashbone(){
 			trap - ERR
 			trap - RETURN
 			trap - EXIT
+			trap - INT
+			trap - TERM
 			source <(printf '%s\n' "${BASCHBONE_BAK_RET[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_ERR[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_EXIT[@]}")

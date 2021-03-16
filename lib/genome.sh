@@ -46,7 +46,7 @@ genome::mkdict() {
 		declare -a cmd1 cmd2
 
 		dict="$(mktemp -u -p "$tmpdir" cleanup.XXXXXXXXXX.dict)"
-		commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 			picard
 				-Xmx${jmem}m
 				-XX:ParallelGCThreads=$jgct
@@ -58,13 +58,13 @@ genome::mkdict() {
 				VERBOSITY=WARNING
 		CMD
 
-		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+		commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 			grep -Eo 'SN:\S+' "$dict" | cut -d ':' -f 2- > "$genome.list"
 		CMD
 			mv "$dict" "${genome%.*}.dict"
 		CMD
 
-		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 			samtools faidx "$genome"
 		CMD
 
@@ -190,7 +190,7 @@ genome::view(){
 	$autoexit && echo "exit" >> $f
 
 	declare -a cmd1
-	commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+	commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 		java
 			--module-path="\$CONDA_PREFIX/lib/igv"
 			-Xmx${memory}m

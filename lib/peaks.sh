@@ -35,7 +35,7 @@ peaks::_idr(){
 	[[ $mandatory -lt 6 ]] && _usage
 
 	#p.value q.value signal.value
-	commander::makecmd -a _cmds1_idr -s '|' -c {COMMANDER[0]}<<- CMD
+	commander::makecmd -a _cmds1_idr -s ';' -c {COMMANDER[0]}<<- CMD
 		idr
 		--samples "$t" "$r"
 		--peak-list "$p"
@@ -196,7 +196,7 @@ peaks::macs(){
 			# the first can be tackled by downsampling, but the latter also faces strong variation in base gene expression levels, which makes model estimation nearly impossible
 			if ! $ripseq; then
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					macs2 callpeak
 					$params
 					-t "$f"
@@ -213,7 +213,7 @@ peaks::macs(){
 			fi
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 				macs2 callpeak
 				$params
 				-t "$f"
@@ -387,7 +387,7 @@ peaks::macs_idr(){
 				# the first can be tackled by downsampling, but the latter also faces strong variation in base gene expression levels, which makes model estimation nearly impossible
 				if ! $ripseq; then
 					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
-					commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 						macs2 callpeak
 						$params
 						-t "$f"
@@ -404,7 +404,7 @@ peaks::macs_idr(){
 				fi
 
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					macs2 callpeak
 					$params
 					-t "$f"
@@ -653,7 +653,7 @@ peaks::gem(){
 				echo > "$odir/$o1/$o1.narrowPeak"
 			else
 				distfile="$(dirname "$(which gem)")/Read_Distribution_default.txt"
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					gem
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -695,7 +695,7 @@ peaks::gem(){
 				distfile="$(dirname "$(which gem)")/Read_Distribution_ChIP-exo.txt"
 			fi
 
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 				gem
 					-Xmx${jmem}m
 					-XX:ParallelGCThreads=$jgct
@@ -932,7 +932,7 @@ peaks::gem_idr(){
 					echo > "$odir/$o1/$o1.narrowPeak"
 				else
 					distfile="$(dirname "$(which gem)")/Read_Distribution_default.txt"
-					commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 						gem
 							-Xmx${jmem}m
 							-XX:ParallelGCThreads=$jgct
@@ -974,7 +974,7 @@ peaks::gem_idr(){
 					distfile="$(dirname "$(which gem)")/Read_Distribution_ChIP-exo.txt"
 				fi
 
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					gem
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -1167,7 +1167,7 @@ peaks::peakachu() {
 			o="${o%.*}"
 		fi
 
-		commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 			rm -rf "$odir/$o"
 		CMD
 			peakachu adaptive
@@ -1270,7 +1270,7 @@ peaks::peakachu_idr() {
 			for f in "$tf" "$rf" "$pf"; do
 				o=$(echo -e "$(basename $nf)\t$(basename $f)" | sed -E 's/(\..+)\t(.+)\1/-\2/')
 
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					rm -rf "$odir/$o"
 				CMD
 					peakachu adaptive

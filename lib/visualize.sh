@@ -46,7 +46,7 @@ visualize::venn() {
 	[[ $(head -1 ${_lists_venn[0]} | awk '{print NF}') -eq 1 ]] && params+=" --type list"
 
 	tdir="$(mktemp -u -d -p "$tmpdir" cleanup.XXXXXXXXXX.intervene)"
-	commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+	commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 		intervene venn
 		$params
 		-i $(printf '"%s" ' "${_lists_venn[@]}")
@@ -55,7 +55,7 @@ visualize::venn() {
 	CMD
 		mv "$tdir/Intervene_venn.pdf" "$outfile.pdf"
 	CMD
-	commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+	commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 		intervene venn
 		$params
 		-i $(printf '"%s" ' "${_lists_venn[@]}")
