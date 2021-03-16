@@ -69,7 +69,7 @@ quantify::featurecounts() {
 			[[ $x -gt 0 ]] && params+='-p '
 			[[ "$featuretag" != "gene_id" ]] && params+='-f -O '
 
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				featureCounts
 					$params
 					-Q 0
@@ -137,7 +137,7 @@ quantify::tpm() {
 		for f in "${_bams_tpm[@]}"; do
 			countfile="$countsdir/$m/$(basename "$f")"
 			countfile=$(readlink -e "${countfile%.*}"*.+(genecounts|counts).+(reduced|htsc) | head -1)
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 				tpm.pl "$gtf" "$countfile" > "$countfile.tpm"
 			CMD
 		done

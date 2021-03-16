@@ -429,7 +429,7 @@ preprocess::rcorrector(){
 			o2="$outdir/$o2"
 
 			readlink -e "${_fq1_rcorrector[$i]}" | file -f - | grep -qF 'compressed' && {
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 					cd "${tdirs[-1]}"
 				CMD
 					run_rcorrector.pl
@@ -443,7 +443,7 @@ preprocess::rcorrector(){
 					mv "$o2.cor.fq.gz" "$o2.$e2.gz"
 				CMD
 			} || {
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
 					cd "${tdirs[-1]}"
 				CMD
 					exec 11>&1; exec 12>&1
@@ -468,7 +468,7 @@ preprocess::rcorrector(){
 			_fq1_rcorrector[$i]="$o1.$e1.gz"
 			_fq2_rcorrector[$i]="$o2.$e2.gz"
 		else
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				cd "${tdirs[-1]}"
 			CMD
 				run_rcorrector.pl
@@ -566,7 +566,7 @@ preprocess::sortmerna(){
 			# alternative:
 			# 11> >(sed -E '/^\s*$/d' | paste - - - - | awk -F '\t' -v OFS='\n' '{if(NR%2==1){print \$1,\$2,\$3,\$4 > "/dev/fd/1"}else{print \$1,\$2,\$3,\$4 > "/dev/fd/2"}}' > >(bgzip -@ $(((threads+1)/2)) -c > "$o1") 2> >(bgzip -@ $(((threads+1)/2)) -c > "$o2"))
 			# 12> >(sed -E '/^\s*$/d' | paste - - - - | awk -F '\t' -v OFS='\n' '{if(NR%2==1){print \$1,\$2,\$3,\$4 > "/dev/fd/1"}else{print \$1,\$2,\$3,\$4 > "/dev/fd/2"}}' > >(bgzip -@ $(((threads+1)/2)) -c > "$or1") 2> >(bgzip -@ $(((threads+1)/2)) -c > "$or2"))
-			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 				exec 11>&1; exec 12>&1
 			CMD
 				ln -sfn /dev/fd/11 "$tmp.ok.$e1"
@@ -603,7 +603,7 @@ preprocess::sortmerna(){
 				CMD
 			}
 
-			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 				exec 11>&1; exec 12>&1
 			CMD
 				ln -sfn /dev/fd/11 "$tmp.ok.$e1"

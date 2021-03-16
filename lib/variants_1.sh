@@ -109,7 +109,7 @@ variants::panelofnormals() {
 
 			while read -r slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					gatk
 						--java-options '
 								-Xmx${jmem}m
@@ -146,13 +146,13 @@ variants::panelofnormals() {
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 			#DO NOT PIPE - DATALOSS!
-			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				bcftools concat -o "$t.vcf" $(printf '"%s" ' "${tomerge[@]}")
 			CMD
 				bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.vcf" "$t.vcf"
 			CMD
 
-			commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				bgzip -f -@ $ithreads < "$o.vcf" > "$o.vcf.gz"
 			CMD
 				tabix -f -p vcf "$o.vcf.gz"
@@ -240,7 +240,7 @@ variants::makepondb() {
 			bgzip -f -@ $threads < "${tdirs[-1]}/vcf" > "${tdirs[-1]}/vcf.gz"
 			tabix -f -p vcf "${tdirs[-1]}/vcf.gz"
 
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				gatk
 					--java-options '
 						-Xmx${jmem}m
@@ -263,7 +263,7 @@ variants::makepondb() {
 		fi
 
 		# alternative rm "$odir/pondb" && --genomicsdb-workspace-path "$odir/pondb" or --overwrite-existing-genomicsdb-workspace true
-		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 			gatk
 				--java-options '
 					-Xmx${jmem}m
@@ -285,7 +285,7 @@ variants::makepondb() {
 		# there is no conflict if multiple instances are updating pondb in parallel (non-blocking). however do not write pon.vcf in parallel
 
 		[[ -s "$genome.af_only_gnomad.vcf.gz" ]] && params=" --germline-resource '$genome.af_only_gnomad.vcf.gz'" || params=''
-		commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+		commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 			while [[ -e "$odir/blocked" ]]; do sleep 2; done
 		CMD
 			touch "$odir/blocked"
@@ -397,7 +397,7 @@ variants::tree(){
 				'
 			CMD
 
-			commander::makecmd -a cmd3 -s ' ' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 				samtools bedcov -Q 0 "$odir/SNV.bed" "$f" > "$o.snvcov"
 			CMD
 
@@ -420,7 +420,7 @@ variants::tree(){
 			uniq > $odir/SNV.bed
 		CMD
 
-		commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
 			bedtools unionbedg -i $(printf '"%s" ' "${tomerge[@]/%/.snvcov}") > "$odir/SNVCOV.full.bed"
 		CMD
 
@@ -453,7 +453,7 @@ variants::tree(){
 			perl -lane 'print ">$F[0]"; shift @F; print join"",@F'
 		CMD
 
-		commander::makecmd -a cmd9 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+		commander::makecmd -a cmd9 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 			rm -f "$odir/"*.ASCGTRCAT.*
 		CMD
 			raxmlHPC-PTHREADS-AVX2 -T $threads -f a -N 1000 -x 1234 -p 1234 -s "$odir/ALN.fa" -o REFERENCE -w "$odir" -n ASCGTRCAT.tree -m ASC_GTRCAT -V --asc-corr=lewis

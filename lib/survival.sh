@@ -199,7 +199,7 @@ survival::ssgsea(){
 
 	declare -a cmd1 cmd2 cmd3
 	local minsize=$(awk -v i=10 '{if(NF-2<i){i=NF-2}}END{print i}' $(cat "$outdir/gmt.list"))
-	commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+	commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 		Rscript "$(which ssGSEA.R)"
 			"-l$(dirname "$(which ssGSEA.R)")"
 			"-i$gct" "-o$outdir/ssgsea"
@@ -218,7 +218,7 @@ survival::ssgsea(){
 
 	if [[ -s "$clinical" ]]; then
 		mkdir -p "$outdir/plots"
-		commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 			survival.R "$clinical" "$outdir/ssgsea.tsv" "$outdir/plots"
 		CMD
 	fi

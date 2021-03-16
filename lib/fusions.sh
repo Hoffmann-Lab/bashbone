@@ -102,7 +102,7 @@ fusions::starfusion(){
 
 		[[ -s "$j" ]] && params="-J '$j'"
 		if [[ ${_fq2_starfusion[$i]} ]]; then
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				cd "$odir"
 			CMD
 				STAR-Fusion
@@ -116,7 +116,7 @@ fusions::starfusion(){
 				--examine_coding_effect
 			CMD
 		else
-			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				cd "$odir"
 			CMD
 				STAR-Fusion
@@ -278,7 +278,7 @@ fusions::arriba(){
 	declare -a cmd1
 	for f in "${star[@]}"; do
 		o="$outdir/$(basename "$f" .bam)"
-		commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 			arriba
 				-a "$genome"
 				-g "$gtf"

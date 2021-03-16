@@ -64,7 +64,7 @@ expression::diego(){
 		[[ -s "$gtf" ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
 		if [[ ! -s ${gtf%.*}.diego.bed ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::printinfo "preparing annotation for differential splice junction analyses"
-			commander::makecmd -a cmdprep1 -s '&&' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmdprep1 -s ';' -c {COMMANDER[0]}<<- CMD
 				gfftoDIEGObed.pl -g "$gtf" -o "${gtf%.*}.diego.bed"
 			CMD
 		fi
@@ -72,7 +72,7 @@ expression::diego(){
 		if [[ ! -s "${gtf%.*}.aggregated.gtf" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::printinfo "preparing annotation for exon_id tag based quantification"
 			tmp=$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.gtf)
-			commander::makecmd -a cmdprep2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmdprep2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				dexseq_prepare_annotation2.py
 					-r no
 					-f "$tmp"
@@ -133,7 +133,7 @@ expression::diego(){
 					if [[ -s "$odir/list.sj.tsv" ]]; then
 						if [[ $m == "segemehl" ]]; then
 							tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.diego)")
-							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+							commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 								cd "${tdirs[-1]}"
 							CMD
 								pre_segemehl.pl
@@ -145,7 +145,7 @@ expression::diego(){
 							CMD
 						elif [[ $m == "star" ]]; then
 							tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.diego)")
-							commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+							commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 								cd "${tdirs[-1]}"
 							CMD
 								pre_STAR.py
@@ -155,7 +155,7 @@ expression::diego(){
 								mv junction_table.txt "$odir/input.sj.tsv"
 							CMD
 						fi
-						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 							diego.py
 								-d $((min<3?min:3))
 								-a "$odir/input.sj.tsv"
@@ -165,7 +165,7 @@ expression::diego(){
 								-x $c
 								> "$odir/diego.sj.tsv"
 						CMD
-						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 							diego.py
 								-d $((min<3?min:3))
 								-a "$odir/input.sj.tsv"
@@ -180,14 +180,14 @@ expression::diego(){
 
 					if $exonmode; then
 						tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.diego)")
-						commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+						commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 							cd "${tdirs[-1]}"
 						CMD
 							HTseq2DIEGO.pl
 								-i "$odir/list.ex.tsv"
 								-o "$odir/input.ex.tsv"
 						CMD
-						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 							diego.py
 								-d $((min<3?min:3))
 								-a "$odir/input.ex.tsv"
@@ -197,7 +197,7 @@ expression::diego(){
 								-x $c
 								> "$odir/diego.ex.tsv"
 						CMD
-						commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 							diego.py
 								-d $((min<3?min:3))
 								-a "$odir/input.ex.tsv"
@@ -343,7 +343,7 @@ expression::_deseq() {
 	done
 	[[ $mandatory -lt 6 ]] && _usage
 
-	commander::makecmd -a _cmds1_deseq -s '|' -c {COMMANDER[0]}<<- CMD
+	commander::makecmd -a _cmds1_deseq -s ';' -c {COMMANDER[0]}<<- CMD
 		deseq2.R $threads "$csvfile" "$outdir" ${cmppairs[*]}
 	CMD
 
@@ -354,14 +354,14 @@ expression::_deseq() {
 			t=${cmppairs[$((i+1))]}
 			odir="$outdir/$c-vs-$t"
 			for f in "$odir/deseq.tsv" "$odir/deseq.full.tsv" "$odir/deseq.noNA.tsv"; do
-				commander::makecmd -a _cmds2_deseq -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a _cmds2_deseq -s ';' -c {COMMANDER[0]}<<- CMD
 					[[ -e "$f" ]] && annotate.pl "${gtfinfo:=0}" "$gtf" "$f"
 				CMD
 			done
 			for f in "$odir/heatmap.vsc.ps" "$odir/heatmap.vsc.zscores.ps" \
 					"$odir/heatmap.vsc.globalclust.ps" "$odir/heatmap.vsc.zscores.globalclust.ps" "$odir/heatmap.vsc.localclust.ps" "$odir/heatmap.vsc.zscores.localclust.ps" \
 					"$odir/heatmap.mean.vsc.ps" "$odir/heatmap.mean.vsc.zscores.ps"; do
-				commander::makecmd -a _cmds2_deseq -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a _cmds2_deseq -s ';' -c {COMMANDER[0]}<<- CMD
 					if [[ -e "$f" ]]; then
 						annotate.pl "${gtfinfo:=0}" "$gtf" "$f";
 						ps2pdf \$(grep -m 1 -F BoundingBox ${f%.*}.annotated.ps | awk '{print "-g"\$4*10"x"\$5*10}') ${f%.*}.annotated.ps ${f%.*}.annotated.pdf;
@@ -480,7 +480,7 @@ expression::join(){
 			echo -e "$h" > "$odir/experiments.$e"
 			cat "$joined" >> "$odir/experiments.$e"
 
-			commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				head -1 "$odir/experiments.$e" > "$deseqdir/$m/heatmap.$e"
 			CMD
 				grep -F -f "$topids" "$odir/experiments.$e" >> "$deseqdir/$m/heatmap.$e"
@@ -504,7 +504,7 @@ expression::join(){
 				"$odir/experiments.$e" "$odir/experiments.$e.zscores"
 			CMD
 
-			commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				head -1 "$odir/experiments.$e.zscores" > "$deseqdir/$m/heatmap.$e.zscores"
 			CMD
 				grep -F -f "$topids" "$odir/experiments.$e.zscores" >> "$deseqdir/$m/heatmap.$e.zscores"
@@ -533,7 +533,7 @@ expression::join(){
 				"$tmp.$e" "$odir/experiments.mean.$e"
 			CMD
 
-			commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				head -1 "$odir/experiments.mean.$e" > "$deseqdir/$m/heatmap.mean.$e"
 			CMD
 				grep -F -f "$topids" "$odir/experiments.mean.$e" >> "$deseqdir/$m/heatmap.mean.$e"
@@ -557,7 +557,7 @@ expression::join(){
 				"$odir/experiments.mean.$e" "$odir/experiments.mean.$e.zscores"
 			CMD
 
-			commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				head -1 "$odir/experiments.mean.$e.zscores" > "$deseqdir/$m/heatmap.mean.$e.zscores"
 			CMD
 				grep -F -f "$topids" "$odir/experiments.mean.$e.zscores" >> "$deseqdir/$m/heatmap.mean.$e.zscores"
@@ -569,7 +569,7 @@ expression::join(){
 				for f in "$deseqdir/$m/heatmap.$e.localclust.ps" "$deseqdir/$m/heatmap.$e.globalclust.ps" \
 						"$deseqdir/$m/heatmap.$e.zscores.localclust.ps" "$deseqdir/$m/heatmap.$e.zscores.globalclust.ps" \
 						"$deseqdir/$m/heatmap.mean.$e.ps" "$deseqdir/$m/heatmap.mean.$e.zscores.ps"; do
-					commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
 						if [[ -e "$f" ]]; then
 							annotate.pl "${gtfinfo:=0}" "$gtf" "$f";
 							ps2pdf \$(grep -m 1 -F BoundingBox ${f%.*}.annotated.ps | awk '{print "-g"\$4*10"x"\$5*10}') ${f%.*}.annotated.ps ${f%.*}.annotated.pdf;

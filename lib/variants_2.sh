@@ -92,7 +92,7 @@ variants::haplotypecaller() {
 				# HaplotypeCallerSpark with --spark-master local[$mthreads] is BETA and differs in results!!
 				# Spark does not yet support -D "$dbsnp"
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					gatk
 						--java-options '
 								-Xmx${jmem}m
@@ -122,7 +122,7 @@ variants::haplotypecaller() {
 				CMD
 
 				if $isdna; then
-					commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 						gatk
 							--java-options '
 									-Xmx${jmem}m
@@ -150,7 +150,7 @@ variants::haplotypecaller() {
 							--tmp-dir "${tdirs[-1]}"
 					CMD
 				else
-					commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 						gatk
 							--java-options '
 									-Xmx${jmem}m
@@ -173,7 +173,7 @@ variants::haplotypecaller() {
 					CMD
 				fi
 
-				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 					vcfix.pl -i "$slice.vcf" > "$slice.fixed.vcf"
 				CMD
 
@@ -213,13 +213,13 @@ variants::haplotypecaller() {
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				#DO NOT PIPE - DATALOSS!
-				commander::makecmd -a cmd6 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bcftools concat -o "$t.$e" $(printf '"%s" ' "${tomerge[@]/%/.$e}")
 				CMD
 					bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.$e" "$t.$e"
 				CMD
 
-				commander::makecmd -a cmd7 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
@@ -338,7 +338,7 @@ variants::mutect() {
 			while read -r nslice slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
 				# normal name defined for RGSM sam header entry by alignment::addreadgroup
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					gatk
 						--java-options '
 								-Xmx${jmem}m
@@ -387,7 +387,7 @@ variants::mutect() {
 				# --dont-use-soft-clipped-bases recommended for RNA based calling due to splitNcigar which elongates both splits towards full length read alignments and mask them\n\t\t\t\t# since we are doing clipmateoverlap, which introduces soft-clips, always enable this option
 
 				if [[ -s "$genome.somatic_common.vcf.gz" ]]; then
-					commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 						gatk
 							--java-options '
 								-Xmx${jmem}m
@@ -410,7 +410,7 @@ variants::mutect() {
 					#TODO awk 'NR>2' *slice?.bam.pileups.table | sort -k1,1V -k2,2n  BUT -k1,1 must be in order of $genome.list
 					# then predict contamination as whole and filter on full set
 					##########
-					commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 						gatk
 							--java-options '
 								-Xmx${jmem}m
@@ -429,7 +429,7 @@ variants::mutect() {
 					params2=" --contamination-table '$slice.contamination.table' --tumor-segmentation '$slice.tumorsegments.table'"
 				fi
 
-				commander::makecmd -a cmd4 -s '&&' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
 					gatk
 						--java-options '
 							-Xmx${jmem}m
@@ -444,7 +444,7 @@ variants::mutect() {
 						--tmp-dir "${tdirs[-1]}"
 				CMD
 
-				commander::makecmd -a cmd5 -s '&&' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
 					gatk
 						--java-options '
 							-Xmx${jmem}m
@@ -468,7 +468,7 @@ variants::mutect() {
 				#In order to tweak results in favor of more sensitivity users may set -f-score-beta to a value greater than its default of 1 (beta is the relative weight of sensitivity versus precision in the harmonic mean). Setting it lower biases results toward greater precision.
 				# optional: --tumor-segmentation segments.table
 
-				commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD
 					vcfix.pl -i "$slice.vcf" > "$slice.fixed.vcf"
 				CMD
 
@@ -506,7 +506,7 @@ variants::mutect() {
 			o="$odir/${o%.*}"
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-			commander::makecmd -a cmd9 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd9 -s ';' -c {COMMANDER[0]}<<- CMD
 				gatk
 					--java-options '
 						-Xmx${jmem2}m
@@ -525,13 +525,13 @@ variants::mutect() {
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
 				tdirs+=("$(mktemp -d -p "$tdir" cleanup.XXXXXXXXXX.bcftools)")
 				#DO NOT PIPE - DATALOSS!
-				commander::makecmd -a cmd10 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd10 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bcftools concat -o "$t.$e" $(printf '"%s" ' "${tomerge[@]/%/.$e}")
 				CMD
 					bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.$e" "$t.$e"
 				CMD
 
-				commander::makecmd -a cmd11 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd11 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
@@ -750,7 +750,7 @@ variants::bcftools() {
 					CMD
 				fi
 
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 					vcfix.pl -i "$slice.vcf" > "$slice.fixed.vcf"
 				CMD
 
@@ -786,13 +786,13 @@ variants::bcftools() {
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				#DO NOT PIPE - DATALOSS!
-				commander::makecmd -a cmd5 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bcftools concat -o "$t.$e" $(printf '"%s" ' "${tomerge[@]/%/.$e}")
 				CMD
 					bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.$e" "$t.$e"
 				CMD
 
-				commander::makecmd -a cmd6 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
@@ -954,7 +954,7 @@ variants::freebayes() {
 					# grep -E '(^#|VCFSAMPLEDIFF=somatic)' > "$slice.vcf"
 					# do not hard filter here. vcfix.pl adds vcfix_somatic FILTER tag if somatic or loh and GQ MAF thresholds passed
 				else
-					commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 						freebayes
 							-f "$genome"
 							-t "${tdirs[0]}/slice.$j.bed"
@@ -972,7 +972,7 @@ variants::freebayes() {
 					CMD
 				fi
 
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 					vcfix.pl -i "$slice.vcf" > "$slice.fixed.vcf"
 				CMD
 
@@ -1008,13 +1008,13 @@ variants::freebayes() {
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				#DO NOT PIPE - DATALOSS!
-				commander::makecmd -a cmd5 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bcftools concat -o "$t.$e" $(printf '"%s" ' "${tomerge[@]/%/.$e}")
 				CMD
 					bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.$e" "$t.$e"
 				CMD
 
-				commander::makecmd -a cmd6 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
@@ -1154,7 +1154,7 @@ variants::varscan() {
 					nf="${_bams_varscan[${_nidx_varscan[$i]}]}"
 
 					# print orphans A and overlaps x, since this can be adressed by the user via post-aln functions
-					commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 						samtools mpileup
 							-A
 							-x
@@ -1168,7 +1168,7 @@ variants::varscan() {
 					CMD
 
 					# pileup can be piped into varscan. but if disk is too busy, varscan simply stops and does not wait for input stream
-					commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 						varscan
 							-Xmx${jmem}m
 							-XX:ParallelGCThreads=$jgct
@@ -1190,7 +1190,7 @@ variants::varscan() {
 
 					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 					# do not use bcftools concat -o "$slice.concat" "$slice.snp.reheader" "$slice.indel.reheader", since positions can overlap which is not handled by bcftools unless input is bgzip
-					commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 						bcftools reheader -f "$genome.fai" -o "$slice.snp.reheader" "$slice.snp.vcf"
 					CMD
 						bcftools reheader -f "$genome.fai" -o "$slice.indel.reheader" "$slice.indel.vcf"
@@ -1202,7 +1202,7 @@ variants::varscan() {
 					#	grep -E '(^#|SS=2)' "$slice.unfiltered" > "$slice.vcf"
 					#CMD # do not hard filter here. vcfix.pl adds vcfix_somatic FILTER tag if SS=2
 				else
-					commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 						samtools mpileup
 							-A
 							-x
@@ -1236,12 +1236,12 @@ variants::varscan() {
 					# all sites are labeled with PASS
 
 					# do not pipe into bcftools : --fai cannot be used when reading from stdin
-					commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 						bcftools reheader -f "$genome.fai" -o "$slice.vcf" "$slice.toreheader"
 					CMD
 				fi
 
-				commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
 					vcfix.pl -i "$slice.vcf" > "$slice.fixed.vcf"
 				CMD
 
@@ -1277,13 +1277,13 @@ variants::varscan() {
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				#DO NOT PIPE - DATALOSS!
-				commander::makecmd -a cmd7 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bcftools concat -o "$t.$e" $(printf '"%s" ' "${tomerge[@]/%/.$e}")
 				CMD
 					bcftools sort -T "${tdirs[-1]}" -m ${memory2}M -o "$o.$e" "$t.$e"
 				CMD
 
-				commander::makecmd -a cmd8 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd8 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
@@ -1504,13 +1504,13 @@ variants::vardict() {
 				# note: this does not always mean multiple alleles per se (like bcftools norm), but sometimes duplicons with slightly differnt format and info fields
 
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
-				commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bcftools reheader -f "$genome.fai" -o "$slice.reheader" "$slice.vcf"
 				CMD
 					bcftools sort -T "${tdirs[-1]}" -m ${memory1}M -o "$slice.vcf" "$slice.reheader"
 				CMD
 
-				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 					vcfix.pl -i "$slice.vcf" > "$slice.fixed.vcf"
 				CMD
 
@@ -1546,13 +1546,13 @@ variants::vardict() {
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				#DO NOT PIPE - DATALOSS!
-				commander::makecmd -a cmd6 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bcftools concat -o "$t.$e" $(printf '"%s" ' "${tomerge[@]/%/.$e}")
 				CMD
 					bcftools sort -T "${tdirs[-1]}" -m ${memory2}M -o "$o.$e" "$t.$e"
 				CMD
 
-				commander::makecmd -a cmd7 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
@@ -1755,13 +1755,13 @@ variants::vardict_threads() {
 			# note: this does not always mean multiple alleles per se (like bcftools norm), but sometimes duplicons with slightly differnt format and info fields
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
-			commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				bcftools reheader -f "$genome.fai" -o "$t.vcf" "$t.toreheader"
 			CMD
 				bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.vcf" "$t.vcf"
 			CMD
 
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 				vcfix.pl -i "$o.vcf" > "$o.fixed.vcf"
 			CMD
 
@@ -1792,7 +1792,7 @@ variants::vardict_threads() {
 			fi
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
-				commander::makecmd -a cmd6 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
@@ -1891,7 +1891,7 @@ variants::platypus() {
 			# can make use of --regions=$(awk '{print $1":"$2"-"$3}' $bed | xargs -echo | sed 's/ /,/g')
 			if [[ $_nidx_platypus ]]; then # somatic
 				nf="${_bams_platypus[${_nidx_platypus[$i]}]}"
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					platypus callVariants
 						--logFileName /dev/null
 						--output "$t.toreheader"
@@ -1922,7 +1922,7 @@ variants::platypus() {
 				#	grep -E '(^#|VCFSAMPLEDIFF=somatic)' > "$o.vcf"
 				#CMD # do not hard filter here. vcfix.pl adds vcfix_somatic FILTER tag if somatic or loh and GQ MAF thresholds passed
 			else
-				commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					platypus callVariants
 						--logFileName /dev/null
 						--output "$t.toreheader"
@@ -1941,12 +1941,12 @@ variants::platypus() {
 						--filterDuplicates 0
 				CMD
 
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 					bcftools reheader -f "$genome.fai" -o "$o.vcf" "$t.toreheader"
 				CMD
 			fi
 
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 				vcfix.pl -i "$o.vcf" > "$o.fixed.vcf"
 			CMD
 
@@ -1977,7 +1977,7 @@ variants::platypus() {
 			fi
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
-				commander::makecmd -a cmd6 -s '&&' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
