@@ -39,6 +39,114 @@ variants::vcfzip() {
 	return 0
 }
 
+variants::vcfnorm() {
+	declare -a tdirs
+	_cleanup::variants::vcfnorm(){
+		rm -rf "${tdirs[@]}"
+	}
+
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip>  | true/false return
+			-s <softskip>  | true/false only print commands
+			-t <threads>   | number of
+			-g <genome>    | path to
+			-d <dbsnp>     | path to
+			-r <vcfs>      | array of
+			-z <zip>       | true/false compress output
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads dbsnp genome zip=false
+	declare -n _vcfs_vcfnorm
+	while getopts 'S:s:t:g:d:r:z:' arg; do
+		case $arg in
+			S) $OPTARG && return 0;;
+			s) $OPTARG && skip=true;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			g) ((++mandatory)); genome="$OPTARG";;
+			d) dbsnp="$OPTARG";;
+			r) ((++mandatory)); _vcfs_vcfnorm="$OPTARG";;
+			z) zip="$OPTARG";;
+			*) _usage;;
+		esac
+	done
+	[[ $mandatory -lt 3 ]] && _usage
+
+	commander::printinfo "normalizing vcf files"
+
+	local instances ithreads
+	read -r instances ithreads < <(configure::instances_by_threads -i $((${#_vcfs_vcfnorm[@]}*3)) -t 10 -T $threads)
+
+	declare -a cmd1 cmd2 cmd3 cmd4
+	local vcf o e
+	for vcf in "${_vcfs_vcfnorm[@]}"; do
+		helper::basename -f "$vcf" -o o -e e
+		o="$(dirname "$vcf")/$o"
+
+		commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			bcftools view $vcf
+		CMD
+			vcfix.pl -i - > "$o.fixed.vcf"
+		CMD
+
+		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			bcftools norm -f "$genome" -c s -m-both "$o.fixed.vcf"
+		CMD
+			vcfix.pl -i - > "$o.fixed.nomulti.vcf"
+		CMD
+
+		if [[ $dbsnp ]]; then
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+				vcffixup "$o.fixed.nomulti.vcf"
+			CMD
+				vt normalize -q -n -r "$genome" -
+			CMD
+				vcfixuniq.pl
+			CMD
+				vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$o.fixed.nomulti.normed.vcf"
+			CMD
+		else
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				vcffixup "$o.fixed.nomulti.vcf"
+			CMD
+				vt normalize -q -n -r "$genome" -
+			CMD
+				vcfixuniq.pl > "$o.fixed.nomulti.normed.vcf"
+			CMD
+		fi
+
+		if $zip; then
+			for e in fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
+				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
+				CMD
+					tabix -f -p vcf "$o.$e.gz"
+				CMD
+					rm "$o.$e"
+				CMD
+			done
+		fi
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+		commander::printcmd -a cmd4
+	else
+		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -v -b -t $instances -a cmd4
+	fi
+
+	return 0
+}
+
 variants::panelofnormals() {
 	declare -a tdirs
 	_cleanup::variants::panelofnormals(){
