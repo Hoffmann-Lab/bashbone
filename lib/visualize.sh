@@ -2,9 +2,9 @@
 # (c) Konstantin Riege
 
 visualize::venn() {
-	local tdir
+	declare -a tdirs
 	_cleanup::visualize::venn(){
-		rm -rf "$tdir"
+		rm -rf "${tdir[@]}"
 	}
 
 	_usage() {
@@ -45,24 +45,26 @@ visualize::venn() {
 	[[ $_names_venn ]] && params="--names $(printf '%s,' "${_names_venn[@]}" | sed 's/,$//')"
 	[[ $(head -1 ${_lists_venn[0]} | awk '{print NF}') -eq 1 ]] && params+=" --type list"
 
-	tdir="$(mktemp -u -d -p "$tmpdir" cleanup.XXXXXXXXXX.intervene)"
+	tdirs+=("$(mktemp -u -d -p "$tmpdir" cleanup.XXXXXXXXXX.intervene)")
 	commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 		intervene venn
 		$params
 		-i $(printf '"%s" ' "${_lists_venn[@]}")
-		-o "$tdir"
+		-o "${tdirs[-1]}"
 		--figtype pdf
 	CMD
-		mv "$tdir/Intervene_venn.pdf" "$outfile.pdf"
+		mv "${tdirs[-1]}/Intervene_venn.pdf" "$outfile.pdf"
 	CMD
+
+	tdirs+=("$(mktemp -u -d -p "$tmpdir" cleanup.XXXXXXXXXX.intervene)")
 	commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 		intervene venn
 		$params
 		-i $(printf '"%s" ' "${_lists_venn[@]}")
-		-o "$tdir"
+		-o "${tdirs[-1]}"
 		--figtype png
 	CMD
-		mv "$tdir/Intervene_venn.png" "$outfile.png"
+		mv "${tdirs[-1]}/Intervene_venn.png" "$outfile.png"
 	CMD
 
 	if $skip; then
