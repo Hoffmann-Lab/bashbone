@@ -10,7 +10,7 @@ cat <<- EOF
 	0.1.0
 
 	SYNOPSIS
-	$(basename $0) -1 <fastq> [-2 <fastq>] -o <prefix> [-p <tmpdir> -t <threads> -n <chunks> -z]
+	$(basename $0) -1 <fastq> [-2 <fastq>] -o <prefix> [-p <tmpdir> -t <threads> -z]
 
 	OPTIONS
 	-h          | this help
