@@ -144,9 +144,9 @@ genome::view(){
 	-e 's/(\s*)(SAM.SHOW_MISMATCHES)=[^\n]*/\1\2=true/g; /SAM.SHOW_MISMATCHES=/!{s/\s*$/\nSAM.SHOW_MISMATCHES=true/};' \
 	-e 's/(\s*)(DETAILS_BEHAVIOR)=[^\n]*/\1\2=CLICK/g; /DETAILS_BEHAVIOR=/!{s/\s*$/\nDETAILS_BEHAVIOR=CLICK/};' \
 	-e 's/(\s*)(SAM.MAX_VISIBLE_RANGE)=[^\n]*/\1\2=1000/g; /SAM.MAX_VISIBLE_RANGE=/!{s/\s*$/\nSAM.MAX_VISIBLE_RANGE=1000/};' \
-	-e 's/(\s*)(SAM.BASE_QUALITY_MIN)=[^\n]*/\1\2=5/g; /SAM.BASE_QUALITY_MIN=/!{s/\s*$/\nSAM.BASE_QUALITY_MIN=5/};' \
+	-e 's/(\s*)(SAM.BASE_QUALITY_MIN)=[^\n]*/\1\2=0/g; /SAM.BASE_QUALITY_MIN=/!{s/\s*$/\nSAM.BASE_QUALITY_MIN=0/};' \
 	-e 's/(\s*)(SAM.SORT_OPTION)=[^\n]*/\1\2=FIRST_OF_PAIR_STRAND/g; /SAM.SORT_OPTION=/!{s/\s*$/\nSAM.SORT_OPTION=FIRST_OF_PAIR_STRAND/};' \
-	-e 's/(\s*)(SAM.DOWNSAMPLE_READS)=[^\n]*/\1\2=true/g; /SAM.DOWNSAMPLE_READS=/!{s/\s*$/\nSAM.DOWNSAMPLE_READS=true/};' \
+	-e 's/(\s*)(SAM.DOWNSAMPLE_READS)=[^\n]*/\1\2=false/g; /SAM.DOWNSAMPLE_READS=/!{s/\s*$/\nSAM.DOWNSAMPLE_READS=false/};' \
 	-e 's/(\s*)(SAM.COLOR_BY)=[^\n]*/\1\2=FIRST_OF_PAIR_STRAND/g; /SAM.COLOR_BY=/!{s/\s*$/\nSAM.COLOR_BY=FIRST_OF_PAIR_STRAND/};' \
 	-e 'p;x;$!{p};${/##/p}}' \
 	"$pref"
@@ -185,7 +185,12 @@ genome::view(){
 				setSleepInterval 0
 			EOF
 		fi
-		$snapshots && echo "snapshot $i.jpg" >> $f
+		if $snapshots; then
+			cat <<- EOF >> $f
+				collapse
+				snapshot $i.jpg
+			EOF
+		fi
 	done
 	$autoexit && echo "exit" >> $f
 
