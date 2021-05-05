@@ -347,6 +347,7 @@ cluster::coexpression -t $threads -M $memory -g $gtf -b protein_coding -f 02 -i 
 | DGCA          | <https://github.com/andymckenzie/DGCA>                              | 10.1186/s12918-016-0349-1 |
 | fastqc        | <https://www.bioinformatics.babraham.ac.uk/projects/fastqc>         | NA |
 | featureCounts | <http://subread.sourceforge.net>                                    | 10.1093/bioinformatics/btt656  |
+| fgbio         | <http://fulcrumgenomics.github.io/fgbio/>                           | NA  |
 | freebayes     | <https://github.com/ekg/freebayes>                                  | arXiv:1207.3907 |
 | GATK          | <https://github.com/broadinstitute/gatk>                            | 10.1101/gr.107524.110 <br> 10.1038/ng.806 |
 | GEM           | <https://groups.csail.mit.edu/cgs/gem>                              | 10.1371/journal.pcbi.1002638 |
