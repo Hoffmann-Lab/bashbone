@@ -87,18 +87,23 @@ genome::mkdict() {
 }
 
 genome::view(){
+	local dict
+	_cleanup::genome::view(){
+		[[ -e "$pref.bak" ]] && mv "$pref.bak" "$pref"
+	}
+
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-m <memory>   | amount of
 			-g <genome>   | path to indexed fasta or igv .genome file
-			-o <outdir>   | path to
+			-o <outdir>   | path to batch skript and snapshot files
 			-l <files>    | array of gtf/bed/bam/narrowPeak/... file paths to load
 			-i <ids>      | array of gene ids to goto and make snapshots
 			-p <pos>      | array of positions to goto and make snapshots (chrom:start-stop)
 			-d <number>   | delay seconds between positions
-			-e <exit>     | true/false automatically after last position
-			-s <snapshot> | true/false per position/id
+			-e            | automatically exit after last position
+			-s            | do snapshots per position/id
 		EOF
 		return 1
 	}
@@ -130,28 +135,40 @@ genome::view(){
 	# hack to prevent loading last genome before loading user defined stuff - problem:
 	declare -a cmd=("unset DISPLAY; igv")
 	local pref="$(commander::runcmd -c igv -a cmd |& grep 'IGV Directory:' | awk -F': ' '{print $NF}')"/prefs.properties
-	[[ ! -s "$pref" ]] && echo -e "##RNA\n##THIRD_GEN" > "$pref"
-	#[[ -e $pref ]] && sed "s@(DEFAULT_GENOME_KEY=).+@\1$genome@" "$pref" # loads silently without progress bar and does not show igv window unless done
+
+	# sed "s@(DEFAULT_GENOME_KEY=).+@\1$genome@" "$pref" # loads silently without progress bar and does not show igv window unless done
 	# deletion defaults to hg19 and downloads it unless available
 	# sed -i -E -e '/DEFAULT_GENOME_KEY/d' "$pref"
+	# see also https://github.com/igvteam/igv/blob/master/src/main/resources/org/broad/igv/prefs/preferences.tab
 
-	# see https://github.com/igvteam/igv/blob/master/src/main/resources/org/broad/igv/prefs/preferences.tab
-	# slurp (:a;ba) section from ##RNA to e.g. ##THIRD_GEN or EOF into holdspace (H;n), then switch to holdspace (x) and do replacements/appends (s).
-	# finally print (p), switch back to pattern space (x) and handle EOF
-	sed -i -nE -e '/DEFAULT_GENOME_KEY/d;' \
-	-e '1{s/(DETAILS_BEHAVIOR=.*|^)/DETAILS_BEHAVIOR=CLICK\n/p};' -e '/DETAILS_BEHAVIOR/d;' \
-	-e '/##RNA/!p; /##RNA/{:slurp; $!{H;n;/##/!{b slurp}}; ${/##/!{H}};x; s/^\n//;' \
-	-e 's/(\s*)(SAM.SHOW_MISMATCHES)=[^\n]*/\1\2=true/g; /SAM.SHOW_MISMATCHES=/!{s/\s*$/\nSAM.SHOW_MISMATCHES=true/};' \
-	-e 's/(\s*)(DETAILS_BEHAVIOR)=[^\n]*/\1\2=CLICK/g; /DETAILS_BEHAVIOR=/!{s/\s*$/\nDETAILS_BEHAVIOR=CLICK/};' \
-	-e 's/(\s*)(SAM.MAX_VISIBLE_RANGE)=[^\n]*/\1\2=1000/g; /SAM.MAX_VISIBLE_RANGE=/!{s/\s*$/\nSAM.MAX_VISIBLE_RANGE=1000/};' \
-	-e 's/(\s*)(SAM.BASE_QUALITY_MIN)=[^\n]*/\1\2=0/g; /SAM.BASE_QUALITY_MIN=/!{s/\s*$/\nSAM.BASE_QUALITY_MIN=0/};' \
-	-e 's/(\s*)(SAM.SORT_OPTION)=[^\n]*/\1\2=FIRST_OF_PAIR_STRAND/g; /SAM.SORT_OPTION=/!{s/\s*$/\nSAM.SORT_OPTION=FIRST_OF_PAIR_STRAND/};' \
-	-e 's/(\s*)(SAM.DOWNSAMPLE_READS)=[^\n]*/\1\2=false/g; /SAM.DOWNSAMPLE_READS=/!{s/\s*$/\nSAM.DOWNSAMPLE_READS=false/};' \
-	-e 's/(\s*)(SAM.COLOR_BY)=[^\n]*/\1\2=FIRST_OF_PAIR_STRAND/g; /SAM.COLOR_BY=/!{s/\s*$/\nSAM.COLOR_BY=FIRST_OF_PAIR_STRAND/};' \
-	-e 'p;x;$!{p};${/##/p}}' \
-	"$pref"
+	[[ -e "$pref" ]] && mv "$pref" "$pref.bak"
+	cat <<- EOF > "$pref"
+		SAM.SHOW_MISMATCHES=true
+		SAM.MAX_VISIBLE_RANGE=1000
+		SAM.SHOW_SOFT_CLIPPED=false
+		SAM.SHOW_ALL_BASES=false
+		SAM.SHOW_CENTER_LINE=true
+		SAM.DOWNSAMPLE_READS=false
+		SAM.FILTER_DUPLICATES=false
+		SAM.FILTER_FAILED_READS=false
+		SAM.ALIGNMENT_SCORE_THRESHOLD=0
+		SAM.QUALITY_THRESHOLD=0
+		SAM.SORT_OPTION=START
+		SAM.COLOR_BY=FIRST_OF_PAIR_STRAND
+		DETAILS_BEHAVIOR=CLICK
 
-	f="$outdir/run.batch"
+		##RNA
+		SAM.SHOW_JUNCTION_TRACK=true
+		SAM.SHOW_COV_TRACK=true
+		SAM.SHOW_ALIGNMENT_TRACK=true
+		SAM.MAX_VISIBLE_RANGE=1000
+
+		##THIRD_GEN
+		SAM.DOWNSAMPLE_READS=false
+		SAM.MAX_VISIBLE_RANGE=1000
+	EOF
+
+	local f="$outdir/run.batch"
 
 	# the genome path will always be interpreted as an id and thus must not be quoted!
 	cat <<- EOF > "$f"
@@ -188,7 +205,7 @@ genome::view(){
 		if $snapshots; then
 			cat <<- EOF >> $f
 				collapse
-				snapshot $i.jpg
+				snapshot $i.png
 			EOF
 		fi
 	done
