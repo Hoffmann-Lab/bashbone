@@ -97,10 +97,10 @@ for (method in c("log","vsd","rld")){
 			theme_bw() +
 			theme(legend.box = "horizontal") +
 			geom_point(size = 3) +
-			stat_ellipse() +
 			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
 			ylab(paste0("PC2: ",percentVar[2], "% variance"))
 		ggsave(file.path(outdir,paste("pca_12_",method,".pdf",sep="")))
+		# stat_ellipse() +
 
 		ggplot(data, aes(PC1, PC3, color = condition, group = condition, shape = replicate)) +
 			ggtitle("PCA plot - PC1 vs PC3") +
@@ -109,10 +109,10 @@ for (method in c("log","vsd","rld")){
 			theme_bw() +
 			theme(legend.box = "horizontal") +
 			geom_point(size = 3) +
-			stat_ellipse() +
 			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
 			ylab(paste0("PC3: ",percentVar[3], "% variance"))
 		ggsave(file.path(outdir,paste("pca_13_",method,".pdf",sep="")))
+		# stat_ellipse() +
 
 		ggplot(data, aes(PC2, PC3, color = condition, group = condition, shape = replicate)) +
 			ggtitle("PCA plot - PC2 vs PC3") +
@@ -121,10 +121,10 @@ for (method in c("log","vsd","rld")){
 			theme_bw() +
 			theme(legend.box = "horizontal") +
 			geom_point(size = 3) +
-			stat_ellipse() +
 			xlab(paste0("PC2: ",percentVar[2], "% variance")) +
 			ylab(paste0("PC3: ",percentVar[3], "% variance"))
 		ggsave(file.path(outdir,paste("pca_23_",method,".pdf",sep="")))
+		# stat_ellipse() +
 	})
 }
 
@@ -148,7 +148,8 @@ gplots_heatmap = function(){
 	}
 
 	# get number conditions colors and repeat them according to colannotation
-	colannotationcolor = colorRampPalette(brewer.pal(3, "Blues"))(length(unique(colannotation)))
+	# colannotationcolor = colorRampPalette(brewer.pal(3, "Blues"))(length(unique(colannotation)))
+	colannotationcolor = colorRampPalette(brewer.pal(11, "Spectral"))(length(unique(colannotation)))
 	j=0
 	colannotationcolor.full=c()
 	for (g in unique(colannotation)){
@@ -249,7 +250,8 @@ get_heatmap = function(input,path){
 	}
 
 	# get number conditions colors and name them by conditions
-	colannotationcolor = colorRampPalette(brewer.pal(3, "Blues"))(length(unique(colannotation)))
+	# colannotationcolor = colorRampPalette(brewer.pal(3, "Blues"))(length(unique(colannotation)))
+	colannotationcolor = colorRampPalette(brewer.pal(11, "Spectral"))(length(unique(colannotation)))
 	names(colannotationcolor) = unique(colannotation)
 	# create dataframe of column annotations with rownames
 	colannotations = data.frame(row.names = colnames(df), Group = colannotation)
@@ -369,11 +371,11 @@ get_table = function(dds){
 			theme_bw() +
 			theme(legend.box = "horizontal") +
 			geom_point(size = 3) +
-			stat_ellipse() +
 			xlab(paste("PC1:",percentVar[1],"% variance",sep=" ")) +
 			ylab(paste("PC2:",percentVar[2],"% variance",sep=" "))
 		ggsave(file.path(odir,"pca.pdf"))
 	})
+	# stat_ellipse() +
 
 	vsdr = vsd[,vsd$condition %in% c(ctr[i],treat[i])]
 
