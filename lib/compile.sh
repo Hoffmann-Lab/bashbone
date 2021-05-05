@@ -76,7 +76,7 @@ compile::tools() {
 	compile::_parse -r insdir -s threads "$@"
 	source $insdir/conda/bin/activate base
 	mkdir -p $insdir/latest
-	for i in $(find "$src/tools" -mindepth 1 -maxdepth 1 -type d); do
+	for i in $(find -L "$src/tools" -mindepth 1 -maxdepth 1 -type d); do
 		cp -r "$i" "$insdir/$(basename "$i")"
 		ln -sfn "$insdir/$(basename "$i")/bin" "$insdir/latest/$(basename "$i" | cut -d '-' -f 1)"
 	done
@@ -203,7 +203,7 @@ compile::conda_tools() {
 	# better do not predefine python version. if tool recipe depends on earlier version, conda installs an older or the oldest version (freebayes)
 
 	# arriba 2.x , successor of 1.2 (arriba=1.2) has new star parameters incompatible with star < 2.7.6
-	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq arriba picard bamutil macs2 peakachu diego gatk4 freebayes varscan igv intervene raxml metilene; do
+	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq arriba picard bamutil fgbio macs2 peakachu diego gatk4 freebayes varscan igv intervene raxml metilene; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
 		$upgrade && ${envs[$n]:=false} || {
