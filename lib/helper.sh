@@ -461,9 +461,15 @@ helper::_trimprefix(){
 helper::_substring(){
 	declare -n __="$1"
 	local i
-	for i in "${!__[@]}"; do
-		__[$i]="${__[$i]:$2:$3}"
-	done
+	if [[ $3 ]]; then
+		for i in "${!__[@]}"; do
+			__[$i]="${__[$i]:$2:$3}"
+		done
+	else
+		for i in "${!__[@]}"; do
+			__[$i]="${__[$i]:$2}"
+		done
+	fi
 }
 
 helper::_replace(){

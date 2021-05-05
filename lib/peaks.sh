@@ -1186,7 +1186,7 @@ peaks::peakachu() {
 		commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
 			awk '!/^replicon/' "$odir/$o/peak_tables/"*.csv
 		CMD
-			awk -v OFS='\t' '$9!="inf"{print $1,$3,$4,".",0,".",$9,-1,-1,-1}'
+			awk -v OFS='\t' '$(NF-9)!="inf"{print $1,$3,$4,".",0,".",$(NF-9),-1,-1,-1}'
 		CMD
 			sort -k1,1 -k2,2n -k3,3n
 		CMD
@@ -1194,6 +1194,7 @@ peaks::peakachu() {
 		CMD
 			awk -v OFS='\t' '{$4="peak_"NR; print}'
 		CMD
+		# NF-9 is either base_mean or if ctr_libs fold_change
 	done
 
 	if $skip; then
@@ -1289,7 +1290,7 @@ peaks::peakachu_idr() {
 				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
 					awk '!/^replicon/' "$odir/$o/peak_tables/"*.csv
 				CMD
-					awk -v OFS='\t' '$9!="inf"{print $1,$3,$4,".",0,".",$9,-1,-1,-1}'
+					awk -v OFS='\t' '$(NF-9)!="inf"{print $1,$3,$4,".",0,".",$(NF-9),-1,-1,-1}'
 				CMD
 					sort -k1,1 -k2,2n -k3,3n
 				CMD
@@ -1297,6 +1298,7 @@ peaks::peakachu_idr() {
 				CMD
 					awk -v OFS='\t' '{$4="peak_"NR; print}'
 				CMD
+				# NF-9 is either base_mean or if ctr_libs fold_change
 
 				toidr+=("$odir/$o.narrowPeak")
 			done

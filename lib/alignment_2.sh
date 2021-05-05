@@ -176,7 +176,7 @@ alignment::rmduplicates(){
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2
+	declare -a tomerge cmd1 cmd2 cmd3
 	[[ $regex ]] && regex="READ_NAME_REGEX='$regex'" # default is to follow casava i.e. split by 5 or 7 colons and use the last 3 groups i.e. \s+:\d+:\d+:\d+.*
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
@@ -185,7 +185,7 @@ alignment::rmduplicates(){
 		for i in "${!_bams_rmduplicates[@]}"; do
 			tomerge=()
 			while read -r slice; do
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					picard
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -202,9 +202,11 @@ alignment::rmduplicates(){
 						VERBOSITY=WARNING
 						MAX_FILE_HANDLES=$nfh
 				CMD
+
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					mv "$slice.rmdup" "$slice"
 				CMD
-					samtools index -@ $mthreads "$slice" "${slice%.*}.bai"
+					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 				CMD
 
 				tomerge+=("$slice")
@@ -214,7 +216,7 @@ alignment::rmduplicates(){
 			o="${o%.*}.rmdup.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
@@ -232,19 +234,23 @@ alignment::rmduplicates(){
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	else
 		commander::runcmd -c picard -v -b -t $minstances -a cmd1
 		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd3
 	fi
 
 	return 0
 }
 
-alignment::clipmateoverlaps() {
-	# must not handle supplementary i.e. circular/chimeric transcripts due to potentially uneven lists
-	# if not flagged as supplementary and mate2 is mapped totally before mate1, both will be flagged as unmapped
-	# fully covered by mate will be flagged as unmapped
-	# adjusted poolsize will consume ~15gb memory
+alignment::clipmateoverlaps_alt() {
+	declare -a tdirs
+	_cleanup::alignment::clipmateoverlaps(){
+		rm -rf "${tdirs[@]}"
+	}
+
+	# does not handle secondary and supplementary alignments
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -255,7 +261,124 @@ alignment::clipmateoverlaps() {
 			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
-			-o <outbase>   | path to
+			-o <outdir>    | path to
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads memory maxmemory outdir
+	declare -n _mapper_clipmateoverlaps _bamslices_clipmateoverlaps
+	declare -A nidx tidx
+	while getopts 'S:s:t:m:M:r:c:p:o:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
+			r)	((++mandatory)); _mapper_clipmateoverlaps=$OPTARG;;
+			c)	((++mandatory)); _bamslices_clipmateoverlaps=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 5 ]] && _usage
+
+	commander::printinfo "clipping ends of overlapping mate pairs"
+	local m i o slice odir instances ithreads minstances mthreads jmem jgct jcgct
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
+
+	for m in "${_mapper_clipmateoverlaps[@]}"; do
+		declare -n _bams_clipmateoverlaps=$m
+		((instances+=${#_bams_clipmateoverlaps[@]}))
+	done
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+
+	declare -a tomerge cmd1 cmd2 cmd3
+	for m in "${_mapper_clipmateoverlaps[@]}"; do
+		declare -n _bams_clipmateoverlaps=$m
+		odir="$outdir/$m"
+		mkdir -p "$odir"
+
+		for i in "${!_bams_clipmateoverlaps[@]}"; do
+			tomerge=()
+
+			while read -r slice; do
+				# fgbio clips half the overlap from both reads, thus does not produce unmapped reads
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fgbio)")
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					fgbio
+						-Xmx${jmem}m
+						-XX:ParallelGCThreads=$jgct
+						-XX:ConcGCThreads=$jcgct
+						-Djava.io.tmpdir="$tmpdir"
+					ClipBam
+						--clipping-mode=Soft
+						--tmp-dir="${tdirs[-1]}"
+						--log-level=Warning
+						--sam-validation-stringency=SILENT
+						--clip-overlapping-reads=true
+						-i "$slice"
+						-o "$slice.mateclipped"
+				CMD
+
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					mv "$slice.mateclipped" "$slice"
+				CMD
+					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
+				CMD
+
+				tomerge+=("$slice")
+			done < "${_bamslices_clipmateoverlaps[${_bams_clipmateoverlaps[$i]}]}"
+
+			o="$odir/$(basename "${_bams_clipmateoverlaps[$i]}")"
+			o="${o%.*}.mateclipped.bam"
+
+			# slices have full sam header info used by merge to maintain the global sort order
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+				samtools merge
+					-@ $ithreads
+					-f
+					-c
+					-p
+					"$o"
+					$(printf '"%s" ' "${tomerge[@]}")
+			CMD
+
+			_bamslices_clipmateoverlaps["$o"]="${_bamslices_clipmateoverlaps[${_bams_clipmateoverlaps[$i]}]}"
+			_bams_clipmateoverlaps[$i]="$o"
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+	else
+		commander::runcmd -c fgbio -v -b -t $minstances -a cmd1
+		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd3
+	fi
+
+	return 0
+}
+
+alignment::clipmateoverlaps() {
+	# must not handle supplementary i.e. circular/chimeric transcripts due to potentially uneven lists
+	# if not flagged as supplementary and mate2 is mapped totally before mate1, both will be flagged as unmapped
+	# fully covered by mate will be flagged as unmapped
+	# default poolsize of 1Mio will consume ~1.5gb memory
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip>  | true/false return
+			-s <softskip>  | true/false only print commands
+			-t <threads>   | number of
+			-m <memory>    | amount of
+			-M <maxmemory> | amount of
+			-r <mapper>    | array of sorted, indexed bams within array of
+			-c <sliceinfo> | array of
+			-o <outdir>    | path to
 		EOF
 		return 1
 	}
@@ -280,7 +403,8 @@ alignment::clipmateoverlaps() {
 
 	commander::printinfo "clipping ends of overlapping mate pairs"
 
-	local m i o slice odir instances ithreads minstances mthreads
+	local m i o slice odir instances ithreads minstances mthreads poolsize=$((memory/1500*1000000))
+	[[ $poolsize -eq 0 ]] && poolsize=1000000
 	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
 
 	for m in "${_mapper_clipmateoverlaps[@]}"; do
@@ -306,8 +430,9 @@ alignment::clipmateoverlaps() {
 						--out -.bam
 						--unmapped
 						--excludeFlags 0x80C
-						--poolSize 10000000
+						--poolSize $poolsize
 						--stats
+						--noPhoneHome
 					> "$slice.mateclipped"
 				CMD
 				# [[ $? -le 2 ]] && true || false
@@ -366,7 +491,7 @@ alignment::reorder() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
-			-o <outbase>   | path to
+			-o <outdir>    | path to
 		EOF
 		return 1
 	}
@@ -403,7 +528,7 @@ alignment::reorder() {
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2
+	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_reorder[@]}"; do
 		declare -n _bams_reorder=$m
 		odir="$outdir/$m"
@@ -413,7 +538,7 @@ alignment::reorder() {
 			tomerge=()
 
 			while read -r slice; do
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					picard
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -426,9 +551,11 @@ alignment::reorder() {
 						VALIDATION_STRINGENCY=SILENT
 						VERBOSITY=WARNING
 				CMD
+
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					mv "$slice.ordered" "$slice"
 				CMD
-					samtools index -@ $mthreads "$slice" "${slice%.*}.bai"
+					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 				CMD
 				# SD (former R) accepts fasta, bam, dict
 
@@ -439,7 +566,7 @@ alignment::reorder() {
 			o="${o%.*}.ordered.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
@@ -457,9 +584,11 @@ alignment::reorder() {
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	else
 		commander::runcmd -c picard -v -b -t $minstances -a cmd1
 		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd3
 	fi
 
 	return 0
@@ -474,17 +603,18 @@ alignment::addreadgroup() {
 			-t <threads>   | number of
 			-m <memory>    | amount of
 			-M <maxmemory> | amount of
+			-n <readgroup> | name
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-1 <normalidx> | array of (requieres -2)
 			-2 <tumoridx>  | array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
-			-o <outbase>   | path to
+			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir outdir i rgprefix=''
+	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir outdir i readgroup
 	declare -n _mapper_addreadgroup _bamslices_addreadgroup _nidx_addreadgroup _tidx_addreadgroup
 	declare -A nidx tidx
 	while getopts 'S:s:t:m:M:n:r:1:2:c:p:o:' arg; do
@@ -494,7 +624,7 @@ alignment::addreadgroup() {
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
 			M)	maxmemory=$OPTARG;;
-			n)	rgprefix=$OPTARG;;
+			n)	readgroup=$OPTARG;;
 			r)	((++mandatory)); _mapper_addreadgroup=$OPTARG;;
 			1)	_nidx_addreadgroup=$OPTARG;;
 			2)	_tidx_addreadgroup=$OPTARG;;
@@ -533,14 +663,16 @@ alignment::addreadgroup() {
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2
+	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_addreadgroup[@]}"; do
 		declare -n _bams_addreadgroup=$m
 		odir="$outdir/$m"
 		mkdir -p "$odir"
 
 		for i in "${!_bams_addreadgroup[@]}"; do
-			if [[ ! $rgprefix ]]; then
+			if [[ $readgroup ]]; then
+				rgprefix=$readgroup
+			else
 				[[ ${nidx[$i]} ]] && rgprefix=NORMAL || rgprefix=TUMOR
 			fi
 
@@ -548,7 +680,7 @@ alignment::addreadgroup() {
 			o="$(basename "${_bams_addreadgroup[$i]}")"
 			o="${o%.*}"
 			while read -r slice; do
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					picard
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -565,16 +697,18 @@ alignment::addreadgroup() {
 						VALIDATION_STRINGENCY=SILENT
 						VERBOSITY=WARNING
 				CMD
+
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					mv "$slice.rg" "$slice"
 				CMD
-					samtools index -@ $mthreads "$slice" "${slice%.*}.bai"
+					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 				CMD
 
 				tomerge+=("$slice")
 			done < "${_bamslices_addreadgroup[${_bams_addreadgroup[$i]}]}"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
@@ -591,9 +725,11 @@ alignment::addreadgroup() {
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	else
 		commander::runcmd -c picard -v -b -t $minstances -a cmd1
 		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd3
 	fi
 
 	return 0
@@ -617,7 +753,7 @@ alignment::splitncigar() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
-			-o <outbase>   | path to
+			-o <outdir>    | path to
 		EOF
 		return 1
 	}
@@ -654,7 +790,7 @@ alignment::splitncigar() {
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2
+	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_splitncigar[@]}"; do
 		declare -n _bams_splitncigar=$m
 		odir="$outdir/$m"
@@ -672,7 +808,7 @@ alignment::splitncigar() {
 			# only for FR-PE data else produces empty file!	--read-filter MateDifferentStrandReadFilter
 			while read -r slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					gatk
 						--java-options '
 							-Xmx${jmem}m
@@ -684,12 +820,15 @@ alignment::splitncigar() {
 						-I "$slice"
 						-O "$slice.nsplit"
 						-R "$genome"
+						--process-secondary-alignments true
 						-verbosity ERROR
 						--tmp-dir "${tdirs[-1]}"
 				CMD
+
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					mv "$slice.nsplit" "$slice"
 				CMD
-					samtools index -@ $mthreads "$slice" "${slice%.*}.bai"
+					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 				CMD
 
 				tomerge+=("$slice")
@@ -699,7 +838,7 @@ alignment::splitncigar() {
 			o="${o%.*}.nsplit.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
@@ -717,9 +856,130 @@ alignment::splitncigar() {
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	else
 		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
 		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd3
+	fi
+
+	return 0
+}
+
+alignment::soft2hardclip() {
+	declare -a tdirs
+	_cleanup::alignment::soft2hardclip(){
+		rm -rf "${tdirs[@]}"
+	}
+
+	# does not handle secondary and supplementary alignments
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip>  | true/false return
+			-s <softskip>  | true/false only print commands
+			-t <threads>   | number of
+			-m <memory>    | amount of
+			-M <maxmemory> | amount of
+			-r <mapper>    | array of sorted, indexed bams within array of
+			-c <sliceinfo> | array of
+			-o <outdir>    | path to
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads memory maxmemory outdir
+	declare -n _mapper_soft2hardclip _bamslices_soft2hardclip
+	declare -A nidx tidx
+	while getopts 'S:s:t:m:M:r:c:p:o:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
+			r)	((++mandatory)); _mapper_soft2hardclip=$OPTARG;;
+			c)	((++mandatory)); _bamslices_soft2hardclip=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 5 ]] && _usage
+
+	commander::printinfo "convertig soft clipped based to hard clipped bases"
+	local m i o slice odir instances ithreads minstances mthreads jmem jgct jcgct
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
+
+	for m in "${_mapper_soft2hardclip[@]}"; do
+		declare -n _bams_soft2hardclip=$m
+		((instances+=${#_bams_soft2hardclip[@]}))
+	done
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+
+	declare -a tomerge cmd1 cmd2 cmd3
+	for m in "${_mapper_soft2hardclip[@]}"; do
+		declare -n _bams_soft2hardclip=$m
+		odir="$outdir/$m"
+		mkdir -p "$odir"
+
+		for i in "${!_bams_soft2hardclip[@]}"; do
+			tomerge=()
+
+			while read -r slice; do
+				# --upgrade-clipping=true updates softclipped sites to hard clipped ones (or vice versa) prior to do any other (optional) operation
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fgbio)")
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					fgbio
+						-Xmx${jmem}m
+						-XX:ParallelGCThreads=$jgct
+						-XX:ConcGCThreads=$jcgct
+						-Djava.io.tmpdir="$tmpdir"
+					ClipBam
+						--clipping-mode=Hard
+						--upgrade-clipping=true
+						--tmp-dir="${tdirs[-1]}"
+						--log-level=Warning
+						--sam-validation-stringency=SILENT
+						-i "$slice"
+						-o "$slice.hardclipped"
+				CMD
+
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					mv "$slice.hardclipped" "$slice"
+				CMD
+					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
+				CMD
+
+				tomerge+=("$slice")
+			done < "${_bamslices_soft2hardclip[${_bams_soft2hardclip[$i]}]}"
+
+			o="$odir/$(basename "${_bams_soft2hardclip[$i]}")"
+			o="${o%.*}.hardclipped.bam"
+
+			# slices have full sam header info used by merge to maintain the global sort order
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+				samtools merge
+					-@ $ithreads
+					-f
+					-c
+					-p
+					"$o"
+					$(printf '"%s" ' "${tomerge[@]}")
+			CMD
+
+			_bamslices_soft2hardclip["$o"]="${_bamslices_soft2hardclip[${_bams_soft2hardclip[$i]}]}"
+			_bams_soft2hardclip[$i]="$o"
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+	else
+		commander::runcmd -c fgbio -v -b -t $minstances -a cmd1
+		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd3
 	fi
 
 	return 0
@@ -743,7 +1003,7 @@ alignment::leftalign() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
-			-o <outbase>   | path to
+			-o <outdir>    | path to
 		EOF
 		return 1
 	}
@@ -780,7 +1040,7 @@ alignment::leftalign() {
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2
+	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_leftalign[@]}"; do
 		declare -n _bams_leftalign=$m
 		odir="$outdir/$m"
@@ -791,7 +1051,13 @@ alignment::leftalign() {
 
 			while read -r slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+
+
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					samtools reheader -c "sed -E 's/\tSO:.+/\tSO:undefined/'" "$slice" > "$slice.reheader"
+				CMD
+					mv "$slice.reheader" "$slice"
+				CMD
 					gatk
 						--java-options '
 								-Xmx${jmem}m
@@ -806,10 +1072,20 @@ alignment::leftalign() {
 						-verbosity ERROR
 						--tmp-dir "${tdirs[-1]}"
 				CMD
-					mv "$slice.leftaln" "$slice"
+
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					cd "${tdirs[-1]}"
 				CMD
-					samtools index -@ $mthreads "$slice" "${slice%.*}.bai"
+					samtools sort -@ $ithreads -O BAM -T "$(basename "${slice%.*}")" "$slice.leftaln" > "$slice"
 				CMD
+					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
+				CMD
+					rm -f "$slice.leftaln"
+				CMD
+				# leftalign indel has a major issue if pos is incremented due to e.g. softclippings (as introduced by RNA-Seq itself, splitNcigar or clipoverlaps)
+				# and file is coordinate sorted (sam header SO)
+				# aln1: pos 100 cig 1M1=1D40= -> pos 101 2S40=
+ 				# aln2: pos 100 cig 20= -> pos 100 20= <- out of order !!
 
 				tomerge+=("$slice")
 			done < "${_bamslices_leftalign[${_bams_leftalign[$i]}]}"
@@ -818,7 +1094,7 @@ alignment::leftalign() {
 			o="${o%.*}.leftaln.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
@@ -836,9 +1112,11 @@ alignment::leftalign() {
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	else
 		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
 		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd3
 	fi
 
 	return 0
@@ -865,7 +1143,7 @@ alignment::bqsr() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
-			-o <outbase>   | path to
+			-o <outdir>    | path to
 		EOF
 		return 1
 	}
@@ -912,7 +1190,7 @@ alignment::bqsr() {
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3
+	declare -a tomerge cmd1 cmd2 cmd3 cmd4
 	for m in "${_mapper_bqsr[@]}"; do
 		declare -n _bams_bqsr=$m
 		odir="$outdir/$m"
@@ -936,7 +1214,7 @@ alignment::bqsr() {
 				# GatherBQSRReports - Gathers scattered BQSR recalibration reports into a single file
 				#
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					gatk
 						--java-options '
 								-Xmx${jmem}m
@@ -953,7 +1231,7 @@ alignment::bqsr() {
 						--tmp-dir "${tdirs[-1]}"
 				CMD
 
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					rm -rf "$slice.bqsr.parts"
 				CMD
 					gatk
@@ -970,9 +1248,11 @@ alignment::bqsr() {
 						-verbosity ERROR
 						--tmp-dir "${tdirs[-1]}"
 				CMD
+
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					mv "$slice.bqsr" "$slice"
 				CMD
-					samtools index -@ $mthreads "$slice" "${slice%.*}.bai"
+					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 				CMD
 
 				tomerge+=("$slice")
@@ -981,7 +1261,7 @@ alignment::bqsr() {
 			o="$odir/$(basename "${_bams_bqsr[$i]}")"
 			o="${o%.*}.bqsr.bam"
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
@@ -1000,10 +1280,12 @@ alignment::bqsr() {
         commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
+		commander::printcmd -a cmd4
 	else
 		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
 		commander::runcmd -c gatk -v -b -t $minstances -a cmd2
 		commander::runcmd -v -b -t $instances -a cmd3
+		commander::runcmd -v -b -t $instances -a cmd4
 	fi
 
 	return 0

@@ -60,20 +60,27 @@ commander::printerr(){
 }
 
 commander::makecmd(){
+	_cleanup::commander::makecmd(){
+		COMMANDER=()
+	}
+
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-a <cmds>      | array of
-			-s <seperator> | string for
+			-s <seperator> | string for (default: |)
 			-o <outfile>   | stdout redirection to
 			-c <cmd|fd3..> | ALWAYS LAST OPTION
 			                 command line string(s) and or
 			                 file descriptor(s) starting from 3
-			example:
+			example 1:
+			${FUNCNAME[1]} -a cmds -c perl -le \''print "foo"'\'
+
+			example 2:
 			${FUNCNAME[1]} -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 			    perl -sl - -y=$x <<< '
-			        print "$x";
-			        print "\$y";
+			        print "\$x";
+			        print "\\\$y";
 			    '
 			CMD
 			    awk '{print $0}'
@@ -98,7 +105,6 @@ commander::makecmd(){
 					exec {fd}>&- # just to be safe
 					# exec {fd}>&- to close fd in principle not necessary since heredoc is read only and handles closure after last EOF
 				done
-				COMMANDER=()
 				tmp="${cmd_makecmd[*]/#/$sep }" # concatenate CMD* with seperator
 				_cmds_makecmd+=("$* ${tmp/#$sep /}$suffix")
 				return 0;;
@@ -145,15 +151,14 @@ commander::runcmd(){
 			-b             | benchmark on
 			-c <env>       | run with conda
 			-t <instances> | number of parallel
-			-a <cmds>      | ALWAYS LAST OPTION
-			                 array of
+			-a <cmds>      | array of
 			example:
 			${FUNCNAME[1]} -v -b -t 1 -a cmd
 		EOF
 		return 1
 	}
 
-	local OPTIND arg threads=1 verbose=false benchmark=false cenv
+	local OPTIND arg mandatory threads=1 verbose=false benchmark=false cenv
 	declare -n _cmds_runcmd # be very careful with circular name reference
 	while getopts 'vbt:c:a:' arg; do
 		case $arg in
@@ -161,62 +166,84 @@ commander::runcmd(){
 			v)	verbose=true;;
 			b)	benchmark=true;;
 			c)	cenv=$OPTARG;;
-			a)	_cmds_runcmd=$OPTARG
-				[[ $_cmds_runcmd ]] || return 0
-				$verbose && {
-					commander::printinfo "running commands of array ${!_cmds_runcmd}"
-					commander::printcmd -a _cmds_runcmd
-				}
-				local i sh
-				tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
-				# better write to file to avoid xargs argument too long error due to -I {}
-				# old: printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $threads -I {} bash -c {}
-				# use a subshell with its own trap, destructed if subshell terminates
-				if $benchmark; then
-					for i in "${!_cmds_runcmd[@]}"; do
-						sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
-						echo "#!/usr/bin/env bash" > "$sh"
-						#echo "set -o pipefail" >> "$sh"
-						#echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh" # do not use set -e, to ignore sigpipe caused by e.g. samtools view | head
-						#[[ $cenv ]] && echo "source $CONDA_PREFIX/bin/activate $cenv" >> "$sh"
-						if [[ $cenv ]]; then
-							echo "source '$BASHBONE_DIR/activate.sh' -c true" >> "$sh"
-							echo "conda activate $cenv" >> "$sh"
-						else
-							echo "source '$BASHBONE_DIR/activate.sh' -c false" >> "$sh"
-						fi
-						printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
-						echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
-						echo "$sh"
-					done | $(command -v time) -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
-					# time may be a shell keyword, so use full path
-					# due to set -E based error tracing, command time may leads to *** longjmp causes uninitialized stack frame ***: bash terminated
-					# workaround: use which or command -v
-				else
-					for i in "${!_cmds_runcmd[@]}"; do
-						sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
-						echo "#!/usr/bin/env bash" > "$sh"
-						# echo "set -o pipefail" >> "$sh"
-						# echo "trap 'e=\$?; if [[ \$e -ne 141 ]]; then exit \$e; fi' ERR" >> "$sh"
-						# [[ $cenv ]] && echo "source $CONDA_PREFIX/bin/activate $cenv" >> "$sh"
-						if [[ $cenv ]]; then
-							echo "source '$BASHBONE_DIR/activate.sh' -c true" >> "$sh"
-							echo "conda activate $cenv" >> "$sh"
-						else
-							echo "source '$BASHBONE_DIR/activate.sh' -c false" >> "$sh"
-						fi
-						printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
-						echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
-						echo "$sh"
-					done | xargs -P $threads -I {} bash {}
-				fi
-				return 0
-			;;
+			a)	mandatory=1; _cmds_runcmd=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
+	[[ ! $mandatory ]] && _usage
+	[[ $_cmds_runcmd ]] || return 0
 
-	_usage
+	$verbose && {
+		commander::printinfo "running commands of array ${!_cmds_runcmd}"
+		commander::printcmd -a _cmds_runcmd
+	}
+	local i sh
+	tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
+
+	# better write to file to avoid xargs argument too long error due to -I {}
+	# old: printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $threads -I {} bash -c {}
+	# upon error return 255 to prevent xargs to load further jobs
+	# use exit function on PPID to kill all sibling processes executed by xargs
+	if $benchmark; then
+		for i in "${!_cmds_runcmd[@]}"; do
+			sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
+
+			cat <<- EOF > "$sh"
+				#!/usr/bin/env bash
+				exit::$(basename $sh)(){
+					if [[ \$1 -ne 0 ]]; then
+						configure::exit -p \$PPID
+					fi
+				}
+			EOF
+			if [[ $cenv ]]; then
+				echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$(basename $sh)" >> "$sh"
+				echo "conda activate $cenv" >> "$sh"
+			else
+				echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$(basename $sh)" >> "$sh"
+			fi
+			printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
+			echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
+			echo "$sh"
+		done | $(command -v time) -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
+		# time is also a bash shell keyword which works differently and does not record memory usage
+		# due to set -E based error tracing, command time may leads to *** longjmp causes uninitialized stack frame ***: bash terminated
+		# workaround: use full path, which or command -v
+	else
+		for i in "${!_cmds_runcmd[@]}"; do
+			sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
+
+			cat <<- EOF > "$sh"
+				#!/usr/bin/env bash
+				exit::$(basename $sh)(){
+					if [[ \$1 -ne 0 ]]; then
+						configure::exit -p \$PPID
+					fi
+				}
+			EOF
+			if [[ $cenv ]]; then
+				echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$(basename $sh)" >> "$sh"
+				echo "conda activate $cenv" >> "$sh"
+			else
+				echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$(basename $sh)" >> "$sh"
+			fi
+			printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
+			echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
+			echo "$sh"
+		done | xargs -P $threads -I {} bash {}
+	fi
+
+	# shorter, but disrupts proper LINENO report upon error
+	# for i in "${!_cmds_runcmd[@]}"; do
+	#	...
+	# 	echo "$sh"
+	# done | if $benchmark; then
+	# 	$(command -v time) -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {}
+	# else
+	# 	xargs -P $threads -I {} bash {}
+	# fi
+
+	return 0
 }
 
 commander::qsubcmd(){
@@ -240,8 +267,7 @@ commander::qsubcmd(){
 			-q <queue>     | name of sge queue
 			-p <env>       | name of parallel sge environment
 			-t <threads>   | to be allocated per instance in parallel environment
-			-a <cmds>      | ALWAYS LAST OPTION
-			                 array of
+			-a <cmds>      | array of
 			example:
 			${FUNCNAME[1]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c base -p threads -t 4 -i 2 -w -o ~/logs -a cmd
 		EOF
@@ -265,58 +291,57 @@ commander::qsubcmd(){
 			p)	((++mandatory)); penv="-pe $OPTARG";;
 			q)	((++mandatory)); queue="-q $OPTARG";;
 			n)	jobname="$OPTARG";;
-			a)	_cmds_qsubcmd=$OPTARG
-				[[ $mandatory -lt 2 ]] && _usage
-				[[ $_cmds_qsubcmd ]] || return 0
-
-				$verbose && {
-					commander::printinfo "running commands of array ${!_cmds_qsubcmd}"
-					commander::printcmd -a _cmds_qsubcmd
-				}
-
-				[[ $penv ]] && params="$penv $threads" || params="$queue"
-				[[ $jobname ]] || jobname=$(mktemp -u -p "$logdir" XXXXXXXXXX)
-				local ex="$logdir/exitcodes.$jobname"
-				local log="$logdir/job.$jobname.\$TASK_ID.log" # not SGE_TASK_ID
-
-				local i id sh
-				for i in "${!_cmds_qsubcmd[@]}"; do
-					id=$((i+1))
-					if $override; then
-						rm -f "$logdir/job.$jobname.$id.log" "$ex"
-					fi
-					sh="$logdir/job.$jobname.$id.sh"
-					cat <<- EOF > "$sh"
-						#!/usr/bin/env bash
-						exit::$jobname.$id(){
-							echo "$jobname.$id exited with exit code \$1" >> "$ex"
-						}
-					EOF
-					if [[ $cenv ]]; then
-						echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id" >> "$sh"
-						echo "conda activate $cenv" >> "$sh"
-					else
-						echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id" >> "$sh"
-					fi
-					printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
-					chmod 755 "$sh"
-				done
-
-				[[ $instances ]] || instances=$id
-				if $benchmark; then
-					TIMEFORMAT=':BENCHMARK: runtime %3lR [hours][minutes]seconds' # different to /usr/bin/time, bash builtin time can handle: time echo "sleep 2" | bash
-					time echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
-					# in case of job exit code > 0, leads to *** longjmp causes uninitialized stack frame ***: bash terminated
-				else
-					echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
-				fi
-				return $?
-			;;
+			a)	((++mandatory)); _cmds_qsubcmd=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
 
-	_usage
+	[[ $mandatory -lt 3 ]] && _usage
+	[[ $_cmds_qsubcmd ]] || return 0
+
+	$verbose && {
+		commander::printinfo "running commands of array ${!_cmds_qsubcmd}"
+		commander::printcmd -a _cmds_qsubcmd
+	}
+
+	[[ $penv ]] && params="$penv $threads" || params="$queue"
+	[[ $jobname ]] || jobname=$(mktemp -u -p "$logdir" XXXXXXXXXX)
+	local ex="$logdir/exitcodes.$jobname"
+	local log="$logdir/job.$jobname.\$TASK_ID.log" # not SGE_TASK_ID
+
+	local i id sh
+	for i in "${!_cmds_qsubcmd[@]}"; do
+		id=$((i+1))
+		if $override; then
+			rm -f "$logdir/job.$jobname.$id.log" "$ex"
+		fi
+		sh="$logdir/job.$jobname.$id.sh"
+		cat <<- EOF > "$sh"
+			#!/usr/bin/env bash
+			exit::$jobname.$id(){
+				echo "$jobname.$id exited with exit code \$1" >> "$ex"
+			}
+		EOF
+		if [[ $cenv ]]; then
+			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id" >> "$sh"
+			echo "conda activate $cenv" >> "$sh"
+		else
+			echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id" >> "$sh"
+		fi
+		printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
+		chmod 755 "$sh"
+	done
+
+	[[ $instances ]] || instances=$id
+	if $benchmark; then
+		TIMEFORMAT=':BENCHMARK: runtime %3lR [hours][minutes]seconds' # different to /usr/bin/time, bash builtin time can handle: time echo "sleep 2" | bash
+		time echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
+		# in case of job exit code > 0, leads to *** longjmp causes uninitialized stack frame ***: bash terminated
+	else
+		echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
+	fi
+
+	return 0
 }
 
 commander::_test(){

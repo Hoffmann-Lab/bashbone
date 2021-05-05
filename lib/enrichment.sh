@@ -53,9 +53,11 @@ enrichment::_ora(){
 			ora <- data.frame(matrix(ncol = 4, nrow = 0));
 			if(length(genes)>0){
 				tg <- suppressMessages(read.gmt(gmt));
-				ora <- enricher(genes, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
-				if(!is.null(ora)){
-					ora <- as.data.frame(ora)[c("ID","Count","pvalue","p.adjust")];
+				if(sum(genes %in% tg$gene)>0){
+					ora <- enricher(genes, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
+					if(!is.null(ora)){
+						ora <- as.data.frame(ora)[c("ID","Count","pvalue","p.adjust")];
+					};
 				};
 			};
 			colnames(ora) = c("id","count","pval","padj");
@@ -126,12 +128,14 @@ enrichment::_gsea(){
 			gsea <- data.frame(matrix(ncol = 4, nrow = 0));
 			if(nrow(df)>0){
 				tg <- suppressMessages(read.gmt(gmt));
-				gl <- abs(df[, which(colnames(df)=="log2FoldChange") ]);
-				names(gl) <- as.character(df[, which(colnames(df)=="id")]);
-				gl <- sort(gl, decreasing = T);
-				gsea <- GSEA(gl, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
-				if(!is.null(gsea)){
-					gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust")];
+				if(sum(df$id %in% tg$gene)>0){
+					gl <- abs(df[, which(colnames(df)=="log2FoldChange") ]);
+					names(gl) <- as.character(df[, which(colnames(df)=="id")]);
+					gl <- sort(gl, decreasing = T);
+					gsea <- GSEA(gl, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
+					if(!is.null(gsea)){
+						gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust")];
+					};
 				};
 			};
 			colnames(gsea) = c("id","count","pval","padj");
@@ -174,7 +178,7 @@ enrichment::_revigo(){
 	# for pvalue instead of padj do revigo <(awk 'NR>1 && \$(NF-1)<=0.05' $odir/gsea.tsv) --stdout
 	# need to remove [_'"\t*$#%^!]
 	commander::makecmd -a _cmds1_revigo -s '|' -o "$outdir/revigo.tsv" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-		revigo <(awk 'NR>1 && \$NF<=0.05 {print \$1"\t"\$NF}' $orafile) --stdout
+		revigo <(awk 'NR>1 && \$NF<=0.05 {print \$1"\t"\$NF}' "$orafile") --stdout
 	CMD
 		perl -lane '
 			next if $.<3;
@@ -295,7 +299,7 @@ enrichment::go(){
 		for domain in biological_process cellular_component molecular_function; do
 			odir="$(dirname "$f")/$domain"
 			mkdir -p "$odir"
-			enrichment::_ora -1 cmd1 -2 cmd2 -d $domain -g $gofile -i $f -o $odir
+			enrichment::_ora -1 cmd1 -2 cmd2 -d $domain -g "$gofile" -i "$f" -o "$odir"
 			enrichmentfiles+=("$odir/goenrichment.tsv")
 		done
 	done
@@ -329,11 +333,11 @@ enrichment::go(){
 	declare -a cmd3 cmd4
 	local x
 	for f in "${enrichmentfiles[@]}"; do
-		x=$(head $f | wc -l)
+		x=$(head "$f" | wc -l)
 		[[ $x -lt 2 ]] && commander::warn "no enriched go terms in $f" && continue
-		odir=$(dirname $f)
-		domain=$(basename $odir)
-		enrichment::_revigo -1 cmd3 -2 cmd4 -d $domain -i $f -o $odir
+		odir="$(dirname "$f")"
+		domain="$(basename "$odir")"
+		enrichment::_revigo -1 cmd3 -2 cmd4 -d $domain -i "$f" -o "$odir"
 	done
 
 	if $skip; then

@@ -40,12 +40,14 @@ my %header = (
     DP4 => '##FORMAT=<ID=DP4,Number=4,Type=Integer,Description="Strand specific ref and alt read counts: ref-fwd, ref-rev, alt-fwd, alt-rev">',
     ASF => '##FORMAT=<ID=ASF,Number=1,Type=Float,Description="Alt strand specific reads fraction: min(fwd,rev)/max(fwd/rev)">',
     RSF => '##FORMAT=<ID=RSF,Number=1,Type=Float,Description="Ref strand specific reads fraction: min(fwd,rev)/max(fwd/rev)">',
-    vcfix_germlinerisk => '##FILTER=<ID=vcfix_germlinerisk,Description="if paired vcf, not marked as vcfix_somatic and vcfsamplediff reported germline">',
-    vcfix_strandbias => '##FILTER=<ID=vcfix_strandbias,Description="ASF < 0.2">',
+    vcfix_germlinerisk => '##FILTER=<ID=vcfix_germlinerisk,Description="according to caller flag or vcfsamplediff if paired vcf">',
+    vcfix_lohrisk => '##FILTER=<ID=vcfix_lohrisk,Description="according to caller flag or if paired vcf and tumor sample genotype equals reference">',
+    vcfix_strandbias => '##FILTER=<ID=vcfix_strandbias,Description="RFS == 0 or ASF < 0.2">',
+    vcfix_weaksignal => '##FILTER=<ID=vcfix_weaksignal,Description="Alt AD < 3">',
     vcfix_lowcov => '##FILTER=<ID=vcfix_lowcov,Description="COV < 10">',
     vcfix_lowqual => '##FILTER=<ID=vcfix_lowqual,Description="QUAL < 5">',
-    vcfix_somatic => '##FILTER=<ID=vcfix_somatic,Description="if paired vcf, site is somatic according to the caller or vcfix QUAL and MAF fraction filter">',
-    vcfix_dp4bias => '##FILTER=<ID=vcfix_dp4bias,Description="if source is platypus and normal samples significantly support variant, tumor alt dp4 values and thus ASF is biased">',
+    vcfix_somatic => '##FILTER=<ID=vcfix_somatic,Description="according to caller flag or if paired vcf not passing vcfix QUAL and MAF fraction filter">',
+    vcfix_dp4bias => '##FILTER=<ID=vcfix_dp4bias,Description="if paired vcf and source is platypus or freebayes dp4 is estimated from total fr counts and normal AD. strand filter is not applied">',
     vcfix_ok => '##FILTER=<ID=vcfix_ok,Description="site passed all naive vcfix filters">',
 );
 
@@ -58,10 +60,12 @@ my $germline;
     'i|in' => sub {
         $normals+=8; # last normal index
 
+        my $warnedscore;
         my $warnedgt;
         my $warneddp;
         my $warneddp4;
         my $warnedgq;
+        my $warnmaf;
         while(<>){
             my $l = $_;
             chomp $l;
@@ -86,15 +90,22 @@ my $germline;
                 next;
             }
 
-            next if $l[5] ne "." && $l[5] < 1; # simple quality filter
+            # simple score based filter
+            if($l[5] ne "." && $l[5] != 0 && $l[5] < 1){
+                warn "warning: too low score to be kept. output will be truncated." unless $warnedscore;
+                $warnedscore = 1;
+                next;
+            }
 
             my @smaf;
             my @sgq;
             my %filter;
             my $somatic;
-            my $vsupn = 0;
             my @t;
+
             $germline=1 if $#l==9;
+            $filter{"vcfix_lowqual"}=1 if $l[5] ne "." && $l[5] != 0 && $l[5] < 5;
+
             for my $s (9..$#l){
                 @t = split /:/,$l[8]; # redo due to splice
                 my @v = split /:/,$l[$s];
@@ -115,89 +126,14 @@ my $germline;
                 $v[$i] = join '/', @gt;
 
 
-                # insert or recalculate dp4
-                my ($dp4) = indexes { /^DP4$/ } @t;
-                my @dp4;
-                if(($i) = indexes { /^SB$/ } @t){ #gatk4 haplotypecaller fix (requieres -A StrandBiasBySample)
-                    @dp4 = split/,/,$v[$i];
-                } elsif(($i) = indexes { /^RDF$/ } @t){ #varscan (germline) fix - ok, no multiallelic sites reported. attention: bcftools also reports ADF and ADR but as comma-sep. ref,alt
-                    push @dp4 , $v[$i];
-                    ($i) = indexes { /^RDR$/ } @t;
-                    push @dp4 , $v[$i];
-                    ($i) = indexes { /^ADF$/ } @t;
-                    push @dp4 , $v[$i];
-                    ($i) = indexes { /^ADR$/ } @t;
-                    push @dp4 , $v[$i];
-                } elsif(($i) = indexes { /^ADF$/ } @t){ #bcftools fix (below varscan fix)- do not use $l[7]=~/[\s;]DP4=([^\s;]+)/ which is the sum of all input samples
-                    my @adf = split/,/,$v[$i];
-                    ($i) = indexes { /^ADR$/ } @t;
-                    my @adr = split/,/,$v[$i];
-                    $dp4[0]=shift @adf;
-                    $dp4[1]=shift @adr;
-                    $dp4[2]=sum(@adf);
-                    $dp4[3]=sum(@adr);
-                } elsif($l[7]=~/[\s;]SRF=([^\s;]+)/){ #freebayes fix (info properly defined for bcftools norm). unlike platypus, reads are always variant exclusive (no read sharing within multiallelic cases)
-                    if (! $germline && $s <= $normals){ # normal
-                        @dp4=(-1,-1,-1,-1);
-                    } else {
-                        @dp4 = ($1);
-                        push @dp4 , $1;
-                        $l[7]=~/[\s;]SAF=([^\s;]+)/;
-                        push @dp4 , sum(split/,/,$1);
-                        $l[7]=~/[\s;]SAR=([^\s;]+)/;
-                        push @dp4 , sum(split/,/,$1);
-                    }
-                } elsif($l[7]=~/[\s;]TCF=([^\s;]+)/){ #platypus fix
-                    # if reads are shared among rare multiallelic cases, sum(NF) and/or sum(NR) can be larger than TCF and or TCR
-                    # CG -> C,TG -----T----| |----  read (internally left-aligned)
-                    #            NNNNNCGGGGGGGNNNN  ref
-                    # note also that TC* and N* are total values across all input samples and thus is just works germline or single tumor normal pair, if normal does not support any variant
-                    if (! $germline && $s <= $normals){ # normal
-                        @dp4=(-1,-1,-1,-1);
-                    } else {
-                        my $allf = $1;
-                        $l[7]=~/[\s;]TCR=([^\s;]+)/;
-                        my $allr=$1;
-                        $l[7]=~/[\s;]NF=([^\s;]+)/;
-                        my $altf=sum(split/,/,$1);
-                        $l[7]=~/[\s;]NR=([^\s;]+)/;
-                        my $altr=sum(split/,/,$1);
-                        if($germline) {
-                            @dp4 = (max(-1,$allf-$altf),max(-1,$allr-$altr),$altf,$altr);
-                        } else {
-                            @dp4 = (-1,-1,$altf,$altr); # ref-fw ref-rv cannot be calculated, since unclear how to split and assign TCF/TCR to normal and tumor ref
-                            $filter{"vcfix_dp4bias"}=1 if $s > $normals && $vsupn/($altf+$altr+1) >= 0.05;
-                        }
-                    }
-                } elsif(($i) = indexes { /^ALD$/ } @t){ #vardict fix - ok, no multiallelic sites called
-                    @dp4 = ($v[$i]);
-                    ($i) = indexes { /^RD$/ } @t;
-                    push @dp4 , $v[$i];
-                } elsif (defined $dp4) { # varscan (somatic) fix and fallback
-                     @dp4 = split/,/,$v[$dp4];
-                } else {
-                    warn "warning: unable to infer DP4. output will be truncated." unless $warneddp4;
-                    $warneddp4 = 1;
-                    $filter{"vcfix_formaterror"}=1;
-                    last;
-                }
-                if(defined $dp4){ # update values, e.g. after splitting multiallelic hits
-                    $v[$dp4] = join(",",@dp4);
-                } else {
-                    splice @t, 1, 0, 'DP4';
-                    splice @v, 1, 0, join(",",@dp4);
-                }
-
-
                 # insert or correct ad
                 ($i) = indexes { /^AD$/ } @t;
+                my @ad;
                 if( ! defined $i){ # platypus fix
                     if (($i) = indexes { /^NR$/ } @t) {
                         my @nr = split /,/,$v[$i];
                         ($i) = indexes { /^NV$/ } @t;
-                        my @ad = split /,/,$v[$i];
-
-                        $vsupn += max(@ad) if $s <= $normals; # need for warning
+                        @ad = split /,/,$v[$i];
 
                         $nr[$_]-=$ad[$_] for 0..$#nr;
                         unshift @ad, max(@nr);
@@ -208,12 +144,13 @@ my $germline;
                     if (my ($j) = indexes { /^RD$/ } @t){
                         my @alleles = split /,/,$l[4];
                         pop @alleles;
-                        my @ad;
                         push @ad, $v[$j];
                         push @ad, $v[$j]-$v[$i] for @alleles;
                         push @ad, $v[$i];
                         $v[$i] = join ",",@ad;
                     }
+                } else {
+                    @ad = split /,/,$v[$i];
                 }
 
 
@@ -230,6 +167,11 @@ my $germline;
                     $filter{"vcfix_formaterror"}=1;
                     last;
                 }
+
+
+                # get cov
+                my $cov = max(sum(@ad), $dp); #try to find real COV, do not use dp4 since not present in freebayes, platypus tumor normal paired vcf
+                $dp = min(sum(@ad), $dp); #varscan, vardict and freebayes fix DP >= sum(AD) i.e. DP ~ total COV, not filtered depth, whereas AD values are wrongly based on filtered reads
                 if(defined $dpi){ # update values, e.g. after splitting multiallelic hits
                     $v[$dpi] = $dp;
                 } else {
@@ -238,17 +180,109 @@ my $germline;
                 }
 
 
-
-                # add COV, MAV and strand usage fraction info
-                ($i) = indexes { /^DP4$/ } @t;
-                @dp4 = split/,/,$v[$i];
-                ($i) = indexes { /^AD$/ } @t;
-                my @ad = split /,/,$v[$i];
-                ($i) = indexes { /^DP$/ } @t;
-
-                # get cov
-                my $cov = max(sum(@ad), $v[$i]); #try to find real COV, do not use dp4 since not present in freebayes, platypus tumor normal paired vcf
-                $v[$i] = min(sum(@ad), $v[$i]); #varscan, vardict and freebayes fix DP >= sum(AD) i.e. DP ~ total COV, not filtered depth, whereas AD values are wrongly based on filtered reads
+                # insert or recalculate dp4
+                my ($dp4) = indexes { /^DP4$/ } @t;
+                my @dp4;
+                if(($i) = indexes { /^SB$/ } @t){ #gatk4 haplotypecaller fix (requieres -A StrandBiasBySample)
+                    @dp4 = split/,/,$v[$i];
+                } elsif(($i) = indexes { /^RDF$/ } @t){ #varscan (germline) fix - ok, no multiallelic sites reported. attention: bcftools also reports ADF and ADR but as comma-sep. ref,alt
+                    push @dp4 , $v[$i];
+                    ($i) = indexes { /^RDR$/ } @t;
+                    push @dp4 , $v[$i];
+                    ($i) = indexes { /^ADF$/ } @t;
+                    push @dp4 , $v[$i];
+                    ($i) = indexes { /^ADR$/ } @t;
+                    push @dp4 , $v[$i];
+                } elsif(($i) = indexes { /^ADF$/ } @t){ #bcftools fix (below varscan fix)- do not use $l[7]=~/(^|;)DP4=([^\t;]+)/ which is the sum of all input samples
+                    my @adf = split/,/,$v[$i];
+                    ($i) = indexes { /^ADR$/ } @t;
+                    my @adr = split/,/,$v[$i];
+                    @dp4= (shift @adf, shift @adr, sum(@adf), sum(@adr));
+                } elsif($l[7]=~/(^|;)SRF=([^\s;]+)/){ #freebayes fix (info properly defined for bcftools norm). unlike platypus, reads are always variant exclusive (no read sharing across multiallelic sites)
+                    # note that S* are total values across all input samples and thus is just works germline or single tumor normal pair, if normal does not support any variant
+                    my $allreff = $2;
+                    $l[7]=~/(^|;)SRR=([^\s;]+)/;
+                    my $allrefr = $2;
+                    $l[7]=~/(^|;)SAF=([^\s;]+)/;
+                    my $allaltf = sum(split/,/,$2);
+                    $l[7]=~/(^|;)SAR=([^\s;]+)/;
+                    my $allaltr = sum(split/,/,$2);
+                    if($germline){
+                        @dp4=($allreff,$allrefr,$allaltf,$allaltr); # only if single
+                    } else {
+                        if ($s <= $normals){
+                            @dp4 = (-1,-1,-1,-1);
+                        } else {
+                            if ($allaltf + $allaltr > $ad[1] + 1){ # ignore single normal alt support
+                                $filter{"vcfix_dp4bias"}=1;
+                                @dp4 = (-1,-1,-1,-1);
+                            } else {
+                                # $dp4[0] = sprintf("%.f",$ad[0]*$allreff/($allreff + $allrefr); # alt should be ~unique to tumor, but ref cannot be splitted that easy
+                                # $dp4[1] = $ad[0] - $dp4[0];
+                                @dp4 = (-1,-1);
+                                if($allaltf + $allaltr == 0){ # this can happen in case of paired vcf or multi samples - catched below as no alt support im somatic samples warning
+                                    push @dp4,0;
+                                } else {
+                                    push @dp4,sprintf("%.f",$ad[1]*$allaltf/($allaltf + $allaltr));
+                                }
+                                push @dp4,$ad[1] - $dp4[2];
+                            }
+                        }
+                    }
+                } elsif($l[7]=~/(^|;)TCF=([^\s;]+)/){ #platypus fix
+                    # if reads are shared among rare multiallelic cases, sum(NF) and/or sum(NR) can be larger than TCF and or TCR
+                    # CG -> C,TG -----T----| |----  read (internally left-aligned)
+                    #            NNNNNCGGGGGGGNNNN  ref
+                    # note also that TC* and N* are total values across all input samples and thus is just works germline or single tumor normal pair, if normal does not support any variant
+                    my $allreff = $2;
+                    $l[7]=~/(^|;)TCR=([^\s;]+)/;
+                    my $allrefr = $2;
+                    $l[7]=~/(^|;)NF=([^\s;]+)/;
+                    my $allaltf = sum(split/,/,$2);
+                    $l[7]=~/(^|;)NR=([^\s;]+)/;
+                    my $allaltr = sum(split/,/,$2);
+                    $allreff-=$allaltf;
+                    $allrefr-=$allaltr;
+                    if($germline){
+                        @dp4=($allreff,$allrefr,$allaltf,$allaltr); # only if single
+                    } else {
+                        if ($s <= $normals){
+                            @dp4 = (-1,-1,-1,-1);
+                        } else {
+                            if ($allaltf + $allaltr > $ad[1] + 1){ # ignore single normal alt support
+                                $filter{"vcfix_dp4bias"}=1;
+                                @dp4 = (-1,-1,-1,-1);
+                            } else {
+                                # $dp4[0] = sprintf("%.f",$ad[0]*$allreff/($allreff + $allrefr); # alt should be ~unique to tumor, but ref cannot be splitted that easy
+                                # $dp4[1] = $ad[0] - $dp4[0];
+                                @dp4 = (-1,-1);
+                                if($allaltf + $allaltr == 0){ # this can happen in case of paired vcf or multi samples - catched below as no alt support im somatic samples warning
+                                    push @dp4,0;
+                                } else {
+                                    push @dp4,sprintf("%.f",$ad[1]*$allaltf/($allaltf + $allaltr));
+                                }
+                                push @dp4,$ad[1] - $dp4[2];
+                            }
+                        }
+                    }
+                } elsif(($i) = indexes { /^ALD$/ } @t){ #vardict fix - ok, no multiallelic sites called
+                    @dp4 = split/,/,$v[$i];
+                    ($i) = indexes { /^RD$/ } @t;
+                    push @dp4 , split/,/,$v[$i];
+                } elsif (defined $dp4) { # varscan (somatic) fix and fallback
+                     @dp4 = split/,/,$v[$dp4];
+                } else {
+                    warn "warning: unable to infer DP4. output will be truncated." unless $warneddp4;
+                    $warneddp4 = 1;
+                    $filter{"vcfix_formaterror"}=1;
+                    last;
+                }
+                if(defined $dp4){ # update values, e.g. after splitting multiallelic hits
+                    $v[$dp4] = join(",",@dp4);
+                } else {
+                    splice @t, 1, 0, 'DP4';
+                    splice @v, 1, 0, join(",",@dp4);
+                }
 
                 # get maf
                 shift @ad;
@@ -258,10 +292,10 @@ my $germline;
                 $_=~s/\.$// for @maf;
 
                 # get asf and rsf
-                my $rsf = max($dp4[0],$dp4[1]) == 0 ? 0 : max($dp4[0],$dp4[1]) == -1 ? -1 : sprintf("%.4f",min($dp4[0],$dp4[1])/max($dp4[0],$dp4[1]));
+                my $rsf = max($dp4[0],$dp4[1]) <= 0 ? -1 : sprintf("%.4f",min($dp4[0],$dp4[1])/max($dp4[0],$dp4[1]));
                 $rsf=~s/(\.[^0]*)0+$/$1/;
                 $rsf=~s/\.$//g;
-                my $asf = max($dp4[2],$dp4[3]) == 0 ? 0 : max($dp4[2],$dp4[3]) == -1 ? -1 : sprintf("%.4f",min($dp4[2],$dp4[3])/max($dp4[2],$dp4[3]));
+                my $asf = max($dp4[2],$dp4[3]) <= 0 ? -1 : sprintf("%.4f",min($dp4[2],$dp4[3])/max($dp4[2],$dp4[3]));
                 $asf=~s/(\.[^0]*)0+$/$1/;
                 $asf=~s/\.$//;
 
@@ -367,11 +401,11 @@ my $germline;
                             $gq =  min(@pl[1..$#pl]) - $pl[0] * -1;
                         }
                     }
-                } elsif($l[7]=~/[\s;]TLOD=([^\s;]+)/){ # mutect
-                    $gq = max(split /,/,$1);
+                } elsif($l[7]=~/(^|;)TLOD=([^\s;]+)/){ # mutect
+                    $gq = max(split /,/,$2);
                     if($s <= $normals){ # normal - TODO check if mutect can be run on multiple bams and how NLOD | TLOD changes
-                        $l[7]=~/[\s;]NLOD=([^\s;]+)/;
-                        $gq = max(split /,/,$1);
+                        $l[7]=~/(^|;)NLOD=([^\s;]+)/;
+                        $gq = max(split /,/,$2);
                     }
                 } elsif (($i) = indexes { $_ =~ /^GQ$/ } @t){ # fallback
                     $gq = $v[$i] unless $v[$i] eq ".";
@@ -397,46 +431,67 @@ my $germline;
                     # https://github.com/bcbio/bcbio-nextgen/blob/master/bcbio/variation/freebayes.py
                     # -> somatic check for callers with paired input which do not report a status (bcftools, platypus, freebayes)
                     #if ( $sgq[0] >= 3.5 && $sgq[-1] >= 3.5 && ($smaf[0] <= 0.001 || $smaf[0] <= $smaf[-1]/2.7)){
-                    if ( min(@sgq[0..$normals-9]) >= 3.5 && $sgq[-1] >= 3.5 && ( max(@smaf[0..$normals-9]) <= 0.001 || max(@smaf[0..$normals-9]) <= $smaf[-1]/2.7)){
+                    if ( min(@sgq[0..$normals-9]) >= 3.5 && $sgq[-1] >= 3.5 && $smaf[-1] > 0 && ( max(@smaf[0..$normals-9]) <= 0.001 || max(@smaf[0..$normals-9]) <= $smaf[-1]/2.7)){
                         $somatic=1 if max(@gt)>0; # otherwise could be LOH
                         $filter{"vcfix_germlinerisk"}=1 if $l[7]=~/=[gG]ermline/; # vcfsamplediff, vardict
                     }
+                    $filter{"vcfix_lohrisk"}=1 if max(@gt)==0;
                 }
                 if($germline || $s > $normals){
-                    $filter{"vcfix_strandbias"}=1 if $asf < 0.2;
+                    $filter{"vcfix_strandbias"}=1 if $asf != -1 && $asf < 0.2;
 					$filter{"vcfix_lowcov"}=1 if $cov < 10;
+                    $filter{"vcfix_weaksignal"}=1 if sum(@ad) < 3; # already shifted for maf above
+                } else {
+                    $filter{"vcfix_strandbias"}=1 if $rsf == 0;
+                    $filter{"vcfix_lowcov"}=1 if $cov == 0;
                 }
 
                 $l[$s] = join ':' , @v;
             }
 
             next if exists $filter{"vcfix_formaterror"};
-
             $l[8] = join ':' , @t;
 
-            $filter{"vcfix_lowqual"}=1 if $l[5] ne "." && $l[5] < 5;
-
             unless($germline){
-                if($l[7]=~/[\s;]SS=(\d)[\s;]/){ # varscan
-                    if ($1 == 2){
+                # if (sum(@smaf[$normals-9+1..$#smaf]) == 0){ # could be LOH
+                #     warn "warning: no alt support im somatic samples. output will be truncated." unless $warnmaf;
+                #     $warnmaf=1;
+                #     next;
+                # }
+
+                if($l[7]=~/(^|;)SS=(\d)(;|$)/){ # varscan
+                    $somatic=0;
+                    if ($2 == 2){
                         $somatic=1;
-                    } elsif ($1 == 1){
+                    } elsif ($2 == 1){
                         $filter{"vcfix_germlinerisk"}=1;
+                    } elsif ($2 == 3){
+                         $filter{"vcfix_lohrisk"}=1;
                     }
-                } elsif ($l[7]=~/[\s;]STATUS=[^;]*[sS]omatic/ && $l[6]=~/PASS/){ # vardict
-                     $somatic=1;
-                } elsif ($l[7]=~/[\s;]TLOD=/ && $l[6]=~/PASS/){ # mutect
-                    $somatic=1;
-                } elsif ($l[6]=~/germline/){ # mutect
-                     $filter{"vcfix_germlinerisk"}=1;
+                } elsif ($l[7]=~/(^|;)STATUS=([^;]*)/){ # vardict
+                    $somatic=0;
+                    if ($2=~/[sS]omatic/) {
+                        $somatic=1; #if $l[6]=~/PASS/;
+                    } elsif ($2=~/[gG]ermline/) {
+                        $filter{"vcfix_germlinerisk"}=1;
+                    } elsif ($2=~/LOH/) {
+                        $filter{"vcfix_lohrisk"}=1;
+                    }
+                } elsif ($l[7]=~/(^|;)TLOD=/){ # mutect
+                    $somatic=1; # $somatic= $l[6]=~/PASS/ ? 1 : 0;
+                    $filter{"vcfix_germlinerisk"}=1 if $l[6]=~/(germline|normal)/;
                 }
             }
+            # stay PASS independent!
 
             $filter{"vcfix_ok"}=1 if scalar(keys %filter) == 0 || (scalar(keys %filter) == 1 && exists $filter{"vcfix_dp4bias"});
             $filter{"vcfix_somatic"}=1 if $somatic;
 
-            $filter{$_}=1 for split/;/,$l[6];
-            delete $filter{"."};
+            for(split/;/,$l[6]){
+                unless($_=~/^vcfix_/ || $_ eq ".") {
+                    $filter{$_}=1;
+                }
+            }
             my @filter = sort {$a cmp $b} keys %filter;
 
             $l[6] = join";",@filter;

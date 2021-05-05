@@ -749,6 +749,7 @@ variants::bcftools() {
 						vcffilter -v -f "DP < 10" > "$slice.vcf"
 					CMD
 				fi
+				# attention: conda bcftools may spawn too many file descriptors accoring to ulimit
 
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 					vcfix.pl -i "$slice.vcf" > "$slice.fixed.vcf"
@@ -1054,6 +1055,7 @@ variants::varscan() {
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
+			-m <memory>    | per threads amount of (default: 2048)
 			-M <maxmemory> | amount of
 			-g <genome>    | path to
 			-d <dbsnp>     | path to
@@ -1066,13 +1068,14 @@ variants::varscan() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory genome dbsnp tmpdir outdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir outdir
 	declare -n _mapper_varscan _nidx_varscan _tidx_varscan
 	while getopts 'S:s:t:M:g:d:m:r:1:2:c:p:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
+			m) memory=$OPTARG;;
 			M) maxmemory=$OPTARG;;
 			g) ((++mandatory)); genome="$OPTARG";;
 			d) dbsnp="$OPTARG";;
@@ -1093,7 +1096,7 @@ variants::varscan() {
 	[[ ! $_tidx_varscan ]] && unset _tidx_varscan && declare -a _tidx_varscan=(${!_bams_varscan[@]}) # use all indices for germline calling
 
 	local minstances mthreads jmem jgct jcgct ithreads i memory1 memory2 instances=$((${#_mapper_varscan[@]}*${#_tidx_varscan[@]}))
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m 2048 -M "$maxmemory") # good estimate for varscan
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m ${memory:-2048} -M "$maxmemory") # good estimate for varscan
 	read -r i memory1 < <(configure::memory_by_instances -i $((minstances*instances)) -T $threads -M "$maxmemory") # for bcftools sort of initial vcf slices
 	read -r i memory2 < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
@@ -1327,6 +1330,7 @@ variants::vardict() {
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
+			-m <memory>    | per thread amount of (default: 12288)
 			-M <maxmemory> | amount of
 			-g <genome>    | path to
 			-d <dbsnp>     | path to
@@ -1339,13 +1343,14 @@ variants::vardict() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory genome dbsnp tmpdir outdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir outdir
 	declare -n _mapper_vardict _nidx_vardict _tidx_vardict
 	while getopts 'S:s:t:M:g:d:m:r:1:2:c:p:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
+			m) memory=$OPTARG;;
 			M) maxmemory=$OPTARG;;
 			g) ((++mandatory)); genome="$OPTARG";;
 			d) dbsnp="$OPTARG";;
@@ -1366,7 +1371,11 @@ variants::vardict() {
 	[[ ! $_tidx_vardict ]] && unset _tidx_vardict && declare -a _tidx_vardict=(${!_bams_vardict[@]}) # use all indices for germline calling
 
 	local minstances mthreads jmem jgct jcgct ithreads i memory1 memory2 instances=$((${#_mapper_vardict[@]}*${#_tidx_vardict[@]}))
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m 2096 -M "$maxmemory") # good estimate for 10k chunks
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m ${memory:=12288} -M "$maxmemory")
+	# I often estimate needed memory by about 1Mb for 1 bp of region (here are included possible intermediate structures for variations, reference and softclips).
+	# Also you have to take account of amount of threads that you run, because memory will be used by all of them and will be split between threads
+	# https://github.com/AstraZeneca-NGS/VarDictJava/issues/216
+	# -> 10kb chunks -> 10G per thread + JVM overhead by GC
 	read -r i memory1 < <(configure::memory_by_instances -i $((minstances*instances)) -T $threads -M "$maxmemory") # for bcftools sort of initial vcf slices
 	read -r i memory2 < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
@@ -1374,16 +1383,17 @@ variants::vardict() {
 	tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
 	declare -a cmd1slice cmd2slice
 	commander::makecmd -a cmd1slice -s ' ' -o "${tdirs[0]}/tmp" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-		perl -M'List::Util qw(max)' -lane '
+		perl -M'List::Util qw(max)' -slane '
+			$l = $m-2048 >= 9500 ? 10000 : int(($m-1024)/1000)*1000;
 			$i=0;
-			for (map {$_*10000} 1..($F[1]-1)/10000){
+			for (map {$_*$l} 1..($F[1]-1)/$l){
 				$i=$_;
-				print join"\t",($F[0],max(0,$_-10000-100),$_-1);
+				print join"\t",($F[0],max(0,$_-$l-100),$_-1);
 			}
 			print join"\t",($F[0],$i-100,$F[1]-1) if $i<$F[1]-1;
 		'
 	CMD
-		"$genome.fai"
+		-- -m=$jmem "$genome.fai"
 	CMD
 	# despite of mutlithreading support, execute in parallel on multiple chunks, to limit memory footprint which heavily depends on region size and coverage.
 	# small chunks within one bed file wille be individually processed. thus a small overlap is recommended to no miss any variant.
@@ -1434,7 +1444,7 @@ variants::vardict() {
 					commander::makecmd -a cmd1 -s '|' -o "$slice.vcf" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
 						JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir' -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
 						vardict-java
-							-G $genome
+							-G "$genome"
 							-f 0.1
 							-V 0.05
 							-F 0x200
@@ -1471,7 +1481,7 @@ variants::vardict() {
 					commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 						JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir' -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
 						vardict-java
-						-G $genome
+						-G "$genome"
 						-f 0.1
 						-F 0x200
 						-N SAMPLE
@@ -1583,7 +1593,7 @@ variants::vardict() {
 }
 
 variants::vardict_threads() {
-	# may be used as fallback for low memory systems < 40gb or to reduce disk i/o
+	# may be used as fallback to reduce disk i/o
 	# use one region file and multiple threads on it
 	# -> something limits parallelization to ~14 threads. chunks may not be the reason: tested with up to 100k
 	# memory footprint raises with multiple threads
@@ -1612,7 +1622,7 @@ variants::vardict_threads() {
 
 	local OPTIND arg mandatory skip=false threads maxmemory genome dbsnp tmpdir outdir
 	declare -n _mapper_vardict _nidx_vardict _tidx_vardict
-	while getopts 'S:s:t:M:g:d:m:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:M:g:d:r:1:2:c:p:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -1637,7 +1647,7 @@ variants::vardict_threads() {
 	[[ ! $_tidx_vardict ]] && unset _tidx_vardict && declare -a _tidx_vardict=(${!_bams_vardict[@]}) # use all indices for germline calling
 
 	local minstances mthreads jmem jgct jcgct ithreads i memory instances=$((${#_mapper_vardict[@]}*${#_tidx_vardict[@]}))
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads -m 4096 -M "$maxmemory") # good estimate for 10k chunks unless -i 1 is used
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads -M "$maxmemory")
 	read -r i memory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
 
@@ -1655,6 +1665,7 @@ variants::vardict_threads() {
 	CMD
 		"$genome.fai"
 	CMD
+	# TODO either do chunks depending on jmem/threads or restrict -th parameter to maxmem/jmem
 
 	if $skip; then
 		commander::printcmd -a cmd1slice

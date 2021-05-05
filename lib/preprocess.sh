@@ -228,7 +228,7 @@ preprocess::trimmomatic() {
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
-			-b <rrbs>     | true/false
+			-b <rrbs>     | true/false if true does not trim read starts
 			-t <threads>  | number of
 			-o <outdir>   | path to
 			-p <tmpdir>   | path to
@@ -417,16 +417,19 @@ preprocess::rcorrector(){
 	commander::printinfo "correcting read errors"
 
 	declare -a cmd1 cmd2
-	local i o1 e1 o2 e2
+	local i o1 e1 o2 e2 r1 r2
 	for i in "${!_fq1_rcorrector[@]}"; do
 		helper::basename -f "${_fq1_rcorrector[$i]}" -o o1 -e e1
-		e1=$(echo $e1 | cut -d '.' -f 1)
+		e1=$(echo $e1 | cut -d '.' -f 1) # if e1 == fastq or fq : mv $o1.cor.fq.gz $o1.$e1.gz else mv $o1.$e1.cor.fq.gz $o1.$e1.gz
 		o1="$outdir/$o1"
+		[[ $e1 == "fastq" || $e1 == "fq" ]] && r1="cor.fq" || r1="$e1.cor.fq"
+
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rcorrector)")
 		if [[ ${_fq2_rcorrector[$i]} ]]; then
 			helper::basename -f "${_fq2_rcorrector[$i]}" -o o2 -e e2
 			e2=$(echo $e2 | cut -d '.' -f 1)
 			o2="$outdir/$o2"
+			[[ $e2 == "fastq" || $e2 == "fq" ]] && r2="cor.fq" || r2="$e2.cor.fq"
 
 			readlink -e "${_fq1_rcorrector[$i]}" | file -f - | grep -qF 'compressed' && {
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
@@ -438,9 +441,9 @@ preprocess::rcorrector(){
 					-od "$outdir"
 					-t $threads
 				CMD
-					mv "$o1.cor.fq.gz" "$o1.$e1.gz"
+					mv "$o1.$r1.gz" "$o1.$e1.gz"
 				CMD
-					mv "$o2.cor.fq.gz" "$o2.$e2.gz"
+					mv "$o2.$r2.gz" "$o2.$e2.gz"
 				CMD
 			} || {
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
@@ -448,9 +451,9 @@ preprocess::rcorrector(){
 				CMD
 					exec 11>&1; exec 12>&1
 				CMD
-					ln -sfn "/dev/fd/11" "$(basename "$o1").cor.fq"
+					ln -sfn "/dev/fd/11" "$(basename "$o1").$r1"
 				CMD
-					ln -sfn "/dev/fd/12" "$(basename "$o2").cor.fq"
+					ln -sfn "/dev/fd/12" "$(basename "$o2").$r2"
 				CMD
 					run_rcorrector.pl
 					-1 "${_fq1_rcorrector[$i]}"
@@ -464,6 +467,7 @@ preprocess::rcorrector(){
 					exec 11>&-; exec 12>&-
 				CMD
 			}
+			# -stdout is broken for PE data. reports R1 twice instead of R1 and R2
 
 			_fq1_rcorrector[$i]="$o1.$e1.gz"
 			_fq2_rcorrector[$i]="$o2.$e2.gz"
@@ -558,7 +562,7 @@ preprocess::sortmerna(){
 			commander::makecmd -a cmd1 -s '|' -o "$tmp.merged.$e1" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
 				paste <($catcmd "${_fq1_sortmerna[$i]}") <($catcmd "${_fq2_sortmerna[$i]}")
 			CMD
-				paste - - - - - - - -
+				paste - - - -
 			CMD
 				awk -F '\t' -v OFS='\n' '{print $1,$3,$5,$7; print $2,$4,$6,$8}'
 			CMD
@@ -717,13 +721,15 @@ preprocess::qcstats(){
 	[[ $mandatory -lt 5 ]] && _usage
 
 	declare -a cmdqc
-	local qdir i f b e
+	local qdir i f b e qczip
 	for i in "${!_qualdirs_qcstats[@]}"; do
 		qdir="${_qualdirs_qcstats[$i]}"
 		declare -n _pi_qcstats=preprocess$i
 		for f in "${_pi_qcstats[@]}"; do
 			helper::basename -f "$f" -o b -e e
-			if $force || [[ ! -s "$qdir/${b}_fastqc.zip" ]]; then
+			e=$(echo $e | cut -d '.' -f 1) # if e == fastq or fq : check for ${b}_fastqc.zip else $b.${e}_fastqc.zip
+			[[ $e == "fastq" || $e == "fq" ]] && qczip="${b}_fastqc.zip" || qczip="$b.${e}_fastqc.zip"
+			if $force || [[ ! -s "$qdir/$qczip" ]]; then
 				commander::makecmd -a cmdqc -s ' ' -c {COMMANDER[0]}<<- CMD
 					fq=("$f");
 					preprocess::fastqc -S false -s $skip -t 1 -p "$tmpdir" -o "$qdir" -1 fq
@@ -744,13 +750,15 @@ preprocess::qcstats(){
 	echo -e "sample\ttype\tcount" > "$outdir/preprocessing.barplot.tsv"
 	for i in "${!_fq1_qcstats[@]}"; do
 		helper::basename -f "${_fq1_qcstats[$i]}" -o b -e e
+		e=$(echo $e | cut -d '.' -f 1) # if e == fastq or fq : check for ${b}_fastqc.zip else $b.${e}_fastqc.zip
+		[[ $e == "fastq" || $e == "fq" ]] && qczip="${b}_fastqc.zip" || qczip="$b.${e}_fastqc.zip"
 		o="$outdir/$b.stats"
 		multiplier=1
 		[[ "${_fq2_qcstats[$i]}" ]] && multiplier=2
 		rm -f $o
 		for qdir in "${_qualdirs_qcstats[@]}"; do
 			tool=$(basename "$qdir")
-			c=$(unzip -p "$qdir/${b}_fastqc.zip" "${b}_fastqc/fastqc_data.txt" | grep -m 1 -F Total | awk -v mult=$multiplier '{print $3*mult}')
+			c=$(unzip -p "$qdir/$qczip" "${qczip%.*}/fastqc_data.txt" | grep -m 1 -F Total | awk -v mult=$multiplier '{print $3*mult}')
 			counts+=($c)
 			echo -e "$b\t$tool reads\t$c" >> $o
 			perl -sle 'print join"\t",("$sample ($all)","$tool reads",(100*$c/$all))' -- -all=${counts[$((i*${#_qualdirs_qcstats[@]}))]} -c=$c -sample=$b -tool=$tool

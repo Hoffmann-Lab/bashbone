@@ -67,6 +67,7 @@ alignment::segemehl() {
 				segemehl -x "$genomeidx" -d "$genome"
 			CMD
 			commander::runcmd -v -b -t $threads -a cmdidx
+			commander::printinfo "updating md5 sums"
 			thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
 			sed -i "s/md5segemehl=.*/md5segemehl=$thismd5segemehl/" "$genome.md5.sh"
 		fi
@@ -229,6 +230,7 @@ alignment::star() {
 				--outFileNamePrefix "$genomeidxdir/$(basename "$genome")."
 			CMD
 			commander::runcmd -c star -v -b -t $threads -a cmdidx
+			commander::printinfo "updating md5 sums"
 			thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
 			sed -i "s/md5star=.*/md5star=$thismd5star/" "$genome.md5.sh"
 		fi
@@ -384,6 +386,7 @@ alignment::bwa() {
 				bwa index -p "$idxprefix" "$genome"
 			CMD
 			commander::runcmd -c bwa -v -b -t $threads -a cmdidx
+			commander::printinfo "updating md5 sums"
 			thismd5bwa=$(md5sum "$idxprefix.bwt" | cut -d ' ' -f 1)
 			sed -i "s/md5bwa=.*/md5bwa=$thismd5bwa/" "$genome.md5.sh"
 		fi
