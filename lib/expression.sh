@@ -118,8 +118,8 @@ expression::diego(){
 					while read -r sample condition library replicate factors; do
 						echo -e "$condition\t$sample.$replicate" >> "$odir/groups.tsv"
 
-						#sjfile=$(find "${mappeddirs[@]}" -maxdepth 1 -name "$sample*.sj" -exec readlink -e {} \; -quit)
-						sjfile="$(find "${mappeddirs[@]}" -maxdepth 1 -name "$sample*.sj" -print -quit)"
+						#sjfile=$(find -L "${mappeddirs[@]}" -maxdepth 1 -name "$sample*.sj" -exec readlink -e {} \; -quit)
+						sjfile="$(find -L "${mappeddirs[@]}" -maxdepth 1 -name "$sample*.sj" -print -quit)"
 						[[ $sjfile ]] && echo -e "$sample.$replicate\t$sjfile" >> "$odir/list.sj.tsv"
 
 						if $exonmode; then
