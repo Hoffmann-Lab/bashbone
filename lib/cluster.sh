@@ -52,7 +52,10 @@ cluster::coexpression_deseq(){
 	[[ $mandatory -lt 8 ]] && _usage
 	[[ $biotype && ! $gtf ]] && _usage
 
-	[[ ! $_idfiles_coexpression ]] && unset _idfiles_coexpression && declare -a _idfiles_coexpression
+	declare -p ${!_idfiles_coexpression} &> /dev/null || {
+		unset _idfiles_coexpression
+		declare -a _idfiles_coexpression
+	}
 
 	commander::printinfo "inferring coexpression"
 
@@ -167,7 +170,9 @@ cluster::coexpression_deseq(){
 				type="Module.$(printf '%03d' $i)"
 				odir="$wdir/$type"
 				mkdir -p "$odir"
+
 				awk -v i=$i '$NF==i{print $1}' "$wdir/wgcna.modules.tsv" > "$odir/genes.list"
+				[[ -s "$odir/genes.list" ]] || continue
 
 				# add to array for later go enrichment
 				_idfiles_coexpression+=("$odir/genes.list")
@@ -217,7 +222,9 @@ cluster::coexpression_deseq(){
 				type="Cluster.$(printf '%03d' $i)"
 				odir="$wdir/$type"
 				mkdir -p "$odir"
+
 				awk -v i=$i '$NF==i{print $1}' "$wdir/wgcna.cluster.tsv" > "$odir/genes.list"
+				[[ -s "$odir/genes.list" ]] || continue
 
 				# add to array for later go enrichment
 				_idfiles_coexpression+=("$odir/genes.list")
@@ -327,7 +334,10 @@ cluster::coexpression(){
 	[[ $mandatory -lt 6 ]] && _usage && return 1
 	[[ $biotype && ! $gtf ]] && _usage && return 1
 
-	[[ ! $_idfiles_coexpression ]] && unset _idfiles_coexpression && declare -a _idfiles_coexpression
+	declare -p ${!_idfiles_coexpression} &> /dev/null || {
+		unset _idfiles_coexpression
+		declare -a _idfiles_coexpression
+	}
 
 	commander::printinfo "inferring coexpression"
 
@@ -445,7 +455,9 @@ cluster::coexpression(){
 				type="Module.$(printf '%03d' $i)"
 				odir="$wdir/$type"
 				mkdir -p "$odir"
+
 				awk -v i=$i '$NF==i{print $1}' "$wdir/wgcna.modules.tsv" > "$odir/genes.list"
+				[[ -s "$odir/genes.list" ]] || continue
 
 				# add to array for later go enrichment
 				_idfiles_coexpression+=("$odir/genes.list")
@@ -478,7 +490,9 @@ cluster::coexpression(){
 				type="Cluster.$(printf '%03d' $i)"
 				odir="$wdir/$type"
 				mkdir -p "$odir"
+
 				awk -v i=$i '$NF==i{print $1}' "$wdir/wgcna.cluster.tsv" > "$odir/genes.list"
+				[[ -s "$odir/genes.list" ]] || continue
 
 				# add to array for later go enrichment
 				_idfiles_coexpression+=("$odir/genes.list")
