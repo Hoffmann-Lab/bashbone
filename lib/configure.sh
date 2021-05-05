@@ -27,7 +27,10 @@ configure::exit(){
 	}
 
 	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
-	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # includes pids of pstree parser pipeline above, thus throws errors necessary to be catched
+	{ kill -INT "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # includes pids of pstree parser pipeline above, thus throws errors necessary to be catched
+	# KILL is harsh and does not work for commander::runcmd abortion of parallel jobs
+	# INT does not send NOHUB signal
+	# TERM is graceful signal and likewise to INT is often cached by applications
 
 	return 0
 }
@@ -65,10 +68,14 @@ configure::err(){
 		read -r fun line src < <(declare -F "$fun") # requires shopt -s extdebug
 		[[ $- =~ i ]] && ((lineno+=line)) # do not!! use [[ ${BASH_EXECUTION_STRING} ]] || ((lineno+=line))
 	}
-	local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o$0}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o$0}else{o=""}}}' $src | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
-	[[ $fun ]] && src="$src ($fun)"
-
-	commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
+	if [[ -e "$src" ]]; then # self sourcing by commander::runcmd and commander::qsubcmd with cleanup function may causes src to be removed before reaching this point
+		local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o$0}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o$0}else{o=""}}}' $src | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+		[[ $fun ]] && src="$src ($fun)"
+		commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
+	else
+		[[ $fun ]] && src="$src ($fun)"
+		commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno"
+	fi
 
 	return 0
 }
@@ -238,9 +245,9 @@ configure::jvm(){
 
 	ithreads=$((maxthreads/instances))
 	jmem=$((maxmemory/instances))
-	jgct=$(((3+5*ithreads/8)/instances))
+	jgct=$(((3+5*ithreads/8)/instances)) # For N <= 8 parallel GC will use just as many, i.e., N GC threads. For N > 8 available processors, the number of GC threads will be computed as 3+5N/8
 	[[ $jgct -eq 0 ]] && jgct=1
-	jcgct=$((jgct/4))
+	jcgct=$((jgct/4)) # Sets n to approximately 1/4 of the number of parallel garbage collection threads (ParallelGCThreads).
 	[[ $jcgct -eq 0 ]] && jcgct=1
 
 	echo "$instances $ithreads $jmem $jgct $jcgct"
