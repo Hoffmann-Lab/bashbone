@@ -160,6 +160,7 @@ bisulfite::segemehl() {
 				segemehl -F 1 -x "$ctidx" -y "$gaidx" -d "$genome"
 			CMD
 			commander::runcmd -v -b -t $threads -a cmdidx
+			commander::printinfo "updating md5 sums"
 			thismd5segemehlbs=$(md5sum "$ctidx" | cut -d ' ' -f 1)
 			sed -i "s/md5segemehlbs=.*/md5segemehlbs=$thismd5segemehlbs/" $genome.md5.sh
 		fi
@@ -332,7 +333,7 @@ bisulfite::metilene(){
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-c <cmpfiles> | array of
-			-m <missing>  | values - default: 0.2
+			-m <minimum>  | values present in control and treatment samples as fraction or absolute number - default: 0.8
 			-r <mapper>   | array of bams within array of
 			-i <methdir>  | path to
 			-o <outdir>   | path to
@@ -341,7 +342,7 @@ bisulfite::metilene(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads genome mecalldir outdir tmpdir missing=0.2
+	local OPTIND arg mandatory skip=false threads genome mecalldir outdir tmpdir min=0.8
 	declare -n _mapper_metilene _cmpfiles_metilene
 	while getopts 'S:s:t:c:m:r:i:o:p:' arg; do
 		case $arg in
@@ -349,7 +350,7 @@ bisulfite::metilene(){
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			c)	((++mandatory)); _cmpfiles_metilene=$OPTARG;;
-			m)	missing=$OPTARG;;
+			m)	min=$OPTARG;;
 			r)	((++mandatory)); _mapper_metilene=$OPTARG;;
 			i)	((++mandatory)); mecalldir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
@@ -372,13 +373,14 @@ bisulfite::metilene(){
 			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
 			i=0
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
+				crep=$(awk -v s=$c -v n=$min '$2==s{i=i+1}END{if(n>1){if(i<n){n=i} print n}else{printf "%0.f", i*n}}' "$f")
+
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					odir="$outdir/$m/$c-vs-$t"
 					mkdir -p "$odir"
 					tomerge=()
 					header="chr sta pos"
-					crep=$(awk -v c=$c '$2==c{i=i+1}END{print i}' "$f")
-					trep=$(awk -v t=$t '$2==t{i=i+1}END{print i}' "$f")
+					trep=$(awk -v s=$t -v n=$min '$2==s{i=i+1}END{if(n>1){if(i<n){n=i} print n}else{printf "%0.f", i*n}}' "$f")
 
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
@@ -405,7 +407,6 @@ bisulfite::metilene(){
 						-b $t \
 						-x $crep \
 						-y $trep \
-						-m $missing \
 						-o "$odir"
 				done
 			done
@@ -435,17 +436,17 @@ bisulfite::_metilene(){
 			-i <inmerates> | path to bedgraph
 			-a <condition> | name of control
 			-b <condition> | name of treatment
-			-x <number>    | of -a replicates
-			-y <number>    | of -b replicates
-			-m <missing>   | values - default: 0.2
+			-x <minimum>   | of -a values
+			-y <minimum>   | of -b values
+			-d <distance>  | for CpGs within DMR maximum - default: 300
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads merates gtf outdir gtfinfo missing=0.2 c t crep trep distance=300
+	local OPTIND arg mandatory threads merates gtf outdir gtfinfo c t crep trep distance=300
 	declare -n _cmds1_metilene _cmds2_metilene
-	while getopts '1:2:t:i:a:b:x:y:m:d:o:' arg; do
+	while getopts '1:2:t:i:a:b:x:y:d:o:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_metilene=$OPTARG;;
 			2)	((++mandatory)); _cmds2_metilene=$OPTARG;;
@@ -453,9 +454,8 @@ bisulfite::_metilene(){
 			i)	((++mandatory)); merates="$OPTARG";;
 			a)	((++mandatory)); c=$OPTARG;;
 			b)	((++mandatory)); t=$OPTARG;;
-			x)	crep=$OPTART;;
+			x)	crep=$OPTARG;;
 			y)	trep=$OPTARG;;
-			m)	missing=$OPTARG;;
 			d)	distance=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG";;
 			*)	_usage;;
@@ -463,10 +463,10 @@ bisulfite::_metilene(){
 	done
 	[[ $mandatory -lt 7 ]] && _usage
 
-	local params
+	local params=''
 	# this is the default behaviour of allowing for missing values
-	[[ $crep ]] && params+=" -X $(echo $crep | awk -v m=$missing '{printf "%.f",$1*(1-m)}')"
-	[[ $trep ]] && params+=" -Y $(echo $trep | awk -v m=$missing '{printf "%.f",$1*(1-m)}')"
+	[[ $crep ]] && params+=" -X $crep"
+	[[ $trep ]] && params+=" -Y $trep"
 
 	local header="chr start stop q-value mean_$c-mean_$t CpGs p-value_MWU p-value_2DKS mean_$c mean_$t"
 	commander::makecmd -a _cmds1_metilene -s ';' -c {COMMANDER[0]}<<- CMD
