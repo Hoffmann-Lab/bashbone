@@ -90,7 +90,8 @@ if(cluster){
   }
 
   # get number conditions colors and name them by conditions
-  colannotationcolor = colorRampPalette(brewer.pal(3, "Blues"))(length(unique(colannotation)))
+  # colannotationcolor = colorRampPalette(brewer.pal(3, "Blues"))(length(unique(colannotation)))
+  colannotationcolor = colorRampPalette(brewer.pal(11, "Spectral"))(length(unique(colannotation)))
   names(colannotationcolor) = unique(colannotation)
   # create dataframe of column annotations with rownames
   colannotations = data.frame(row.names = colnames(df), Group = colannotation)
@@ -182,7 +183,8 @@ if(min(df)<0) {
 }
 
 # get number conditions colors and repeat them according to colannotation
-colannotationcolor = colorRampPalette(brewer.pal(3, "Blues"))(length(unique(colannotation)))
+# colannotationcolor = colorRampPalette(brewer.pal(3, "Blues"))(length(unique(colannotation)))
+colannotationcolor = colorRampPalette(brewer.pal(11, "Spectral"))(length(unique(colannotation)))
 i=0
 colannotationcolor.full=c()
 for (g in unique(colannotation)){
