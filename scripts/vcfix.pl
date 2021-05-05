@@ -60,6 +60,7 @@ my $germline;
     'i|in' => sub {
         $normals+=8; # last normal index
 
+        my $warnedscore;
         my $warnedgt;
         my $warneddp;
         my $warneddp4;
@@ -89,7 +90,12 @@ my $germline;
                 next;
             }
 
-            next if $l[5] ne "." && $l[5] != 0 && $l[5] < 1; # simple quality filter
+            # simple score based filter
+            if($l[5] ne "." && $l[5] != 0 && $l[5] < 1){
+                warn "warning: too low score to be kept. output will be truncated." unless $warnedscore;
+                $warnedscore = 1;
+                next;
+            }
 
             my @smaf;
             my @sgq;
