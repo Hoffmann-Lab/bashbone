@@ -9,7 +9,7 @@ die(){
 }
 
 cleanup(){
-	rm -rf "$tmp"
+	[[ -e $tmp ]] && rm -rf "$tmp"
 	[[ $mkfg ]] && printf '%s' "${mkfg[@]}" > "$HOME/.ncbi/user-settings.mkfg"
 }
 
@@ -34,7 +34,7 @@ usage(){
 		  - ebi uk mirror is used as fallback upon fastq-dump errors
 
 		VERSION
-		0.1.4
+		0.1.5
 
 		REQUIREMENTS
 		Depends on chosen options
@@ -50,11 +50,11 @@ usage(){
 		-o [file] : additionally print information for given accession numbers to file
 		-d [path] : download into this directory
 		-p [num]  : number of maximum parallel download instances (default: 2)
-		            HINT: use -p 1 in a second run to ensure all files were downloaded correctly
 		-n        : no ebi mirror fallback upon fastq-dump failure
-		-t [num]  : pigz compression threads per download (default: no pigz)
+		-t [num]  : pigz compression threads for fastq-dump (default: no pigz)
 		-m [path] : path to temporary directory (default: "$PWD")
 		-e        : priorize ebi uk mirror utilizing wget
+		            HINT: use -p 1 in a second run to ensure all files were downloaded correctly
 		-c        : experimental! priorize ebi uk mirror utilizing curl
 		-f        : experimental! switch to fasterq-dump
 		            NOTE: not yet recommended!
@@ -62,7 +62,7 @@ usage(){
 		              - misconfigured read deflines
 
 		EXAMPLE
-		  $(basename "$0") -p 4 -t /dev/shm GSM1446883 SRR1528586 SRX663213
+		  $(basename "$0") -p 4 -t 4 -m /dev/shm GSM1446883 SRR1528586 SRX663213
 
 		REFERENCES
 		(c) Konstantin Riege
@@ -77,7 +77,7 @@ while getopts o:p:m:t:d:sfecnh ARG; do
 		o) outfile="$OPTARG";;
 		p) instances="$OPTARG";;
 		t) threads="$OPTARG";;
-		m) tmp="$OPTARG";;
+		m) t="$OPTARG";;
 		d) outdir="$OPTARG";;
 		f) faster=true;;
 		e) ebi=true; method=wget;;
@@ -97,7 +97,7 @@ shift $((OPTIND-1))
 declare -a srr title
 instances=${instances:-2}
 threads=${threads:-1}
-tmp="$(mktemp -d -p "${tmp:-$PWD}" tmp.XXXXXXXXXX.sradump)"
+tmp="$(mktemp -d -p "${t:-$PWD}" tmp.XXXXXXXXXX.sradump)"
 faster=${faster:-false}
 ebi=${ebi:-false}
 method=${method:-wget}
