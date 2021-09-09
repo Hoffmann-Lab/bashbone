@@ -330,7 +330,7 @@ helper::addmemberfunctions(){
 		eval "alias $var.sum='helper::_sum $var'"
 		eval "alias $var.trimprefix='helper::_prefix $var'"
 		eval "alias $var.trimprefixfirst='helper::_prefixfirst $var'"
-		eval "alias $var.trimsuffix='helper::_suffix $var'"
+		eval "alias $var.trimsuffix='helper::_trimsuffix $var'"
 		eval "alias $var.trimsuffixfirst='helper::_suffixfirst $var'"
 		eval "alias $var.substring='helper::_substring $var'"
 		eval "alias $var.replace='helper::_replace $var'"
