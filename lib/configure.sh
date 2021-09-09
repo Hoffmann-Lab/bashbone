@@ -72,6 +72,7 @@ configure::err(){
 		local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o$0}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o$0}else{o=""}}}' $src | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 		[[ $fun ]] && src="$src ($fun)"
 		commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
+		commander::printerr "$(eval "echo -e \"$cmd\"")"
 	else
 		[[ $fun ]] && src="$src ($fun)"
 		commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno"
