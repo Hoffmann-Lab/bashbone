@@ -107,7 +107,7 @@ expression::diego(){
 		mapfile -t mappeddirs < <(printf '%s\n' "${_bams_diego[@]}" | xargs -I {} dirname {} | sort -Vu)
 
 		for f in "${_cmpfiles_diego[@]}"; do
-			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
+			mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
 			i=0
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
@@ -129,7 +129,7 @@ expression::diego(){
 
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 
-					min=$(cut -d $'\t' -f 1 "$odir/groups.tsv" | sort | uniq -c | column -t | cut -d ' ' -f 1 | sort -k1,1 | head -1)
+					min=$(cut -f 1 "$odir/groups.tsv" | sort | uniq -c | column -t | cut -d ' ' -f 1 | sort -n | head -1)
 					if [[ -s "$odir/list.sj.tsv" ]]; then
 						if [[ $m == "segemehl" ]]; then
 							tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.diego)")
@@ -274,7 +274,7 @@ expression::deseq() {
 
 		head -1 ${_cmpfiles_deseq[0]} | perl -lane 'push @o,"sample,countfile,condition,replicate"; for (4..$#F){push @o,"factor".($_-3)}END{print join",",@o}' > "$odir/experiments.csv"
 		for f in "${_cmpfiles_deseq[@]}"; do
-			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
+			mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
 			i=0
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
@@ -335,7 +335,7 @@ expression::_deseq() {
 			2)	((++mandatory)); _cmds2_deseq=$OPTARG;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			i)	((++mandatory)); csvfile="$OPTARG";;
-			g)	gtf="$OPTARG"; gtfinfo="$(readlink -e "$gtf"*.+(info|descr) | head -1)";;
+			g)	gtf="$OPTARG"; gtfinfo="$(readlink -e "$gtf"*.+(info|descr) | head -1 || true)";;
 			c)	((++mandatory)); mapfile -t -d ' ' cmppairs < <(printf '%s' "$OPTARG");;
 			o)	((++mandatory)); outdir="$OPTARG";;
 			*)	_usage;;
@@ -403,7 +403,7 @@ expression::join(){
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
-			g)	gtf="$OPTARG"; gtfinfo="$(readlink -e "$gtf"*.+(info|descr) | head -1)";;
+			g)	gtf="$OPTARG"; gtfinfo="$(readlink -e "$gtf"*.+(info|descr) | head -1 || true)";;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			r)	((++mandatory)); _mapper_join=$OPTARG;;
 			c)	((++mandatory)); _cmpfiles_join=$OPTARG;;
@@ -428,7 +428,7 @@ expression::join(){
 		declare -a header meanheader
 		x=0
 		for f in "${_cmpfiles_join[@]}"; do
-			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
+			mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
 			i=0
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
