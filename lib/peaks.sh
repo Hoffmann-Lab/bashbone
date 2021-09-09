@@ -125,14 +125,15 @@ peaks::macs(){
 	done
 	[[ $mandatory -lt 7 ]] && _usage
 	[[ $_nidx_macs ]] && [[ ! $_tidx_macs ]] && _usage
-	[[ $_tidx_macs ]] && [[ ! $_nidx_macs ]] && _usage
+
+	declare -n _bams_macs=${_mapper_macs[0]}
+	if [[ ! $_tidx_macs ]]; then
+		declare -a tidx_macs=("${!_bams_macs[@]}") # use all bams as unpaired input unless -a and -i
+		_tidx_macs=tidx_macs
+	fi
 
 	commander::printinfo "peak calling macs"
 
-	declare -n _bams_macs=${_mapper_macs[0]}
-	[[ ! $_tidx_macs ]] && unset _nidx_macs _tidx_macs && declare -a _tidx_macs=(${!_bams_macs[@]}) # use all bams as unpaired input
-
-	commander::printinfo "preparing genome"
 	# get effective genome size
 	# if multimapped reads: genome minus Ns , else genome minus Ns minus repetetive Elements
 	local genomesize
@@ -325,7 +326,6 @@ peaks::macs_idr(){
 	[[ $mandatory -lt 11 ]] && _usage
 
 	commander::printinfo "peak calling macs"
-	commander::printinfo "preparing genome"
 
 	# get effective genome size
 	# if multimapped reads: genome minus Ns , else genome minus Ns minus repetetive Elements
@@ -554,17 +554,18 @@ peaks::gem(){
 	[[ $mandatory -lt 6 ]] && _usage
 	$ripseq && [[ ! $_strandness_gem ]] && _usage
 	[[ $_nidx_gem ]] && [[ ! $_tidx_gem ]] && _usage
-	[[ $_tidx_gem ]] && [[ ! $_nidx_gem ]] && _usage
-
-	commander::printinfo "peak calling gem"
 
 	declare -n _bams_gem=${_mapper_gem[0]}
-	[[ ! $_tidx_gem ]] && unset _nidx_gem _tidx_gem && declare -a _tidx_gem=(${!_bams_gem[@]}) # use all bams as unpaired input
+	if [[ ! $_tidx_gem ]]; then
+		declare -a tidx_gem=("${!_bams_gem[@]}") # use all bams as unpaired input unless -a and -i
+		_tidx_gem=tidx_gem
+	fi
+
+	commander::printinfo "peak calling gem"
 
 	local minstances mthreads jmem jgct jcgct instances=$(( ${#_tidx_gem[@]} * $($pointy && echo 1 || echo 2)  * ${#_mapper_gem[@]} ))
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i $instances -T $threads -m $memory -M "$maxmemory")
 
-	commander::printinfo "preparing genome"
 	# get effective genome size
 	# if multimapped reads: genome minus Ns , else genome minus Ns minus repetetive Elements
 	local genomesize
@@ -653,7 +654,9 @@ peaks::gem(){
 				echo > "$odir/$o1/$o1.narrowPeak"
 			else
 				distfile="$(dirname "$(which gem)")/Read_Distribution_default.txt"
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					unset DISPLAY
+				CMD
 					gem
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -676,10 +679,11 @@ peaks::gem(){
 						$params
 				CMD
 
+				# col 4 (Fold) is NaN unless ctr is given. else IP base mean (col 2)
 				commander::makecmd -a cmd2 -s '|' -o "$odir/$o1/$o1.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 					paste "$odir/$o1/$o1.GPS_events.narrowPeak" <(tail -n +2 "$odir/$o1/$o1.GPS_events.txt")
 				CMD
-					perl -lane '$F[6]=$F[13]; print join"\t",@F[0..9]'
+					perl -lane 'if($F[13] eq "NaN"){$F[6]=$F[11]}else{$F[6]=$F[13]}; print join"\t",@F[0..9]'
 				CMD
 			fi
 
@@ -695,7 +699,9 @@ peaks::gem(){
 				distfile="$(dirname "$(which gem)")/Read_Distribution_ChIP-exo.txt"
 			fi
 
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				unset DISPLAY
+			CMD
 				gem
 					-Xmx${jmem}m
 					-XX:ParallelGCThreads=$jgct
@@ -719,10 +725,11 @@ peaks::gem(){
 					$params
 			CMD
 
+			# col 4 (Fold) is NaN unless ctr is given. else IP base mean (col 2)
 			commander::makecmd -a cmd2 -s '|' -o "$odir/$o2/$o2.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 				paste "$odir/$o2/$o2.GPS_events.narrowPeak" <(tail -n +2 "$odir/$o2/$o2.GPS_events.txt")
 			CMD
-				perl -lane '$F[6]=$F[13]; print join"\t",@F[0..9]'
+				perl -lane 'if($F[13] eq "NaN"){$F[6]=$F[11]}else{$F[6]=$F[13]}; print join"\t",@F[0..9]'
 			CMD
 
 			commander::makecmd -a cmd3 -s '|' -o "$odir/$o1.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
@@ -846,7 +853,6 @@ peaks::gem_idr(){
 	declare -n _bams_gem=${_mapper_gem[0]}
 	local nf="${_bams_gem[${_nidx_gem[0]}]}"
 
-	commander::printinfo "preparing genome"
 	# get effective genome size
 	# if multimapped reads: genome minus Ns , else genome minus Ns minus repetetive Elements
 	local genomesize
@@ -932,7 +938,9 @@ peaks::gem_idr(){
 					echo > "$odir/$o1/$o1.narrowPeak"
 				else
 					distfile="$(dirname "$(which gem)")/Read_Distribution_default.txt"
-					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+						unset DISPLAY
+					CMD
 						gem
 							-Xmx${jmem}m
 							-XX:ParallelGCThreads=$jgct
@@ -974,7 +982,9 @@ peaks::gem_idr(){
 					distfile="$(dirname "$(which gem)")/Read_Distribution_ChIP-exo.txt"
 				fi
 
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					unset DISPLAY
+				CMD
 					gem
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -1133,12 +1143,14 @@ peaks::peakachu() {
 	done
 	[[ $mandatory -lt 4 ]] && _usage
 	[[ $_nidx_peakachu ]] && [[ ! $_tidx_peakachu ]] && _usage
-	[[ $_tidx_peakachu ]] && [[ ! $_nidx_peakachu ]] && _usage
-
-	commander::printinfo "peak calling peakachu"
 
 	declare -n _bams_peakachu=${_mapper_peakachu[0]}
-	[[ ! $_tidx_peakachu ]] && unset _nidx_peakachu _tidx_peakachu && declare -a _tidx_peakachu=(${!_bams_peakachu[@]}) # use all bams as unpaired input
+	if [[ ! $_tidx_peakachu ]]; then
+		declare -a tidx_peakachu=("${!_bams_peakachu[@]}") # use all bams as unpaired input unless -a and -i
+		_tidx_peakachu=tidx_peakachu
+	fi
+
+	commander::printinfo "peak calling peakachu"
 
 	local x params
 	# infer SE or PE
@@ -1390,12 +1402,14 @@ peaks::m6aviewer() {
 	done
 	[[ $mandatory -lt 4 ]] && _usage
 	[[ $_nidx_m6aviewer ]] && [[ ! $_tidx_m6aviewer ]] && _usage
-	[[ $_tidx_m6aviewer ]] && [[ ! $_nidx_m6aviewer ]] && _usage
-
-	commander::printinfo "peak calling m6aviewer"
 
 	declare -n _bams_m6aviewer=${_mapper_m6aviewer[0]}
-	[[ ! $_tidx_m6aviewer ]] && unset _nidx_m6aviewer _tidx_m6aviewer && declare -a _tidx_m6aviewer=(${!_bams_m6aviewer[@]}) # use all bams as unpaired input
+	if [[ ! $_tidx_m6aviewer ]]; then
+		declare -a tidx_m6aviewer=("${!_bams_m6aviewer[@]}") # use all bams as unpaired input unless -a and -i
+		_tidx_m6aviewer=tidx_m6aviewer
+	fi
+
+	commander::printinfo "peak calling m6aviewer"
 
 	local x params
 	# infer SE or PE
