@@ -1,6 +1,101 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
+preprocess::dedup(){
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip>  | true/false return
+			-s <softskip>  | true/false only print commands
+			-t <threads>   | number of
+			-p <tmpdir>    | path to
+			-o <outdir>    | path to
+			-M <maxmemory> | amount of
+			-1 <fastq1>    | array of
+			-2 <fastq2>    | array of
+			-3 <fastqUMI>  | array of
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads maxmemory tmpdir outdir
+	declare -n _fq1_dedup _fq2_dedup _umi_dedup
+	while getopts 'S:s:t:M:o:p:1:2:3:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			1)	((++mandatory)); _fq1_dedup=$OPTARG;;
+			2)	_fq2_dedup=$OPTARG;;
+			3)	((++mandatory)); _umi_dedup=$OPTARG;;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 5 ]] && _usage
+
+	commander::printinfo "umi based de-duplication"
+
+	declare -a catcmd cmd1
+	local i o1 e1 o2 e2 instances memory
+	read -r instances memory < <(configure::memory_by_instances -i 1 -M "$maxmemory")
+
+	for i in "${!_fq1_dedup[@]}"; do
+
+		helper::basename -f "${_fq1_dedup[$i]}" -o o1 -e e1
+		e1=$(echo $e1 | cut -d '.' -f 1)
+		o1="$outdir/$o1.$e1.gz"
+
+		helper::makecatcmd -c catcmd -f "${_fq1_dedup[$i]}"
+
+		if [[ "${_fq2_dedup[$i]}" ]]; then
+			helper::basename -f "${_fq2_dedup[$i]}" -o o2 -e e2
+			e2=$(echo $e2 | cut -d '.' -f 1)
+			o2="$outdir/$o2.$e2.gz"
+
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
+				paste <($catcmd "${_fq1_dedup[$i]}" | paste - - - -) <($catcmd "${_fq2_dedup[$i]}" | paste - - - -) <($catcmd "${_umi_dedup[$i]}" | paste - - - -)
+			CMD
+				awk -F '\t' -v OFS='\t' '{print $2$6$10,$0}'
+			CMD
+				LC_ALL=C sort --parallel=$t -S ${memory}M -T $tmpdir -k1,1
+			CMD
+				awk '{if($1!=s){print}; s=$1}'
+			CMD
+				tee >(awk -F '\t' -v OFS='\n' '{print \$2,\$3,\$4,\$5}' | bgzip -@ $(((threads+1)/2)) -c > "$o1") >(awk -F '\t' -v OFS='\n' '{print \$6,\$7,\$8,\$9}' | bgzip -@ $(((threads+1)/2)) -c > "$o2") > /dev/null
+			CMD
+				cat
+			CMD
+
+			_fq1_dedup[$i]="$o1"
+			_fq2_dedup[$i]="$o2"
+		else
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
+				paste <($catcmd "${_fq1_dedup[$i]}" | paste - - - -) <($catcmd "${_umi_dedup[$i]}" | paste - - - -)
+			CMD
+				awk -F '\t' -v OFS='\t' '{print $2$6,$0}'
+			CMD
+				LC_ALL=C sort --parallel=$threads -S ${memory}M -T $tmpdir -k1,1
+			CMD
+				awk -F '\t' -v OFS='\n' '{if($1!=s){print $2,$3,$4,$5}; s=$1}'
+			CMD
+				bgzip -@ $threads -c > "$o1"
+			CMD
+			_fq1_dedup[$i]="$o1"
+		fi
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+	else
+		commander::runcmd -v -b -t 1 -a cmd1
+	fi
+
+	return 0
+}
+
 preprocess::fastqc() {
 	declare -a tdirs
 	_cleanup::preprocess::fastqc(){
@@ -269,9 +364,9 @@ preprocess::trimmomatic() {
 	$rrbs || params='LEADING:20'
 
 	for f in "${_fq1_trimmomatic[@]}"; do
-		helper::makecatcmd -c catcmd -f $f
+		helper::makecatcmd -c catcmd -f "$f"
 		commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-			$catcmd $f | head -4000
+			$catcmd "$f" | head -4000
 		CMD
 			| perl -M'List::Util qw(min max)' -slne '
 				BEGIN{

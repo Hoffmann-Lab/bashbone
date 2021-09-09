@@ -34,7 +34,7 @@ usage(){
 		  - ebi uk mirror is used as fallback upon fastq-dump errors
 
 		VERSION
-		0.1.5
+		0.1.6
 
 		REQUIREMENTS
 		Depends on chosen options
@@ -111,32 +111,35 @@ mkdir -p $(dirname "$outfile") || die "ERROR cannot create directory for output 
 touch $outfile || die "ERROR cannot create output file"
 resume=true
 
-# or use vdb-config
-# set timeout to 10 seconds
-# vdb-config -s /http/timeout/read=10000
-# to disable caching: /repository/user/cache-disabled = "true"
-[[ -s "$HOME/.ncbi/user-settings.mkfg" ]] && {
-	mapfile mkfg < "$HOME/.ncbi/user-settings.mkfg"
-	sed -i -nE '\@/repository/user/main/public/root\s*=.+@{H; s@(/repository/user/main/public/root\s*=\s*).+@\1"'$tmp'"@}; p; ${x; \@^$@{s@$@/repository/user/main/public/root = "'$tmp'"@p}}' "$HOME/.ncbi/user-settings.mkfg"
-	sed -i -nE '\@/http/timeout/read\s*=.+@{H; s@(/http/timeout/read\s*=\s*).+@\1"20000"@}; p; ${x; \@^$@{s@$@/http/timeout/read = "20000"@p}}' "$HOME/.ncbi/user-settings.mkfg"
-} || {
-	mkdir -p "$HOME/.ncbi"
-	echo "/repository/user/main/public/root = \"$tmp\"" > "$HOME/.ncbi/user-settings.mkfg"
-	echo "/http/timeout/read = \"20000\"" >> "$HOME/.ncbi/user-settings.mkfg"
-}
-
 for i in $(seq 1 $#); do
 	id="${!i}"
-	[[ "$id" =~ ^SRR ]] && {
-		echo -e "$id\t$id" >&2
-		srr+=("$id")
-	} || {
+	# [[ "$id" =~ ^SRR ]] && {
+	# 	echo -e "$id\t$id" >&2
+	# 	srr+=("$id")
+	# } || {
 		i="${#srr[@]}"
-		srr+=($(esearch -db sra -query "$id" | efetch --format docsum | grep -oE 'SRR[^"]+'))
+		srr+=($(esearch -db sra -query "$id" | efetch --format docsum | grep -oE '(S|E|D)RR[^"]+'))
 		n=$(esearch -db sra -query "$id" | efetch --format info | grep -oE 'sample_title="[^"]+' | cut -d '"' -f 2 | sort -Vu | xargs echo)
 		printf "$id\t%s\t$n\n" "${srr[@]:$i}" | tee -a "$outfile" >&2
-	}
+	# }
 done
+
+$nodownload && exit 0
+
+! $ebi || ! $nofallback && {
+	mkdir -p $HOME/.ncbi
+	touch "$HOME/.ncbi/user-settings.mkfg"
+	mapfile mkfg < "$HOME/.ncbi/user-settings.mkfg"
+	rm "$HOME/.ncbi/user-settings.mkfg"
+
+
+	#vdb-config -i & sleep 2; kill $! # does not work when piped
+	vdb-config --restore-defaults &> /dev/null
+	vdb-config -s /LIBS/GUID=$(uuid) # from conda ossuuid (dependency of sra-toolkit) or use systems uuidgen if installed
+	vdb-config -s /http/timeout/read=20000
+	vdb-config -s /repository/user/main/public/root="$tmp" # change cache temp directory
+	vdb-config -s /repository/user/cache-disabled=true # comment to enable caching
+}
 
 fastqdump_sngl(){
 	local id cmd="fastq-dump --split-3"
@@ -203,8 +206,6 @@ ftpdump_curl(){
 	return 0
 }
 
-$nodownload && exit 0
-
 $faster && [[ $(command -v fasterq-dump > /dev/null; echo $?) -eq 0 ]] && {
 	fasterqdump && exit 0 || die "UNFORSEEN ERROR"
 }
@@ -222,7 +223,7 @@ compression=$([[ $threads -eq 1 ]] && echo sngl || echo mult)
 $nofallback && {
 	fastqdump_$compression && exit 0 || die "UNFORSEEN ERROR"
 } || {
-	srr=("$(fastqdump_$compression 2> >(tee /dev/fd/2 | awk -v x="$(basename "$0")" '/failed SRR[0-9]+$/{print "\nDONT WORRY! "x" WILL RETRY TO DOWNLOAD "$NF" FROM A DIFFERNT SOURCE" > "/dev/fd/2"; print $NF}') | awk '{if(/^SRR[0-9]+$/){print}else{print > "/dev/fd/2"}}')")
+	srr=("$(fastqdump_$compression 2> >(tee /dev/fd/2 | awk -v x="$(basename "$0")" '/failed (S|E|D)RR[0-9]+$/{print "\nDONT WORRY! "x" WILL RETRY TO DOWNLOAD "$NF" FROM A DIFFERNT SOURCE" > "/dev/fd/2"; print $NF}') | awk '{if(/^(S|E|D)RR[0-9]+$/){print}else{print > "/dev/fd/2"}}')")
 	resume=false
 	ftpdump_$method && exit 0 || die "UNFORSEEN ERROR"
 }

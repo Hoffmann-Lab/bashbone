@@ -73,7 +73,7 @@ cluster::coexpression_deseq(){
 
 		rm -f "$joined"
 		for f in "${_cmpfiles_coexpression[@]}"; do
-			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
+			mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
 			i=0
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
@@ -126,7 +126,7 @@ cluster::coexpression_deseq(){
 						$m{$1}=1;
 					}
 				}
-			' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
+			' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
 			grep -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			tfiles+=("$tmp.genes" "$tmp.filtered.genes")
@@ -418,7 +418,7 @@ cluster::coexpression(){
 						$m{$1}=1;
 					}
 				}
-			' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1)" > "$tmp.genes"
+			' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
 			grep -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			tfiles+=("$tmp.genes" "$tmp.filtered.genes")

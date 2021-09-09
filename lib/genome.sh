@@ -102,15 +102,16 @@ genome::view(){
 			-i <ids>      | array of gene ids to goto and make snapshots
 			-p <pos>      | array of positions to goto and make snapshots (chrom:start-stop)
 			-d <number>   | delay seconds between positions
+			-r <range>    | of visibility in kb (default: 1000)
 			-e            | automatically exit after last position
 			-s            | do snapshots per position/id
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory genome gtf delay=0 outdir autoexit=false snapshots=false memory
+	local OPTIND arg mandatory genome gtf delay=0 outdir autoexit=false snapshots=false memory range
 	declare -n _ids_view _pos_view _files_view
-	while getopts 'm:g:o:l:i:p:d:es' arg; do
+	while getopts 'm:g:o:l:i:p:d:r:es' arg; do
 		case $arg in
 			m)	memory=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
@@ -119,6 +120,7 @@ genome::view(){
 			i)	_ids_view=$OPTARG;;
 			p)	_pos_view=$OPTARG;;
 			d)	delay=$((OPTARG*1000));;
+			r)	range=$OPTARG;;
 			s)	snapshots=true;;
 			e)	autoexit=true;;
 			*) _usage;;
@@ -144,7 +146,7 @@ genome::view(){
 	[[ -e "$pref" ]] && mv "$pref" "$pref.bak"
 	cat <<- EOF > "$pref"
 		SAM.SHOW_MISMATCHES=true
-		SAM.MAX_VISIBLE_RANGE=1000
+		SAM.MAX_VISIBLE_RANGE=${range:-1000}
 		SAM.SHOW_SOFT_CLIPPED=false
 		SAM.SHOW_ALL_BASES=false
 		SAM.SHOW_CENTER_LINE=true
@@ -161,11 +163,11 @@ genome::view(){
 		SAM.SHOW_JUNCTION_TRACK=true
 		SAM.SHOW_COV_TRACK=true
 		SAM.SHOW_ALIGNMENT_TRACK=true
-		SAM.MAX_VISIBLE_RANGE=1000
+		SAM.MAX_VISIBLE_RANGE=${range:-1000}
 
 		##THIRD_GEN
 		SAM.DOWNSAMPLE_READS=false
-		SAM.MAX_VISIBLE_RANGE=1000
+		SAM.MAX_VISIBLE_RANGE=${range:-1000}
 	EOF
 
 	local f="$outdir/run.batch"

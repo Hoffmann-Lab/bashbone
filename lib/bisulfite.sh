@@ -329,28 +329,30 @@ bisulfite::metilene(){
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
-			-S <hardskip> | true/false return
-			-s <softskip> | true/false only print commands
-			-t <threads>  | number of
-			-c <cmpfiles> | array of
-			-m <minimum>  | values present in control and treatment samples as fraction or absolute number - default: 0.8
-			-r <mapper>   | array of bams within array of
-			-i <methdir>  | path to
-			-o <outdir>   | path to
-			-p <tmpdir>   | path to
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-t <threads>    | number of
+			-c <cmpfiles>   | array of
+			-m <minimum>    | values present in control and treatment samples as fraction or absolute number - default: 0.8
+			-u <upperbound> | values present in control and treatment samples as absolute number (see -m) - default: not capped
+			-r <mapper>     | array of bams within array of
+			-i <methdir>    | path to
+			-o <outdir>     | path to
+			-p <tmpdir>     | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads genome mecalldir outdir tmpdir min=0.8
+	local OPTIND arg mandatory skip=false threads genome mecalldir outdir tmpdir min=0.8 cap=999999
 	declare -n _mapper_metilene _cmpfiles_metilene
-	while getopts 'S:s:t:c:m:r:i:o:p:' arg; do
+	while getopts 'S:s:t:c:m:u:r:i:o:p:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			c)	((++mandatory)); _cmpfiles_metilene=$OPTARG;;
 			m)	min=$OPTARG;;
+			u)	cap=$OPTARG;;
 			r)	((++mandatory)); _mapper_metilene=$OPTARG;;
 			i)	((++mandatory)); mecalldir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
@@ -374,6 +376,7 @@ bisulfite::metilene(){
 			i=0
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
 				crep=$(awk -v s=$c -v n=$min '$2==s{i=i+1}END{if(n>1){if(i<n){n=i} print n}else{printf "%0.f", i*n}}' "$f")
+				[[ $crep -gt $cap ]] && crep=$cap
 
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					odir="$outdir/$m/$c-vs-$t"
@@ -381,6 +384,7 @@ bisulfite::metilene(){
 					tomerge=()
 					header="chr sta pos"
 					trep=$(awk -v s=$t -v n=$min '$2==s{i=i+1}END{if(n>1){if(i<n){n=i} print n}else{printf "%0.f", i*n}}' "$f")
+					[[ $trep -gt $cap ]] && trep=$cap
 
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
