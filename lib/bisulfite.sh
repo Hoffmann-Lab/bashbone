@@ -232,6 +232,7 @@ bisulfite::mecall(){
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-g <genome>   | path to
+			-x <context>  | Cp* base - default: CG
 			-r <mapper>   | array of bams within array of
 			-o <outdir>   | path to
 			-p <tmpdir>   | path to
@@ -239,14 +240,15 @@ bisulfite::mecall(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads genome outdir tmpdir
+	local OPTIND arg mandatory skip=false threads genome outdir tmpdir context=CG
 	declare -n _mapper_haarz
-	while getopts 'S:s:t:m:r:g:o:p:' arg; do
+	while getopts 'S:s:t:m:r:g:x:o:p:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
+			x)	context=$OPTARG;;
 			r)	((++mandatory)); _mapper_haarz=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
@@ -256,7 +258,6 @@ bisulfite::mecall(){
 	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "calling methylated sites"
-
 
 	declare -n _bams_haarz=${_mapper_haarz[0]}
 	local ithreads imemory instances=$((${#_bams_haarz[@]}*${#_mapper_haarz[@]}))
@@ -288,24 +289,26 @@ bisulfite::mecall(){
 				tabix -f -p vcf "$odir/$o.vcf.gz"
 			CMD
 
-			commander::makecmd -a cmd3 -s '|' -o "$odir/$o.CG.full.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
-				bcftools view -H "$odir/$o.vcf.gz"
+			commander::makecmd -a cmd3 -s ' ' -o "$odir/$o.$context.full.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
+				bcftools view -H "$odir/$o.vcf.gz" |
 			CMD
-				perl -lane '
-					next unless $F[7]=~/;CC=CG;/;
+				perl -slane '
+					next unless $F[7]=~/;CC=$c;/;
 					$F[1]-- if $F[7]=~/^CS=-;/;
 					print join"\t",($F[0],$F[1]-1,$F[1],(split/:/,$F[-1])[-3,-4,0])
 				'
 			CMD
-				bedtools merge -d -1 -c 4,5,6 -o sum,sum,max
+				-- -c=$context |
+			CMD
+				bedtools merge -d -1 -c 4,5,6 -o sum,sum,max |
 			CMD
 				perl -lane 'print join"\t",(@F[0..2],$F[3]/$F[4],$F[5])'
 			CMD
 
 			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				awk '\$NF>=10' "$odir/$o.CG.full.bed"
+				awk '\$NF>=10' "$odir/$o.$context.full.bed"
 			CMD
-				cut -f 1-4 > "$odir/$o.CG.bed"
+				cut -f 1-4 > "$odir/$o.$context.bed"
 			CMD
 		done
 	done
@@ -335,6 +338,7 @@ bisulfite::metilene(){
 			-c <cmpfiles>   | array of
 			-m <minimum>    | values present in control and treatment samples as fraction or absolute number - default: 0.8
 			-u <upperbound> | values present in control and treatment samples as absolute number (see -m) - default: not capped
+			-x <context>    | bases - default: CG
 			-r <mapper>     | array of bams within array of
 			-i <methdir>    | path to
 			-o <outdir>     | path to
@@ -343,9 +347,9 @@ bisulfite::metilene(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads genome mecalldir outdir tmpdir min=0.8 cap=999999
+	local OPTIND arg mandatory skip=false threads genome mecalldir outdir tmpdir min=0.8 cap=999999 context=CG
 	declare -n _mapper_metilene _cmpfiles_metilene
-	while getopts 'S:s:t:c:m:u:r:i:o:p:' arg; do
+	while getopts 'S:s:t:c:m:u:x:r:i:o:p:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -353,6 +357,7 @@ bisulfite::metilene(){
 			c)	((++mandatory)); _cmpfiles_metilene=$OPTARG;;
 			m)	min=$OPTARG;;
 			u)	cap=$OPTARG;;
+			x)	context=$OPTARG;;
 			r)	((++mandatory)); _mapper_metilene=$OPTARG;;
 			i)	((++mandatory)); mecalldir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
@@ -388,7 +393,7 @@ bisulfite::metilene(){
 
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
-						tomerge+=("$(readlink -e "$mecalldir/$m/$sample"*.CG.bed | head -1)")
+						tomerge+=("$(readlink -e "$mecalldir/$m/$sample"*.$context.bed | head -1)")
 						header+=" ${condition}_$replicate"
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 
