@@ -629,9 +629,7 @@ preprocess::sortmerna(){
 	commander::printinfo "filtering rRNA fragments"
 
 	local insdir="$(dirname "$(dirname "$(which sortmerna)")")"
-	#local sortmernaref=$(for i in "$insdir/rRNA_databases/"*.fasta; do echo "$i,$insdir/index/$(basename $i .fasta)-L18"; done | xargs -echo | sed 's/ /:/g')
-	local sortmernaref=$(for i in "$insdir/rRNA_databases/"*.fasta; do echo "'$i','$insdir/index/$(basename "$i" .fasta)-L18'"; done | xargs printf "'%s':")
-	sortmernaref=${sortmernaref/%:/}
+	local sortmernaref=$(for i in "$insdir/rRNA_databases/"*.fasta; do echo "$i,$insdir/index/$(basename "$i" .fasta)-L18"; done | sed ':a;N;$!ba; ${s/\n/:/g}')
 
 	declare -a cmd1 cmd2 cmd3
 	local i catcmd tmp o1 o2 or1 or2 e1 e2
