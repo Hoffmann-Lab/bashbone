@@ -173,10 +173,8 @@ commander::runcmd(){
 	[[ ! $mandatory ]] && _usage
 	[[ $_cmds_runcmd ]] || return 0
 
-	$verbose && {
-		commander::printinfo "running commands of array ${!_cmds_runcmd}"
-		commander::printcmd -a _cmds_runcmd
-	}
+	$verbose && commander::printinfo "running commands of array ${!_cmds_runcmd}"
+
 	local i sh
 	tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 
@@ -197,11 +195,12 @@ commander::runcmd(){
 				}
 			EOF
 			if [[ $cenv ]]; then
-				echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$(basename $sh)" >> "$sh"
+				echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$(basename $sh) -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 				echo "conda activate $cenv" >> "$sh"
 			else
-				echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$(basename $sh)" >> "$sh"
+				echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$(basename $sh) -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 			fi
+			$verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
 			printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 			echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 			echo "$sh"
@@ -222,11 +221,12 @@ commander::runcmd(){
 				}
 			EOF
 			if [[ $cenv ]]; then
-				echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$(basename $sh)" >> "$sh"
+				echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$(basename $sh) -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 				echo "conda activate $cenv" >> "$sh"
 			else
-				echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$(basename $sh)" >> "$sh"
+				echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$(basename $sh) -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 			fi
+			$verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
 			printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 			echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 			echo "$sh"
@@ -299,10 +299,7 @@ commander::qsubcmd(){
 	[[ $mandatory -lt 3 ]] && _usage
 	[[ $_cmds_qsubcmd ]] || return 0
 
-	$verbose && {
-		commander::printinfo "running commands of array ${!_cmds_qsubcmd}"
-		commander::printcmd -a _cmds_qsubcmd
-	}
+	$verbose && commander::printinfo "running commands of array ${!_cmds_qsubcmd}"
 
 	[[ $penv ]] && params="$penv $threads" || params="$queue"
 	[[ $jobname ]] || jobname=$(mktemp -u -p "$logdir" XXXXXXXXXX)
@@ -323,12 +320,14 @@ commander::qsubcmd(){
 			}
 		EOF
 		if [[ $cenv ]]; then
-			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id" >> "$sh"
+			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 			echo "conda activate $cenv" >> "$sh"
 		else
-			echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id" >> "$sh"
+			echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 		fi
+		$verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
 		printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
+		echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 		chmod 755 "$sh"
 	done
 
