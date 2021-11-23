@@ -88,7 +88,7 @@ alignment::segemehl() {
 		[[ $accuracy ]] && params+=" -A $accuracy"
 		if [[ ${_fq2_segemehl[$i]} ]]; then
 			[[ $insertsize ]] && params+=" -I $insertsize"
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				segemehl
 				$params
 				-i "$genomeidx"
@@ -99,10 +99,12 @@ alignment::segemehl() {
 				-b
 				-o "$o.bam"
 			CMD
+				touch "$o.sngl.bed"
+			CMD
 				ln -sfnr "$o.sngl.bed" "$o.sj"
 			CMD
 		else
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				segemehl
 				$params
 				-i "$genomeidx"
@@ -111,6 +113,8 @@ alignment::segemehl() {
 				-t $threads
 				-b
 				-o "$o.bam"
+			CMD
+				touch "$o.sngl.bed"
 			CMD
 				ln -sfnr "$o.sngl.bed" "$o.sj"
 			CMD
@@ -781,7 +785,8 @@ alignment::inferstrandness(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
-			-s <softskip>   | true/false only print commands
+			-s <softskip>   | true/false only print commands. use with -d
+			-d <default>    | do not infer. assign 0 (unstranded), 1 (stranded/fr second strand) or 2 (reversely stranded /fr first strand)
 			-t <threads>    | number of
 			-r <mapper>     | array of sorted, indexed bams within array of
 			-x <strandness> | hash per bam of
@@ -791,12 +796,13 @@ alignment::inferstrandness(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf level="exon" featuretag="gene_id"
+	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf level="exon" featuretag="gene_id" default="?"
 	declare -n _mapper_inferstrandness _strandness_inferstrandness
-	while getopts 'S:s:t:r:x:g:l:f:p:o:' arg; do
+	while getopts 'S:s:t:r:x:g:l:f:p:o:d:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
+			d)	[[ $OPTARG ]] && default=$OPTARG || default="?";;
 			t)	((++mandatory)); threads=$OPTARG;;
 			r)	((++mandatory)); _mapper_inferstrandness=$OPTARG;;
 			x)	((++mandatory)); _strandness_inferstrandness=$OPTARG;;
@@ -868,7 +874,7 @@ alignment::inferstrandness(){
 			CMD
 
 			# skip case
-			_strandness_inferstrandness["$f"]="?"
+			_strandness_inferstrandness["$f"]=$default
 		done
 	done
 

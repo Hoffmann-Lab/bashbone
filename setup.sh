@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-source $(dirname $(readlink -e $0))/activate.sh -c false || exit 1
+source "$(dirname "$(readlink -e "$0")")/activate.sh" -c false || exit 1
 
 THREADS=$(cat /proc/cpuinfo | grep -cF processor)
 VERBOSITY=0
@@ -30,6 +30,6 @@ for i in "${INSTALL[@]}"; do
 done
 
 unset BASHBONE_ERROR
-commander::printinfo "success" >> "$LOG"
+commander::printinfo "success" | tee -ia "$LOG"
 
 exit 0

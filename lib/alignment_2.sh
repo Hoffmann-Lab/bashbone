@@ -93,12 +93,13 @@ alignment::slice(){
 			o="$tdir"/$(basename "$f")
 			o="${o%.*}"
 
-			_bamslices_slice["$f"]="$o.slices.info"
-			ls -v "$tmpdir/genome/slice".*.bed | sed -E "s@.+\.([0-9]+)\.bed@$o.slice.\1.bam@" > "$o.slices.info"
-
 			alignment::_index -1 cmd2 -t $ithreads -i "$f"
 
-			for bed in $(ls -v "$tmpdir/genome/slice".*.bed); do
+			mapfile -t mapdata < <(find "$tmpdir/genome" -maxdepth 1 -type f -name "slice.*.bed" | sort -V)
+			printf "%s\n" "${mapdata[@]}" sed -E "s@.+\.([0-9]+)\.bed@$o.slice.\1.bam@" > "$o.slices.info"
+			_bamslices_slice["$f"]="$o.slices.info"
+
+			for bed in "${mapdata[@]}"; do
 				i=$(basename "$bed" .bed | rev | cut -d '.' -f 1 | rev)
 				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					samtools view
@@ -202,6 +203,12 @@ alignment::rmduplicates(){
 						VERBOSITY=WARNING
 						MAX_FILE_HANDLES=$nfh
 				CMD
+				# note REMOVE_DUPLICATES=true removes, without -> marks
+				# alternative1: samtools sort -n -u -@ $threads -T $tmp/$prefix1 $bam | samtools fixmate -@ $threads -m -u - - | samtools sort -u -@ $threads -T $tmp/$prefix2 | samtools markdup -r -S -T $tmp/$prefix3 -u -@ $threads - $bam.rmdup
+				# note: -r removes, without -> marks
+				# alternative2: samtools sort -n -@ $threads -O SAM -T $tmp/$prefix1 $bam | samblaster --removeDups --addMateTags | samtools sort -@ $threads -O BAM -T $tmp/$prefix2 > $bam.rmdup
+				# note: --removeDups removes, else use --excludeDups. requires setupped RG in SAM header
+				# alternative3: sambamba
 
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					mv "$slice.rmdup" "$slice"

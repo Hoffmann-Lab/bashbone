@@ -282,7 +282,7 @@ fusions::arriba(){
 			arriba
 				-a "$genome"
 				-g "$gtf"
-				-b "\$(ls \$CONDA_PREFIX/var/lib/arriba/blacklist_${genomeversion}_*.gz)"
+				-b "\$(ls '\$CONDA_PREFIX/var/lib/arriba/blacklist_${genomeversion}_'*.gz)"
 				-x "$f"
 				-o "$o.fusions.tsv"
 				-O "$o.fusions.discarded.tsv"
@@ -292,8 +292,8 @@ fusions::arriba(){
 		CMD
 		# -s may be set to auto, to skip alignment::inferstrandness detour and star version conflicts by serate star conda env
 		# but I encountered errors yelling unable to determine strandness AND alignment::star checks for star index version
-		# -k "\$(ls \$CONDA_PREFIX/var/lib/arriba/known_fusions_${genomeversion}_*.gz)"
-		# -p "\$(ls \$CONDA_PREFIX/var/lib/arriba/protein_domains_${genomeversion}_*.gff3)"
+		# -k "\$(ls '\$CONDA_PREFIX/var/lib/arriba/known_fusions_${genomeversion}_'*.gz)"
+		# -p "\$(ls '\$CONDA_PREFIX/var/lib/arriba/protein_domains_${genomeversion}_'*.gff3)"
 	done
 
 	if $skip; then

@@ -56,10 +56,10 @@ compile::all(){
 }
 
 compile::bashbone() {
-	local insdir threads version src=$(dirname $(readlink -e $0))
+	local insdir threads version src="$(dirname "$(readlink -e "$0")")"
 	commander::printinfo "installing bashbone"
 	compile::_parse -r insdir -s threads "$@"
-	source $src/lib/version.sh
+	source "$src/lib/version.sh"
 	rm -rf "$insdir/bashbone-$version"
 	mkdir -p "$insdir/bashbone-$version"
 	cp -r "$src"/* "$insdir/bashbone-$version"
@@ -70,13 +70,15 @@ compile::bashbone() {
 }
 
 compile::tools() {
-	local insdir threads i src=$(dirname $(readlink -e $0))
+	local insdir threads i src="$(dirname "$(readlink -e "$0")")"
+	declare -a mapdata
 
 	commander::printinfo "installing statically pre-compiled tools"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
-	mkdir -p $insdir/latest
-	for i in $(find -L "$src/tools" -mindepth 1 -maxdepth 1 -type d); do
+	source "$insdir/conda/bin/activate" base
+	mkdir -p "$insdir/latest"
+	mapfile -t mapdata < <(find -L "$src/tools" -mindepth 1 -maxdepth 1 -type d)
+	for i in "${mapdata[@]}"; do
 		cp -r "$i" "$insdir/$(basename "$i")"
 		ln -sfn "$insdir/$(basename "$i")/bin" "$insdir/latest/$(basename "$i" | cut -d '-' -f 1)"
 	done
@@ -132,7 +134,7 @@ compile::conda(){
 		perl perl-app-cpanminus perl-list-moreutils perl-try-tiny perl-dbi perl-db-file perl-xml-parser perl-bioperl perl-bio-eutilities \
 		java-jdk \
 		nlopt r-base=4.0.2
-	cpanm Switch
+	cpanm Switch Tee::Simple
 
 	tmpdir="$insdir/tmp"
 	mkdir -p "$tmpdir"
@@ -198,7 +200,7 @@ compile::conda_tools() {
 	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
 	while read -r tool; do
 		envs[$tool]=true
-	done < <(conda info -e | awk -v prefix="^"$insdir '$NF ~ prefix {print $1}')
+	done < <(conda info -e | awk -v prefix="^$insdir" '$NF ~ prefix {print $1}')
 
 	# better do not predefine python version. if tool recipe depends on earlier version, conda installs an older or the oldest version (freebayes)
 
@@ -311,14 +313,14 @@ compile::java() {
 
 	commander::printinfo "installing java"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
-	url="https://download.oracle.com/otn-pub/java/jdk/15.0.1%2B9/51f4f36ad4ef43e39d0dfdbaf6549e32/jdk-15.0.1_linux-x64_bin.tar.gz"
-	wget -q --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O $insdir/java.tar.gz $url
-	version=$(echo $url | perl -lane '$_=~/jdk-([^-_]+)/; print $1')
-	tar -xzf $insdir/java.tar.gz -C $insdir
-	rm $insdir/java.tar.gz
-	mkdir -p $insdir/latest
-	ln -sfn $(ls -vd $insdir/jdk-*/bin | tail -1) $insdir/latest/java
+	source "$insdir/conda/bin/activate" base
+	url='https://download.oracle.com/otn-pub/java/jdk/15.0.1%2B9/51f4f36ad4ef43e39d0dfdbaf6549e32/jdk-15.0.1_linux-x64_bin.tar.gz'
+	wget -q --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O "$insdir/java.tar.gz" "$url"
+	version=$(echo "$url" | perl -lane '$_=~/jdk-([^-_]+)/; print $1')
+	tar -xzf "$insdir/java.tar.gz" -C "$insdir"
+	rm "$insdir/java.tar.gz"
+	mkdir -p "$insdir/latest"
+	ln -sfn "$(ls -vd "$insdir/jdk-"*/bin | tail -1)" $insdir/latest/java
 
 	return 0
 }
@@ -353,16 +355,16 @@ compile::trimmomatic(){
 
 	commander::printinfo "installing trimmomatic"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
+	source "$insdir/conda/bin/activate" base
 	url='http://www.usadellab.org/cms/?page=trimmomatic'
-	url='http://www.usadellab.org/cms/'$(curl -s $url | grep Version | grep -oE '[^"]+Trimmomatic-[0-9]+\.[0-9]+\.zip' | sort -Vr | head -1)
-	wget -q $url -O $insdir/trimmomatic.zip
-	unzip -o -d $insdir $insdir/trimmomatic.zip
-	rm $insdir/trimmomatic.zip
-	cd $(ls -dv $insdir/Trimmomatic-*/ | tail -1)
-	mkdir -p $insdir/latest bin
-	compile::_javawrapper bin/trimmomatic $(readlink -e trimmomatic-*.jar) $insdir/latest/java/java
-	ln -sfn $PWD/bin $insdir/latest/trimmomatic
+	url='http://www.usadellab.org/cms/'$(curl -s "$url" | grep Version | grep -oE '[^"]+Trimmomatic-[0-9]+\.[0-9]+\.zip' | sort -Vr | head -1)
+	wget -q "$url" -O "$insdir/trimmomatic.zip"
+	unzip -o -d "$insdir" "$insdir/trimmomatic.zip"
+	rm "$insdir/trimmomatic.zip"
+	cd "$(ls -dv "$insdir/Trimmomatic-"*/ | tail -1)"
+	mkdir -p "$insdir/latest" bin
+	compile::_javawrapper bin/trimmomatic "$(readlink -e trimmomatic-*.jar)" "$insdir/latest/java/java"
+	ln -sfn "$PWD/bin" "$insdir/latest/trimmomatic"
 
 	return 0
 }
@@ -371,25 +373,24 @@ compile::sortmerna() {
 	local insdir threads url
 
 	commander::printinfo "installing sortmerna"
-	echo $insdir
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
+	source "$insdir/conda/bin/activate" base
 	url='https://github.com/biocore/sortmerna/archive/2.1.tar.gz'
-	wget -q $url -O $insdir/sortmerna.tar.gz
-	tar -xzf $insdir/sortmerna.tar.gz -C $insdir
-	rm $insdir/sortmerna.tar.gz
-	cd $(ls -dv $insdir/sortmerna-*/ | tail -1)
+	wget -q "$url" -O "$insdir/sortmerna.tar.gz"
+	tar -xzf "$insdir/sortmerna.tar.gz" -C "$insdir"
+	rm "$insdir/sortmerna.tar.gz"
+	cd "$(ls -dv "$insdir/sortmerna-"*/ | tail -1)"
 	make clean || true
-	./configure --prefix=$PWD
+	./configure --prefix="$PWD"
 	make -j $threads
 	make install -i # ignore errors caused by --prefix=$PWD
-	mkdir -p $insdir/latest
-	ln -sfn $PWD/bin $insdir/latest/sortmerna
+	mkdir -p "$insdir/latest"
+	ln -sfn "$PWD/bin" "$insdir/latest/sortmerna"
 	commander::printinfo "indexing databases"
-	for i in rRNA_databases/*.fasta; do
-		o=index/$(basename $i .fasta)-L18
-		echo -ne "bin/indexdb_rna --ref $i,$o -m 4096 -L 18\0"
-	done | xargs -0 -P $threads -I {} bash -c {}
+for i in rRNA_databases/*.fasta; do
+	o="index/$(basename "$i" .fasta)-L18"
+	echo -ne "bin/indexdb_rna --ref '$i','$o' -m 4096 -L 18\0"
+done | xargs -0 -P $threads -I {} bash -c {}
 
 	return 0
 }
@@ -399,35 +400,35 @@ compile::segemehl() {
 
 	commander::printinfo "installing segemehl"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
+	source "$insdir/conda/bin/activate" base
 	url='http://www.bioinf.uni-leipzig.de/Software/segemehl/downloads/'
-	url="$url"$(curl -s $url | grep -oE 'segemehl-[0-9\.]+\.tar\.gz' | sort -Vr | head -1)
-	wget -q $url -O $insdir/segemehl.tar.gz
-	tar -xzf $insdir/segemehl.tar.gz -C $insdir
-	rm $insdir/segemehl.tar.gz
-	cd $(ls -dv $insdir/segemehl-*/ | tail -1)
-	export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig
+	url="$url"$(curl -s "$url" | grep -oE 'segemehl-[0-9\.]+\.tar\.gz' | sort -Vr | head -1)
+	wget -q "$url" -O "$insdir/segemehl.tar.gz"
+	tar -xzf "$insdir/segemehl.tar.gz" -C "$insdir"
+	rm "$insdir/segemehl.tar.gz"
+	cd "$(ls -dv "$insdir/segemehl-"*/ | tail -1)"
+	export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
 	make clean || true
 	make -j $threads all
 	mkdir -p bin
 	mv *.x bin
 	touch bin/segemehl bin/haarz
 	chmod 755 bin/*
-	mkdir -p $insdir/latest
-	ln -sfn $PWD/bin $insdir/latest/segemehl
-	cat <<- 'EOF' > $insdir/latest/segemehl/segemehl
+	mkdir -p "$insdir/latest"
+	ln -sfn "$PWD/bin" "$insdir/latest/segemehl"
+	cat <<- 'EOF' > "$insdir/latest/segemehl/segemehl"
 		#!/usr/bin/env bash
-		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig
+		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
 		l=$(pkg-config --variable=libdir htslib)
 		[[ $l ]] && export LD_LIBRARY_PATH=$l
-		$(cd $(dirname $0) && echo $PWD)/segemehl.x $*
+		$(cd "$(dirname "$0")" && echo "$PWD")/segemehl.x $*
 	EOF
 	cat <<- 'EOF' > $insdir/latest/segemehl/haarz
 		#!/usr/bin/env bash
-		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig
-		l=$(pkg-config --variable=libdir htslib)
-		[[ $l ]] && export LD_LIBRARY_PATH=$l
-		$(cd $(dirname $0) && echo $PWD)/haarz.x $*
+		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
+		l="$(pkg-config --variable=libdir htslib)"
+		[[ $l ]] && export LD_LIBRARY_PATH="$l"
+		$(cd "$(dirname "$0")" && echo "$PWD")/haarz.x $*
 	EOF
 
 	return 0
@@ -439,14 +440,14 @@ compile::starfusion() {
 	# conda recipe has either star > 2.7.0f (v1.6) or star > 2.5 (>=v1.8, plus python compatibility issues)
 	commander::printinfo "installing starfusion"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
+	source "$insdir/conda/bin/activate" base
 	url='https://github.com/'$(curl -s https://github.com/STAR-Fusion/STAR-Fusion/releases | grep -oE 'STAR-Fusion/\S+STAR-Fusion-v[0-9\.]+\.FULL\.tar\.gz' | sort -Vr | head -1)
-	wget -q $url -O $insdir/starfusion.tar.gz
-	tar -xzf $insdir/starfusion.tar.gz -C $insdir
-	rm $insdir/starfusion.tar.gz
-	cd $(ls -dv $insdir/STAR-Fusion-*/ | tail -1)
-	mkdir -p $insdir/latest
-	ln -sfn $PWD $insdir/latest/starfusion
+	wget -q "$url" -O "$insdir/starfusion.tar.gz"
+	tar -xzf "$insdir/starfusion.tar.gz" -C "$insdir"
+	rm "$insdir/starfusion.tar.gz"
+	cd "$(ls -dv "$insdir/STAR-Fusion"-*/ | tail -1)"
+	mkdir -p "$insdir/latest"
+	ln -sfn "$PWD" "$insdir/latest/starfusion"
 
 	return 0
 }
@@ -456,15 +457,15 @@ compile::preparedexseq() {
 
 	commander::printinfo "installing dexseq"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
-	cd $insdir
+	source "$insdir/conda/bin/activate" base
+	cd "$insdir"
 	rm -rf Subread_to_DEXSeq
 	git clone https://github.com/vivekbhr/Subread_to_DEXSeq.git
 	cd Subread_to_DEXSeq
 	mkdir -p bin
 	mv *.py bin
-	mkdir -p $insdir/latest
-	ln -sfn $PWD/bin $insdir/latest/subreadtodexseq
+	mkdir -p "$insdir/latest"
+	ln -sfn "$PWD/bin" "$insdir/latest/subreadtodexseq"
 
 	return 0
 }
@@ -474,15 +475,15 @@ compile::revigo() {
 
 	commander::printinfo "installing revigo"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
-	cd $insdir
+	source "$insdir/conda/bin/activate" base
+	cd "$insdir"
 	rm -rf revigo
 	git clone https://gitlab.leibniz-fli.de/kriege/revigo.git
 	cd revigo
 	mkdir bin
-	compile::_javawrapper bin/revigo $(readlink -e RevigoStandalone.jar) $insdir/latest/java/java
-	mkdir -p $insdir/latest
-	ln -sfn $PWD/bin $insdir/latest/revigo
+	compile::_javawrapper bin/revigo "$(readlink -e RevigoStandalone.jar)" "$insdir/latest/java/java"
+	mkdir -p "$insdir/latest"
+	ln -sfn "$PWD/bin" "$insdir/latest/revigo"
 
 	return 0
 }
@@ -492,22 +493,22 @@ compile::gem() {
 
 	commander::printinfo "installing gem"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
+	source "$insdir/conda/bin/activate" base
 	url='https://groups.csail.mit.edu/cgs/gem/download/'
-	url="$url"$(curl -s $url | grep -oE "gem.v[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
-	version=$(basename $url | sed -E 's/gem.v([0-9\.]+)\.tar\.gz/\1/')
-	wget -q $url -O $insdir/gem.tar.gz
-	tar -xzf $insdir/gem.tar.gz -C $insdir
-	mv $insdir/gem $insdir/gem-$version
-	rm $insdir/gem.tar.gz
-	cd $insdir/gem-$version
+	url="$url"$(curl -s "$url" | grep -oE "gem.v[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
+	version=$(basename "$url" | sed -E 's/gem.v([0-9\.]+)\.tar\.gz/\1/')
+	wget -q "$url" -O "$insdir/gem.tar.gz"
+	tar -xzf "$insdir/gem.tar.gz" -C "$insdir"
+	mv "$insdir/gem" "$insdir/gem-$version"
+	rm "$insdir/gem.tar."gz
+	cd "$insdir/gem-$version"
 	mkdir -p bin
 	wget -q -O bin/Read_Distribution_default.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_default.txt
 	wget -q -O bin/Read_Distribution_CLIP.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_CLIP.txt
 	wget -q -O bin/Read_Distribution_ChIP-exo.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_ChIP-exo.txt
-	compile::_javawrapper bin/gem $(readlink -e gem.jar) $insdir/latest/java/java
-	mkdir -p $insdir/latest
-	ln -sfn $PWD/bin $insdir/latest/gem
+	compile::_javawrapper bin/gem "$(readlink -e gem.jar)" "$insdir/latest/java/java"
+	mkdir -p "$insdir/latest"
+	ln -sfn "$PWD/bin" "$insdir/latest/gem"
 
 	return 0
 }
@@ -517,16 +518,16 @@ compile::m6aviewer() {
 
 	commander::printinfo "installing m6aviewer"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
+	source "$insdir/conda/bin/activate" base
 	url='http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar'
 	version="1.6.1"
-	rm -rf $insdir/m6aviewer-$version
-	mkdir -p $insdir/m6aviewer-$version/bin
-	cd $insdir/m6aviewer-$version
-	wget -q $url -O m6aviewer.jar
-	compile::_javawrapper bin/m6aviewer $(readlink -e m6aviewer.jar)
-	mkdir -p $insdir/latest
-	ln -sfn $PWD/bin $insdir/latest/m6aviewer
+	rm -rf "$insdir/m6aviewer-$version"
+	mkdir -p "$insdir/m6aviewer-$version/bin"
+	cd "$insdir/m6aviewer-$version"
+	wget -q "$url" -O m6aviewer.jar
+	compile::_javawrapper bin/m6aviewer "$(readlink -e m6aviewer.jar)"
+	mkdir -p "$insdir/latest"
+	ln -sfn "$PWD/bin" "$insdir/latest/m6aviewer"
 
 	return 0
 }
@@ -536,17 +537,17 @@ compile::idr() {
 
 	commander::printinfo "installing idr"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
+	source "$insdir/conda/bin/activate" base
 	url='https://github.com/kundajelab/idr'
-	url="$url/"$(curl -s $url/tags | grep -oE "archive\/[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
+	url="$url/"$(curl -s "$url/tags" | grep -oE "archive\/[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
 	wget -q $url -O $insdir/idr.tar.gz
-	tar -xzf $insdir/idr.tar.gz -C $insdir
-	rm $insdir/idr.tar.gz
-	cd $(ls -vd $insdir/idr-*/ | tail -1)
+	tar -xzf "$insdir/idr.tar.gz" -C "$insdir"
+	rm "$insdir/idr.tar.gz"
+	cd $(ls -vd "$insdir/idr"-*/ | tail -1)
 	pip install numpy matplotlib
 	python setup.py install
-	mkdir -p $insdir/latest
-	ln -sfn $PWD/bin $insdir/latest/idr
+	mkdir -p "$insdir/latest"
+	ln -sfn "$PWD/bin" "$insdir/latest/idr"
 
 	return 0
 }
@@ -556,13 +557,13 @@ compile::newicktopdf(){
 
 	commander::printinfo "installing idr"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
+	source "$insdir/conda/bin/activate" base
 	url='ftp://pbil.univ-lyon1.fr/pub/mol_phylogeny/njplot/newicktopdf'
-	mkdir -p $insdir/newicktopdf
-	wget -q $url -O $insdir/newicktopdf/newicktopdf
-	chmod 755 $insdir/newicktopdf/newicktopdf
-	mkdir -p $insdir/latest
-	ln -sfn $insdir/newicktopdf $insdir/latest/newicktopdf
+	mkdir -p "$insdir/newicktopdf"
+	wget -q "$url" -O "$insdir/newicktopdf/newicktopdf"
+	chmod 755 "$insdir/newicktopdf/newicktopdf"
+	mkdir -p "$insdir/latest"
+	ln -sfn "$insdir/newicktopdf" "$insdir/latest/newicktopdf"
 }
 
 compile::ssgsea() {
@@ -570,24 +571,24 @@ compile::ssgsea() {
 
 	commander::printinfo "installing ssgsea"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
-	cd $insdir
+	source "$insdir/conda/bin/activate" base
+	cd "$insdir"
 	rm -rf ssGSEA-gpmodule
 	git clone https://github.com/GSEA-MSigDB/ssGSEA-gpmodule.git
 	cd ssGSEA-gpmodule
 	mv src bin
 	chmod 755 bin/*
-	mkdir -p $insdir/latest
-	ln -sfn $PWD/bin $insdir/latest/ssgseagpmodule
+	mkdir -p "$insdir/latest"
+	ln -sfn "$PWD/bin" "$insdir/latest/ssgseagpmodule"
 
 	git clone https://github.com/broadinstitute/ssGSEA2.0.git
 	rm -rf ssGSEA-broad
 	mv ssGSEA2.0 ssGSEA-broad
 	cd ssGSEA-broad
-	find . -type f -exec dos2unix {} \;
-	find . -type f -name "*.R" -exec chmod 755 {} \;
-	mkdir -p $insdir/latest
-	ln -sfn $PWD $insdir/latest/ssgseabroad
+	find . -type f -exec dos2unix "{}" \;
+	find . -type f -name "*.R" -exec chmod 755 "{}" \;
+	mkdir -p "$insdir/latest"
+	ln -sfn "$PWD" "$insdir/latest/ssgseabroad"
 
 	return 0
 }
@@ -597,18 +598,18 @@ compile::bgztail() {
 
 	commander::printinfo "installing bgztail"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
+	source "$insdir/conda/bin/activate" base
 
 	url='https://github.com/'$(curl -s https://github.com/circulosmeos/bgztail/releases | grep -oE 'circulosmeos/bgztail/\S+v[0-9\.]+\.tar\.gz' | sort -Vr | head -1)
-	wget -q $url -O $insdir/bgztail.tar.gz
-	tar -xzf $insdir/bgztail.tar.gz -C $insdir
-	rm $insdir/bgztail.tar.gz
-	cd $(ls -dv $insdir/bgztail-*/ | tail -1)
+	wget -q "$url" -O "$insdir/bgztail.tar.gz"
+	tar -xzf "$insdir/bgztail.tar.gz" -C "$insdir"
+	rm "$insdir/bgztail.tar.gz"
+	cd "$(ls -dv "$insdir/bgztail"-*/ | tail -1)"
 	mkdir -p bin
 	mv bgztail bin
 	chmod 755 bin/bgztail
-	mkdir -p $insdir/latest
-	ln -sfn $PWD/bin $insdir/latest/bgztail
+	mkdir -p "$insdir/latest"
+	ln -sfn "$PWD/bin" "$insdir/latest/bgztail"
 
 	return 0
 }
@@ -618,16 +619,16 @@ compile::mdless() {
 
 	commander::printinfo "installing mdless"
 	compile::_parse -r insdir -s threads "$@"
-	source $insdir/conda/bin/activate base
+	source "$insdir/conda/bin/activate" base
 
 	url='https://github.com/'$(curl -s https://github.com/ttscoff/mdless/releases | grep -oE 'ttscoff/mdless/\S+\/[0-9\.]+\.tar\.gz' | sort -Vr | head -1)
-	wget -q $url -O $insdir/mdless.tar.gz
-	tar -xzf $insdir/mdless.tar.gz -C $insdir
-	rm $insdir/mdless.tar.gz
-	cd $(ls -dv $insdir/mdless-*/bin | tail -1)
+	wget -q "$url" -O "$insdir/mdless.tar.gz"
+	tar -xzf "$insdir/mdless.tar.gz" -C "$insdir"
+	rm "$insdir/mdless.tar.gz"
+	cd "$(ls -dv "$insdir/mdless"-*/bin | tail -1)"
 	sed -i 's@require@$LOAD_PATH.unshift File.expand_path("../../lib", __FILE__)\nrequire@' mdless
-	mkdir -p $insdir/latest
-	ln -sfn $PWD $insdir/latest/mdless
+	mkdir -p "$insdir/latest"
+	ln -sfn "$PWD" "$insdir/latest/mdless"
 
 	return 0
 }

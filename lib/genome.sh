@@ -28,7 +28,7 @@ genome::mkdict() {
 			5) $OPTARG && skipmd5=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
 			i) ((++mandatory)); genome="$OPTARG";;
-			p) ((++mandatory)); tmpdir="$OPTARG";;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*) _usage;;
 		esac
 	done
@@ -170,7 +170,7 @@ genome::view(){
 		SAM.MAX_VISIBLE_RANGE=${range:-1000}
 	EOF
 
-	local f="$outdir/run.batch"
+	local i f="$outdir/run.batch"
 
 	# the genome path will always be interpreted as an id and thus must not be quoted!
 	cat <<- EOF > "$f"
@@ -179,11 +179,12 @@ genome::view(){
 		setSleepInterval 0
 
 		genome $genome
-		load $(printf '"%s",' "${_files_view[@]}" | sed 's/,$//')
-		sort FIRSTOFPAIRSTRAND
 	EOF
+	for i in "${_files_view[@]}"; do
+		echo "load \"$i\"" >> "$f"
+	done
+	echo "sort FIRSTOFPAIRSTRAND" >> "$f"
 
-	local i
 	for i in "${_ids_view[@]}"; do
 		echo "goto $(grep -E -m 1 $'\t'gene$'\t'".+gene_id \"$i\"" $gtf | awk '{print $1":"$4"-"$5}')" >> $f
 		if [[ $delay -gt 0 ]]; then
