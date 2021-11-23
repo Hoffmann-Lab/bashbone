@@ -92,21 +92,21 @@ configure::instances_by_threads(){
 		return 1
 	}
 
-	local OPTIND arg instances ithreads=1 maxthreads
-	while getopts 'i:t:T:' arg; do
+	local OPTIND arg instances ithreads=1 maxthreads dryrun=false
+	while getopts 'i:t:T:d' arg; do
 		case $arg in
 			i) instances=$((OPTARG==0?1:OPTARG));;
 			t) ithreads=$OPTARG;;
 			T) maxthreads=$OPTARG;;
+			d) dryrun=true;;
 			*) _usage;;
 		esac
 	done
 
-	local t=$(grep -cF processor /proc/cpuinfo)
+	local t=$($dryrun && [[ $maxthreads ]] && echo $maxthreads || grep -cF processor /proc/cpuinfo)
 	[[ ! $maxthreads ]] && maxthreads=$t
 	[[ $maxthreads -gt $t ]] && maxthreads=$t
 	[[ ! $instances ]] && instances=$maxthreads
-
 	local maxinstances=$maxthreads
 	[[ $maxinstances -gt $(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) ]] && maxinstances=$(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) #+10 for better approximation
 	[[ $instances -gt $maxthreads ]] && instances=$maxthreads
@@ -128,26 +128,22 @@ configure::memory_by_instances(){
 		return 1
 	}
 
-	local OPTIND arg mandatory instances maxthreads maxmemory
-	while getopts 'i:T:M:' arg; do
+	local OPTIND arg mandatory instances maxthreads maxmemory dryrun=false
+	while getopts 'i:T:M:d' arg; do
 		case $arg in
 			i) ((++mandatory)); instances=$((OPTARG==0?1:OPTARG));;
 			T) maxthreads=$OPTARG;;
 			M) maxmemory=$OPTARG;;
+			d) dryrun=true;;
 			*) _usage;;
 		esac
 	done
 	[[ $mandatory -lt 1 ]] && _usage
 
-
-	local m
-	if [[ ! $maxmemory ]]; then
-		m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
-		maxmemory=$m
-	fi
-	m=$(grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+	[[ ! $maxmemory ]] && maxmemory=$m
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
-	local t=$(grep -cF processor /proc/cpuinfo)
+	local t=$($dryrun && [[ $maxthreads ]] && echo $maxthreads || grep -cF processor /proc/cpuinfo)
 	[[ ! $maxthreads ]] && maxthreads=$t
 	[[ $maxthreads -gt $t ]] && maxthreads=$t
 
@@ -169,25 +165,21 @@ configure::instances_by_memory(){
 		return 1
 	}
 
-	local OPTIND arg mandatory maxthreads memory maxmemory
-	while getopts 'T:m:M:' arg; do
+	local OPTIND arg mandatory maxthreads memory maxmemory dryrun=false
+	while getopts 'T:m:M:d' arg; do
 		case $arg in
 			T) maxthreads=$OPTARG;;
 			m) ((++mandatory)); memory=$OPTARG;;
 			M) maxmemory=$OPTARG;;
+			d) dryrun=true;;
 			*) _usage;;
 		esac
 	done
 	[[ $mandatory -lt 1 ]] && _usage
 
-	local m
-	if [[ ! $maxmemory ]]; then
-		m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
-		maxmemory=$m
-	fi
-	m=$(grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
-	local t=$(grep -cF processor /proc/cpuinfo)
+	local t=$($dryrun && [[ $maxthreads ]] && echo $maxthreads || grep -cF processor /proc/cpuinfo)
 	[[ ! $maxthreads ]] && maxthreads=$t
 	[[ $maxthreads -gt $t ]] && maxthreads=$t
 
@@ -213,26 +205,23 @@ configure::jvm(){
 		return 1
 	}
 
-	local OPTIND arg instances ithreads=1 maxthreads memory=1 maxmemory
-	while getopts 'i:t:T:m:M:' arg; do
+	local OPTIND arg instances ithreads=1 maxthreads memory=1 maxmemory dryrun=false
+	while getopts 'i:t:T:m:M:d' arg; do
 		case $arg in
 			i)	instances=$((OPTARG==0?1:OPTARG));;
 			t)	ithreads=$OPTARG;;
 			T)	maxthreads=$OPTARG;;
 			m)	memory=$OPTARG;;
 			M)	maxmemory=$OPTARG;;
+			d)	dryrun=true;;
 			*)	_usage
 		esac
 	done
 
-	local m
-	if [[ ! $maxmemory ]]; then
-		m=$(grep -F -i memavailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
-		maxmemory=$m
-	fi
-	m=$(grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+	[[ ! $maxmemory ]] && maxmemory=$m
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
-	local t=$(grep -cF processor /proc/cpuinfo)
+	local t=$($dryrun && [[ $maxthreads ]] && echo $maxthreads || grep -cF processor /proc/cpuinfo)
 	[[ ! $maxthreads ]] && maxthreads=$t
 	[[ $maxthreads -gt $t ]] && maxthreads=$t
 	[[ ! $instances ]] && instances=$maxthreads
