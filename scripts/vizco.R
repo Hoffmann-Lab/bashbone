@@ -46,20 +46,48 @@ if (datatype == "TPM") {
 	labeldatatype <- paste("log2",datatype,sep=" ")
 }
 
-mmin <- min(m)
-mmax <- max(m)
-breaks <- c(mmin,mmin+0.5,(mmax+mmin)/2,mmax-0.5,mmax)
-label <- c('',as.integer(mmin),labeldatatype,as.integer(mmax),'')
-
 write.table(data.frame(id=rownames(m),m,type=ac), quote=FALSE, row.names=F, sep="\t",
 	file = paste(outbase, "heatmap.tsv", sep=".")
 )
-pheatmap(m, color=rev(colorRampPalette(brewer.pal(9, 'RdBu'))(100)),
+
+# mmin <- min(m)
+# mmax <- max(m)
+# breaks <- c(mmin,mmin+0.5,(mmax+mmin)/2,mmax-0.5,mmax)
+# label <- c('',as.integer(mmin),labeldatatype,as.integer(mmax),'')
+# pheatmap(m, color=rev(colorRampPalette(brewer.pal(9, 'RdBu'))(100)),
+# 	cluster_cols = F, cluster_rows = F, filename = paste(outbase, "heatmap.pdf", sep="."),
+# 	gaps_row = gr, annotation_row = ar, main = "Heatmap",
+# 	annotation_names_row = F, show_rownames = F, border_color=NA,
+# 	legend_breaks = breaks, legend_labels = label
+# )
+
+if(min(m)<0) {
+	# use red (+) and blue (-)
+	color = rev(colorRampPalette(brewer.pal(9, "RdBu"))(100))
+	# define breaks from min to 0 and 0 to max according to number colors/2
+	breaks = c(seq(min(m), 0, length.out=51), seq(max(m)/100, max(m), length.out=50))
+	# define breaks around 0 and labels
+	legendbreaks = unique(c(seq(min(m), 0, length.out = round(-min(m)+1)) , seq(0, max(m), length.out = round(max(m)+1))))
+	legendlabels = round(legendbreaks)
+	legendlabels[legendlabels==0] = paste0(labeldatatype," ")
+} else {
+	# use simple gradient
+	color = colorRampPalette(brewer.pal(9, "GnBu"))(100)
+	# define breaks equal to heatmap default
+	breaks = seq(min(m), max(m), length.out=101)
+	# define breaks and labels
+	legendbreaks = seq(min(m), max(m), length.out=7)
+	legendlabels = round(legendbreaks)
+	legendlabels[1] = paste0(labeldatatype," ")
+}
+
+pheatmap(m, color=color,
 	cluster_cols = F, cluster_rows = F, filename = paste(outbase, "heatmap.pdf", sep="."),
 	gaps_row = gr, annotation_row = ar, main = "Heatmap",
 	annotation_names_row = F, show_rownames = F, border_color=NA,
-	legend_breaks = breaks, legend_labels = label
+	breaks = breaks, legend_breaks = legendbreaks, legend_labels = legendlabels
 )
+
 
 if(datatype != "TPM" && datatype != "VSC") quit()
 
