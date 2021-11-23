@@ -95,8 +95,8 @@ if [[ $BASHBONE_EXITFUN ]]; then
 else
 	trap 'sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::exit -p $$' EXIT
 fi
-# make use of local scope during functrace to trigger tmp file deletion etc.
-trap 'declare -F _cleanup::${FUNCNAME[0]} &> /dev/null && _cleanup::${FUNCNAME[0]}' RETURN
+# make use of local scope during functrace to trigger tmp file deletion etc. but do not call cleanup upon source command
+trap '_BASH_COMMAND="$BASH_COMMAND"; [[ ! "$_BASH_COMMAND" =~ ^source[[:space:]] ]] && declare -F _cleanup::${FUNCNAME[0]} &> /dev/null && _cleanup::${FUNCNAME[0]}' RETURN
 # error traps must not be splited into muliple lines to hold correct lineno
 if [[ $- =~ i ]]; then
 	# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte and other functions
