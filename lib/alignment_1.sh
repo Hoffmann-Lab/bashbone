@@ -380,7 +380,7 @@ alignment::bwa() {
 
 		local thismd5genome thismd5bwa
 		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
-		[[ -s "$idxprefix.bwt" ]] && thismd5bwa=$(md5sum "$idxprefix.bwt" | cut -d ' ' -f 1)
+		[[ -s "$idxprefix.pac" ]] && thismd5bwa=$(md5sum "$idxprefix.pac" | cut -d ' ' -f 1)
 		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5bwa" || "$thismd5bwa" != "$md5bwa" ]]; then
 			commander::printinfo "indexing genome for bwa"
 			declare -a cmdidx
@@ -391,7 +391,7 @@ alignment::bwa() {
 			CMD
 			commander::runcmd -c bwa -v -b -t $threads -a cmdidx
 			commander::printinfo "updating md5 sums"
-			thismd5bwa=$(md5sum "$idxprefix.bwt" | cut -d ' ' -f 1)
+			thismd5bwa=$(md5sum "$idxprefix.pac" | cut -d ' ' -f 1)
 			sed -i "s/md5bwa=.*/md5bwa=$thismd5bwa/" "$genome.md5.sh"
 		fi
 	fi
@@ -796,13 +796,13 @@ alignment::inferstrandness(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf level="exon" featuretag="gene_id" default="?"
+	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf level="exon" featuretag="gene_id" default
 	declare -n _mapper_inferstrandness _strandness_inferstrandness
 	while getopts 'S:s:t:r:x:g:l:f:p:o:d:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
-			d)	[[ $OPTARG ]] && default=$OPTARG || default="?";;
+			d)	default=$OPTARG;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			r)	((++mandatory)); _mapper_inferstrandness=$OPTARG;;
 			x)	((++mandatory)); _strandness_inferstrandness=$OPTARG;;
@@ -811,10 +811,20 @@ alignment::inferstrandness(){
 			*)	_usage;;
 		esac
 	done
-
 	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "inferring library preparation method"
+
+	local m f
+	if [[ $default ]]; then
+		for m in "${_mapper_inferstrandness[@]}"; do
+			declare -n _bams_inferstrandness=$m
+			for f in "${_bams_inferstrandness[@]}"; do
+				_strandness_inferstrandness["$f"]=$default
+			done
+		done
+		return 0
+	fi
 
 	tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)"
 	declare -a cmd1
@@ -873,8 +883,7 @@ alignment::inferstrandness(){
 				'
 			CMD
 
-			# skip case
-			_strandness_inferstrandness["$f"]=$default
+			_strandness_inferstrandness["$f"]='?' # skip case
 		done
 	done
 
