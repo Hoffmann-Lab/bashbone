@@ -7,11 +7,16 @@
 [[ ${BASH_VERSINFO[0]} -lt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -lt 4) ]] && echo "requieres bash >= v4.4" >&2 && return 1
 
 declare -F bashbone &> /dev/null && bashbone -x
+
 BASHBONE_BAK_PATH="$PATH"
 mapfile -t BASCHBONE_BAK_SHOPT < <(shopt | sed -E '/off$/d;{s/^(\S+).+/shopt -s \1/}')
+# mapfile -t BASCHBONE_BAK_ALIAS < <(alias)
+# unalias -a
 mapfile -t BASCHBONE_BAK_ERR < <(trap -p ERR)
-mapfile -t BASCHBONE_BAK_RET < <(trap -p RETURN)
+mapfile -t BASCHBONE_BAK_RETURN < <(trap -p RETURN)
 mapfile -t BASCHBONE_BAK_EXIT < <(trap -p EXIT)
+mapfile -t BASCHBONE_BAK_INT < <(trap -p INT)
+mapfile -t BASCHBONE_BAK_TERM < <(trap -p TERM)
 
 BASHBONE_WORKDIR="$PWD"
 BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
@@ -147,15 +152,18 @@ bashbone(){
 		a)	declare -F | grep -oE '\S+::\S+' | sort -t ':' -k1,1 -k3,3V; return 0;;
 		x)	shopt -u extdebug
 			set +E +o pipefail +o functrace
-			trap - ERR
 			trap - RETURN
+			trap - ERR
 			trap - EXIT
 			trap - INT
 			trap - TERM
-			source <(printf '%s\n' "${BASCHBONE_BAK_RET[@]}")
+			source <(printf '%s\n' "${BASCHBONE_BAK_RETURN[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_ERR[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_EXIT[@]}")
+			source <(printf '%s\n' "${BASCHBONE_BAK_INT[@]}")
+			source <(printf '%s\n' "${BASCHBONE_BAK_TERM[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_SHOPT[@]}")
+			# source <(printf '%s\n' "${BASCHBONE_BAK_ALIAS[@]}")
 			PATH="$BASHBONE_BAK_PATH"
 
 			local x
