@@ -219,6 +219,116 @@ bisulfite::segemehl() {
 	return 0
 }
 
+bisulfite::bwa() {
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-5 <skip>       | true/false md5sums, indexing respectively
+			-t <threads>    | number of
+			-r <mapper>     | array of bams within array of
+			-g <genome>     | path to
+			-o <outdir>     | path to
+			-1 <fastq1>     | array of
+			-2 <fastq2>     | array of
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome outdir
+	declare -n _fq1_bwa _fq2_bwa _mapper_bwa
+	declare -g -a bwa=()
+	while getopts 'S:s:5:t:a:i:g:m:r:o:p:1:2:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			5)	$OPTARG && skipmd5=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG/bwa"; mkdir -p "$outdir";;
+			r)	((++mandatory))
+				_mapper_bwa=$OPTARG
+				_mapper_bwa+=(bwa)
+			;;
+			1)	((++mandatory)); _fq1_bwa=$OPTARG;;
+			2)	_fq2_bwa=$OPTARG;;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 5 ]] && _usage
+
+	commander::printinfo "bisufite mapping bwa"
+
+	if $skipmd5; then
+		commander::warn "skip checking md5 sums and genome indexing respectively"
+	else
+		commander::printinfo "checking md5 sums"
+		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
+		source "$genome.md5.sh"
+
+		local thismd5genome thismd5bwameth
+		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
+		[[ -s "$genome.bwameth.c2t.pac" ]] && thismd5bwameth=$(md5sum "$genome.bwameth.c2t.pac" | cut -d ' ' -f 1)
+		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5bwameth" || "$thismd5bwameth" != "$md5bwameth" ]]; then
+			commander::printinfo "indexing genome for bwameth"
+			declare -a cmdidx
+			commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD
+				bwameth.py index-mem2 "$genome"
+			CMD
+			commander::runcmd -c bwameth -v -b -t $threads -a cmdidx
+			commander::printinfo "updating md5 sums"
+			thismd5bwameth=$(md5sum "$genome.bwameth.c2t.pac" | cut -d ' ' -f 1)
+			sed -i "s/md5bwameth=.*/md5bwameth=$thismd5bwameth/" "$genome.md5.sh"
+		fi
+	fi
+
+	declare -a cmd1
+	local o e
+	for i in "${!_fq1_bwa[@]}"; do
+		helper::basename -f "${_fq1_bwa[$i]}" -o o -e e
+		o="$outdir/$o"
+
+		if [[ ${_fq2_bwa[$i]} ]]; then
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+				bwameth.py
+					--do-not-penalize-chimeras
+					--read-group '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
+					--threads $threads
+					--reference "$genome"
+					"${_fq1_bwa[$i]}" "${_fq2_bwa[$i]}"
+			CMD
+				sed -E ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a'
+			CMD
+				samtools view -@ $threads -b > "$o.bam"
+			CMD
+			# sed corrects SA and XA tags, which bwameth does not change back from c2t (f+r) chromosomes i.e. (f|r)chr to chr
+		else
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+				bwameth.py
+					--do-not-penalize-chimeras
+					--read-group '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
+					--threads $threads
+					--reference "$genome"
+					"${_fq1_bwa[$i]}"
+			CMD
+				sed -E ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a'
+			CMD
+				samtools view -@ $threads -b > "$o.bam"
+			CMD
+		fi
+		bwa+=("$o.bam")
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+	else
+		commander::runcmd -c bwameth -v -b -t 1 -a cmd1
+	fi
+
+	return 0
+}
+
 bisulfite::mecall(){
 	declare -a tdirs
 	_cleanup::bisulfite::mecall(){

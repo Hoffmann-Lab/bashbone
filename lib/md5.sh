@@ -16,5 +16,8 @@ md5segemehlbs=MD5SUM
 #genome.fa.star.idx/SA
 md5star=MD5SUM
 
-#genome.fa.bwa.idx/bwa.bwt
+#genome.fa.bwa.idx/bwa.pac
 md5bwa=MD5SUM
+
+#genome.fa.bwameth.c2t.pac
+md5bwameth=MD5SUM

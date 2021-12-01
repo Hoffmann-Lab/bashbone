@@ -195,7 +195,7 @@ compile::conda(){
 compile::conda_tools() {
 	local insdir threads upgrade=false tool n bin doclean=false
 	declare -A envs
-
+	commander::printinfo "installing conda tools"
 	compile::_parse -r insdir -s threads -c upgrade "$@"
 	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
 	while read -r tool; do
@@ -241,7 +241,23 @@ compile::conda_tools() {
 		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 	done
 
-	# customized env setupus
+	# customized env setups
+
+	tool=bwameth
+	n=${tool/=*/}
+	n=${n//[^[:alpha:]]/}
+	$upgrade && ${envs[$n]:=false} || {
+		doclean=true
+		commander::printinfo "setup conda $n env"
+		conda create -y -n $n #python=3
+		conda install -n $n -y --override-channels -c iuc -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool bwa-mem2
+		# get latest functions from pull requensts like support for bwa-mem2 and report of supplementary/split alignments
+		curl -s "https://raw.githubusercontent.com/brentp/bwa-meth/master/bwameth.py" > "$insdir/conda/envs/bwameth/bin/bwameth.py"
+		sed -i 's/-CM/-C -Y/' "$insdir/conda/envs/bwameth/bin/bwameth.py" # by removal of -M splits/chimeric reads are marked as supplementary (which is the way to go!). -Y: apply soft-clipping instead of hard clipping to keep sequence info in bam (can be changed via)
+	}
+	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	done
 
 	tool=vardict
 	n=${tool/=*/}
