@@ -78,7 +78,7 @@ commander::makecmd(){
 
 			example 2:
 			${FUNCNAME[1]} -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-			    perl -sl - -y=$x <<< '
+			    perl -sl - -y=\$x <<< '
 			        print "\$x";
 			        print "\\\$y";
 			    '
@@ -256,8 +256,8 @@ commander::qsubcmd(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-v             | verbose on
-			-b             | benchmark on
 			-w             | do wait for jobs and receive a non-null exit code if a single job fails
+			-b             | benchmark on if do wait
 			-n <name>      | prefix of logs and jobs to wait for - should be unique
 			-c <env>       | run with conda
 			-l <complex>   | sge digestable list of consumables as key="value" pairs (see qconf -sc or qconf -mc)
@@ -313,12 +313,14 @@ commander::qsubcmd(){
 			rm -f "$logdir/job.$jobname.$id.log" "$ex"
 		fi
 		sh="$logdir/job.$jobname.$id.sh"
+
 		cat <<- EOF > "$sh"
 			#!/usr/bin/env bash
 			exit::$jobname.$id(){
 				echo "$jobname.$id exited with exit code \$1" >> "$ex"
 			}
 		EOF
+
 		if [[ $cenv ]]; then
 			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 			echo "conda activate $cenv" >> "$sh"
@@ -332,10 +334,29 @@ commander::qsubcmd(){
 	done
 
 	[[ $instances ]] || instances=$id
-	if $benchmark; then
-		TIMEFORMAT=':BENCHMARK: runtime %3lR [hours][minutes]seconds' # different to /usr/bin/time, bash builtin time can handle: time echo "sleep 2" | bash
-		time echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
-		# in case of job exit code > 0, leads to *** longjmp causes uninitialized stack frame ***: bash terminated
+
+	# compared to /usr/bin/time, bash builtin time can handle: time echo "sleep 2" | bash
+	# cons:
+	# - benchmarks only qsub not job itself
+	# - no memory consumption logged
+	# - in case of job exit code > 0, leads to *** longjmp causes uninitialized stack frame ***: bash terminated
+	# TIMEFORMAT=':BENCHMARK: runtime %3lR [hours][minutes]seconds'
+	# time echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
+
+	if $benchmark && [[ "$dowait" == "y" ]]; then
+		local jobid x message
+		while read -r x message; do
+			jobid=$x
+			echo "$message"
+		done < <(echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job ([0-9]+)\.(.+)\./\1 job.'$jobname'.\2/;t;s/Job ([0-9]+) (.+)\./\1 job.'$jobname'.1 \2/')
+
+		# use command qstat in case someone like me makes use of an alias :)
+		# wait until accounting record is written to epilog after jobs post-processing metrics collection
+		while command qstat -j $jobid &> /dev/null; do
+			sleep 1
+		done
+		qacct -j $jobid | perl -M'List::Util qw(min max)' -lanE 'if($F[0] eq "start_time"){$d=join(" ",@F[1..$#F]); $d=`date -d "$d" +%s`; $sta=min($d,$sta?$sta:$d)} if($F[0] eq "end_time"){$d=join(" ",@F[1..$#F]); $d=`date -d "$d" +%s`; $sto=max($d,$sto?$sto:$d)} END{$s=$sto-$sta; if($s>3600){$d=3600}else{$d=60}; $hm=sprintf("%.0d",$s/$d); $hm=0 unless $hm; $ms=sprintf("%05.2f",($s/$d-$hm)*60); say ":BENCHMARK: runtime $hm:$ms [hours:]minutes:seconds"}'
+		printf ":BENCHMARK: memory %s Kbytes\n" $(qacct -j $jobid | sed -nE 's/^ru_maxrss\s+([0-9.]+)\s*$/\1/p' | sort -gr | head -1)
 	else
 		echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
 	fi
