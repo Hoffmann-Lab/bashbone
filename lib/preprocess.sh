@@ -60,7 +60,7 @@ preprocess::dedup(){
 			CMD
 				awk -F '\t' -v OFS='\t' '{print $2$6$10,$0}'
 			CMD
-				LC_ALL=C sort --parallel=$t -S ${memory}M -T $tmpdir -k1,1
+				LC_ALL=C sort --parallel=$threads -S ${memory}M -T $tmpdir -k1,1
 			CMD
 				awk '{if($1!=s){print}; s=$1}'
 			CMD
