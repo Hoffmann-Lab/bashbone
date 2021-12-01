@@ -96,7 +96,7 @@ alignment::slice(){
 			alignment::_index -1 cmd2 -t $ithreads -i "$f"
 
 			mapfile -t mapdata < <(find "$tmpdir/genome" -maxdepth 1 -type f -name "slice.*.bed" | sort -V)
-			printf "%s\n" "${mapdata[@]}" sed -E "s@.+\.([0-9]+)\.bed@$o.slice.\1.bam@" > "$o.slices.info"
+			printf "%s\n" "${mapdata[@]}" | sed -E "s@.+\.([0-9]+)\.bed@$o.slice.\1.bam@" > "$o.slices.info"
 			_bamslices_slice["$f"]="$o.slices.info"
 
 			for bed in "${mapdata[@]}"; do
@@ -133,6 +133,7 @@ alignment::rmduplicates(){
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
+			-k             | keep marked duplicates in bam
 			-t <threads>   | number of
 			-m <memory>    | amount of
 			-M <maxmemory> | amount of
@@ -144,12 +145,13 @@ alignment::rmduplicates(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir outdir regex
+	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir outdir regex remove=true
 	declare -n _mapper_rmduplicates _bamslices_rmduplicates
-	while getopts 'S:s:t:m:M:x:r:c:p:o:' arg; do
+	while getopts 'S:s:t:m:M:x:r:c:p:o:k' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
+			k)	remove=false;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
 			M)	maxmemory=$OPTARG;;
@@ -197,7 +199,7 @@ alignment::rmduplicates(){
 						O="$slice.rmdup"
 						M="$slice.metrics"
 						$regex
-						REMOVE_DUPLICATES=true
+						REMOVE_DUPLICATES=$remove
 						ASSUME_SORT_ORDER=coordinate
 						VALIDATION_STRINGENCY=SILENT
 						VERBOSITY=WARNING
