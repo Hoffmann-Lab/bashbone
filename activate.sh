@@ -94,7 +94,7 @@ td="$(readlink -e "$BASHBONE_TOOLSDIR/latest")"
 [[ $td ]] && export PATH="$(readlink -e "$td/"!(java) | xargs -echo | sed 's/ /:/g'):$PATH"
 export PATH="$(readlink -e "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):$PATH"
 
-
+# error traps must not be splited into muliple lines to hold correct lineno
 if [[ $BASHBONE_EXITFUN ]]; then
 	trap 'e=$?; sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::exit -p $$ -f $BASHBONE_EXITFUN $e' EXIT
 else
@@ -102,14 +102,18 @@ else
 fi
 # make use of local scope during functrace to trigger tmp file deletion etc. but do not call cleanup upon source command
 trap '_BASH_COMMAND="$BASH_COMMAND"; [[ ! "$_BASH_COMMAND" =~ ^source[[:space:]] ]] && declare -F _cleanup::${FUNCNAME[0]} &> /dev/null && _cleanup::${FUNCNAME[0]}' RETURN
-# error traps must not be splited into muliple lines to hold correct lineno
+# trigger ERR upon error in subshell
 if [[ $- =~ i ]]; then
 	# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte and other functions
 	# although errtrace ignores errors upon 'while until for if || &&' in interactive shell it still triggers ERR trap on function definition line i.e. at LINENO==0 where error occured
-	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ $LINENO -gt 0 && ${FUNCNAME[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; return $e; else unset BASHBONE_TRAPPED; fi; fi' ERR
+	# lineno calculation does not work for error in subshell and function with cleaup. use +5 to at least workaround usage definition 1:_usage { 2:cat > EOF .. 3: EOF 4:return 1 5:}
+	trap 'return 1' USR1
+	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ $LINENO -gt 0 && ${FUNCNAME[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); if [[ $BASHPID -ne $$ ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $((LINENO+5)) -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; kill -USR1 $$; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; return $e; fi; else unset BASHBONE_TRAPPED; fi; fi' ERR
 else
 	# xargs creates funcname main for executing script. to prevent xargs in commander to continue despite of an error, set exit code to 255 so that xargs will stop immediately
-	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ ${FUNCNAME[0]} && "${FUNCNAME[0]}" != "main" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; return $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "${BASH_SOURCE[0]}" -w "$BASHBONE_WORKDIR"; exit 255; fi; fi' ERR
+	# errtrace or errexit + shopt -s inherit_errexit let shubshells inherit traps to let x=$(FAIL) terminate. to further let echo $(FAIL) terminate, trigger ERR in parent shell via usr trap by kill
+	trap 'false' USR1
+	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ ${FUNCNAME[0]} && "${FUNCNAME[0]}" != "main" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; if [[ $BASHPID -ne $$ ]]; then kill -USR1 $$; else return $e; fi; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "${BASH_SOURCE[0]}" -w "$BASHBONE_WORKDIR"; if [[ $BASHPID -ne $$ ]]; then kill -USR1 $$; else exit 255; fi; fi; fi' ERR
 fi
 trap 'BASHBONE_ERROR="killed by user or due to previous error"' INT TERM
 
