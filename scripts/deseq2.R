@@ -134,8 +134,8 @@ for (method in c("log","vsd","rld")){
 
 gplots_heatmap = function(){
 	if(min(df)<0) {
-		# use red (-) and blue (+)
-		color = colorRampPalette(brewer.pal(9, "RdBu"))(100)
+		# use red (+) and blue (-)
+		color = rev(colorRampPalette(brewer.pal(9, "RdBu"))(100))
 		# define breaks from min to 0 and 0 to max according to number colors/2
 		breaks = c(seq(min(df), 0, length.out=51), seq(max(df)/100, max(df), length.out=50))
 		keylabel = "Z-score "
@@ -230,8 +230,8 @@ get_heatmap = function(input,path){
 	###### pheatmap
 
 	if(min(df)<0) {
-		# use red (-) and blue (+)
-		color = colorRampPalette(brewer.pal(9, "RdBu"))(100)
+		# use red (+) and blue (-)
+		color = rev(colorRampPalette(brewer.pal(9, "RdBu"))(100))
 		# define breaks from min to 0 and 0 to max according to number colors/2
 		breaks = c(seq(min(df), 0, length.out=51), seq(max(df)/100, max(df), length.out=50))
 		# define breaks around 0 and labels
@@ -293,8 +293,8 @@ get_heatmap_mean = function(input,path){
 	rownames(df) = input$id
 
 	if(min(df)<0) {
-		# use red (-) and blue (+)
-		color = colorRampPalette(brewer.pal(9, "RdBu"))(100)
+		# use red (+) and blue (-)
+		color = rev(colorRampPalette(brewer.pal(9, "RdBu"))(100))
 		# define breaks from min to 0 and 0 to max according to number colors/2
 		breaks = c(seq(min(df), 0, length.out=51), seq(max(df)/100, max(df), length.out=50))
 		# define breaks around 0 and labels
