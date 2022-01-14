@@ -109,7 +109,7 @@ helper::makecatcmd(){
 	done
 	[[ $mandatory -lt 2 ]] && _usage
 
-	_makecatcmd=$(readlink -e "$f" | file -f - | grep -Eo '(gzip|bzip)' && echo -cd || echo cat)
+	_makecatcmd=$(readlink -e "$f" | file -f - | grep -Eo '(gzip|bzip)' | sed 's/gzip/pigz -p 1/;s/$/ -cd/' || echo cat)
 
 	return 0
 }
