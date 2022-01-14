@@ -26,12 +26,12 @@ configure::exit(){
 		$exitfun "$@"
 	}
 
-	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
-	{ kill -INT "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # includes pids of pstree parser pipeline above, thus throws errors necessary to be catched
-	# KILL is harsh and does not work for commander::runcmd abortion of parallel jobs
-	# INT does not send NOHUB signal
-	# TERM is graceful signal and likewise to INT is often cached by applications
-
+	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2)) # pstree < 23.0-1 : /proc/<id> no such file bug https://bugs.launchpad.net/ubuntu/+source/psmisc/+bug/1629839
+	{ kill -TERM "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # true due to grp and tail process ids of pstree pipeline
+	#kill -PIPE $p # is captured by bashbone. does not print termination message
+	#kill -INT $p # graceful kill. due to interrupt by user. probably captured by job or simply not delivered
+	#kill -TERM $p # graceful kill like INT but due to other process. probably captured by job.
+	#kill -KILL $p # cannot be captured. no job cleanup traps invoked
 	return 0
 }
 
@@ -72,7 +72,7 @@ configure::err(){
 		local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o$0}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o$0}else{o=""}}}' $src | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 		[[ $fun ]] && src="$src ($fun)"
 		commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
-		commander::printerr "$(eval "echo -e \"$cmd\"")"
+		# commander::printerr "$(eval "echo -e \"$cmd\"")"
 	else
 		[[ $fun ]] && src="$src ($fun)"
 		commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno"
