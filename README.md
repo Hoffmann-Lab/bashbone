@@ -337,6 +337,7 @@ cluster::coexpression -t $threads -M $memory -g $gtf -b protein_coding -f 02 -i 
 | Arriba        | <https://github.com/suhrig/arriba/>                                 | NA |
 | BamUtil       | <https://genome.sph.umich.edu/wiki/BamUtil>                         | 10.1101/gr.176552.114 |
 | BWA           | <https://github.com/lh3/bwa>                                        | 10.1093/bioinformatics/btp324 |
+| BWA-meth      | <https://github.com/brentp/bwa-meth>                                        | arXiv:1401.1129 |
 | BCFtools      | <http://www.htslib.org/doc/bcftools.html>                           | 10.1093/bioinformatics/btr509 |
 | BEDTools      | <https://bedtools.readthedocs.io>                                   | 10.1093/bioinformatics/btq033 |
 | bgztail       | <https://github.com/circulosmeos/bgztail>                           | NA |

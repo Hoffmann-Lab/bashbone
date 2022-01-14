@@ -298,11 +298,12 @@ bisulfite::bwa() {
 					--reference "$genome"
 					"${_fq1_bwa[$i]}" "${_fq2_bwa[$i]}"
 			CMD
-				sed -E ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a'
+				sed -E ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/(NM:i:\S+)(.*)\t(MD:Z:\S+)(.*)\t(RG:Z:\S+)(.*)\tYC:Z:(\S+)(.*)/HI:i:0\tNH:i:1\t\1\t\3\tXD:i:0\tXF:i:0\tXB:Z:F1\/\7\t\5\tYZ:Z:0\tYC:Z:\7\2\4\6\8/'
 			CMD
 				samtools view -@ $threads -b > "$o.bam"
 			CMD
 			# sed corrects SA and XA tags, which bwameth does not change back from c2t (f+r) chromosomes i.e. (f|r)chr to chr
+			# and adds/reorderes tags into segemehl like output for haarz: #bwa2sege -e 's/(NM:i:\S+)\t(MD:Z:\S+).+YC:Z:(\S+).+/HI:i:0\tNH:i:1\t\1\t\2\tXD:i:0\tXF:i:0\tXB:Z:F1\/\3\tRG:Z:A1\tYZ:Z:0/'
 		else
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 				bwameth.py
@@ -328,6 +329,9 @@ bisulfite::bwa() {
 
 	return 0
 }
+
+#todo gem: gem-mapper -p --bisulfite-mode -I c2t+g2a.fa.gem -s 1 -p -M 4 && bs_call -r genome.fa.gz -p -L5
+
 
 bisulfite::mecall(){
 	declare -a tdirs
