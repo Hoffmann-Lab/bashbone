@@ -113,6 +113,7 @@ variants::haplotypecaller() {
 						--smith-waterman FASTEST_AVAILABLE
 						--max-reads-per-alignment-start 0
 						--min-base-quality-score 20
+						--minimum-mapping-quality 0
 						--standard-min-confidence-threshold-for-calling 20
 						--native-pair-hmm-threads $mthreads
 						--max-alternate-alleles 3
@@ -364,6 +365,7 @@ variants::mutect() {
 						--f1r2-min-bq 20
 						--callable-depth 10
 						--min-base-quality-score 20
+						--minimum-mapping-quality 0
 						--minimum-allele-fraction 0.1
 						--native-pair-hmm-threads $mthreads
 						--verbosity INFO
