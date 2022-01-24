@@ -190,7 +190,7 @@ commander::runcmd(){
 				#!/usr/bin/env bash
 				exit::$(basename $sh)(){
 					if [[ \$1 -ne 0 ]]; then
-						configure::exit -p \$PPID
+						kill -TERM \$(pgrep -P \$PPID) &> /dev/null || true
 					fi
 				}
 			EOF
@@ -216,7 +216,7 @@ commander::runcmd(){
 				#!/usr/bin/env bash
 				exit::$(basename $sh)(){
 					if [[ \$1 -ne 0 ]]; then
-						configure::exit -p \$PPID
+						kill -TERM \$(pgrep -P \$PPID) &> /dev/null || true
 					fi
 				}
 			EOF
@@ -302,7 +302,7 @@ commander::qsubcmd(){
 	$verbose && commander::printinfo "running commands of array ${!_cmds_qsubcmd}"
 
 	[[ $penv ]] && params="$penv $threads" || params="$queue"
-	[[ $jobname ]] || jobname=$(mktemp -u -p "$logdir" XXXXXXXXXX)
+	[[ $jobname ]] || jobname="$(basename "$(mktemp -u -p "$logdir" XXXXXXXXXX)")"
 	local ex="$logdir/exitcodes.$jobname"
 	local log="$logdir/job.$jobname.\$TASK_ID.log" # not SGE_TASK_ID
 
