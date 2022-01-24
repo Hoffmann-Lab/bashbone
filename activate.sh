@@ -19,8 +19,8 @@ mapfile -t BASCHBONE_BAK_INT < <(trap -p INT)
 mapfile -t BASCHBONE_BAK_TERM < <(trap -p TERM)
 
 BASHBONE_WORKDIR="$PWD"
-BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
-BASHBONE_TOOLSDIR="$(dirname "$BASHBONE_DIR")"
+export BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
+export BASHBONE_TOOLSDIR="$(dirname "$BASHBONE_DIR")"
 unset OPTIND
 while getopts ':i:c:x:h' arg; do
 	case $arg in
@@ -54,7 +54,7 @@ while getopts ':i:c:x:h' arg; do
 	esac
 done
 
-set -o pipefail -o errtrace -o functrace # traces enable trap to know local scope of functions and shubshells that inherit ERR trap (-o errtrace) and RETURN and DEBUG trap (-o functrace)
+set +m -o pipefail -o errtrace -o functrace # traces enable trap to know local scope of functions and shubshells that inherit ERR trap (-o errtrace) and RETURN and DEBUG trap (-o functrace)
 shopt -s extdebug # do not shopt -u extdebug, otherwise set -E -o pipefail configuration will be nuked
 shopt -s extglob
 shopt -s expand_aliases
@@ -94,28 +94,29 @@ td="$(readlink -e "$BASHBONE_TOOLSDIR/latest")"
 [[ $td ]] && export PATH="$(readlink -e "$td/"!(java) | xargs -echo | sed 's/ /:/g'):$PATH"
 export PATH="$(readlink -e "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):$PATH"
 
-# error traps must not be splited into muliple lines to hold correct lineno
-if [[ $BASHBONE_EXITFUN ]]; then
-	trap 'e=$?; sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::exit -p $$ -f $BASHBONE_EXITFUN $e' EXIT
-else
-	trap 'sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::exit -p $$' EXIT
-fi
-# make use of local scope during functrace to trigger tmp file deletion etc. but do not call cleanup upon source command
-trap '_BASH_COMMAND="$BASH_COMMAND"; [[ ! "$_BASH_COMMAND" =~ ^source[[:space:]] ]] && declare -F _cleanup::${FUNCNAME[0]} &> /dev/null && _cleanup::${FUNCNAME[0]}' RETURN
-# trigger ERR upon error in subshell
+
+trap 'configure::exit -p $$ -f "$BASHBONE_EXITFUN" $?' EXIT
+trap 'exit 255' USR1
+trap '_trap_e=$?; _trap_cmd=$BASH_COMMAND; if [[ $_trap_e -gt 0 ]]; then return $_trap_e & fi; if [[ ! "$_trap_cmd" =~ ^source[[:space:]] ]]; then declare -f _cleanup::${FUNCNAME[0]} > /dev/null && _cleanup::${FUNCNAME[0]}; fi' RETURN
+trap '_bashbone_errtrap $? $BASHPID $$ $LINENO "${FUNCNAME[0]}" "${BASH_SOURCE[0]}"; return $?' ERR
+trap 'BASHBONE_ERROR="false"; false' INT TERM
 if [[ $- =~ i ]]; then
-	# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte and other functions
-	# although errtrace ignores errors upon 'while until for if || &&' in interactive shell it still triggers ERR trap on function definition line i.e. at LINENO==0 where error occured
-	# lineno calculation does not work for error in subshell and function with cleaup. use +5 to at least workaround usage definition 1:_usage { 2:cat > EOF .. 3: EOF 4:return 1 5:}
-	trap 'return 1' USR1
-	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ $LINENO -gt 0 && ${FUNCNAME[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); if [[ $BASHPID -ne $$ ]]; then configure::err -x $e -e "$BASHBONE_ERROR" -l $((LINENO+5)) -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; kill -USR1 $$; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; return $e; fi; else unset BASHBONE_TRAPPED; fi; fi' ERR
-else
-	# xargs creates funcname main for executing script. to prevent xargs in commander to continue despite of an error, set exit code to 255 so that xargs will stop immediately
-	# errtrace or errexit + shopt -s inherit_errexit let shubshells inherit traps to let x=$(FAIL) terminate. to further let echo $(FAIL) terminate, trigger ERR in parent shell via usr trap by kill
-	trap 'false' USR1
-	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ ${FUNCNAME[0]} && "${FUNCNAME[0]}" != "main" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; if [[ $BASHPID -ne $$ ]]; then kill -USR1 $$; else return $e; fi; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "${BASH_SOURCE[0]}" -w "$BASHBONE_WORKDIR"; if [[ $BASHPID -ne $$ ]]; then kill -USR1 $$; else exit 255; fi; fi; fi' ERR
+	trap '_trap_e=$?; if [[ $_trap_e -ne 141 && $LINENO -gt 0 && ${FUNCNAME[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then _bashbone_errtrap $_trap_e $BASHPID $$ $LINENO "${FUNCNAME[0]}" "${BASH_SOURCE[0]}"; return $?; fi' ERR
 fi
-trap 'BASHBONE_ERROR="killed by user or due to previous error"' INT TERM
+
+_bashbone_errtrap(){
+	local err=$1 pid=$2 ppid=$3 line=$4 fun=$5 src=$6
+	[[ $err -eq 141 ]] && return 0
+	if [[ $fun && "$fun" != "main" ]]; then
+		[[ "$BASHBONE_ERROR" != "false" && $line -gt 1 ]] && configure::err -x $err -e "$BASHBONE_ERROR" -l $line -f "$fun"
+		return $err
+	else
+		[[ "$BASHBONE_ERROR" != "false" && $line -gt 1 ]] && configure::err -x $err -e "$BASHBONE_ERROR" -l $line -s "$src" -w "$BASHBONE_WORKDIR"
+		kill -USR1 $ppid
+	fi
+	kill -PIPE $(pstree -Alps $pid | grep -oE "\($$).+\($pid\)" | grep -oE "[0-9]+" | tail -n +2)
+	return 0
+}
 
 
 bashbone(){
@@ -155,7 +156,7 @@ bashbone(){
 		d)	declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper::_ | grep -F -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
 		a)	declare -F | grep -oE '\S+::\S+' | sort -t ':' -k1,1 -k3,3V; return 0;;
 		x)	shopt -u extdebug
-			set +E +o pipefail +o functrace
+			set -m +E +o pipefail +o functrace
 			trap - RETURN
 			trap - ERR
 			trap - EXIT
