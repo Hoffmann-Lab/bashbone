@@ -27,7 +27,7 @@ configure::exit(){
 	}
 
 	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2)) # pstree < 23.0-1 : /proc/<id> no such file bug https://bugs.launchpad.net/ubuntu/+source/psmisc/+bug/1629839
-	{ kill -TERM "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # true due to grp and tail process ids of pstree pipeline
+	{ kill -TERM "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # true due to grep and tail process ids of pstree pipeline
 	#kill -PIPE $p # is captured by bashbone. does not print termination message
 	#kill -INT $p # graceful kill. due to interrupt by user. probably captured by job or simply not delivered
 	#kill -TERM $p # graceful kill like INT but due to other process. probably captured by job.
@@ -69,7 +69,7 @@ configure::err(){
 		[[ $- =~ i ]] && ((lineno+=line)) # do not!! use [[ ${BASH_EXECUTION_STRING} ]] || ((lineno+=line))
 	}
 	if [[ -e "$src" ]]; then # self sourcing by commander::runcmd and commander::qsubcmd with cleanup function may causes src to be removed before reaching this point
-		local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o$0}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o$0}else{o=""}}}' $src | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+		local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' $src | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 		[[ $fun ]] && src="$src ($fun)"
 		commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
 		# commander::printerr "$(eval "echo -e \"$cmd\"")"
