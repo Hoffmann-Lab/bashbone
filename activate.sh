@@ -54,6 +54,7 @@ while getopts ':i:c:x:h' arg; do
 	esac
 done
 
+# +m turns off job control to avoid "done" aor "terminated" messages of subshells
 set +m -o pipefail -o errtrace -o functrace # traces enable trap to know local scope of functions and shubshells that inherit ERR trap (-o errtrace) and RETURN and DEBUG trap (-o functrace)
 shopt -s extdebug # do not shopt -u extdebug, otherwise set -E -o pipefail configuration will be nuked
 shopt -s extglob
@@ -95,15 +96,22 @@ td="$(readlink -e "$BASHBONE_TOOLSDIR/latest")"
 export PATH="$(readlink -e "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):$PATH"
 
 
-trap 'configure::exit -p $$ -f "$BASHBONE_EXITFUN" $?' EXIT
-trap 'exit 255' USR1
-trap '_trap_e=$?; _trap_cmd=$BASH_COMMAND; if [[ $_trap_e -gt 0 ]]; then return $_trap_e & fi; if [[ ! "$_trap_cmd" =~ ^source[[:space:]] ]]; then declare -f _cleanup::${FUNCNAME[0]} > /dev/null && _cleanup::${FUNCNAME[0]}; fi' RETURN
-trap '_bashbone_errtrap $? $BASHPID $$ $LINENO "${FUNCNAME[0]}" "${BASH_SOURCE[0]}"; return $?' ERR
-trap 'BASHBONE_ERROR="false"; false' INT TERM
-if [[ $- =~ i ]]; then
-	trap '_trap_e=$?; if [[ $_trap_e -ne 141 && $LINENO -gt 0 && ${FUNCNAME[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then _bashbone_errtrap $_trap_e $BASHPID $$ $LINENO "${FUNCNAME[0]}" "${BASH_SOURCE[0]}"; return $?; fi' ERR
-fi
+trap 'configure::exit -p $$ -f "$BASHBONE_EXITFUN" $?' EXIT # fire last, global cleanup function and kill all remaining subshells
+trap '_trap_cmd=$BASH_COMMAND; if [[ ! "$_trap_cmd" =~ ^source[[:space:]] ]]; then declare -f _cleanup::${FUNCNAME[0]} > /dev/null && _cleanup::${FUNCNAME[0]}; fi' RETURN # fire cleanup function from local name space upon any return (success or failure). do not fire cleanup if returning from a source command
+trap 'exit 255' USR1 # define user signal, that can be received by $$ from any subshell or other process. use 255, in case xargs job failed, to prevent xargs to load and execute further, queued commands
+trap '_trap_e=$?; BASHBONE_ERROR="false"; (exit $_trap_e)' INT TERM # silence error messages which go out of sync, when e.g. TERM signal is received from failed sibling xargs job. INT signal is often not correctly received and thus needs to trigger ERR manually. note that INT/ctr-c by user kills subshells immediately -> no cleanup for inner subshell functions possible
+trap '_trap_e=$?; pid=$BASHPID; echo error ${FUNCNAME[0]} $_trap_e $LINENO; if [[ ${FUNCNAME[0]} && "${FUNCNAME[0]}" != "main" ]]; then return $_trap_e; else kill -USR1 $$; fi; kill -PIPE $(pstree -Alps $pid | grep -oE "\($$).+\($pid\)" | grep -oE "[0-9]+" | tail -n +2)' ERR
+# bubble-up/propagate exit code > 0 via return to continue ERR trap recursion on higher level function.
+# use _trap_VAR to derease risk of interference with dynamically loaded variable name space of current function recursion level
+# BASHPID set to last nested subshell pid keeps constant during trace -> contrast to LINENO which referes to recent BASH_LINENO[0] (in line to BASH_SOURCE[@]/FUNCNAME[@])
+# send PIPE signal to all nested subshells (parent pids between $BASHPID and $$) to kill them silently -> no conflict with 141/PIPE catch in ERR trap, since kill alone does not invoke ERR, despite of trap being inherited, without calling wait $! to receive exit code e.g. cat <(kill -PIPE $BASHPID) && echo mustNotShow vs cat <(kill -PIPE $BASHPID) && wait $! && echo mustNotShow
+# main as function name is not set from interactive shells or script execution as an other process like xargs -I {} bash -c '{}'
 
+trap '_trap_e=$?; _bashbone_errtrap $_trap_e $BASHPID $$ $LINENO "${FUNCNAME[0]}" "${BASH_SOURCE[0]}"; if [[ $? -gt 0 ]]; then return $_trap_e; fi' ERR # above is showcase only
+if [[ $- =~ i ]]; then
+	# do not exit on interactive shells ;)
+	trap '_trap_e=$?; if [[ $_trap_e -ne 141 && $LINENO -gt 0 && ${FUNCNAME[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then _bashbone_errtrap $_trap_e $BASHPID $$ $LINENO "${FUNCNAME[0]}" "${BASH_SOURCE[0]}"; if [[ $? -gt 0 ]]; then return $_trap_e; fi; fi' ERR
+fi
 _bashbone_errtrap(){
 	local err=$1 pid=$2 ppid=$3 line=$4 fun=$5 src=$6
 	[[ $err -eq 141 ]] && return 0
@@ -114,7 +122,9 @@ _bashbone_errtrap(){
 		[[ "$BASHBONE_ERROR" != "false" && $line -gt 1 ]] && configure::err -x $err -e "$BASHBONE_ERROR" -l $line -s "$src" -w "$BASHBONE_WORKDIR"
 		kill -USR1 $ppid
 	fi
-	kill -PIPE $(pstree -Alps $pid | grep -oE "\($$).+\($pid\)" | grep -oE "[0-9]+" | tail -n +2)
+	if [[ $pid -ne $ppid ]]; then
+		kill -PIPE $(pstree -Alps $pid | grep -oE "\($ppid).+\($pid\)" | grep -oE "[0-9]+" | tail -n +2) &> /dev/null || true
+	fi
 	return 0
 }
 
