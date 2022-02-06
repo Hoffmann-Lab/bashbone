@@ -659,13 +659,11 @@ alignment::_uniqify() {
 	local x=$(samtools view -F 4 "$sambam" | head -10000 | cat <(samtools view -H "$sambam") - | samtools view -c -f 1)
 	[[ $x -gt 0 ]] && params+='-f 2 '
 
-	if [[ "$m" =~ bwa || "$m" =~ bowtie || "$m" =~ tophat || "$m" =~ hisat || "$m" =~ star || \
-		$(samtools view -F 4 "$sambam" | head -10000 | grep -cE '\s+NH:i:[0-9]+\s+' ) -eq 0 ]]; then
-
+	if [[ $(samtools view -F 4 "$sambam" | head -10000 | grep -cE '\s+NH:i:[0-9]+\s+' ) -eq 0 ]]; then
 		#extract uniques just by MAPQ
-		[[ "$m" == "star" ]] && params+='-q 60' || params+='-q 1'
 		commander::makecmd -a _cmds2_uniqify -s ';' -c {COMMANDER[0]}<<- CMD
 			samtools view
+				-q 1
 				$params
 				-@ $ithreads
 				-F 4
@@ -675,23 +673,39 @@ alignment::_uniqify() {
 				> "$_returnfile_uniqify"
 		CMD
 	else
-		# sed is faster than grep here
-		commander::makecmd -a _cmds2_uniqify -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-			LC_ALL=C samtools view
-				$params
-				-h
-				-@ $ithreads
-				-F 4
-				-F 256
-				"$sambam"
-		CMD
-			sed -n '/^@/p; /\tNH:i:1\t/p'
-		CMD
-			samtools view
-				-@ $ithreads
-				-b
+		declare -a cmdchk=("samtools --version | head -1 | cut -d '.' -f 2")
+		local version=$(commander::runcmd -a cmdchk)
+		if [[ $version -lt 12 ]]; then
+			# sed is faster than grep here
+			commander::makecmd -a _cmds2_uniqify -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+				LC_ALL=C samtools view
+					$params
+					-h
+					-@ $ithreads
+					-F 4
+					-F 256
+					"$sambam"
+			CMD
+				sed -n '/^@/p; /\tNH:i:1\t/p'
+			CMD
+				samtools view
+					-@ $ithreads
+					-b
+					> "$_returnfile_uniqify"
+			CMD
+		else
+			commander::makecmd -a _cmds2_uniqify -s ';' -c {COMMANDER[0]}<<- CMD
+				samtools view
+					$params
+					-b
+					-@ $ithreads
+					-F 4
+					-F 256
+					-d NH:1
+					"$sambam"
 				> "$_returnfile_uniqify"
-		CMD
+			CMD
+		fi
 	fi
 
 	return 0
@@ -1071,10 +1085,15 @@ alignment::qcstats(){
 				rm -f "$o"
 			fi
 			for bam in "${_mi_bamstats[@]}"; do
+				# total = mapped + secondary + supplementary + unmapped (if bam contains unmapped, else total - secondary - supplementary = 0 = unmapped)
+				# % = mapped/total <- silly
+				# primary = mapped - secondary - supplementary
 				[[ ! $filter ]] && filter='mapped' || filter=$(echo "${bam/\.sorted\./.}" | rev | cut -d '.' -f 2 | rev)
-				a=$(grep mapped -m 1 "${bam%.*}.flagstat" | cut -d ' ' -f 1)
-				s=$(grep secondary -m 1 "${bam%.*}.flagstat" | cut -d ' ' -f 1) # get rid of multicounts - 0 if unique reads in bam only
+				a=$(grep -m 1 -F mapped "${bam%.*}.flagstat" | cut -d ' ' -f 1)
+				s=$(grep -m 1 -F secondary "${bam%.*}.flagstat" | cut -d ' ' -f 1) # get rid of multicounts - 0 if unique reads in bam only
 				c=$((a-s))
+				s=$(grep -m 1 -F supplementary "${bam%.*}.flagstat" | cut -d ' ' -f 1) # get rid of multicounts - 0 if unique reads in bam only
+				c=$((c-s))
 				[[ ! $all ]] && all=$c # set all to what was mapped in first file unless preprocessing fastq stats file was found
 				echo -e "$b\t$filter reads\t$c" >> "$o"
 			done
