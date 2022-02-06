@@ -19,46 +19,17 @@ progress::_bar() {
 }
 
 progress::log() {
-	_usage(){
-		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-v [0|1|2]    | verbosity level
-			-o <logfile>  | path to
-		EOF
-		return 1
+	local tmpdir
+	_cleanup::progress::log(){
+		rm -rf "$tmpdir"
 	}
 
-	local OPTIND arg mandatory log verbosity
-	while getopts 'v:o:' arg; do
-		case $arg in
-			v)	((++mandatory)); verbosity=$OPTARG;;
-			o)	((++mandatory)); log="$OPTARG";;
-			*)	_usage;;
-		esac
-	done
-	[[ $mandatory -lt 2 ]] && _usage
-
-	commander::printinfo "$(date)" > "$log"
-	# do not grep :ERROR: since this goes to stderr and will be printed anyways
-	case $verbosity in
-		0)	progress::_bar &
-			{ tail -f "$log" | grep -E --line-buffered '^\s*(:INFO:|:BENCHMARK:|:WARNING:)'; } &
-			;;
-		1)	progress::_bar &
-			{ tail -f "$log" | grep -E --line-buffered '^\s*(:INFO:|:CMD:|:BENCHMARK:|:WARNING:)'; } &
-			;;
-	esac
-
-	return 0
-}
-
-progress::observe() {
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-v [0|1|2]    | verbosity level
 			-o <logfile>  | path to
-			-f <function> | and parameters
+			-f <function> | and parameters - needs to be last!
 		EOF
 		return 1
 	}
@@ -67,21 +38,31 @@ progress::observe() {
 	while getopts 'v:o:f:' arg; do
 		case $arg in
 			v)	((++mandatory)); verbosity=$OPTARG;;
-			o)	((++mandatory)); log="$OPTARG";;
-			f)	fun=$OPTARG
-				[[ $mandatory -lt 2 ]] && _usage
-				shift $((OPTIND-1))
-				case $verbosity in
-					0)	$fun "$@" 2> >(tee -ai "$log" | grep -E --line-buffered '^\s*:ERROR:' >&2 || true) >> "$log";;
-					1)	$fun "$@" 2> >(tee -ai "$log" | grep -E --line-buffered '^\s*:ERROR:' >&2 || true) >> "$log";;
-					2)	$fun "$@" 2> >(tee -ai "$log" >&2) | tee -ai "$log";;
-					*)	_usage;;
-				esac
-				return 0
-			;;
+			o)	((++mandatory)); log="$OPTARG"; mkdir -p "$(dirname "$log")";;
+			f)	((++mandatory)); fun=$OPTARG; shift $((OPTIND-1));;
 			*)	_usage;;
 		esac
 	done
+	[[ $mandatory -lt 3 ]] && _usage
 
-	_usage
+	tmpdir="$(mktemp -d -p "/dev/shm" fifo.XXXXXXXXXX)"
+	mkfifo "$tmpdir/stderr" "$tmpdir/stdout"
+	case $verbosity in
+		0)	jobs | grep -F 'progress::_bar' || progress::_bar &
+			tee -ia "$log" < "$tmpdir/stdout" | grep -E --line-buffered '^\s*(:INFO:|:BENCHMARK:|:WARNING:)' &
+			tee -ia "$log" < "$tmpdir/stderr" | grep -E --line-buffered '^\s*:ERROR:' >&2 &
+			;;
+		1)	jobs | grep -F 'progress::_bar' || progress::_bar &
+			tee -ia "$log" < "$tmpdir/stdout" | grep -E --line-buffered '^\s*(:INFO:|:CMD:|:BENCHMARK:|:WARNING:)' &
+			tee -ia "$log" < "$tmpdir/stderr" | grep -E --line-buffered '^\s*:ERROR:' >&2 &
+		;;
+		2)	tee -ia "$log" < "$tmpdir/stdout" &
+			tee -ia "$log" < "$tmpdir/stderr" >&2 &
+		;;
+		*)	_usage;;
+	esac
+
+	$fun "$@" 2> "$tmpdir/stderr" > "$tmpdir/stdout"
+
+	return 0
 }

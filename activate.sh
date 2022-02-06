@@ -19,8 +19,8 @@ mapfile -t BASCHBONE_BAK_INT < <(trap -p INT)
 mapfile -t BASCHBONE_BAK_TERM < <(trap -p TERM)
 
 BASHBONE_WORKDIR="$PWD"
-BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
-BASHBONE_TOOLSDIR="$(dirname "$BASHBONE_DIR")"
+export BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
+export BASHBONE_TOOLSDIR="$(dirname "$BASHBONE_DIR")"
 unset OPTIND
 while getopts ':i:c:x:h' arg; do
 	case $arg in
@@ -54,7 +54,8 @@ while getopts ':i:c:x:h' arg; do
 	esac
 done
 
-set -o pipefail -o errtrace -o functrace # traces enable trap to know local scope of functions and shubshells that inherit ERR trap (-o errtrace) and RETURN and DEBUG trap (-o functrace)
+# +m turns off job control to avoid "done" aor "terminated" messages of subshells
+set +m -o pipefail -o errtrace -o functrace # traces enable trap to know local scope of functions and shubshells that inherit ERR trap (-o errtrace) and RETURN and DEBUG trap (-o functrace)
 shopt -s extdebug # do not shopt -u extdebug, otherwise set -E -o pipefail configuration will be nuked
 shopt -s extglob
 shopt -s expand_aliases
@@ -77,7 +78,7 @@ BASHBONE_VERSION=$version
 
 if ${BASHBONE_CONDA:-false}; then
 	BASHBONE_ERROR="conda activation failed. use -c false to disable conda activation"
-	source $BASHBONE_TOOLSDIR/conda/bin/activate base &> /dev/null
+	source $BASHBONE_TOOLSDIR/conda/bin/activate bashbone &> /dev/null
 else
 	[[ $BASHBONE_CONDA ]] || {
 		commander::printinfo {COMMANDER[0]}<<- EOF
@@ -94,24 +95,37 @@ td="$(readlink -e "$BASHBONE_TOOLSDIR/latest")"
 [[ $td ]] && export PATH="$(readlink -e "$td/"!(java) | xargs -echo | sed 's/ /:/g'):$PATH"
 export PATH="$(readlink -e "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):$PATH"
 
+trap 'configure::exit -p $$ -f "$BASHBONE_EXITFUN" $?' EXIT # fire last, global cleanup function and kill all remaining subshells
+trap '_trap_cmd=$BASH_COMMAND; if [[ ! "$_trap_cmd" =~ ^source[[:space:]] ]]; then declare -f _cleanup::${FUNCNAME[0]} > /dev/null && _cleanup::${FUNCNAME[0]}; fi' RETURN # fire cleanup function from local name space upon any return (success or failure). do not fire cleanup if returning from a source command
+trap 'exit 255' USR1 # define user signal, that can be received by $$ from any subshell or other process. use 255, in case xargs job failed, to prevent xargs to load and execute further, queued commands
+trap '_trap_e=$?; BASHBONE_ERROR="false"; (exit $_trap_e)' INT TERM # silence error messages which go out of sync, when e.g. TERM signal is received from failed sibling xargs job. INT signal is often not correctly received and thus needs to trigger ERR manually. note that INT/ctr-c by user kills subshells immediately -> no cleanup for inner subshell functions possible
+trap '_trap_e=$?; pid=$BASHPID; echo error ${FUNCNAME[0]} $_trap_e $LINENO; if [[ ${FUNCNAME[0]} && "${FUNCNAME[0]}" != "main" ]]; then return $_trap_e; else kill -USR1 $$; fi; kill -PIPE $(pstree -Alps $pid | grep -oE "\($$).+\($pid\)" | grep -oE "[0-9]+" | tail -n +2)' ERR
+# bubble-up/propagate exit code > 0 via return to continue ERR trap recursion on higher level function.
+# use _trap_VAR to derease risk of interference with dynamically loaded variable name space of current function recursion level
+# BASHPID set to last nested subshell pid keeps constant during trace -> contrast to LINENO which referes to recent BASH_LINENO[0] (in line to BASH_SOURCE[@]/FUNCNAME[@])
+# send PIPE signal to all nested subshells (parent pids between $BASHPID and $$) to kill them silently -> no conflict with 141/PIPE catch in ERR trap, since kill alone does not invoke ERR, despite of trap being inherited, without calling wait $! to receive exit code e.g. cat <(kill -PIPE $BASHPID) && echo mustNotShow vs cat <(kill -PIPE $BASHPID) && wait $! && echo mustNotShow
+# main as function name is not set from interactive shells or script execution as an other process like xargs -I {} bash -c '{}'
 
-if [[ $BASHBONE_EXITFUN ]]; then
-	trap 'e=$?; sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::exit -p $$ -f $BASHBONE_EXITFUN $e' EXIT
-else
-	trap 'sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::exit -p $$' EXIT
-fi
-# make use of local scope during functrace to trigger tmp file deletion etc. but do not call cleanup upon source command
-trap '_BASH_COMMAND="$BASH_COMMAND"; [[ ! "$_BASH_COMMAND" =~ ^source[[:space:]] ]] && declare -F _cleanup::${FUNCNAME[0]} &> /dev/null && _cleanup::${FUNCNAME[0]}' RETURN
-# error traps must not be splited into muliple lines to hold correct lineno
+trap '_trap_e=$?; _bashbone_errtrap $_trap_e $BASHPID $$ $LINENO "${FUNCNAME[0]}" "${BASH_SOURCE[0]}"; if [[ $? -gt 0 ]]; then return $_trap_e; fi' ERR # above is showcase only
 if [[ $- =~ i ]]; then
-	# since trap needs to persist in shell, make sure return is triggerd only from sourced bashbone functions. otherwise there will be issues with bash completion, vte and other functions
-	# although errtrace ignores errors upon 'while until for if || &&' in interactive shell it still triggers ERR trap on function definition line i.e. at LINENO==0 where error occured
-	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ $LINENO -gt 0 && ${FUNCNAME[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; return $e; else unset BASHBONE_TRAPPED; fi; fi' ERR
-else
-	# xargs creates funcname main for executing script. to prevent xargs in commander to continue despite of an error, set exit code to 255 so that xargs will stop immediately
-	trap 'e=$?; if [[ $e -ne 141 ]]; then if [[ ${FUNCNAME[0]} && "${FUNCNAME[0]}" != "main" ]]; then sleep $((++BASHBONE_TRAPPED==1?1:0)); configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -f "${FUNCNAME[0]}" -w "$BASHBONE_WORKDIR"; return $e; else configure::err -x $e -e "$BASHBONE_ERROR" -l $LINENO -s "${BASH_SOURCE[0]}" -w "$BASHBONE_WORKDIR"; exit 255; fi; fi' ERR
+	# do not exit on interactive shells ;)
+	trap '_trap_e=$?; if [[ $_trap_e -ne 141 && $LINENO -gt 0 && ${FUNCNAME[0]} && "$(cd "$BASHBONE_WORKDIR"; readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then _bashbone_errtrap $_trap_e $BASHPID $$ $LINENO "${FUNCNAME[0]}" "${BASH_SOURCE[0]}"; if [[ $? -gt 0 ]]; then return $_trap_e; fi; fi' ERR
 fi
-trap 'BASHBONE_ERROR="killed by user or due to previous error"' INT TERM
+_bashbone_errtrap(){
+	local err=$1 pid=$2 ppid=$3 line=$4 fun=$5 src=$6
+	[[ $err -eq 141 ]] && return 0
+	if [[ $fun && "$fun" != "main" ]]; then
+		[[ "$BASHBONE_ERROR" != "false" && $line -gt 1 ]] && configure::err -x $err -e "$BASHBONE_ERROR" -l $line -f "$fun"
+		return $err
+	else
+		[[ "$BASHBONE_ERROR" != "false" && $line -gt 1 ]] && configure::err -x $err -e "$BASHBONE_ERROR" -l $line -s "$src" -w "$BASHBONE_WORKDIR"
+		kill -USR1 $ppid
+	fi
+	if [[ $pid -ne $ppid ]]; then
+		kill -PIPE $(pstree -Alps $pid | grep -oE "\($ppid).+\($pid\)" | grep -oE "[0-9]+" | tail -n +2) &> /dev/null || true
+	fi
+	return 0
+}
 
 
 bashbone(){
@@ -132,17 +146,18 @@ bashbone(){
 			-e | list functions for experienced users
 			-d | list functions for developers
 			-a | list all, including non-standalone, functions
+			-t | list tools and versions in setupped environment
 			-x | exit bashbone and revert changes to environment
 		EOF
 		return 0
 	}
 
 	local OPTIND arg
-	while getopts 'hrcsuvledax' arg; do
+	while getopts 'hrcsuvledtax' arg; do
 		case $arg in
 		h)	_usage; return 0;;
 		r)	mdless -P $BASHBONE_DIR/README.md | less; return 0;;
-		c)	source $BASHBONE_TOOLSDIR/conda/bin/activate base &> /dev/null;	commander::printinfo "utilizing $(conda --version)"; return 0;;
+		c)	source $BASHBONE_TOOLSDIR/conda/bin/activate bashbone &> /dev/null;	commander::printinfo "utilizing $(conda --version)"; return 0;;
 		s)	while [[ -n $CONDA_PREFIX ]]; do conda deactivate &> /dev/null; done; return 0;;
 		u)	find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n"; find "$BASHBONE_DIR/scripts/" -type f -name "*.pl" -printf "%f\n" -o -name "*.sh" -printf "%f\n" | rev | sort | rev; return 0;;
 		v)	find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n"; find "$BASHBONE_DIR/scripts/" -type f -printf "%f\n" | rev | sort | rev; return 0;;
@@ -150,8 +165,16 @@ bashbone(){
 		e)	declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
 		d)	declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper::_ | grep -F -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
 		a)	declare -F | grep -oE '\S+::\S+' | sort -t ':' -k1,1 -k3,3V; return 0;;
+		t)	(	source $BASHBONE_TOOLSDIR/conda/bin/activate base
+				mapfile -t mapdata < <({ readlink -e "$BASHBONE_TOOLSDIR"/latest/* | sed -nE 's@.*\/([^/]+)-([0-9][^/]+)\/*.*@\L\1\t\2@p;'; conda list | grep -vE '^(#|lib|perl-|xorg-|r-|python-|font)' | tr -s ' ' '\t'; } | sort -k1,1 -k2,2Vr | cut -f 1,2)
+				for e in $(conda env list | grep -F "$BASHBONE_TOOLSDIR" | grep -v '^base' | cut -f 1 -d ' '); do
+					conda list -n $e | grep -vE '^(#|lib|perl-|xorg-|r-|python-|font)'
+				done | tr -s ' ' '\t' | sort -k1,1 -k2,2Vr | cut -f 1,2 | rev | uniq -f 1 | rev | grep -v -F -f <(printf "%s\n" "${mapdata[@]}" | cut -f 1) | sort -k1,1 - <(printf "%s\n" "${mapdata[@]}")
+			)
+			return 0
+		;;
 		x)	shopt -u extdebug
-			set +E +o pipefail +o functrace
+			set -m +E +o pipefail +o functrace
 			trap - RETURN
 			trap - ERR
 			trap - EXIT

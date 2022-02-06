@@ -10,36 +10,53 @@ enrichment::_ora(){
 			-d <domain>   | biological_process or cellular_component or molecular_function
 			-g <gofile>   | path to
 			-i <idsfile>  | path to
+			-j <tpmfile>  | tpm experiments file path to
 			-o <outdir>   | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads domain gofile idsfile outdir
+	local OPTIND arg mandatory threads domain gofile idsfile tpmtsv outdir
 	declare -n _cmds1_ora _cmds2_ora
-	while getopts '1:2:d:g:i:o:' arg; do
+	while getopts '1:2:d:g:i:j:o:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_ora=$OPTARG;;
 			2)	((++mandatory)); _cmds2_ora=$OPTARG;;
 			d)	((++mandatory)); domain=$OPTARG;;
 			g)	((++mandatory)); gofile="$OPTARG";;
 			i)	((++mandatory)); idsfile="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG";;
+			j)	tpmtsv="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 6 ]] && _usage
 
-	commander::makecmd -a _cmds1_ora -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-		grep -F $domain $gofile
-	CMD
-		perl -F'\t' -lane '
-			push @{$m{$F[1]}},$F[0];
-			END{
-				print join"\t",($_,"NA",@{$m{$_}}) for keys %m
-			}
-		'
-	CMD
+	if [[ $tpmtsv ]]; then
+		commander::makecmd -a _cmds1_ora -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
+			grep -F $domain "$gofile"
+		CMD
+			grep -F -f <(perl -M'List::Util qw(max)' -lanE 'say \$F[0] if max(@F)>=1 && \$.>1' "$tpmtsv")
+		CMD
+			perl -F'\t' -lane '
+				push @{$m{$F[1]}},$F[0];
+				END{
+					print join"\t",($_,"NA",@{$m{$_}}) for keys %m
+				}
+			'
+		CMD
+	else
+		commander::makecmd -a _cmds1_ora -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+			grep -F $domain "$gofile"
+		CMD
+			perl -F'\t' -lane '
+				push @{$m{$F[1]}},$F[0];
+				END{
+					print join"\t",($_,"NA",@{$m{$_}}) for keys %m
+				}
+			'
+		CMD
+	fi
 
 	commander::makecmd -a _cmds2_ora -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
@@ -79,36 +96,53 @@ enrichment::_gsea(){
 			-d <domain>   | biological_process or cellular_component or molecular_function
 			-g <gofile>   | path to
 			-i <deseqtsv> | path to
+			-j <tpmfile>  | tpm experiments file path to
 			-o <outdir>   | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads domain gofile deseqtsv outdir
+	local OPTIND arg mandatory threads domain gofile deseqtsv tpmtsv outdir
 	declare -n _cmds1_gsea _cmds2_gsea
-	while getopts '1:2:d:g:i:o:' arg; do
+	while getopts '1:2:d:g:i:j:o:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_gsea=$OPTARG;;
 			2)	((++mandatory)); _cmds2_gsea=$OPTARG;;
 			d)	((++mandatory)); domain=$OPTARG;;
 			g)	((++mandatory)); gofile="$OPTARG";;
 			i)	((++mandatory)); deseqtsv="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG";;
+			j)	tpmtsv="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 6 ]] && _usage
 
-	commander::makecmd -a _cmds1_gsea -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-		grep -F $domain $gofile
-	CMD
-		perl -F'\t' -lane '
-			push @{$m{$F[1]}},$F[0];
-			END{
-				print join"\t",($_,"NA",@{$m{$_}}) for keys %m
-			}
-		'
-	CMD
+	if [[ $tpmtsv ]]; then
+		commander::makecmd -a _cmds1_gsea -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
+			grep -F $domain "$gofile"
+		CMD
+			grep -F -f <(perl -M'List::Util qw(max)' -lanE 'say \$F[0] if max(@F)>=1 && \$.>1' "$tpmtsv")
+		CMD
+			perl -F'\t' -lane '
+				push @{$m{$F[1]}},$F[0];
+				END{
+					print join"\t",($_,"NA",@{$m{$_}}) for keys %m
+				}
+			'
+		CMD
+	else
+		commander::makecmd -a _cmds1_gsea -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+			grep -F $domain "$gofile"
+		CMD
+			perl -F'\t' -lane '
+				push @{$m{$F[1]}},$F[0];
+				END{
+					print join"\t",($_,"NA",@{$m{$_}}) for keys %m
+				}
+			'
+		CMD
+	fi
 
 	commander::makecmd -a _cmds2_gsea -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
@@ -119,10 +153,7 @@ enrichment::_gsea(){
 			odir <- args[3];
 
 			df <- read.table(ddsr, header=T, sep="\t", stringsAsFactors=F);
-			df <- df[!is.na(df$log2FoldChange) , ];
 			df <- df[!is.na(df$padj) , ];
-			df <- df[df$baseMean > 0 , ];
-			df <- df[abs(df$log2FoldChange)>=0.5 , ];
 			df <- df[df$padj<=0.05 , ];
 
 			gsea <- data.frame(matrix(ncol = 4, nrow = 0));
@@ -193,6 +224,7 @@ enrichment::_revigo(){
 	CMD
 
 	# don't to 10**(-df$log10_p.value), values will get too small and treemap will fail
+	# don't kick not representative values
 	commander::makecmd -a _cmds2_revigo -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
 			suppressMessages(library("treemap"));
@@ -202,9 +234,9 @@ enrichment::_revigo(){
 			domain <- args[3];
 			df <- read.table(revigo, header=T, sep="\t");
 			df$log10_p.value = -(df$log10_p.value);
-			df <- df[df$dispensability<0.7,];
+			df$representative <- df[sapply(df$representative,function(x) which(df$term_ID==x)),"description"];
 			pdf(outf, width=16, height=9);
-			treemap(df, index = "description", vSize = "log10_p.value", type = "categorical",
+			treemap(df, index = "representative", vSize = "log10_p.value", type = "categorical",
 				vColor = "representative", title = domain, inflate.labels = T,
 				lowerbound.cex.labels = 0, force.print.labels = T, position.legend = "none");
 			graphics.off();
@@ -221,23 +253,55 @@ enrichment::_revigo(){
 			revigo <- args[2];
 			outf <- args[3];
 			domain <- args[4];
-			minbars=10;
 			c <- read.table(gsea,header=T,sep="\t");
 			colnames(c)[1] <- "term_ID";
 			df <- read.table(revigo,header=T,sep="\t");
 			df <- merge(df,c,by="term_ID");
 			df$description <- paste(df$description," ","(",df$count,")", sep="");
-			df=df[order(df$log10_p.value),];
-			df=head(df,min(minbars,nrow(df)));
-			pdf(outf,width=max(nchar(df$description))/5,height=min(minbars,nrow(df))/2+1.8);
+
+			df <- df[order(df$log10_p.value),];
+			bars <- min(10,nrow(df));
+			dfp <- head(df,bars);
+			pdf(paste0(outf,".pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
 			par(mar=c(5,max(nchar(df$description))/3+3,5,1));
-			barplot(rev(-(df$log10_p.value)), main=domain, horiz=T, names.arg=rev(df$description),
-				xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(df$log10_p.value)+5)),
+			barplot(rev(-(dfp$log10_p.value)), main=paste0(domain," (Top ",bars,")"), horiz=T, names.arg=rev(dfp$description),
+				xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(dfp$log10_p.value)+5)),
+				cex.names=0.8, las=1);
+			graphics.off();
+
+			bars <- nrow(df);
+			dfp <- df;
+			pdf(paste0(outf,".full.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
+			par(mar=c(5,max(nchar(df$description))/3+3,5,1));
+			barplot(rev(-(dfp$log10_p.value)), main=domain, horiz=T, names.arg=rev(dfp$description),
+				xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(dfp$log10_p.value)+5)),
+				cex.names=0.8, las=1);
+			graphics.off();
+
+
+			df <- df[df$term_ID %in% df$representative,];
+
+			df <- df[order(df$log10_p.value),];
+			bars <- min(10,nrow(df));
+			dfp <- head(df,bars);
+			pdf(paste0(outf,"_revigo.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
+			par(mar=c(5,max(nchar(df$description))/3+3,5,1));
+			barplot(rev(-(dfp$log10_p.value)), main=paste0(domain," (Top ",bars,")"), horiz=T, names.arg=rev(dfp$description),
+				xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(dfp$log10_p.value)+5)),
+				cex.names=0.8, las=1);
+			graphics.off();
+
+			bars <- nrow(df);
+			dfp <- df;
+			pdf(paste0(outf,"_revigo.full.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
+			par(mar=c(5,max(nchar(df$description))/3+3,5,1));
+			barplot(rev(-(dfp$log10_p.value)), main=domain, horiz=T, names.arg=rev(dfp$description),
+				xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(dfp$log10_p.value)+5)),
 				cex.names=0.8, las=1);
 			graphics.off();
 		'
 	CMD
-		"$orafile" "$outdir/revigo.tsv" "$outdir/barplot.pdf" $(echo $domain | sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/')
+		"$orafile" "$outdir/revigo.tsv" "$outdir/barplot" $(echo $domain | sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/')
 	CMD
 
 	return 0
@@ -258,6 +322,7 @@ enrichment::go(){
 			                ..
 			-r <mapper>   | array of bams within array of
 			-i <deseqdir> | for gsea path to
+			-j <countsdir>| for gmt background creation path to
 			-c <cmpfiles> | array of
 			-l <idfiles>  | for ora array of (does not require -i -r -c)
 
@@ -265,9 +330,9 @@ enrichment::go(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads gofile deseqdir
+	local OPTIND arg mandatory skip=false threads gofile deseqdir countsdir
     declare -n _mapper_go _cmpfiles_go _idfiles_go
-	while getopts 'S:s:t:r:c:g:l:i:' arg; do
+	while getopts 'S:s:t:r:c:g:l:i:j:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -277,6 +342,7 @@ enrichment::go(){
 			g) ((++mandatory)); gofile="$OPTARG";;
 			l) _idfiles_go="$OPTARG";;
 			i) deseqdir="$OPTARG";;
+			j) countsdir="$OPTARG";;
 			*) _usage;;
 		esac
 	done
@@ -298,8 +364,11 @@ enrichment::go(){
 	for f in "${_idfiles_go[@]}"; do
 		for domain in biological_process cellular_component molecular_function; do
 			odir="$(dirname "$f")/$domain"
-			mkdir -p "$odir"
-			enrichment::_ora -1 cmd1 -2 cmd2 -d $domain -g "$gofile" -i "$f" -o "$odir"
+			if [[ $countsdir ]]; then
+				enrichment::_ora -1 cmd1 -2 cmd2 -d $domain -g "$gofile" -i "$f" -j "$(find -L "$countsdir" -name "experiments.tpm" -print -quit)" -o "$odir"
+			else
+				enrichment::_ora -1 cmd1 -2 cmd2 -d $domain -g "$gofile" -i "$f" -o "$odir"
+			fi
 			enrichmentfiles+=("$odir/goenrichment.tsv")
 		done
 	done
@@ -310,12 +379,22 @@ enrichment::go(){
 			i=0
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
-					deseqtsv="$deseqdir/$m/$c-vs-$t/deseq.tsv"
-					for domain in biological_process cellular_component molecular_function; do
-						odir="$deseqdir/$m/$c-vs-$t/$domain"
-						mkdir -p "$odir"
-						enrichment::_gsea -1 cmd1 -2 cmd2 -d $domain -g "$gofile" -i "$deseqtsv" -o "$odir"
-						enrichmentfiles+=("$odir/goenrichment.tsv")
+					# deseqtsv="$deseqdir/$m/$c-vs-$t/deseq.tsv"
+					IFS=$'\n'
+					for deseqtsv in $(find -L "$deseqdir/$m/$c-vs-$t/" -type f -name "deseq.tsv"); do
+						unset IFS
+						if [[ $(wc -l < "$deseqtsv") -gt 1 ]]; then
+							for domain in biological_process cellular_component molecular_function; do
+								# odir="$deseqdir/$m/$c-vs-$t/$domain"
+								odir="$(dirname "$deseqtsv")/$domain"
+								if [[ -e "$deseqdir/$m/$c-vs-$t/experiments.tpm" ]]; then # ensure compatibility with previous version
+									enrichment::_gsea -1 cmd1 -2 cmd2 -d $domain -g "$gofile" -i "$deseqtsv" -j "$deseqdir/$m/$c-vs-$t/experiments.tpm" -o "$odir"
+								else
+									enrichment::_gsea -1 cmd1 -2 cmd2 -d $domain -g "$gofile" -i "$deseqtsv" -o "$odir"
+								fi
+								enrichmentfiles+=("$odir/goenrichment.tsv")
+							done
+						fi
 					done
 				done
 			done

@@ -11,6 +11,7 @@ options::usage(){
 
 		OPTIONS
 		-i | --install [all|upgrade] : install into given directory
+		-g | --use-config            : use supplied yaml files instead of cutting edge conda tools
 		-d | --directory [path]      : installation path
 		-t | --threads [value]       : threads - predicted default: $THREADS
 		-l | --log [path]            : log file - default: [-d]/install.log
@@ -35,7 +36,8 @@ options::checkopt(){
 		-v | --verbose) VERBOSITY=2;;
 		-d | --directory) arg=true; INSDIR="$2";;
 		-t | --threads) arg=true; THREADS=$2;;
-		-l | --log) arg=true; LOG=$2;;
+		-l | --log) arg=true; LOG="$2";;
+		-g | --use-config) USECONFIG=true;;
 		-s | --source)
 			arg=true
 			declare -a mapdata

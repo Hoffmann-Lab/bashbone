@@ -1,0 +1,17 @@
+name: bamutil
+channels:
+  - conda-forge
+  - bioconda
+  - main
+  - defaults
+  - r
+  - anaconda
+dependencies:
+  - _libgcc_mutex=0.1
+  - _openmp_mutex=4.5
+  - bamutil=1.0.15
+  - libgcc-ng=11.2.0
+  - libgomp=11.2.0
+  - libstdcxx-ng=11.2.0
+  - libzlib=1.2.11
+  - zlib=1.2.11

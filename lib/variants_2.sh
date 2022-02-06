@@ -113,6 +113,7 @@ variants::haplotypecaller() {
 						--smith-waterman FASTEST_AVAILABLE
 						--max-reads-per-alignment-start 0
 						--min-base-quality-score 20
+						--minimum-mapping-quality 0
 						--standard-min-confidence-threshold-for-calling 20
 						--native-pair-hmm-threads $mthreads
 						--max-alternate-alleles 3
@@ -364,6 +365,7 @@ variants::mutect() {
 						--f1r2-min-bq 20
 						--callable-depth 10
 						--min-base-quality-score 20
+						--minimum-mapping-quality 0
 						--minimum-allele-fraction 0.1
 						--native-pair-hmm-threads $mthreads
 						--verbosity INFO
@@ -386,7 +388,7 @@ variants::mutect() {
 
 				# --dont-use-soft-clipped-bases recommended for RNA based calling due to splitNcigar which elongates both splits towards full length read alignments and mask them\n\t\t\t\t# since we are doing clipmateoverlap, which introduces soft-clips, always enable this option
 
-				if [[ -s "$genome.somatic_common.vcf.gz" ]]; then
+				if [[ -s "$genome.small_common.vcf.gz" ]]; then
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 						gatk
 							--java-options '
@@ -398,8 +400,8 @@ variants::mutect() {
 							'
 							GetPileupSummaries
 							-I "$slice"
-							-V "$genome.somatic_common.vcf.gz"
-							-L "$genome.somatic_common.vcf.gz"
+							-V "$genome.small_common.vcf.gz"
+							-L "$genome.small_common.vcf.gz"
 							-O "$slice.pileups.table"
 							--verbosity INFO
 							--tmp-dir "${tdirs[-1]}"

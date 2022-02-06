@@ -19,6 +19,10 @@ keylabel = args[6]
 # appended to "Heatmap of <nrow> "
 title = args[7]
 
+if(nrow(input)<2){
+  quit("no")
+}
+
 # setup postscript device
 setEPS(reset=T, width=w, height=h, onefile=T)
 # use w=8.25, h=11.7 and convert via ps2pdf -sPAPERSIZE=a4 in.ps out.pdf
@@ -70,8 +74,8 @@ if(cluster){
   colclust = as.hclust(coldendro)
 
   if(min(df)<0) {
-    # use red (-) and blue (+)
-    color = colorRampPalette(brewer.pal(9, "RdBu"))(100)
+    # use red (+) and blue (-)
+    color = rev(colorRampPalette(brewer.pal(9, "RdBu"))(100))
     # define breaks from min to 0 and 0 to max according to number colors/2
     breaks = c(seq(min(df), 0, length.out=51), seq(max(df)/100, max(df), length.out=50))
     # define breaks around 0 and labels
