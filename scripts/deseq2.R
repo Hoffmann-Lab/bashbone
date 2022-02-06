@@ -2,8 +2,6 @@
 # (c) Konstantin Riege
 options(warn=-1)
 
-cat("about to run deseq2 and pca\n")
-
 suppressMessages({
 	library("DESeq2")
 	library("BiocParallel")
@@ -35,7 +33,7 @@ colnames(experiments)[1:4] = c("sample","countfile","condition","replicate")
 
 # create design formula from factors under exclusion of potential linear combinations
 # e.g. ~ factor1 + factor2 + condition
-get_design = function(experiments){
+get_design = function(experiments,interactionterms=F){
 	factors = c()
 	if(length(colnames(experiments)) > 4){
 		for (f in colnames(experiments)[5:length(colnames(experiments))]){
@@ -47,14 +45,17 @@ get_design = function(experiments){
 			}
 		}
 	}
-	return(paste("~",paste(c(factors,"condition"),collapse=" + ")))
+	if(interactionterms){
+		return(paste("~",paste(c(factors,"condition"),collapse=" * ")))
+	} else {
+		return(paste("~",paste(c(factors,"condition"),collapse=" + ")))
+	}
 }
 
 design = get_design(experiments)
-cat(paste("computing pca with deseq normalized read counts based on design formula: ",design,"\n",sep=""))
-
-ddsHTSeq = DESeqDataSetFromHTSeqCount(sampleTable = experiments, directory = "", design = as.formula(design))
-dds = DESeq(ddsHTSeq, parallel = TRUE, BPPARAM = BPPARAM)
+cat(paste("about to run pca and deseq2 with design formula: ",design,"\n",sep=""))
+dds = DESeqDataSetFromHTSeqCount(sampleTable = experiments, directory = "", design = as.formula(design))
+dds = DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM)
 save(dds, file = file.path(outdir,"dds.Rdata"))
 
 pdf(file.path(outdir,"dispersion.pdf"))
@@ -436,7 +437,114 @@ get_table = function(dds){
 		get_heatmap_mean(data.frame(id=rownames(meanzscores),meanzscores),file.path(odir,"heatmap.mean.vsc.zscores"))
 	}
 
-	cat(paste("number of significantly differentially expressed genes for ",ctr[i]," vs ",treat[i]," :",nrow(ddsr),"\n",sep=""))
+	cat(paste("number of significantly differentially expressed genes for ",ctr[i]," vs ",treat[i],": ",nrow(ddsr),"\n",sep=""))
+}
+
+######
+
+get_interactionterm_pairs = function(dds,experiments,outdir,ctr,treat){
+	# avoid alphabetically sorted levels. ensure first factor/condition listed is the one to be used as main/reference
+	dds$condition = factor(dds$condition, levels=unique(c(ctr,as.character(dds$condition)))) # do not use truncates experiments here
+	for (fac in colnames(experiments)[5:ncol(experiments)]) {
+		dds[[fac]] = factor(dds[[fac]], levels=unique(c(unique(as.character(dds[[fac]])[1]),as.character(dds[[fac]]))))
+	}
+
+	odir = file.path(outdir,"interactionterms")
+	dir.create(odir, recursive = T, showWarnings = F)
+
+	design_interactionterms = get_design(experiments,T)
+	cat(paste("calculating effect (interaction term) of secondary factors with design formula: ",design_interactionterms,"\n",sep=""))
+	design(dds) = as.formula(design_interactionterms)
+	dds = DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM)
+	save(dds, file = file.path(odir,"dds.Rdata"))
+
+	for (i in 5:ncol(experiments)){
+		fac = colnames(experiments)[i]
+		terms=unique(experiments[,i])
+
+		for (term in terms[2:length(terms)]){
+			odir = file.path(outdir,"interactionterms",paste0(terms[1],"-vs-",term))
+			dir.create(odir, recursive = T, showWarnings = F)
+
+			cat(paste("calculating effect (interaction term) of ",terms[1]," vs ",term," on ",ctr," vs ",treat," with design formula: ",design_interactionterms,"\n",sep=""))
+			ddsr = results(dds, name=paste0(fac,term,".condition",treat), parallel = TRUE, BPPARAM = BPPARAM)
+
+			write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
+				file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
+			)
+
+			ddsr = ddsr[!is.na(ddsr$log2FoldChange) , ]
+			ddsr = ddsr[!is.na(ddsr$padj) , ]
+			ddsr = ddsr[ddsr$baseMean > 0 , ]
+			ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ]
+			write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
+				file=file.path(odir,"deseq.noNA.tsv"), quote=F, sep="\t"
+			)
+
+			ddsr = ddsr[ddsr$padj <= 0.05 , ]
+			write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
+				file=file.path(odir,"deseq.tsv"), quote=F, sep="\t"
+			)
+
+			cat(paste("number of significantly affected genes by interaction term of ",terms[1]," vs ",term," on ",ctr," vs ",treat,": ",nrow(ddsr),"\n",sep=""))
+		}
+	}
+}
+
+
+get_interactionterm = function(dds,experiments,outdir,ctr,treat){
+
+	design_interactionterms = get_design(experiments,T)
+	design(dds) = as.formula(design_interactionterms)
+	#cat(paste("calculating effects (interaction terms) of secondary factors on ",ctr," vs ",treat," with design formula: ",design_interactionterms,"\n",sep=""))
+	#DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM)
+
+	for (f in 5:ncol(experiments)){
+		fac = colnames(experiments)[f]
+		terms = unique(experiments[,f])
+
+		for (i in 1:(length(terms)-1)){
+			ctr_term = terms[i]
+			# avoid alphabetically sorted levels. ensure first factor/condition listed is the one to be used as main/reference
+			dds$condition = relevel(dds$condition, ref = ctr)
+			dds[[fac]] = relevel(dds[[fac]], ref = ctr_term)
+
+			cat(paste("calculating effects (interaction terms) of secondary factors with reference ",ctr_term," on ",ctr," vs ",treat," with design formula: ",design_interactionterms,"\n",sep=""))
+			dds = DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM) # as suggested upon relevel: run nbinomWaldTest or DESeq() i.e. estimate size factors <- automatically re-used, estimate dispersion <- no need to re-do it, nbinomWaldTest/nbinomLRT
+			# LRT tests multiple terms at once e.g. multiple levels of a factor or all interactions between two variables
+			# dds <- nbinomLRT(dds, reduced = ???)
+
+			for (j in (i+1):length(terms)){
+				term = terms[j]
+
+				odir = file.path(outdir,"interactionterms",paste0(ctr_term,"-vs-",term))
+				dir.create(odir, recursive = T, showWarnings = F)
+				save(dds, file = file.path(odir,"dds.Rdata"))
+
+				#cat(paste("calculating effect (interaction term) of ",ctr_term," vs ",term," on ",ctr," vs ",treat," with design formula: ",design_interactionterms,"\n",sep=""))
+				ddsr = results(dds, name=paste0(fac,term,".condition",treat), parallel = TRUE, BPPARAM = BPPARAM)
+
+				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
+					file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
+				)
+
+				ddsr = ddsr[!is.na(ddsr$log2FoldChange) , ]
+				ddsr = ddsr[!is.na(ddsr$padj) , ]
+				ddsr = ddsr[ddsr$baseMean > 0 , ]
+				ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ]
+				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
+					file=file.path(odir,"deseq.noNA.tsv"), quote=F, sep="\t"
+				)
+
+				ddsr = ddsr[ddsr$padj <= 0.05 , ]
+				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
+					file=file.path(odir,"deseq.tsv"), quote=F, sep="\t"
+				)
+
+				cat(paste("number of significantly affected genes by interaction term ",ctr_term," vs ",term," on ",ctr," vs ",treat,": ",nrow(ddsr),"\n",sep=""))
+			}
+		}
+	}
 }
 
 
@@ -449,15 +557,16 @@ for (i in 1:length(ctr)){
 
 	thisexperiments = experiments[experiments$condition %in% c(ctr[i],treat[i]),]
 	thisdesign = get_design(thisexperiments)
+	thisdds = dds
 
+	cat(paste("calculating differential expression of ",ctr[i]," vs ",treat[i]," with design formula: ",thisdesign,"\n",sep=""))
 	if (design != thisdesign){
-		cat(paste("warning: executing ",ctr[i]," vs ",treat[i]," independently from other samples with design formula: ",thisdesign,"\n",sep=""))
-		ddsHTSeq = DESeqDataSetFromHTSeqCount(sampleTable = thisexperiments, directory = "", design = as.formula(thisdesign))
-		thisdds = DESeq(ddsHTSeq, parallel = TRUE, BPPARAM = BPPARAM)
+		design(thisdds) = as.formula(thisdesign)
+		thisdds = DESeq(thisdds, parallel = TRUE, BPPARAM = BPPARAM)
 		save(thisdds, file = file.path(odir,"dds.Rdata"))
-		get_table(thisdds)
-	} else {
-		cat(paste("executing ",ctr[i]," vs ",treat[i]," with design formula: ",design,"\n",sep=""))
-		get_table(dds)
+	}
+	get_table(thisdds)
+	if(ncol(experiments) > 4){
+		get_interactionterm(thisdds,thisexperiments,odir,ctr[i],treat[i])
 	}
 }
