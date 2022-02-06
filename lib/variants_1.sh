@@ -238,6 +238,7 @@ variants::panelofnormals() {
 						--f1r2-min-bq 20
 						--callable-depth 10
 						--min-base-quality-score 20
+						--minimum-mapping-quality 0
 						--native-pair-hmm-threads $mthreads
 						-verbosity INFO
 						--tmp-dir "${tdirs[-1]}"
