@@ -191,7 +191,8 @@ fusions::arriba(){
 	# -> alignment::star sets alignIntronMax = alignMatesGapMax = 200000 or user value by -i -> set to star default (0)
 
 	# for arriba v2.x : star > 2.7.6 is required to allow for multimapped fusions
-	declare -a cmdchk=("conda list -f arriba | tail -1 | awk '{print \$2}' | cut -d '.' -f 1")
+	# declare -a cmdchk=("conda list -f arriba | tail -1 | awk '{print \$2}' | cut -d '.' -f 1")
+	declare -a cmdchk=("arriba -h | grep -m 1 Version | awk '{print \$2}' | cut -d '.' -f 1")
 	local version=$(commander::runcmd -c arriba -a cmdchk) params
 	if [[ $version -lt 2 ]]; then
 		params+=" --outFilterMultimapNmax 1"
