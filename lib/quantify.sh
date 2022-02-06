@@ -130,23 +130,43 @@ quantify::tpm() {
 
 	commander::printinfo "calculating transcripts per million"
 
-	local m f countfile
-	declare -a cmd1
+	local m f countfile header
+	declare -a cmd1 cmd2 tojoin
 	for m in "${_mapper_tpm[@]}"; do
 		declare -n _bams_tpm=$m
+		unset -v tojoin1 tojoin2
+		header="id"
 		for f in "${_bams_tpm[@]}"; do
+			header+="\t$(basename "${f%.*}")"
 			countfile="$countsdir/$m/$(basename "$f")"
-			countfile=$(readlink -e "${countfile%.*}"*.+(genecounts|counts).+(reduced|htsc) | head -1)
+			countfile="$(readlink -e "${countfile%.*}"*.+(genecounts|counts).+(reduced|htsc) | head -1)"
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 				tpm.pl "$gtf" "$countfile" > "$countfile.tpm"
 			CMD
+			tojoin+=("$countfile")
 		done
+
+		commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD
+			helper::multijoin
+				-h "$(echo -e "$header")"
+				-o "$countsdir/$m/experiments.htsc"
+				-f $(printf '"%s" ' "${tojoin[@]}");
+		CMD
+
+		commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD
+			helper::multijoin
+				-h "$(echo -e "$header")"
+				-o "$countsdir/$m/experiments.tpm"
+				-f $(printf '"%s" ' "${tojoin[@]/%/.tpm}");
+		CMD
 	done
 
 	if $skip; then
 		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
 	else
 		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
 	fi
 
 	return 0
