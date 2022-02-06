@@ -1,0 +1,10 @@
+name: star
+channels:
+  - conda-forge
+  - bioconda
+  - main
+  - defaults
+  - r
+  - anaconda
+dependencies:
+  - star=2.7.10a

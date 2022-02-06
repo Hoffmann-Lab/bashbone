@@ -1,0 +1,19 @@
+name: vardict
+channels:
+  - conda-forge
+  - bioconda
+  - main
+  - defaults
+  - r
+  - anaconda
+dependencies:
+  - _libgcc_mutex=0.1
+  - _openmp_mutex=4.5
+  - libgcc-ng=11.2.0
+  - libgomp=11.2.0
+  - ncurses=5.9
+  - openjdk=8.0.312
+  - perl=5.26.2
+  - readline=6.2
+  - vardict=2019.06.04
+  - vardict-java=1.5.1
