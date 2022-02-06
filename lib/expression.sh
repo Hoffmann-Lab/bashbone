@@ -118,7 +118,6 @@ expression::diego(){
 					while read -r sample condition library replicate factors; do
 						echo -e "$condition\t$sample.$replicate" >> "$odir/groups.tsv"
 
-						#sjfile=$(find -L "${mappeddirs[@]}" -maxdepth 1 -name "$sample*.sj" -exec readlink -e {} \; -quit)
 						sjfile="$(find -L "${mappeddirs[@]}" -maxdepth 1 -name "$sample*.sj" -print -quit)"
 						[[ $sjfile ]] && echo -e "$sample.$replicate\t$sjfile" >> "$odir/list.sj.tsv"
 
@@ -397,11 +396,17 @@ expression::deseq() {
 					CMD
 
 					if [[ $gtf ]]; then
-						for h in "$odir/deseq.tsv" "$odir/deseq.full.tsv" "$odir/deseq.noNA.tsv"; do
-							commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
-								[[ -e "$h" ]] && annotate.pl "${gtfinfo:=0}" "$gtf" "$h"
-							CMD
-						done
+						# for h in "$odir/$c-vs-$t/deseq.tsv" "$odir/$c-vs-$t/deseq.full.tsv" "$odir/$c-vs-$t/deseq.noNA.tsv"; do
+						# 	commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
+						# 		annotate.pl "${gtfinfo:=0}" "$gtf" "$h"
+						# 	CMD
+						# done
+						commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
+							find -L "$odir/$c-vs-$t"
+								-type f
+								"(" -name "deseq.tsv" -or -name "deseq.noNA.tsv" -or -name "deseq.full.tsv" ")"
+ 								-exec annotate.pl "${gtfinfo:=0}" "$gtf" "{}" \;
+						CMD
 
 						for e in vsc tpm; do
 							for h in "$odir/$c-vs-$t/heatmap.$e.localclust.ps" "$odir/$c-vs-$t/heatmap.$e.globalclust.ps" \
@@ -416,7 +421,6 @@ expression::deseq() {
 							done
 						done
 					fi
-
 				done
 			done
 		done
@@ -497,11 +501,18 @@ expression::_deseq() {
 			c=${cmppairs[$i]}
 			t=${cmppairs[$((i+1))]}
 			odir="$outdir/$c-vs-$t"
-			for f in "$odir/deseq.tsv" "$odir/deseq.full.tsv" "$odir/deseq.noNA.tsv"; do
-				commander::makecmd -a _cmds2_deseq -s ';' -c {COMMANDER[0]}<<- CMD
-					[[ -e "$f" ]] && annotate.pl "${gtfinfo:=0}" "$gtf" "$f"
-				CMD
-			done
+			# for f in "$odir/deseq.tsv" "$odir/deseq.full.tsv" "$odir/deseq.noNA.tsv"; do
+			# 	commander::makecmd -a _cmds2_deseq -s ';' -c {COMMANDER[0]}<<- CMD
+			# 		[[ -e "$f" ]] && annotate.pl "${gtfinfo:=0}" "$gtf" "$f"
+			# 	CMD
+			# done
+			commander::makecmd -a _cmds2_deseq -s ';' -c {COMMANDER[0]}<<- CMD
+				find -L "$odir"
+					-type f
+					"(" -name "deseq.tsv" -or -name "deseq.noNA.tsv" -or -name "deseq.full.tsv" ")"
+					-exec annotate.pl "${gtfinfo:=0}" "$gtf" "{}" \;
+			CMD
+
 			for f in "$odir/heatmap.vsc.ps" "$odir/heatmap.vsc.zscores.ps" \
 					"$odir/heatmap.vsc.globalclust.ps" "$odir/heatmap.vsc.zscores.globalclust.ps" "$odir/heatmap.vsc.localclust.ps" "$odir/heatmap.vsc.zscores.localclust.ps" \
 					"$odir/heatmap.mean.vsc.ps" "$odir/heatmap.mean.vsc.zscores.ps"; do
@@ -588,13 +599,14 @@ expression::join(){
 						meanheader[$x]="$condition"
 						((++x))
 
-						cf="$(readlink -e "$countsdir/$m/$sample"*.tpm | head -1)"
+						#cf="$(readlink -e "$countsdir/$m/$sample"*.tpm | head -1)"
+						cf="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.tpm" -print -quit)"
 						cf="${cf%.*}"
 						countfiles["$sample.$replicate"]="$cf"
 
 						# get column per sample and write it to counts dir for downstream joins
 						# if sample name aka input file name contains \W chars, they were auto replaced by upstream R scripts
-						perl -M'List::MoreUtils qw(first_index)' -slane 'if($.==1){$h=~s/\W/./g; $c = first_index {$_ eq $h} @F}else{print "$F[0]\t$F[$c]"}' -- -h="$sample.$replicate" "$vsc" > $cf.vsc
+						perl -M'List::MoreUtils qw(first_index)' -slane 'if($.==1){$h=~s/\W/./g; $c = first_index {$_ eq $h} @F}else{print "$F[0]\t$F[$c]"}' -- -h="$sample.$replicate" "$vsc" > "$cf.vsc"
 
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 				done
@@ -654,24 +666,6 @@ expression::join(){
 				"$odir/experiments.$e" "$odir/experiments.$e.zscores"
 			CMD
 
-			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-				head -1 "$odir/experiments.$e" > "$deseqdir/$m/heatmap.$e"
-			CMD
-				grep -F -f "$topids" "$odir/experiments.$e" >> "$deseqdir/$m/heatmap.$e"
-			CMD
-				heatmap.R TRUE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.$e" "${e^^}" "most differentially expressed genes"
-			CMD
-
-			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-				head -1 "$odir/experiments.$e.zscores" > "$deseqdir/$m/heatmap.$e.zscores"
-			CMD
-				grep -F -f "$topids" "$odir/experiments.$e.zscores" >> "$deseqdir/$m/heatmap.$e.zscores"
-			CMD
-				heatmap.R TRUE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.$e.zscores" "Z-Score" "most differentially expressed genes"
-			CMD
-
-			###### means
-
 			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 				Rscript - <<< '
 					args <- commandArgs(TRUE);
@@ -688,33 +682,56 @@ expression::join(){
 				"$odir/experiments.mean.$e" "$odir/experiments.mean.$e.zscores"
 			CMD
 
-			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-				head -1 "$odir/experiments.mean.$e" > "$deseqdir/$m/heatmap.mean.$e"
-			CMD
-				grep -F -f "$topids" "$odir/experiments.mean.$e" >> "$deseqdir/$m/heatmap.mean.$e"
-			CMD
-				heatmap.R FALSE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.mean.$e" "${e^^}" "most differentially expressed genes"
-			CMD
+			if [[ $(wc -l < "$topids") -gt 1 ]]; then
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					head -1 "$odir/experiments.$e" > "$deseqdir/$m/heatmap.$e"
+				CMD
+					grep -F -f "$topids" "$odir/experiments.$e" >> "$deseqdir/$m/heatmap.$e"
+				CMD
+					heatmap.R TRUE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.$e" "${e^^}" "most differentially expressed genes"
+				CMD
 
-			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-				head -1 "$odir/experiments.mean.$e.zscores" > "$deseqdir/$m/heatmap.mean.$e.zscores"
-			CMD
-				grep -F -f "$topids" "$odir/experiments.mean.$e.zscores" >> "$deseqdir/$m/heatmap.mean.$e.zscores"
-			CMD
-				heatmap.R FALSE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.mean.$e.zscores" "Z-Score" "most differentially expressed genes"
-			CMD
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					head -1 "$odir/experiments.$e.zscores" > "$deseqdir/$m/heatmap.$e.zscores"
+				CMD
+					grep -F -f "$topids" "$odir/experiments.$e.zscores" >> "$deseqdir/$m/heatmap.$e.zscores"
+				CMD
+					heatmap.R TRUE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.$e.zscores" "Z-Score" "most differentially expressed genes"
+				CMD
 
-			if [[ $gtf ]]; then
-				for f in "$deseqdir/$m/heatmap.$e.localclust.ps" "$deseqdir/$m/heatmap.$e.globalclust.ps" \
-						"$deseqdir/$m/heatmap.$e.zscores.localclust.ps" "$deseqdir/$m/heatmap.$e.zscores.globalclust.ps" \
-						"$deseqdir/$m/heatmap.mean.$e.ps" "$deseqdir/$m/heatmap.mean.$e.zscores.ps"; do
-					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-						if [[ -e "$f" ]]; then
-							annotate.pl "${gtfinfo:=0}" "$gtf" "$f";
-							ps2pdf \$(grep -m 1 -F BoundingBox ${f%.*}.annotated.ps | awk '{print "-g"\$4*10"x"\$5*10}') ${f%.*}.annotated.ps ${f%.*}.annotated.pdf;
-						fi
-					CMD
-				done
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					head -1 "$odir/experiments.mean.$e" > "$deseqdir/$m/heatmap.mean.$e"
+				CMD
+					grep -F -f "$topids" "$odir/experiments.mean.$e" >> "$deseqdir/$m/heatmap.mean.$e"
+				CMD
+					heatmap.R FALSE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.mean.$e" "${e^^}" "most differentially expressed genes"
+				CMD
+
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					head -1 "$odir/experiments.mean.$e.zscores" > "$deseqdir/$m/heatmap.mean.$e.zscores"
+				CMD
+					grep -F -f "$topids" "$odir/experiments.mean.$e.zscores" >> "$deseqdir/$m/heatmap.mean.$e.zscores"
+				CMD
+					heatmap.R FALSE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.mean.$e.zscores" "Z-Score" "most differentially expressed genes"
+				CMD
+
+				if [[ $gtf ]]; then
+					for f in "$deseqdir/$m/heatmap.$e.localclust.ps" "$deseqdir/$m/heatmap.$e.globalclust.ps" \
+							"$deseqdir/$m/heatmap.$e.zscores.localclust.ps" "$deseqdir/$m/heatmap.$e.zscores.globalclust.ps" \
+							"$deseqdir/$m/heatmap.mean.$e.ps" "$deseqdir/$m/heatmap.mean.$e.zscores.ps"; do
+						# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+						# 	if [[ -e "$f" ]]; then
+						# 		annotate.pl "${gtfinfo:=0}" "$gtf" "$f";
+						# 		ps2pdf \$(grep -m 1 -F BoundingBox ${f%.*}.annotated.ps | awk '{print "-g"\$4*10"x"\$5*10}') ${f%.*}.annotated.ps ${f%.*}.annotated.pdf;
+						# 	fi
+						# CMD
+						commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+							annotate.pl "${gtfinfo:=0}" "$gtf" "$f"
+						CMD
+							ps2pdf \$(grep -m 1 -F BoundingBox ${f%.*}.annotated.ps | awk '{print "-g"\$4*10"x"\$5*10}') ${f%.*}.annotated.ps ${f%.*}.annotated.pdf
+						CMD
+					done
+				fi
 			fi
 		done
 	done
