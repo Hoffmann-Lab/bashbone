@@ -68,8 +68,8 @@ configure::err(){
 		read -r fun line src < <(declare -F "$fun") # requires shopt -s extdebug
 		[[ $- =~ i ]] && ((lineno+=line)) # do not!! use [[ ${BASH_EXECUTION_STRING} ]] || ((lineno+=line))
 	}
-	if [[ -e "$src" ]]; then # self sourcing by commander::runcmd and commander::qsubcmd with cleanup function may causes src to be removed before reaching this point
-		local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' $src | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+	if (cd "$wdir"; [[ -e $src ]]); then # self sourcing by commander::runcmd and commander::qsubcmd with cleanup function may causes src to be removed before reaching this point
+		local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 		[[ $fun ]] && src="$src ($fun)"
 		commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
 		# commander::printerr "$(eval "echo -e \"$cmd\"")"
