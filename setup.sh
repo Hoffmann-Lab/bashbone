@@ -15,18 +15,17 @@ BASHBONE_ERROR="mandatory parameter -d missing"
 [[ $INSDIR ]]
 
 BASHBONE_ERROR="cannot access $INSDIR"
-mkdir -p $INSDIR
+mkdir -p "$INSDIR"
 INSDIR="$(readlink -e "$INSDIR")"
 
 [[ $LOG ]] || LOG="$INSDIR/install.log"
 BASHBONE_ERROR="cannot access $LOG"
-progress::log -v $VERBOSITY -o "$LOG"
 
-unset BASHBONE_ERROR
-commander::printinfo "installation started. please be patient." >> "$LOG"
+commander::printinfo "installation started. please be patient." | tee -i "$LOG"
+source "$(dirname "$(readlink -e "$0")")/activate.sh" -c false -i "$INSDIR"
 for i in "${INSTALL[@]}"; do
 	BASHBONE_ERROR="compilation of $i failed"
-	progress::observe -v $VERBOSITY -o "$LOG" -f compile::$i -i "$INSDIR" -t $THREADS
+	progress::log -v $VERBOSITY -o "$LOG" -f compile::$i -i "$INSDIR" -t $THREADS -g ${USECONFIG:-false}
 done
 
 unset BASHBONE_ERROR
