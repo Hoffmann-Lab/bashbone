@@ -78,7 +78,7 @@ BASHBONE_VERSION=$version
 
 if ${BASHBONE_CONDA:-false}; then
 	BASHBONE_ERROR="conda activation failed. use -c false to disable conda activation"
-	source $BASHBONE_TOOLSDIR/conda/bin/activate base &> /dev/null
+	source $BASHBONE_TOOLSDIR/conda/bin/activate bashbone &> /dev/null
 else
 	[[ $BASHBONE_CONDA ]] || {
 		commander::printinfo {COMMANDER[0]}<<- EOF
@@ -94,7 +94,6 @@ fi
 td="$(readlink -e "$BASHBONE_TOOLSDIR/latest")"
 [[ $td ]] && export PATH="$(readlink -e "$td/"!(java) | xargs -echo | sed 's/ /:/g'):$PATH"
 export PATH="$(readlink -e "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):$PATH"
-
 
 trap 'configure::exit -p $$ -f "$BASHBONE_EXITFUN" $?' EXIT # fire last, global cleanup function and kill all remaining subshells
 trap '_trap_cmd=$BASH_COMMAND; if [[ ! "$_trap_cmd" =~ ^source[[:space:]] ]]; then declare -f _cleanup::${FUNCNAME[0]} > /dev/null && _cleanup::${FUNCNAME[0]}; fi' RETURN # fire cleanup function from local name space upon any return (success or failure). do not fire cleanup if returning from a source command
@@ -147,17 +146,18 @@ bashbone(){
 			-e | list functions for experienced users
 			-d | list functions for developers
 			-a | list all, including non-standalone, functions
+			-t | list tools and versions in setupped environment
 			-x | exit bashbone and revert changes to environment
 		EOF
 		return 0
 	}
 
 	local OPTIND arg
-	while getopts 'hrcsuvledax' arg; do
+	while getopts 'hrcsuvledtax' arg; do
 		case $arg in
 		h)	_usage; return 0;;
 		r)	mdless -P $BASHBONE_DIR/README.md | less; return 0;;
-		c)	source $BASHBONE_TOOLSDIR/conda/bin/activate base &> /dev/null;	commander::printinfo "utilizing $(conda --version)"; return 0;;
+		c)	source $BASHBONE_TOOLSDIR/conda/bin/activate bashbone &> /dev/null;	commander::printinfo "utilizing $(conda --version)"; return 0;;
 		s)	while [[ -n $CONDA_PREFIX ]]; do conda deactivate &> /dev/null; done; return 0;;
 		u)	find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n"; find "$BASHBONE_DIR/scripts/" -type f -name "*.pl" -printf "%f\n" -o -name "*.sh" -printf "%f\n" | rev | sort | rev; return 0;;
 		v)	find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n"; find "$BASHBONE_DIR/scripts/" -type f -printf "%f\n" | rev | sort | rev; return 0;;
@@ -165,6 +165,14 @@ bashbone(){
 		e)	declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
 		d)	declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper::_ | grep -F -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
 		a)	declare -F | grep -oE '\S+::\S+' | sort -t ':' -k1,1 -k3,3V; return 0;;
+		t)	(	source $BASHBONE_TOOLSDIR/conda/bin/activate base
+				mapfile -t mapdata < <({ readlink -e "$BASHBONE_TOOLSDIR"/latest/* | sed -nE 's@.*\/([^/]+)-([0-9][^/]+)\/*.*@\L\1\t\2@p;'; conda list | grep -vE '^(#|lib|perl-|xorg-|r-|python-|font)' | tr -s ' ' '\t'; } | sort -k1,1 -k2,2Vr | cut -f 1,2)
+				for e in $(conda env list | grep -F "$BASHBONE_TOOLSDIR" | grep -v '^base' | cut -f 1 -d ' '); do
+					conda list -n $e | grep -vE '^(#|lib|perl-|xorg-|r-|python-|font)'
+				done | tr -s ' ' '\t' | sort -k1,1 -k2,2Vr | cut -f 1,2 | rev | uniq -f 1 | rev | grep -v -F -f <(printf "%s\n" "${mapdata[@]}" | cut -f 1) | sort -k1,1 - <(printf "%s\n" "${mapdata[@]}")
+			)
+			return 0
+		;;
 		x)	shopt -u extdebug
 			set -m +E +o pipefail +o functrace
 			trap - RETURN
