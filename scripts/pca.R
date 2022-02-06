@@ -6,49 +6,31 @@ cat("about to run pca\n")
 
 suppressMessages({
 	library("DESeq2")
-	library("BiocParallel")
 	library("ggplot2")
-	library("gplots")
-	library("pheatmap")
 	library("RColorBrewer")
-	library("dplyr")
 })
 
 args = commandArgs(TRUE)
-threads = as.numeric(args[1])
-incsv = args[2] # sample,countfile,condition,replicate[,factor1,factor2,..]
-outdir = args[3]
+incsv = args[1] # sample,countfile,condition,replicate[,factor1,factor2,..] - condition can be NA or empty
+outdir = args[2]
 
 dir.create(outdir, recursive = T, showWarnings = F)
-BPPARAM = MulticoreParam(workers = threads)
 setEPS(width=8, height=8, onefile=T)
 
 experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F)
 colnames(experiments)[1:4] = c("sample","countfile","condition","replicate")
 
-# create design formula from factors under exclusion of potential linear combinations
-# e.g. ~ factor1 + factor2 + condition
-get_design = function(experiments){
-	factors = c()
-	if(length(colnames(experiments)) > 4){
-		for (f in colnames(experiments)[5:length(colnames(experiments))]){
-			v = experiments[,f]
-			# levels(xyxy) -> 2 > 1 && xyxy @ aabb -> a:xy , b:xy -> {x,y} > 0 i.e. no linear combination
-			# whereas levels(xxxx) -> 1 and xyzz @ aabb -> a:xy , b:z -> {} == 0 i.e. deseq error
-			if (length(levels(as.factor(v))) > 1 && length(Reduce(intersect, split(v,experiments$condition))) > 0){
-				factors = c(factors,f)
-			}
-		}
-	}
-	return(paste("~",paste(c(factors,"condition"),collapse=" + ")))
-}
+# method 1
+# raw = matrix(..) # of read counts - equal to assay(DESeqDataSetFromHTSeqCount(..))
+# varianceStabilizingTransformation(raw) # works from matrix
+# in order to get simple pca of counts devided by size factor, estimateSizeFactors requires deseq object
+# dds <- DESeqDataSetFromMatrix(countData = raw, colData = data.frame(row.names = colnames(raw)), design = ~1)
+# ...
+# method 2
+dds = DESeqDataSetFromHTSeqCount(sampleTable = experiments, directory = "", design = ~1)
 
-design = get_design(experiments)
-ddsHTSeq = DESeqDataSetFromHTSeqCount(sampleTable = experiments, directory = "", design = as.formula(design))
-dds = DESeq(ddsHTSeq, parallel = TRUE, BPPARAM = BPPARAM)
-dds = dds[ rowSums(counts(dds)) > 1, ]
 
-log = DESeqTransform(SummarizedExperiment(log2(counts(dds, normalized=T) + 1), colData=colData(dds)))
+log = DESeqTransform(SummarizedExperiment(log2(counts(dds, normalized=T) + 1), colData=colData(dds))) # normalized=T devides by library size factors
 save(log, file = file.path(outdir,"log.Rdata"))
 vsd = varianceStabilizingTransformation(dds, blind=FALSE)
 save(vsd, file = file.path(outdir,"vsd.Rdata"))
