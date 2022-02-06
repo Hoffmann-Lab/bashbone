@@ -29,7 +29,7 @@ progress::log() {
 			${FUNCNAME[1]} usage:
 			-v [0|1|2]    | verbosity level
 			-o <logfile>  | path to
-			-f <function> | and parameters
+			-f <function> | and parameters - needs to be last!
 		EOF
 		return 1
 	}
@@ -39,7 +39,7 @@ progress::log() {
 		case $arg in
 			v)	((++mandatory)); verbosity=$OPTARG;;
 			o)	((++mandatory)); log="$OPTARG"; mkdir -p "$(dirname "$log")";;
-			f)	((++mandatory)); fun=$OPTARG;;
+			f)	((++mandatory)); fun=$OPTARG; shift $((OPTIND-1));;
 			*)	_usage;;
 		esac
 	done
@@ -62,7 +62,6 @@ progress::log() {
 		*)	_usage;;
 	esac
 
-	shift $((OPTIND-1))
 	$fun "$@" 2> "$tmpdir/stderr" > "$tmpdir/stdout"
 
 	return 0
