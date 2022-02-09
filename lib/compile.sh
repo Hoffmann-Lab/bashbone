@@ -220,11 +220,11 @@ compile::conda_tools() {
 
 		# as of 2022, conda can install all r-packages without conflicts. instead manual compilation causes troubles
 		cmd2=()
-		commander::makecmd -a cmd5 -s '&&' -c {COMMANDER[0]}<<- CMD
-Rscript - <<< '
-install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=30, clean=T, destdir="/ssd/data/programs/bashbone/tmp");
-devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
-'
+		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
+			Rscript - <<< '
+			install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
+			devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
+			'
 		CMD
 
 		commander::runcmd -c bashbone -t 1 -a cmd1
