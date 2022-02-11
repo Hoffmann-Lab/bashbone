@@ -42,7 +42,7 @@ if ($ARGV[1]){
 					$mps{$g} = $n;
 				}
 				if ($l[-1]=~/gene_(bio)?type\s+\"([^\"]+)/){
-					$b = $1;
+					$b = $+;
 				}
 				$m{$g} = join"\t",($n,$b,'NA');
 			}
