@@ -331,7 +331,12 @@ get_heatmap_mean = function(input,path){
 
 
 get_table = function(dds){
-	ddsr = results(dds, contrast=c("condition",treat[i],ctr[i]), parallel = TRUE, BPPARAM = BPPARAM)
+	ddsrf = results(dds, contrast=c("condition",treat[i],ctr[i]), parallel = TRUE, BPPARAM = BPPARAM)
+	ddsr = ddsrf
+
+	# ddsr = results(dds, contrast=c("condition",treat[i],ctr[i]), alpha = 0.05, parallel = TRUE, BPPARAM = BPPARAM) # alpha (default: 0.1) should be set to FDR cutoff
+	# shrinkage can be used for data visualization and ranking of RNA-Seq data (remove high LFCs from lowly expressed genes with high variability among samples and estimate moderate FCs more close to reality) if DESeq() was executed with betaPrior=FALSE, which is the default since v1.16
+	ddsrshrunk <- lfcShrink(dds, contrast=c("condition",treat[i],ctr[i]), res=ddsr, type="ashr", parallel = TRUE, BPPARAM = BPPARAM) # 'apeglm' and 'ashr' outperform the original 'normal' shrinkage estimator. but ‘apeglm’ requires use of ‘coef’ i.e. a name from resultsNames
 
 	ddsr = ddsr[order(ddsr$padj) , ]
 	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
@@ -341,7 +346,9 @@ get_table = function(dds){
 	ddsr = ddsr[!is.na(ddsr$log2FoldChange) , ]
 	ddsr = ddsr[!is.na(ddsr$padj) , ]
 	ddsr = ddsr[ddsr$baseMean > 0 , ]
-	ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ]
+
+	#ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ]
+
 	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
 		file=file.path(odir,"deseq.noNA.tsv"), quote=F, sep="\t"
 	)
@@ -352,8 +359,14 @@ get_table = function(dds){
 	)
 
 	if(nrow(ddsr)>0){
+		pdf(file.path(odir,"ma_plot.full.pdf"))
+		plotMA(ddsrf)
+		graphics.off()
 		pdf(file.path(odir,"ma_plot.pdf"))
 		plotMA(ddsr)
+		graphics.off()
+		pdf(file.path(odir,"ma_plot.shrunk.pdf"))
+		plotMA(ddsrshrunk)
 		graphics.off()
 	}
 
@@ -410,7 +423,10 @@ get_table = function(dds){
 
 	if(nrow(ddsr)>1){
 		color = colorRampPalette(brewer.pal(9, "GnBu"))(100)
-		topids = rownames(ddsr)[1:min(50,nrow(ddsr))]
+
+		# ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ]
+		# topids = rownames(ddsr)[1:min(50,nrow(ddsr))]
+		topids = head(ids[rev(order(abs(ddsrshrunk[rownames(ddsrshrunk) %in% rownames(ddsr),]$log2FoldChange)))],n=50)
 
 		vsc = vsc[rownames(vsc) %in% topids , ]
 		write.table(data.frame(id=rownames(vsc),vsc), row.names = F,
@@ -442,56 +458,6 @@ get_table = function(dds){
 
 ######
 
-get_interactionterm_pairs = function(dds,experiments,outdir,ctr,treat){
-	# avoid alphabetically sorted levels. ensure first factor/condition listed is the one to be used as main/reference
-	dds$condition = factor(dds$condition, levels=unique(c(ctr,as.character(dds$condition)))) # do not use truncates experiments here
-	for (fac in colnames(experiments)[5:ncol(experiments)]) {
-		dds[[fac]] = factor(dds[[fac]], levels=unique(c(unique(as.character(dds[[fac]])[1]),as.character(dds[[fac]]))))
-	}
-
-	odir = file.path(outdir,"interactionterms")
-	dir.create(odir, recursive = T, showWarnings = F)
-
-	design_interactionterms = get_design(experiments,T)
-	cat(paste("calculating effect (interaction term) of secondary factors with design formula: ",design_interactionterms,"\n",sep=""))
-	design(dds) = as.formula(design_interactionterms)
-	dds = DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM)
-	save(dds, file = file.path(odir,"dds.Rdata"))
-
-	for (i in 5:ncol(experiments)){
-		fac = colnames(experiments)[i]
-		terms=unique(experiments[,i])
-
-		for (term in terms[2:length(terms)]){
-			odir = file.path(outdir,"interactionterms",paste0(terms[1],"-vs-",term))
-			dir.create(odir, recursive = T, showWarnings = F)
-
-			cat(paste("calculating effect (interaction term) of ",terms[1]," vs ",term," on ",ctr," vs ",treat," with design formula: ",design_interactionterms,"\n",sep=""))
-			ddsr = results(dds, name=paste0(fac,term,".condition",treat), parallel = TRUE, BPPARAM = BPPARAM)
-
-			write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
-				file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
-			)
-
-			ddsr = ddsr[!is.na(ddsr$log2FoldChange) , ]
-			ddsr = ddsr[!is.na(ddsr$padj) , ]
-			ddsr = ddsr[ddsr$baseMean > 0 , ]
-			ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ]
-			write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
-				file=file.path(odir,"deseq.noNA.tsv"), quote=F, sep="\t"
-			)
-
-			ddsr = ddsr[ddsr$padj <= 0.05 , ]
-			write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
-				file=file.path(odir,"deseq.tsv"), quote=F, sep="\t"
-			)
-
-			cat(paste("number of significantly affected genes by interaction term of ",terms[1]," vs ",term," on ",ctr," vs ",treat,": ",nrow(ddsr),"\n",sep=""))
-		}
-	}
-}
-
-
 get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 
 	design_interactionterms = get_design(experiments,T)
@@ -502,6 +468,10 @@ get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 	for (f in 5:ncol(experiments)){
 		fac = colnames(experiments)[f]
 		terms = unique(experiments[,f])
+
+		if(! is.factor(dds[[fac]])){
+			next # in case removed from design formula because not present in this experiments
+		}
 
 		for (i in 1:(length(terms)-1)){
 			ctr_term = terms[i]
@@ -550,23 +520,71 @@ get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 
 ##### iterate over pairs of conditions, recompute diff expr. according to experiment factors, get deseq results + vsc + z-scores + heatmaps
 
-
+toplus=list()
 for (i in 1:length(ctr)){
+	if(length(toplus[[ctr[i]]])==0){
+		toplus[[ctr[i]]]=treat[i]
+	} else {
+		toplus[[ctr[i]]]=unique(c(toplus[[ctr[i]]],treat[i]))
+	}
+
 	odir = file.path(outdir,paste(ctr[i],"-vs-",treat[i],sep=""))
 	dir.create(odir, recursive = T, showWarnings = F)
 
 	thisexperiments = experiments[experiments$condition %in% c(ctr[i],treat[i]),]
-	thisdesign = get_design(thisexperiments)
+	# thisdesign = get_design(thisexperiments)
 	thisdds = dds
 
-	cat(paste("calculating differential expression of ",ctr[i]," vs ",treat[i]," with design formula: ",thisdesign,"\n",sep=""))
-	if (design != thisdesign){
-		design(thisdds) = as.formula(thisdesign)
-		thisdds = DESeq(thisdds, parallel = TRUE, BPPARAM = BPPARAM)
-		save(thisdds, file = file.path(odir,"dds.Rdata"))
-	}
+	cat(paste("calculating differential expression of ",ctr[i]," vs ",treat[i]," with design formula: ",design,"\n",sep=""))
+	# cat(paste("calculating differential expression of ",ctr[i]," vs ",treat[i]," with design formula: ",thisdesign,"\n",sep=""))
+	# if (design != thisdesign){ # use in case of matrix not full rank error
+	# 	design(thisdds) = as.formula(thisdesign)
+	# 	thisdds = DESeq(thisdds, parallel = TRUE, BPPARAM = BPPARAM)
+	# 	save(thisdds, file = file.path(odir,"dds.Rdata"))
+	# }
 	get_table(thisdds)
 	if(ncol(experiments) > 4){
 		get_interactionterm(thisdds,thisexperiments,odir,ctr[i],treat[i])
+	}
+}
+
+for (ctr in names(toplus)){
+	treats=toplus[[ctr]]
+	dds$condition = relevel(dds$condition,ref=ctr)
+	dds = nbinomWaldTest(dds)
+
+	if(length(treats)>1){
+		for (i in 1:(length(treats))){
+			for (j in 1:length(treats)){
+				if(i==j){
+					next
+				}
+				odir = file.path(outdir,paste0(ctr,"-vs-",treats[i]),"extra_effects",paste0(ctr,"-vs-",treats[j]))
+				dir.create(odir, recursive = T, showWarnings = F)
+
+				cat(paste("calculating extra effects of ",ctr," vs ",treats[j]," on top of ",ctr," vs ",treats[i],"\n",sep=""))
+				ddsr = results(dds, contrast=list(paste0("condition_",treats[i],"_vs_",ctr),paste0("condition_",treats[j],"_vs_",ctr)), parallel = TRUE, BPPARAM = BPPARAM)
+				ddsr$log2FoldChange = -1*ddsr$log2FoldChange
+
+				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
+					file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
+				)
+
+				ddsr = ddsr[!is.na(ddsr$log2FoldChange) , ]
+				ddsr = ddsr[!is.na(ddsr$padj) , ]
+				ddsr = ddsr[ddsr$baseMean > 0 , ]
+				ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ]
+				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
+					file=file.path(odir,"deseq.noNA.tsv"), quote=F, sep="\t"
+				)
+
+				ddsr = ddsr[ddsr$padj <= 0.05 , ]
+				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
+					file=file.path(odir,"deseq.tsv"), quote=F, sep="\t"
+				)
+
+				#cat(paste("number of significantly extra effects of ",ctr," vs ",treats[j]," on top of ",ctr," vs ",treats[i],": ",nrow(ddsr),"\n",sep=""))
+			}
+		}
 	}
 }
