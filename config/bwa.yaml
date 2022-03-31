@@ -8,10 +8,26 @@ channels:
   - anaconda
 dependencies:
   - _libgcc_mutex=0.1
-  - _openmp_mutex=4.5
   - bwa=0.7.17
-  - libgcc-ng=11.2.0
-  - libgomp=11.2.0
-  - libzlib=1.2.11
-  - perl=5.32.1
+  - bwa-mem2=2.2.1
+  - ca-certificates=2021.10.8
+  - certifi=2021.10.8
+  - ld_impl_linux-64=2.33.1
+  - libedit=3.1.20191231
+  - libffi=3.3
+  - libgcc-ng=9.1.0
+  - libstdcxx-ng=9.1.0
+  - ncurses=6.2
+  - openssl=1.1.1h
+  - perl=5.30.3
+  - pip=20.2.4
+  - python=3.9.0
+  - python_abi=3.9
+  - readline=8.0
+  - setuptools=50.3.0
+  - sqlite=3.33.0
+  - tk=8.6.10
+  - tzdata=2020d
+  - wheel=0.35.1
+  - xz=5.2.5
   - zlib=1.2.11

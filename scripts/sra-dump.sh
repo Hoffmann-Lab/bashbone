@@ -23,7 +23,7 @@ trap '
 
 trap 'exit $?' INT TERM
 trap 'exit 1' USR1
-trap 'e=$?; [[ $ERROR ]] && echo "ERROR $ERROR"; if [[ $e -ne 141 ]]; then [[ $BASHPID -eq $$ ]] && exit $e || kill -USR1 $$; fi' ERR
+trap 'e=$?; echo ":ERROR: ${ERROR:-an unexpected one}" 1>&2; if [[ $e -ne 141 ]]; then [[ $BASHPID -eq $$ ]] && exit $e || kill -USR1 $$; fi' ERR
 # ignore SIGPIPE caused by e.g. 'samtools view bam | head' and take care of parent exit upon subshell ERR
 # to trigger ERR during xargs runtime let jobs exit with 255 e.g. echo 'CMD || exit 255' | xargs -I {} bash -c {}
 
@@ -31,13 +31,12 @@ usage(){
 	cat <<- EOF
 		DESCRIPTION
 		$(basename "$0") retrieves fastq data from ncbi sra based on GSM, SRR or SRX accession numbers
-		  - initially, information for given accession numbers will be printed to stderr
 		  - support for parallel download instances
 		  - if installed, sra-toolkit via ncbi gov resource is priorized over retrieval via ebi uk mirror
-		  - ebi uk mirror is used as fallback upon fastq-dump errors
+		  - ebi uk mirror can be defined as fallback upon fastq-dump errors
 
 		VERSION
-		0.2.0
+		0.3.0
 
 		REQUIREMENTS
 		Depends on chosen options
@@ -47,27 +46,28 @@ usage(){
 
 		SYNOPSIS
 		$(basename "$0") [OPTIONS] [GSM|SRR|SRX|SRP] [..]
-		$(basename "$0") -f [OPTIONS] [SRA] [..]
+		$(basename "$0") -l [OPTIONS] [SRA] [..]
 
 		OPTIONS
 		-d [path] : download into this directory (default: "$PWD")
 		-p [num]  : number of maximum parallel download instances (default: 2)
 		-t [num]  : pigz compression threads per fastq-dump download instance (default: no pigz)
 		-m [path] : path to temporary directory (default: "$PWD/tmp.XXXXXXXXXX.sradump")
-		-f        : convert local sra files to compressed fastq files
+		-l        : convert local sra files to compressed fastq files
 		-s        : show received meta information for given accession numbers and exit
 		-r        : do not fetch meta information for given SRR* accession numbers
 		-o [file] : additionally print information for given accession numbers to file
 		-a [list] : fetch all, biological and technical reads, and reassign mate ids according to a comma separated list e.g. 1,3,2
-		-b        : use ebi uk mirror fallback utilizing wget (unless -c) upon fastq-dump failures
-		-e        : unless -a, priorize ebi uk mirror utilizing wget
+		-w        : unless -a, download from ebi uk mirror utilizing wget
 		            HINT1: outperformes fastq-dump but uses less stable connections which may requires additional runs
 		            HINT2: use -p 1 in a final run to ensure all files were downloaded correctly
-		-c        : experimental! unless -a, priorize ebi uk mirror utilizing curl
+		-c        : unless -a, download from ebi uk mirror utilizing curl
+		            HINT1: experimental!
+		-f        : unless -a, use ebi uk mirror as fallback upon fastq-dump failures. requires -w or -c
 
 		EXAMPLES
 		$(basename "$0") -p 2 -t 4 -m /dev/shm GSM1446883 SRR1528586 SRX663213
-		$(basename "$0") -f -p 2 -t 4 -m /dev/shm /path/to/SRR1528586.sra /path/to/SRR1528588.sra
+		$(basename "$0") -l -p 2 -t 4 -m /dev/shm /path/to/SRR1528586.sra /path/to/SRR1528588.sra
 
 		REFERENCES
 		(c) Konstantin Riege
@@ -77,7 +77,7 @@ usage(){
 }
 
 unset OPTIND
-while getopts o:p:m:t:d:a:srecbhf ARG; do
+while getopts o:p:m:t:d:a:srwcfhl ARG; do
 	case $ARG in
 		o) outfile="$OPTARG";;
 		p) instances=$OPTARG;;
@@ -85,21 +85,18 @@ while getopts o:p:m:t:d:a:srecbhf ARG; do
 		m) t=$OPTARG;;
 		a) mapfile -t -d ',' mateid < <(printf "%s" "$OPTARG");;
 		d) outdir="$OPTARG";;
-		f) files=true;;
-		e) ebi=true; method=wget;;
+		l) files=true;;
+		w) ebi=true; method=wget;;
 		c) ebi=true; method=curl;;
 		s) nodownload=true;;
 		r) outfile=/dev/null; nofetch=true;;
-		b) ebi=true; fallback=true;;
+		f) fallback=true;;
 		h) (usage); exit 0;;
 		*) usage;;
 	esac
 done
 shift $((OPTIND-1))
-
-[[ $# -eq 0 || -z $1 || $(command -v esearch > /dev/null; echo $?) -gt 0 || ( $(command -v fastq-dump > /dev/null; echo $?) -gt 0 && $(command -v wget > /dev/null; echo $?) -gt 0 ) ]] && {
-	usage
-}
+[[ $# -eq 0 ]] && usage
 
 declare -a srr title
 instances=${instances:-2}
@@ -110,10 +107,11 @@ files=${files:-false}
 $files && ebi=false && fallback=false
 ebi=${ebi:-false}
 [[ $mateid ]] && ebi=false && fallback=false
-method=${method:-wget}
 nodownload=${nodownload:-false}
 nofetch=${nofetch:-false}
 fallback=${fallback:-false}
+ERROR="requires -w or -c"
+$fallback && $ebi
 outfile="${outfile:-/dev/null}"
 outdir="${outdir:-$PWD}"
 ERROR="cannot create output directory"
@@ -138,8 +136,8 @@ else
 			srr+=("$id")
 		} || {
 			i="${#srr[@]}"
-			srr+=($(esearch -db sra -query "$id" | efetch --format docsum | grep -oE '(S|E|D)RR[^"]+'))
-			n=$(esearch -db sra -query "$id" | efetch --format info | grep -oE 'sample_title="[^"]+' | cut -d '"' -f 2 | sort -Vu | xargs echo)
+			srr+=($(esearch -db sra -query "$id" | efetch -format docsum | grep -oE '(S|E|D)RR[^"]+'))
+			n=$({ esearch -db sra -query "$id" | efetch -format info | grep -oE 'sample_(title|name)="[^"]+' || echo "NA"; } | sort -Vur | head -1 | cut -d '"' -f 2)
 			printf "$id\t%s\t$n\n" "${srr[@]:$i}" | tee -a "$outfile" >&2
 		}
 	done
@@ -239,20 +237,8 @@ ftpdump_curl(){
 	return 0
 }
 
-$faster && [[ $(command -v fasterq-dump > /dev/null; echo $?) -eq 0 ]] && {
-	ERROR="@ fasterqdump"
-	fasterqdump
-	exit 0
-}
-
-$ebi || [[ $(command -v fastq-dump > /dev/null; echo $?) -gt 0 ]] && {
-	ERROR="@ ftpdump_$method"
-	ftpdump_$method
-	exit 0
-}
-
 compression=$([[ $threads -eq 1 ]] && echo sngl || echo mult)
-$fallback && {
+if $fallback; then
 	# redirect stderr to subshell via process substitution to be used as stdout
 	# use tee to directly print stdout again as stderr and further filter stdout for failed SRR ids via awk
 	# print message in awk to stderr and check if accession number is truely SRR by second awk command utilizing regex
@@ -263,16 +249,18 @@ $fallback && {
 	ERROR="@ ftpdump_$method during rescuing of fastqdump_$compression"
 	ftpdump_$method
 	exit 0
-} || {
-	[[ $mateid ]] && {
+else
+	if [[ $mateid ]]; then
 		ERROR="@ fastqdump_all"
 		fastqdump_all
-		exit 0
-	} || {
+	elif $ebi; then
+		ERROR="@ ftpdump_$method"
+		ftpdump_$method
+	else
 		ERROR="@ fastqdump_$compression"
 		fastqdump_$compression
-		exit 0
-	}
-}
+	fi
+
+fi
 
 exit 0

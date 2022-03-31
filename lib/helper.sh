@@ -109,7 +109,7 @@ helper::makecatcmd(){
 	done
 	[[ $mandatory -lt 2 ]] && _usage
 
-	_makecatcmd=$(readlink -e "$f" | file -f - | grep -Eo '(gzip|bzip)' | sed 's/gzip/pigz -p 1/;s/$/ -cd/' || echo cat)
+	_makecatcmd=$({ readlink -e "$f" | file -f - | grep -Eo '(gzip|bzip)' || echo cat; } | sed '/gzip/{s/gzip/pigz -p 1/; s/$/ -cd/}')
 
 	return 0
 }
@@ -141,11 +141,11 @@ helper::basename(){
 	[[ $mandatory -lt 3 ]] && _usage
 
 	if readlink -e "$f" | file -f - | grep -qE '(gzip|bzip)'; then
-		_basename=$(basename $f | rev | cut -d '.' -f 3- | rev)
-		_basenamex=$(basename $f | rev | cut -d '.' -f 1-2 | rev)
+		_basename="$(basename "$f" | rev | cut -d '.' -f 3- | rev)"
+		_basenamex="$(basename "$f" | rev | cut -d '.' -f 1-2 | rev)"
 	else
-		_basename=$(basename $f | rev | cut -d '.' -f 2- | rev)
-		_basenamex=$(basename $f | rev | cut -d '.' -f 1 | rev)
+		_basename="$(basename "$f" | rev | cut -d '.' -f 2- | rev)"
+		_basenamex="$(basename "$f" | rev | cut -d '.' -f 1 | rev)"
 	fi
 
 	return 0

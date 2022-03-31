@@ -96,7 +96,7 @@ commander::makecmd(){
 		case $arg in
 			a)	mandatory=1; _cmds_makecmd=$OPTARG;;
 			s)	sep=$(echo -e "$OPTARG");; # echo -e to make e.g. '\t' possible
-			o)	suffix=' > '"$OPTARG";;
+			o)	suffix=" > '$OPTARG'";;
 			c)	[[ ! $mandatory ]] && _usage
 				shift $((OPTIND-1)) # remove '-a <cmd>' '-s <char> '-o <file>' '-c' from $@
 				for fd in "${COMMANDER[@]}"; do
@@ -196,7 +196,7 @@ commander::runcmd(){
 			EOF
 			if [[ $cenv ]]; then
 				echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$(basename $sh) -i '$BASHBONE_TOOLSDIR'" >> "$sh"
-				echo "conda activate $cenv" >> "$sh"
+				echo "conda activate --no-stack $cenv" >> "$sh"
 			else
 				echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$(basename $sh) -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 			fi
@@ -222,7 +222,7 @@ commander::runcmd(){
 			EOF
 			if [[ $cenv ]]; then
 				echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$(basename $sh) -i '$BASHBONE_TOOLSDIR'" >> "$sh"
-				echo "conda activate $cenv" >> "$sh"
+				echo "conda activate --no-stack $cenv" >> "$sh"
 			else
 				echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$(basename $sh) -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 			fi
@@ -306,6 +306,7 @@ commander::qsubcmd(){
 	local ex="$logdir/exitcodes.$jobname"
 	local log="$logdir/job.$jobname.\$TASK_ID.log" # not SGE_TASK_ID
 
+	export BASHBONE_SGEPATH="$PATH"
 	local i id sh
 	for i in "${!_cmds_qsubcmd[@]}"; do
 		id=$((i+1))
@@ -319,11 +320,12 @@ commander::qsubcmd(){
 			exit::$jobname.$id(){
 				echo "$jobname.$id exited with exit code \$1" >> "$ex"
 			}
+			PATH="\${BASHBONE_SGEPATH:-\$PATH}"
 		EOF
 
 		if [[ $cenv ]]; then
 			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
-			echo "conda activate $cenv" >> "$sh"
+			echo "conda activate --no-stack $cenv" >> "$sh"
 		else
 			echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 		fi
@@ -342,6 +344,7 @@ commander::qsubcmd(){
 	# - in case of job exit code > 0, leads to *** longjmp causes uninitialized stack frame ***: bash terminated
 	# TIMEFORMAT=':BENCHMARK: runtime %3lR [hours][minutes]seconds'
 	# time echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
+	# attention: -S /bin/bash cannot be -S "/bin/bash --noprofile" and thus sources bash_profile and bashrc which in worst case modifies PATH so that conda may not serve its binaries first
 
 	if $benchmark && [[ "$dowait" == "y" ]]; then
 		local jobid x message

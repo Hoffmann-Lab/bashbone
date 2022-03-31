@@ -28,7 +28,7 @@ variants::haplotypecaller() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir outdir isdna=true
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp dbsnpfilter=true tmpdir outdir isdna=true
 	declare -n _mapper_haplotypecaller _bamslices_haplotypecaller
 	while getopts 'S:s:t:g:d:e:m:M:r:c:p:o:' arg; do
 		case $arg in
@@ -50,6 +50,8 @@ variants::haplotypecaller() {
 	[[ $mandatory -lt 7 ]] && _usage
 
 	if [[ ! $dbsnp ]]; then
+		dbsnpfilter=false
+
 		tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf.gz)"
 		dbsnp="$tmpfile"
 		echo -e "##fileformat=VCFv4.0\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" | bgzip -f -@ $threads > "$tmpfile"
@@ -147,7 +149,7 @@ variants::haplotypecaller() {
 							--filter-name "MQRankSum-3"
 							-filter "ReadPosRankSum < -3.0"
 							--filter-name "ReadPosRankSum-3"
-							-verbosity INFO
+							-verbosity ERROR
 							--tmp-dir "${tdirs[-1]}"
 					CMD
 				else
@@ -169,7 +171,7 @@ variants::haplotypecaller() {
 							--filter-name "QD2"
 							-filter "FS > 30.0"
 							--filter-name "FS30"
-							-verbosity INFO
+							-verbosity ERROR
 							--tmp-dir "${tdirs[-1]}"
 					CMD
 				fi
@@ -184,15 +186,17 @@ variants::haplotypecaller() {
 					vcfix.pl -i - > "$slice.fixed.nomulti.vcf"
 				CMD
 
-				if [[ $dbsnp ]]; then
-					commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+				if $dbsnpfilter; then
+					commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 						vcffixup "$slice.fixed.nomulti.vcf"
 					CMD
 						vt normalize -q -n -r "$genome" -
 					CMD
 						vcfixuniq.pl
 					CMD
-						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.vcf"
+						tee -i "$slice.fixed.nomulti.normed.vcf"
+					CMD
+						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.nodbsnp.vcf"
 					CMD
 				else
 					commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -211,7 +215,7 @@ variants::haplotypecaller() {
 			t="$tdir/${o%.*}"
 			o="$odir/${o%.*}"
 
-			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
+			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $($dbsnpfilter && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				#DO NOT PIPE - DATALOSS!
 				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -481,14 +485,16 @@ variants::mutect() {
 				CMD
 
 				if [[ $dbsnp ]]; then
-					commander::makecmd -a cmd8 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					commander::makecmd -a cmd8 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 						vcffixup "$slice.fixed.nomulti.vcf"
 					CMD
 						vt normalize -q -n -r "$genome" -
 					CMD
 						vcfixuniq.pl
 					CMD
-						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.vcf"
+						tee -i "$slice.fixed.nomulti.normed.vcf"
+					CMD
+						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.nodbsnp.vcf"
 					CMD
 				else
 					commander::makecmd -a cmd8 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -524,7 +530,7 @@ variants::mutect() {
 					--tmp-dir "${tdirs[-1]}"
 			CMD
 
-			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
+			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				tdirs+=("$(mktemp -d -p "$tdir" cleanup.XXXXXXXXXX.bcftools)")
 				#DO NOT PIPE - DATALOSS!
 				commander::makecmd -a cmd10 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -764,14 +770,16 @@ variants::bcftools() {
 				CMD
 
 				if [[ $dbsnp ]]; then
-					commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 						vcffixup "$slice.fixed.nomulti.vcf"
 					CMD
 						vt normalize -q -n -r "$genome" -
 					CMD
 						vcfixuniq.pl
 					CMD
-						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.vcf"
+						tee -i "$slice.fixed.nomulti.normed.vcf"
+					CMD
+						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.nodbsnp.vcf"
 					CMD
 				else
 					commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -786,7 +794,7 @@ variants::bcftools() {
 				tomerge+=("$slice")
 			done
 
-			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
+			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				#DO NOT PIPE - DATALOSS!
 				commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -986,14 +994,16 @@ variants::freebayes() {
 				CMD
 
 				if [[ $dbsnp ]]; then
-					commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 						vcffixup "$slice.fixed.nomulti.vcf"
 					CMD
 						vt normalize -q -n -r "$genome" -
 					CMD
 						vcfixuniq.pl
 					CMD
-						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.vcf"
+						tee -i "$slice.fixed.nomulti.normed.vcf"
+					CMD
+						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.nodbsnp.vcf"
 					CMD
 				else
 					commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -1008,7 +1018,7 @@ variants::freebayes() {
 				tomerge+=("$slice")
 			done
 
-			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
+			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				#DO NOT PIPE - DATALOSS!
 				commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -1257,14 +1267,16 @@ variants::varscan() {
 				CMD
 
 				if [[ $dbsnp ]]; then
-					commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 						vcffixup "$slice.fixed.nomulti.vcf"
 					CMD
 						vt normalize -q -n -r "$genome" -
 					CMD
 						vcfixuniq.pl
 					CMD
-						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.vcf"
+						tee -i "$slice.fixed.nomulti.normed.vcf"
+					CMD
+						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.nodbsnp.vcf"
 					CMD
 				else
 					commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -1279,7 +1291,7 @@ variants::varscan() {
 				tomerge+=("$slice")
 			done
 
-			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
+			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				#DO NOT PIPE - DATALOSS!
 				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -1533,14 +1545,16 @@ variants::vardict() {
 				CMD
 
 				if [[ $dbsnp ]]; then
-					commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 						vcffixup "$slice.fixed.nomulti.vcf"
 					CMD
 						vt normalize -q -n -r "$genome" -
 					CMD
 						vcfixuniq.pl
 					CMD
-						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.vcf"
+						tee -i "$slice.fixed.nomulti.normed.vcf"
+					CMD
+						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.nodbsnp.vcf"
 					CMD
 				else
 					commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -1555,7 +1569,7 @@ variants::vardict() {
 				tomerge+=("$slice")
 			done
 
-			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
+			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				#DO NOT PIPE - DATALOSS!
 				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -1785,14 +1799,16 @@ variants::vardict_threads() {
 			CMD
 
 			if [[ $dbsnp ]]; then
-				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 					vcffixup "$o.fixed.nomulti.vcf"
 				CMD
 					vt normalize -q -n -r "$genome" -
 				CMD
 					vcfixuniq.pl
 				CMD
-					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$o.fixed.nomulti.normed.vcf"
+					tee -i "$o.fixed.nomulti.normed.vcf"
+				CMD
+					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$o.fixed.nomulti.normed.nodbsnp.vcf"
 				CMD
 			else
 				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -1804,7 +1820,7 @@ variants::vardict_threads() {
 				CMD
 			fi
 
-			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
+			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
 				CMD
@@ -1970,14 +1986,16 @@ variants::platypus() {
 			CMD
 
 			if [[ $dbsnp ]]; then
-				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 					vcffixup "$o.fixed.nomulti.vcf"
 				CMD
 					vt normalize -q -n -r "$genome" -
 				CMD
 					vcfixuniq.pl
 				CMD
-					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$o.fixed.nomulti.normed.vcf"
+					tee -i "$o.fixed.nomulti.normed.vcf"
+				CMD
+					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$o.fixed.nomulti.normed.nodbsnp.vcf"
 				CMD
 			else
 				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -1989,7 +2007,7 @@ variants::platypus() {
 				CMD
 			fi
 
-			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
+			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
 				CMD

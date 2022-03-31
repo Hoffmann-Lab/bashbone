@@ -17,7 +17,7 @@ outdir = args[2]
 dir.create(outdir, recursive = T, showWarnings = F)
 setEPS(width=8, height=8, onefile=T)
 
-experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F)
+experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F, quote="")
 colnames(experiments)[1:4] = c("sample","countfile","condition","replicate")
 
 # method 1
@@ -28,7 +28,7 @@ colnames(experiments)[1:4] = c("sample","countfile","condition","replicate")
 # ...
 # method 2
 dds = DESeqDataSetFromHTSeqCount(sampleTable = experiments, directory = "", design = ~1)
-
+dds = estimateSizeFactors(dds)
 
 log = DESeqTransform(SummarizedExperiment(log2(counts(dds, normalized=T) + 1), colData=colData(dds))) # normalized=T devides by library size factors
 save(log, file = file.path(outdir,"log.Rdata"))
@@ -64,7 +64,7 @@ for (method in c("log","vsd","rld")){
 			geom_point(size = 3) +
 			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
 			ylab(paste0("PC2: ",percentVar[2], "% variance"))
-		ggsave(file.path(outdir,paste("pca_12_",method,".pdf",sep="")))
+		suppressMessages(ggsave(file.path(outdir,paste("pca_12_",method,".pdf",sep=""))))
 		# stat_ellipse() +
 
 		ggplot(data, aes(PC1, PC3, color = condition, group = condition, shape = replicate)) +
@@ -76,7 +76,7 @@ for (method in c("log","vsd","rld")){
 			geom_point(size = 3) +
 			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
 			ylab(paste0("PC3: ",percentVar[3], "% variance"))
-		ggsave(file.path(outdir,paste("pca_13_",method,".pdf",sep="")))
+		suppressMessages(ggsave(file.path(outdir,paste("pca_13_",method,".pdf",sep=""))))
 		# stat_ellipse() +
 
 		ggplot(data, aes(PC2, PC3, color = condition, group = condition, shape = replicate)) +
@@ -88,7 +88,7 @@ for (method in c("log","vsd","rld")){
 			geom_point(size = 3) +
 			xlab(paste0("PC2: ",percentVar[2], "% variance")) +
 			ylab(paste0("PC3: ",percentVar[3], "% variance"))
-		ggsave(file.path(outdir,paste("pca_23_",method,".pdf",sep="")))
+		suppressMessages(ggsave(file.path(outdir,paste("pca_23_",method,".pdf",sep=""))))
 		# stat_ellipse() +
 	})
 }

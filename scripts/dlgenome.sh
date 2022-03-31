@@ -1,52 +1,54 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
-shopt -s extglob
 
-die(){
-	echo ":ERROR: $*"
-	exit 1
-}
+set -o pipefail -o errtrace # for ERR trap inheritance
+# -o functrace for DEBUG and RETURN trap inheritance in case of err backtrace implementation
+
+# shopt -s extdebug # for advanced LINENO handling via read -r fun line src < <(declare -F ${FUNCNAME[0]})
+shopt -s extglob # e.g. +(a|b|c)*
+# shopt -s expand_aliases # to allow aliases in scripts
 
 cleanup(){
 	[[ $outdir ]] && rm -rf "$outdir/tmp"
 }
 
-trap 'die "killed"' INT TERM
-
 trap '
 	cleanup
-	sleep 1
 	declare -a pids=($(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
-	{ kill -KILL "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null
+	{ kill -INT "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null
 	printf "\r"
 ' EXIT
 
+trap 'exit $?' INT TERM
+trap 'exit 1' USR1
+trap 'e=$?; [[ $ERROR ]] && echo ":ERROR: $ERROR"; if [[ $e -ne 141 ]]; then [[ $BASHPID -eq $$ ]] && exit $e || kill -USR1 $$; fi' ERR
+
 usage(){
-cat <<- EOF
-	DESCRIPTION
-	$(basename $0) downloads most recent human or mouse genome and annotation including gene ontology and optionally dbSNP
+	cat <<- EOF
+		DESCRIPTION
+		$(basename $0) downloads most recent human or mouse genome and annotation including gene ontology and optionally dbSNP
 
-	VERSION
-	0.4.0
+		VERSION
+		0.5.0
 
-	SYNOPSIS
-	$(basename $0) -v -r [hg19|hg38|mm10] -g -a -d -s -n
+		SYNOPSIS
+		$(basename $0) -v -r [hg19|hg38|mm10] -g -a -d -s -n
 
-	INPUT OPTIONS
-	-h | --help                       : prints this message
-	-t | --threads [value]            : threads - predicted default: $threads
-	-o | --out [path]                 : output directory - default: $PWD
-	-r | --reference [hg19|hg38|mm10] : choose GRCh37/hg19 or GRCh38/hg38 or GRCm38/mm10
-	-g | --genome                     : download Ensembl genome
-	-c | --ctat                       : switch to CTAT genome and indices (~30GB)
-	-a | --annotation                 : download Ensembl gtf
-	-d | --descriptions               : download Ensembl gene description and ontology information (requires R in PATH)
-	-s | --dbsnp                      : download Ensembl dbSNP
-	-n | --ncbi                       : switch to NCBI dbSNP
+		INPUT OPTIONS
+		-h | --help                       : prints this message
+		-t | --threads [value]            : threads - predicted default: $threads
+		-o | --out [path]                 : output directory - default: $PWD
+		-r | --reference [hg19|hg38|mm10] : choose GRCh37/hg19 or GRCh38/hg38 or GRCm38/mm10 or GRCm39/mm11
+		-g | --genome                     : download Ensembl genome
+		-c | --ctat                       : switch to CTAT genome and indices (~30GB)
+		-a | --annotation                 : download Ensembl gtf
+		-d | --descriptions               : download Ensembl gene description and ontology information (requires R in PATH)
+		-s | --dbsnp                      : download Ensembl dbSNP
+		-n | --ncbi                       : switch to NCBI dbSNP
 
-	REFERENCES
-	(c) Konstantin Riege
-	konstantin.riege{a}leibniz-fli{.}de
+		REFERENCES
+		(c) Konstantin Riege
+		konstantin.riege{a}leibniz-fli{.}de
 	EOF
 	exit 1
 }
@@ -68,11 +70,14 @@ dlgenome::_go(){
 				biocLite("biomaRt", suppressUpdates=TRUE)
 			}
 			library("biomaRt")
-			ensembl <- useMart("ENSEMBL_MART_ENSEMBL")
-			ensembl <- useDataset("$dataset",mart=ensembl)
-			cat("downloading datasets, please wait...\n")
-			goids <- getBM(mart=ensembl,attributes=c("ensembl_gene_id","go_id","namespace_1003","name_1006"))
-			descriptions <- getBM(mart=ensembl,attributes=c("ensembl_gene_id","external_gene_name","gene_biotype","description"))
+			ensembl <- useEnsembl(biomart="genes", dataset="$dataset")
+			goids <- data.frame()
+			descriptions <- data.frame()
+			for (chr in grep("^(MT|X|Y|\\\d+)$",listFilterOptions(mart = ensembl, filter = "chromosome_name"), value=T, perl=T)){
+				cat(paste0("downloading datasets of chr",chr,", please wait...\n"))
+				goids <- rbind(goids, getBM(mart=ensembl, attributes=c("ensembl_gene_id","go_id","namespace_1003","name_1006"), filters=c("chromosome_name"), values=list(chr)))
+				descriptions <- rbind(descriptions, getBM(mart=ensembl, attributes=c("ensembl_gene_id","external_gene_name","gene_biotype","description"), filters=c("chromosome_name"), values=list(chr)))
+			}
 			write.table(goids,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.go")
 			write.table(descriptions,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.info")
 		EOF
@@ -84,15 +89,19 @@ dlgenome::_go(){
 				BiocManager::install(c("biomaRt"), Ncpus=$threads, clean=T)
 			}
 			library("biomaRt")
-			ensembl <- useMart("ENSEMBL_MART_ENSEMBL")
-			ensembl <- useDataset("$dataset",mart=ensembl)
-			cat("downloading datasets, please wait...\n")
-			goids <- getBM(mart=ensembl,attributes=c("ensembl_gene_id","go_id","namespace_1003","name_1006"))
-			descriptions <- getBM(mart=ensembl,attributes=c("ensembl_gene_id","external_gene_name","gene_biotype","description"))
+			ensembl <- useEnsembl(biomart="genes", dataset="$dataset")
+			goids <- data.frame()
+			descriptions <- data.frame()
+			for (chr in grep("^(MT|X|Y|\\\d+)$",listFilterOptions(mart = ensembl, filter = "chromosome_name"), value=T, perl=T)){
+				cat(paste0("downloading datasets of chr",chr,", please wait...\n"))
+				goids <- rbind(goids, getBM(mart=ensembl, attributes=c("ensembl_gene_id","go_id","namespace_1003","name_1006"), filters=c("chromosome_name"), values=list(chr)))
+				descriptions <- rbind(descriptions, getBM(mart=ensembl, attributes=c("ensembl_gene_id","external_gene_name","gene_biotype","description"), filters=c("chromosome_name"), values=list(chr)))
+			}
 			write.table(goids,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.go")
 			write.table(descriptions,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.info")
 		EOF
 	}
+	# curl -s http://current.geneontology.org/ontology/go.obo | grep -A 2 '^\[Term\]' | grep -E '^(id|name):' | paste - - | sed -E 's/id:\s+(\S+)\s+name:\s+(.+)/\1\t\2/' > go2name
 
 	echo ":INFO: downloading gene ontology and descriptions"
 	Rscript $outdir/tmp/download.R || return 1
@@ -117,6 +126,13 @@ dlgenome::hg19.go(){
 dlgenome::mm10.go(){
 	cd $outdir
 	genome=GRCm38
+	dataset="mmusculus_gene_ensembl"
+	dlgenome::_go
+}
+
+dlgenome::mm11.go(){
+	cd $outdir
+	genome=GRCm39
 	dataset="mmusculus_gene_ensembl"
 	dlgenome::_go
 }
@@ -426,6 +442,113 @@ dlgenome::hg19.ctat() {
 }
 
 ##########
+#  mm11  #
+##########
+
+dlgenome::mm11.genome() {
+	cd $outdir
+	genome=GRCm39
+
+	echo ":INFO: downloading $genome genome"
+	wget -c -q --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping --glob=on 'ftp://ftp.ensembl.org/pub/current_fasta/mus_musculus/dna/Mus_musculus.GRCm39.dna.chromosome.*.fa.gz' || return 1
+
+	echo ":INFO: extracting genome"
+	gzip -dc Mus_musculus.GRCm39.dna.chromosome.MT.fa.gz | sed "s/>.*/>chrM/" > $genome.fa
+	[[ $((${PIPESTATUS[@]/%/+}0)) -gt 0 ]] && return 1
+	for i in {1..19} X Y; do
+		gzip -dc Mus_musculus.GRCm39.dna.chromosome.$i.fa.gz | sed "s/>.*/>chr$i/" >> $genome.fa
+		[[ $((${PIPESTATUS[@]/%/+}0)) -gt 0 ]] && return 1
+	done
+
+	ensembl=$(ls -v Mus_musculus.GRCm39.dna.chromosome.*.fa.gz | tail -1 | grep -Eo '\.[0-9]+')
+	cat <<- EOF > $genome.fa.README || return 1
+		$(date)
+		$USER
+		Ensembl $genome genome
+		ftp://ftp.ensembl.org/pub/current_fasta/mus_musculus/dna/
+	EOF
+
+	rm -f Mus_musculus.GRCm39.dna.chromosome.*.fa.gz
+	return 0
+}
+
+dlgenome::mm11.gtf() {
+	cd $outdir
+	genome=GRCm39
+
+	echo ":INFO: downloading annotation"
+	wget -c -q --show-progress --progress=bar:force --waitretry=10 --tries=10 --retry-connrefused --timestamping --glob=on 'ftp://ftp.ensembl.org/pub/current_gtf/mus_musculus/Mus_musculus.GRCm39.*.chr.gtf.gz' || return 1
+
+	echo ":INFO: extracting annotation"
+	gzip -dc Mus_musculus.GRCm39.*.chr.gtf.gz | perl -F'\t' -lane 'next unless $F[0]=~/^(\d+|X|Y|MT)$/; $F[0]="M" if $F[0] eq "MT"; $F[0]="chr$F[0]"; unless($f eq $F[0]){close O; $f=$F[0]; open O,">$f.gtf";} print O join("\t",@F); END{close O};'
+	[[ $((${PIPESTATUS[@]/%/+}0)) -gt 0 ]] && return 1
+
+	echo ":INFO: sorting annotation"
+	rm -f $genome.fa.gtf
+	for i in M {1..19} X Y; do
+		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k4,4n -k5,5n chr$i.gtf >> $genome.fa.gtf || return 1
+	done
+
+	ensembl=$(ls -v Mus_musculus.GRCm39.*.chr.gtf.gz | tail -1 | grep -Eo '\.[0-9]+')
+	cat <<- EOF > $genome.fa.gtf.README || return 1
+		$(date)
+		$USER
+		Ensembl $genome gtf v$ensembl
+		ftp://ftp.ensembl.org/pub/grch37/current/gtf/homo_sapiens/
+	EOF
+
+	rm -f Mus_musculus.GRCm39.*.chr.gtf.gz
+	rm -f chr*.gtf
+	return 0
+}
+
+dlgenome::mm11.dbsnp.ensembl() {
+	cd $outdir
+	genome=GRCm39
+
+	echo ":INFO: downloading dbSNP"
+	wget -c -q --show-progress --progress=bar:force --waitretry=10 --tries=10 --retry-connrefused --timestamping --glob=on 'ftp://ftp.ensembl.org/pub/current_variation/vcf/mus_musculus/mus_musculus.vcf.gz'
+
+	echo ":INFO: extracting dbSNP"
+	gzip -dc mus_musculus.vcf.gz | perl -F'\t' -lane 'next if /^#/ || $F[-1]!~/^dbSNP/; $F[0]="M" if $F[0] eq "MT"; $F[0]="chr$F[0]"; unless($f eq $F[0]){close O; $f=$F[0]; open O,">$f.vcf";} print O join("\t",@F); END{close O};'
+	[[ $((${PIPESTATUS[@]/%/+}0)) -gt 0 ]] && return 1
+
+	echo ":INFO: sorting dbSNP"
+	gzip -dc mus_musculus.vcf.gz | head -1000 | grep '^#' > $genome.fa.vcf
+	[[ -e chrM.vcf ]] && LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chrM.vcf >> $genome.fa.vcf
+	for i in {1..19} X Y; do
+		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
+	done
+
+	cat <<- EOF >> $genome.fa.vcf.README || return 1
+		$(date)
+		$USER
+		Ensembl $genome $(grep -m 1 -Eo 'dbSNP_[0-9]+' $genome.fa.vcf | sed 's/_/ v\./')
+		ftp://ftp.ensembl.org/pub/current_variation/vcf/mus_musculus/
+	EOF
+
+	rm -f mus_musculus.vcf.gz
+	rm -f chr*.vcf
+	return 0
+}
+
+dlgenome::mm11.dbsnp.ncbi() {
+	cd $outdir
+	genome=GRCm38
+
+	echo ":INFO: ncbi dbsnp not (yet?) available"
+	return 0
+}
+
+dlgenome::mm11.ctat() {
+	cd $outdir
+	genome=GRCm38
+
+	echo ":INFO: ctat not (yet?) available"
+	return 0
+}
+
+##########
 #  mm10  #
 ##########
 
@@ -603,11 +726,11 @@ checkopt() {
 	return 0
 }
 
-[[ ! $OSTYPE =~ linux ]] && die "unsupported operating system"
+[[ $OSTYPE =~ linux ]]
 threads=$(cat /proc/cpuinfo | grep -cF processor)
 fun=()
 [[ $# -eq 0 ]] && usage
-[[ $# -eq 1 ]] && [[ ! $1 =~ ^- ]] && die "illegal option $1"
+[[ $# -eq 1 ]] && [[ ! $1 =~ ^- ]] && false
 for i in $(seq 1 $#); do
 	if [[ ${!i} =~ ^- ]]; then
 		j=$((i+1))
@@ -617,18 +740,21 @@ for i in $(seq 1 $#); do
 	fi
 done
 [[ $db ]] && fun+=("dbsnp.$db")
-[[ ! $ref ]] && echo ":ERROR: mandatory parameter -r missing" && exit 1
+ERROR="mandatory parameter -r missing"
+[[ $ref ]]
 outdir=${outdir:-$PWD}
-mkdir -p $outdir || die ":ERROR: cannot create $outdir"
+ERROR="cannot create $outdir"
+mkdir -p $outdir
 outdir=$(readlink -e $outdir)
 log=$outdir/dlgenome.log
 rm -f $log
-touch $log || die ":ERROR: cannot create $log"
-
+ERROR="cannot create $log"
+touch $log
 
 for f in "${fun[@]}"; do
+	ERROR="dlgenome::$ref.$f failed"
 	dlgenome::$ref.$f 2>&1 | tee -ai $log
-	[[ ${PIPESTATUS[0]} -gt 0 ]] && die "fetching $f failed"
 done
 echo ":INFO: success" | tee -ai $log
+
 exit 0

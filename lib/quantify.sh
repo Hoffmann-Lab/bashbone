@@ -139,35 +139,36 @@ quantify::tpm() {
 		for f in "${_bams_tpm[@]}"; do
 			header+="\t$(basename "${f%.*}")"
 			countfile="$countsdir/$m/$(basename "$f")"
-			countfile="$(readlink -e "${countfile%.*}"*.+(genecounts|counts).+(reduced|htsc) | head -1)"
+			countfile="$(realpath -s "${countfile%.*}"*.+(genecounts|counts).+(reduced|htsc) | head -1)"
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 				tpm.pl "$gtf" "$countfile" > "$countfile.tpm"
 			CMD
 			tojoin+=("$countfile")
 		done
 
-		commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD
-			helper::multijoin
-				-h "$(echo -e "$header")"
-				-o "$countsdir/$m/experiments.htsc"
-				-f $(printf '"%s" ' "${tojoin[@]}");
-		CMD
+		# if [[ ${#tojoin[@]} -gt 1 ]]; then
+		# 	commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD
+		# 		helper::multijoin
+		# 			-h "$(echo -e "$header")"
+		# 			-o "$countsdir/$m/experiments.htsc"
+		# 			-f $(printf '"%s" ' "${tojoin[@]}");
+		# 	CMD
 
-		commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD
-			helper::multijoin
-				-h "$(echo -e "$header")"
-				-o "$countsdir/$m/experiments.tpm"
-				-f $(printf '"%s" ' "${tojoin[@]/%/.tpm}");
-		CMD
+		# 	commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD
+		# 		helper::multijoin
+		# 			-h "$(echo -e "$header")"
+		# 			-o "$countsdir/$m/experiments.tpm"
+		# 			-f $(printf '"%s" ' "${tojoin[@]/%/.tpm}");
+		# 	CMD
+		# fi
 	done
 
 	if $skip; then
 		commander::printcmd -a cmd1
-		commander::printcmd -a cmd2
 	else
 		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
 	fi
+	#commander::runcmd -v -b -t $threads -a cmd2
 
 	return 0
 }

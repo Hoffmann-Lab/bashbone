@@ -18,14 +18,15 @@ alignment::segemehl() {
 			-o <outdir>     | path to
 			-1 <fastq1>     | array of
 			-2 <fastq2>     | array of
+			-F              | force index
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome genomeidx outdir accuracy insertsize nosplitaln=false
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome genomeidx outdir accuracy insertsize nosplitaln=false forceidx=false
 	declare -n _fq1_segemehl _fq2_segemehl _mapper_segemehl
 	declare -g -a segemehl=()
-	while getopts 'S:s:5:t:g:x:a:n:i:r:o:1:2:' arg; do
+	while getopts 'S:s:5:t:g:x:a:n:i:r:o:1:2:F' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -43,6 +44,7 @@ alignment::segemehl() {
 			;;
 			1)	((++mandatory)); _fq1_segemehl=$OPTARG;;
 			2)	_fq2_segemehl=$OPTARG;;
+			F)	forceidx=true;;
 			*)	_usage;;
 		esac
 	done
@@ -60,7 +62,7 @@ alignment::segemehl() {
 		local thismd5genome thismd5segemehl
 		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 		[[ -s "$genomeidx" ]] && thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
-		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5segemehl" || "$thismd5segemehl" != "$md5segemehl" ]]; then
+		if $forceidx || [[ "$thismd5genome" != "$md5genome" || ! "$thismd5segemehl" || "$thismd5segemehl" != "$md5segemehl" ]]; then
 			commander::printinfo "indexing genome for segemehl"
 			declare -a cmdidx
 			commander::makecmd -a cmdidx -s '|' -c {COMMANDER[0]}<<- CMD
@@ -156,14 +158,15 @@ alignment::star() {
 			-1 <fastq1>       | array of
 			-2 <fastq2>       | array of
 			-c <opts>         | passed to star
+			-F                | force idx
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false inparams=''
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false inparams='' forceidx=false
 	declare -n _fq1_star _fq2_star _mapper_star
 	declare -g -a star=()
-	while getopts 'S:s:5:t:g:f:x:a:n:i:r:o:p:1:2:c:' arg; do
+	while getopts 'S:s:5:t:g:f:x:a:n:i:r:o:p:1:2:c:F' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -184,6 +187,7 @@ alignment::star() {
 			1)	((++mandatory)); _fq1_star=$OPTARG;;
 			2)	_fq2_star=$OPTARG;;
 			c)	inparams="$OPTARG";;
+			F)	forceidx=true;;
 			*)	_usage;;
 		esac
 	done
@@ -198,7 +202,7 @@ alignment::star() {
 		source "$genome.md5.sh"
 
 		declare -a cmdidx=("STAR --help | grep -m 1 -F versionGenome | sed -E 's/.+\s+(.+)/\1/'")
-		local doindex=false idxparams thisidxversion idxversion=$(commander::runcmd -c star -t $threads -a cmdidx)
+		local doindex=$forceidx idxparams thisidxversion idxversion=$(commander::runcmd -c star -t $threads -a cmdidx)
 		[[ -s "$genomeidxdir/genomeParameters.txt" ]] && thisidxversion=$(grep -m 1 -F versionGenome "$genomeidxdir/genomeParameters.txt" | sed -E 's/.+\s+(.+)/\1/')
 
 		if [[ "$thisidxversion" != "$idxversion" ]]; then
@@ -336,18 +340,19 @@ alignment::bwa() {
 			-r <mapper>     | array of bams within array of
 			-g <genome>     | path to
 			-x <idxprefix>  | path to
-			-f <memalog>    | true/false force mem algorithm independend of readlength
+			-f <memalgo>    | true/false force mem algorithm independend of readlength
 			-o <outdir>     | path to
 			-1 <fastq1>     | array of
 			-2 <fastq2>     | array of
+			-F              | force index
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome idxprefix outdir accuracy forcemem=true
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome idxprefix outdir accuracy forcemem=true forceidx=false
 	declare -n _fq1_bwa _fq2_bwa _mapper_bwa
 	declare -g -a bwa=()
-	while getopts 'S:s:5:t:g:x:a:f:i:r:o:1:2:' arg; do
+	while getopts 'S:s:5:t:g:x:a:f:i:r:o:1:2:f:F' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -364,12 +369,15 @@ alignment::bwa() {
 			;;
 			1)	((++mandatory)); _fq1_bwa=$OPTARG;;
 			2)	_fq2_bwa=$OPTARG;;
+			F)	forceidx=true;;
 			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "mapping bwa"
+	declare -a cmdchk=("command -v bwa-mem2 &> /dev/null && echo bwa-mem2 || echo bwa")
+	local bwacmd=$(commander::runcmd -c bwa -a cmdchk)
 
 	if $skipmd5; then
 		commander::warn "skip checking md5 sums and genome indexing respectively"
@@ -381,13 +389,13 @@ alignment::bwa() {
 		local thismd5genome thismd5bwa
 		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 		[[ -s "$idxprefix.pac" ]] && thismd5bwa=$(md5sum "$idxprefix.pac" | cut -d ' ' -f 1)
-		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5bwa" || "$thismd5bwa" != "$md5bwa" ]]; then
+		if $forceidx || [[ "$thismd5genome" != "$md5genome" || ! "$thismd5bwa" || "$thismd5bwa" != "$md5bwa" ]]; then
 			commander::printinfo "indexing genome for bwa"
 			declare -a cmdidx
 			commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				mkdir -p "$(dirname "$idxprefix")"
 			CMD
-				bwa index -p "$idxprefix" "$genome"
+				$bwacmd index -p "$idxprefix" "$genome"
 			CMD
 			commander::runcmd -c bwa -v -b -t $threads -a cmdidx
 			commander::printinfo "updating md5 sums"
@@ -415,7 +423,7 @@ alignment::bwa() {
 			[[ $accuracy ]] && params='-T '$(echo $accuracy | awk -v l=$readlength '{printf("%.d",l-l*(1-$1/100)*6)}')
 			if [[ ${_fq2_bwa[$i]} ]]; then
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bwa mem
+					$bwacmd mem
 						$params
 						-R '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
 						-a
@@ -428,7 +436,7 @@ alignment::bwa() {
 				CMD
 			else
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bwa mem
+					$bwacmd mem
 						$params
 						-R '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
 						-a
@@ -554,7 +562,7 @@ alignment::postprocess() {
 		declare -n _bams_process=$m
 		mkdir -p "$outdir/$m"
 		for i in "${!_bams_process[@]}"; do
-			outbase=$outdir/$m/$(basename "${_bams_process[$i]}")
+			outbase="$outdir/$m/$(basename "${_bams_process[$i]}")"
 			outbase="${outbase%.*}"
 			case $job in
 				uniqify)
@@ -639,20 +647,19 @@ alignment::_uniqify() {
 			samtools view
 				-@ $threads
 				-b
-				-F 4
 				"$sambam"
 				> "$outbase.bam"
 		CMD
 	}
 
-	commander::makecmd -a _cmds2_uniqify -s '|' -c {COMMANDER[0]}<<- CMD
-		samtools view
-			-@ $threads
-			-b
-			-f 4
-			"$sambam"
-			> "$outbase.unmapped.bam"
-	CMD
+	#commander::makecmd -a _cmds2_uniqify -s '|' -c {COMMANDER[0]}<<- CMD
+	#	samtools view
+	#		-@ $threads
+	#		-b
+	#		-f 4
+	#		"$sambam"
+	#		> "$outbase.unmapped.bam"
+	#CMD
 
 	# infer SE or PE filter
 	local params=''
@@ -661,15 +668,33 @@ alignment::_uniqify() {
 
 	if [[ $(samtools view -F 4 "$sambam" | head -10000 | grep -cE '\s+NH:i:[0-9]+\s+' ) -eq 0 ]]; then
 		#extract uniques just by MAPQ
-		commander::makecmd -a _cmds2_uniqify -s ';' -c {COMMANDER[0]}<<- CMD
-			samtools view
+		# commander::makecmd -a _cmds2_uniqify -s ';' -c {COMMANDER[0]}<<- CMD
+		# 	samtools view
+		# 		-q 1
+		# 		$params
+		# 		-@ $ithreads
+		# 		-F 4
+		# 		-F 256
+		# 		-F 2048
+		# 		-b
+		# 		"$sambam"
+		# 		> "$_returnfile_uniqify"
+		# CMD
+		commander::makecmd -a _cmds2_uniqify -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+			LC_ALL=C samtools view
 				-q 1
 				$params
 				-@ $ithreads
 				-F 4
 				-F 256
-				-b
+				-F 2048
 				"$sambam"
+		CMD
+			sed '/^@\S\S\s/!{s/$/\tNH:i:1/}'
+		CMD
+			samtools view
+				-@ $ithreads
+				-b
 				> "$_returnfile_uniqify"
 		CMD
 	else
@@ -684,9 +709,10 @@ alignment::_uniqify() {
 					-@ $ithreads
 					-F 4
 					-F 256
+					-F 2048
 					"$sambam"
 			CMD
-				sed -n '/^@/p; /\tNH:i:1\t/p'
+				sed -n '/^@\S\S\s/p; /\tNH:i:1\t/p'
 			CMD
 				samtools view
 					-@ $ithreads
@@ -701,6 +727,7 @@ alignment::_uniqify() {
 					-@ $ithreads
 					-F 4
 					-F 256
+					-F 2048
 					-d NH:1
 					"$sambam"
 				> "$_returnfile_uniqify"
@@ -743,12 +770,12 @@ alignment::_sort() {
 	_returnfile_sort="$outbase.sorted.bam"
 
 	commander::makecmd -a _cmds1_sort -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-		cd "$tmpdir"
+		rm -f "$tmpdir/$(basename "$outbase")"*
 	CMD
 		samtools sort
 			-@ $threads
 			-O BAM
-			-T "$(basename "$outbase")"
+			-T "$tmpdir/$(basename "$outbase")"
 			"$bam"
 			> "$_returnfile_sort"
 	CMD
@@ -820,17 +847,17 @@ alignment::inferstrandness(){
 			t)	((++mandatory)); threads=$OPTARG;;
 			r)	((++mandatory)); _mapper_inferstrandness=$OPTARG;;
 			x)	((++mandatory)); _strandness_inferstrandness=$OPTARG;;
-			g)	((++mandatory)); gtf="$OPTARG";;
+			g)	gtf="$OPTARG";;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
-
-	commander::printinfo "inferring library preparation method"
+	[[ $mandatory -lt 4 ]] && _usage
+	[[ ! $default && ! $gtf ]] && _usage
 
 	local m f
 	if [[ $default ]]; then
+		commander::printinfo "assigning default library preparation method"
 		for m in "${_mapper_inferstrandness[@]}"; do
 			declare -n _bams_inferstrandness=$m
 			for f in "${_bams_inferstrandness[@]}"; do
@@ -838,6 +865,8 @@ alignment::inferstrandness(){
 			done
 		done
 		return 0
+	else
+		commander::printinfo "inferring library preparation method"
 	fi
 
 	tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)"
@@ -1107,7 +1136,7 @@ alignment::qcstats(){
 				args <- commandArgs(TRUE);
 				intsv <- args[1];
 				outfile <- args[2];
-				m <- read.table(intsv, header=T, sep="\t");
+				m <- read.table(intsv, header=T, sep="\t", quote="");
 				l <- length(m$type)/length(unique(m$sample));
 				l <- m$type[1:l];
 				m$type = factor(m$type, levels=l);

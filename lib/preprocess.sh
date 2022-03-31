@@ -38,8 +38,8 @@ preprocess::dedup(){
 
 	commander::printinfo "umi based de-duplication"
 
-	declare -a catcmd cmd1
-	local i o1 e1 o2 e2 instances memory
+	declare -a cmd1
+	local i o1 e1 o2 e2 instances memory catcmd
 	read -r instances memory < <(configure::memory_by_instances -i 1 -M "$maxmemory")
 
 	for i in "${!_fq1_dedup[@]}"; do
@@ -485,10 +485,10 @@ preprocess::rcorrector(){
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
-			-o <outdir>   | path to
+			-o <outdir>   | absolute path to
 			-p <tmpdir>   | path to
-			-1 <fastq1>   | array of
-			-2 <fastq2>   | array of
+			-1 <fastq1>   | array of absolute paths
+			-2 <fastq2>   | array of absolute paths
 		EOF
 		return 1
 	}
@@ -500,7 +500,7 @@ preprocess::rcorrector(){
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir"; outdir=$(realpath -s "$outdir");;
 			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_rcorrector=$OPTARG;;
 			2) _fq2_rcorrector=$OPTARG;;
@@ -531,8 +531,8 @@ preprocess::rcorrector(){
 					cd "${tdirs[-1]}"
 				CMD
 					run_rcorrector.pl
-					-1 "${_fq1_rcorrector[$i]}"
-					-2 "${_fq2_rcorrector[$i]}"
+					-1 "$(realpath -s "${_fq1_rcorrector[$i]}")"
+					-2 "$(realpath -s "${_fq2_rcorrector[$i]}")"
 					-od "$outdir"
 					-t $threads
 				CMD
@@ -551,8 +551,8 @@ preprocess::rcorrector(){
 					ln -sfn "/dev/fd/12" "$(basename "$o2").$r2"
 				CMD
 					run_rcorrector.pl
-					-1 "${_fq1_rcorrector[$i]}"
-					-2 "${_fq2_rcorrector[$i]}"
+					-1 "$(realpath -s "${_fq1_rcorrector[$i]}")"
+					-2 "$(realpath -s "${_fq2_rcorrector[$i]}")"
 					-od "${tdirs[-1]}"
 					-t $threads
 					11> >(bgzip -@ $(((threads+1)/2)) -c > "$o1.$e1.gz")
@@ -571,7 +571,7 @@ preprocess::rcorrector(){
 				cd "${tdirs[-1]}"
 			CMD
 				run_rcorrector.pl
-				-s "${_fq1_rcorrector[$i]}"
+				-s "$(realpath -s "${_fq1_rcorrector[$i]}")"
 				-stdout
 				-t $threads
 				> >(bgzip -@ $threads -c > "$o1.$e1.gz")
@@ -869,7 +869,7 @@ preprocess::qcstats(){
 			args <- commandArgs(TRUE);
 			intsv <- args[1];
 			outfile <- args[2];
-			m <- read.table(intsv, header=T, sep="\t");
+			m <- read.table(intsv, header=T, sep="\t", quote="");
 			l <- length(m$type)/length(unique(m$sample));
 			l <- m$type[1:l];
 			m$type = factor(m$type, levels=l);

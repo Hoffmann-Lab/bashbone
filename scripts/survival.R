@@ -74,14 +74,14 @@ survplot = function(path){
                  title = "Kaplan-Meier plot", xlab = "Time since diagnosis (days)",
                  legend.title = "", legend.labs = labels, legend="top", palette = "jco", pval.size=4)
   #g$plot
-  ggsave(g$plot, filename = paste(path,"KM.pdf",sep="."), width=16, height=10)
+  suppressMessages(ggsave(g$plot, filename = paste(path,"KM.pdf",sep="."), width=16, height=10))
   write.table(tsv, row.names=F, file=paste(path,"KM.tsv",sep="."), quote=F, sep="\t")
 
   g = ggsurvplot(fit=fitx, risk.table = F, pval = paste(p1,p2,p3,p4,sep="\n"), conf.int = F, xlim = NULL,
                  title = "Cox PH regression plot", xlab = "Time since diagnosis (days)",
                  legend.title = "", legend.labs = labels, legend="top", palette = "jco", pval.size=4)
   #g$plot
-  ggsave(g$plot, filename = paste(path,"COX.pdf",sep="."), width=16, height=10)
+  suppressMessages(ggsave(g$plot, filename = paste(path,"COX.pdf",sep="."), width=16, height=10))
   write.table(tsvx, row.names=F, file=paste(path,"COX.tsv",sep="."), quote=F, sep="\t")
 }
 

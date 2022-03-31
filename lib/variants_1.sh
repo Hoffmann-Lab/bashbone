@@ -99,14 +99,16 @@ variants::vcfnorm() {
 		CMD
 
 		if [[ $dbsnp ]]; then
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 				vcffixup "$o.fixed.nomulti.vcf"
 			CMD
 				vt normalize -q -n -r "$genome" -
 			CMD
 				vcfixuniq.pl
 			CMD
-				vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$o.fixed.nomulti.normed.vcf"
+				tee -i "$o.fixed.nomulti.normed.vcf"
+			CMD
+				vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$o.fixed.nomulti.normed.nodbsnp.vcf"
 			CMD
 		else
 			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -119,7 +121,7 @@ variants::vcfnorm() {
 		fi
 
 		if $zip; then
-			for e in fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf; do
+			for e in fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
@@ -459,7 +461,7 @@ variants::tree(){
 			r)	((++mandatory)); _mapper_tree=$OPTARG;;
 			i)	((++mandatory)); vcfdir="$OPTARG";;
 			j)	((++mandatory)); caller="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG/genotree"; mkdir -p "$outdir";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
 	done
@@ -469,41 +471,44 @@ variants::tree(){
 
 	declare -a cmd1 cmd2 cmd3 cmd4 cmd5 cmd6 cmd7 cmd8 cmd9
 	declare -a tomerge names
-	local m f o e tmp vcffile odir
+	local m f o e vcffile odir
 
 	for m in "${_mapper_tree[@]}"; do
 		declare -n _bams_tree=$m
-		odir=$outdir/$m
-		mkdir -p $odir
-		e=$(echo -e "$(basename ${_bams_tree[0]})\t$(basename ${_bams_tree[1]})" | rev | sed -E 's/(.+).+\t\1.+/\1/' | rev)
+		odir="$outdir/$m/$caller"
+		mkdir -p "$odir"
+		e="$(echo -e "$(basename "${_bams_tree[0]}")\t$(basename "${_bams_tree[1]}")" | rev | sed -E 's/(.+).+\t\1.+/\1/' | rev)"
 		tomerge=()
 		names=()
 		for f in "${_bams_tree[@]}"; do
-			tmp="$vcfdir/$m/$caller/$(basename "$f")"
-			vcffile="$(readlink -e "${tmp%.*}".fixed.nomulti.normed.vcf)" || vcffile="$(readlink -e "${tmp%.*}".fixed.nomulti.normed.vcf.gz)"
-
-			names+=("$(basename "$f" $e)")
+			vcffile=$(find -L "$vcfdir/$m/$caller" -name "$(basename "$f" "$e")*.vcf" -or -name "$(basename "$f" "$e")*.vcf.gz" | perl -e 'print "".(sort { length($b) <=> length($a) } <>)[0]')
+			names+=("$(basename "$f" "$e")")
 			o="$odir/${names[-1]}"
 			tomerge+=("$o")
 
+			# commander::makecmd -a cmd1 -s '|' -o "$o.snv" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+			# 	bcftools view "$vcffile"
+			# CMD
+			# 	perl -F"\t" -M"List::MoreUtils qw(indexes)" -lane '
+			# 		if (/^#/){
+			# 			($i) = indexes {/^FORMAT$/} @F;
+			# 			next;
+			# 		}
+			# 		@t=split/:/,$F[$i];
+			# 		@v=split/:/,$F[-1];
+			# 		($cov) = indexes {/^COV$/} @t;
+			# 		$cov=$v[$cov];
+			# 		($ad) = indexes {/^AD$/} @t;
+			# 		$ad=(split/,/,$v[$ad])[1];
+			# 		($asf) = indexes {/^ASF$/} @t;
+			# 		$asf=$v[$asf];
+			# 		print "$F[0]\t".($F[1]-1)."\t$F[1]" if $F[-1]=~/^1(\/|\|)1/ && length($F[3])==1 && length($F[4])==1 && $cov>=10 && $ad>=3 && $asf >= 0.2;
+			# 	'
+			# CMD
 			commander::makecmd -a cmd1 -s '|' -o "$o.snv" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-				bcftools view "$vcffile"
+				bcftools view -U -v snps -g hom -f PASS,vcfix_ok,. -H "$vcffile"
 			CMD
-				perl -F"\t" -M"List::MoreUtils qw(indexes)" -lane '
-					if (/^#/){
-						($i) = indexes {/^FORMAT$/} @F;
-						next;
-					}
-					@t=split/:/,$F[$i];
-					@v=split/:/,$F[-1];
-					($cov) = indexes {/^COV$/} @t;
-					$cov=$v[$cov];
-					($ad) = indexes {/^AD$/} @t;
-					$ad=(split/,/,$v[$ad])[1];
-					($asf) = indexes {/^ASF$/} @t;
-					$asf=$v[$asf];
-					print "$F[0]\t".($F[1]-1)."\t$F[1]" if $F[-1]=~/^1\/1/ && length($F[3])==1 && length($F[4])==1 && $cov>=10 && $ad>=3 && $asf >= 0.2;
-				'
+				awk -v OFS='\t' '{print $1,($2-1),$2}'
 			CMD
 
 			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD

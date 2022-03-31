@@ -34,7 +34,7 @@ enrichment::_ora(){
 
 	if [[ $tpmtsv ]]; then
 		commander::makecmd -a _cmds1_ora -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
-			grep -F $domain "$gofile"
+			grep -F $domain "$gofile" | tee -i >(cut -f 2,4 | grep '^GO:' | sort -u > "$outdir/reference.terms")
 		CMD
 			grep -F -f <(perl -M'List::Util qw(max)' -lanE 'say \$F[0] if max(@F)>=1 && \$.>1' "$tpmtsv")
 		CMD
@@ -47,7 +47,7 @@ enrichment::_ora(){
 		CMD
 	else
 		commander::makecmd -a _cmds1_ora -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-			grep -F $domain "$gofile"
+			grep -F $domain "$gofile" | tee -i >(cut -f 2,4 | grep '^GO:' | sort -u > "$outdir/reference.terms")
 		CMD
 			perl -F'\t' -lane '
 				push @{$m{$F[1]}},$F[0];
@@ -61,27 +61,59 @@ enrichment::_ora(){
 	commander::makecmd -a _cmds2_ora -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
 			suppressMessages(library("clusterProfiler"));
+			suppressMessages(library("DOSE"));
+			suppressMessages(library("enrichplot"));
+			suppressMessages(library("ggplot2"));
 			args <- commandArgs(TRUE);
 			gmt <- args[1];
-			idsfile <- args[2];
-			odir <- args[3];
+			g2n <- args[2];
+			idsfile <- args[3];
+			odir <- args[4];
+			domain <- args[5];
 
-			genes <- scan(idsfile, character(), quote = "", quiet = T);
-			ora <- data.frame(matrix(ncol = 4, nrow = 0));
+			genes <- scan(idsfile, character(), quote="", quiet=T);
+			ora <- data.frame(matrix(ncol = 5, nrow = 0));
 			if(length(genes)>0){
 				tg <- suppressMessages(read.gmt(gmt));
+				tn <- read.table(g2n, sep="\t", stringsAsFactors=F, quote="");
 				if(sum(genes %in% tg$gene)>0){
-					ora <- enricher(genes, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
-					if(!is.null(ora)){
-						ora <- as.data.frame(ora)[c("ID","Count","pvalue","p.adjust")];
+					ora <- enricher(genes, TERM2GENE=tg, TERM2NAME=tn, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
+					if(!is.null(ora) && nrow(ora)>0){
+						dotplot(ora, showCategory=10, font.size=10)
+							+ theme(strip.background = element_rect(linetype = 0, fill=NA))
+							+ guides(color = guide_colourbar("FDR"));
+						suppressMessages(ggsave(file.path(odir,"dotplot.pdf")));
+
+						df <- data.frame(fdr=-log(ora$p.adjust, base=10), description = paste0(ora$Description," (",ora$Count,")"));
+						bars <- min(10,nrow(df));
+						dfp <- head(df,bars);
+						pdf(file.path(odir,"barplot.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
+						par(mar=c(5,max(nchar(df$description))/3+3,5,1));
+						barplot(rev(dfp$fdr), main=paste0(domain," (Top ",bars,")"), horiz=T, names.arg=rev(dfp$description),
+							xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
+							cex.names=0.8, las=1);
+						graphics.off();
+
+						bars <- nrow(df);
+						dfp <- df;
+						pdf(file.path(odir,"barplot.full.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
+						par(mar=c(5,max(nchar(df$description))/3+3,5,1));
+						barplot(rev(dfp$fdr), main=paste0(domain," (",bars,")"), horiz=T, names.arg=rev(dfp$description),
+							xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
+							cex.names=0.8, las=1);
+						graphics.off();
+
+						ora <- as.data.frame(ora)[c("ID","Count","pvalue","p.adjust","Description")];
+					} else {
+						ora <- data.frame(matrix(ncol = 5, nrow = 0));
 					};
 				};
 			};
-			colnames(ora) = c("id","count","pval","padj");
+			colnames(ora) = c("id","count","pval","padj","description");
 			write.table(ora, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");
 		'
 	CMD
-		"$outdir/reference.gmt" "$idsfile" "$outdir"
+		"$outdir/reference.gmt" "$outdir/reference.terms" "$idsfile" "$outdir" $(echo $domain | sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/')
 	CMD
 
 	return 0
@@ -120,7 +152,7 @@ enrichment::_gsea(){
 
 	if [[ $tpmtsv ]]; then
 		commander::makecmd -a _cmds1_gsea -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
-			grep -F $domain "$gofile"
+			grep -F $domain "$gofile" | tee -i >(cut -f 2,4 | grep '^GO:' | sort -u > "$outdir/reference.terms")
 		CMD
 			grep -F -f <(perl -M'List::Util qw(max)' -lanE 'say \$F[0] if max(@F)>=1 && \$.>1' "$tpmtsv")
 		CMD
@@ -133,7 +165,7 @@ enrichment::_gsea(){
 		CMD
 	else
 		commander::makecmd -a _cmds1_gsea -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-			grep -F $domain "$gofile"
+			grep -F $domain "$gofile" | tee -i >(cut -f 2,4 | grep '^GO:' | sort -u > "$outdir/reference.terms")
 		CMD
 			perl -F'\t' -lane '
 				push @{$m{$F[1]}},$F[0];
@@ -147,33 +179,81 @@ enrichment::_gsea(){
 	commander::makecmd -a _cmds2_gsea -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
 			suppressMessages(library("clusterProfiler"));
+			suppressMessages(library("DOSE"));
+			suppressMessages(library("enrichplot"));
+			suppressMessages(library("ggplot2"));
 			args <- commandArgs(TRUE);
 			gmt <- args[1];
-			ddsr <- args[2];
-			odir <- args[3];
+			g2n <- args[2];
+			ddsr <- args[3];
+			odir <- args[4];
+			domain <- args[5];
 
-			df <- read.table(ddsr, header=T, sep="\t", stringsAsFactors=F);
+			df <- read.table(ddsr, header=T, sep="\t", stringsAsFactors=F, quote="");
 			df <- df[!is.na(df$padj) , ];
 			df <- df[df$padj<=0.05 , ];
 
-			gsea <- data.frame(matrix(ncol = 4, nrow = 0));
+			gsea <- data.frame(matrix(ncol = 5, nrow = 0));
 			if(nrow(df)>0){
 				tg <- suppressMessages(read.gmt(gmt));
+				tn <- read.table(g2n, sep="\t", stringsAsFactors=F, quote="");
 				if(sum(df$id %in% tg$gene)>0){
-					gl <- abs(df[, which(colnames(df)=="log2FoldChange") ]);
-					names(gl) <- as.character(df[, which(colnames(df)=="id")]);
+					gl <- df$log2FoldChange;
+					names(gl) <- df$id;
 					gl <- sort(gl, decreasing = T);
-					gsea <- GSEA(gl, TERM2GENE=tg, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
-					if(!is.null(gsea)){
-						gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust")];
+					gsea <- GSEA(gl, TERM2GENE=tg, TERM2NAME=tn, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500, eps = 0);
+
+					if(!is.null(gsea) && nrow(gsea)>0){
+						dotplot(gsea, showCategory=10, split=".sign", font.size=10)
+							+ facet_grid(.~.sign)
+							+ theme(axis.text.y = element_text(size=8), strip.background = element_rect(linetype = 0, fill=NA))
+							+ guides(color = guide_colourbar("FDR"));
+						suppressMessages(ggsave(file.path(odir,"dotplot.pdf")));
+
+						ridgeplot(gsea) + xlab("log2 FC distribution")
+							+ guides(fill = guide_colourbar("FDR"))
+							+ theme(axis.text.y = element_text(size=8), axis.text.x = element_text(size=10), axis.title.x = element_text(size=10));
+						suppressMessages(ggsave(file.path(odir,"ridgeplot.pdf")));
+
+						df <- data.frame(fdr=-log(gsea$p.adjust, base=10), description = paste0(gsea$Description," (",gsea$setSize,")"));
+						bars <- min(10,nrow(df));
+						dfp <- head(df,bars);
+						pdf(file.path(odir,"barplot.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
+						par(mar=c(5,max(nchar(df$description))/3+3,5,1));
+						barplot(rev(dfp$fdr), main=paste0(domain," (Top ",bars,")"), horiz=T, names.arg=rev(dfp$description),
+							xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
+							cex.names=0.8, las=1);
+						graphics.off();
+
+						df <- data.frame(fdr=-log(gsea$p.adjust, base=10), description = paste0(gsea$Description," (",gsea$setSize,")"));
+						bars <- nrow(df);
+						dfp <- df;
+						pdf(file.path(odir,"barplot.full.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
+						par(mar=c(5,max(nchar(df$description))/3+3,5,1));
+						barplot(rev(dfp$fdr), main=paste0(domain," (",bars,")"), horiz=T, names.arg=rev(dfp$description),
+							xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
+							cex.names=0.8, las=1);
+						graphics.off();
+
+						dir.create(file.path(odir,"gsea_plots"), recursive = T, showWarnings = F);
+						for (i in 1:length(gsea$Description)){
+							if(! is.na(gsea$Description[i])){
+								gseaplot2(gsea, title = gsea$Description[i], geneSetID = i);
+								suppressMessages(ggsave(file.path(odir,"gsea_plots",paste0(gsea$ID[i],".pdf"))));
+							};
+						};
+
+						gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust","Description")];
+					} else {
+						gsea <- data.frame(matrix(ncol = 5, nrow = 0));
 					};
 				};
 			};
-			colnames(gsea) = c("id","count","pval","padj");
+			colnames(gsea) = c("id","count","pval","padj","description");
 			write.table(gsea, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");
 		'
 	CMD
-		"$outdir/reference.gmt" "$deseqtsv" "$outdir"
+		"$outdir/reference.gmt" "$outdir/reference.terms" "$deseqtsv" "$outdir" $(echo $domain | sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/')
 	CMD
 
 	return 0
@@ -198,7 +278,7 @@ enrichment::_revigo(){
 		case $arg in
 			1)	((++mandatory)); _cmds1_revigo=$OPTARG;;
 			2)	((++mandatory)); _cmds2_revigo=$OPTARG;;
-			d)	((++mandatory)); domain=$(sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/' <<< $OPTARG);;
+			d)	((++mandatory)); domain=$OPTARG;;
 			i)	((++mandatory)); orafile="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG";;
 			*)	_usage;;
@@ -206,12 +286,26 @@ enrichment::_revigo(){
 	done
 	[[ $mandatory -lt 5 ]] && _usage
 
-	# for pvalue instead of padj do revigo <(awk 'NR>1 && \$(NF-1)<=0.05' $odir/gsea.tsv) --stdout
+	# for pvalue instead of padj do revigo <(awk 'NR>1 && \$3<=0.05' $odir/gsea.tsv) --stdout
 	# need to remove [_'"\t*$#%^!]
-	commander::makecmd -a _cmds1_revigo -s '|' -o "$outdir/revigo.tsv" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-		revigo <(awk 'NR>1 && \$NF<=0.05 {print \$1"\t"\$NF}' "$orafile") --stdout
+	# use own buffered reader to handle corner case where orafile is empty or revigo db does not contain any go term and thus instead of an error returns userValue_2 to userValue_XXXXXX in a single line
+	commander::makecmd -a _cmds1_revigo -s ' ' -o "$outdir/revigo.tsv" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
+		l=""; while read -N 1 c; do
+			if [[ "$c" == $'\n' ]];
+				then echo "$l";
+				l="";
+			else
+				l+="$c";
+				if [[ "$l" =~ userVal ]]; then
+					cut -f 1-6 <<< "$l";
+					break;
+				fi;
+			fi;
+		done
 	CMD
-		perl -lane '
+		< <(revigo <(awk 'NR>1 && \$4<=0.05 {print \$1"\t"\$4}' "$orafile") --stdout)
+	CMD
+		| perl -lane '
 			next if $.<3;
 			if($.>3){
 				$F[2]=~s/(^[\W_]+|[\W_]+$)//g;
@@ -225,83 +319,57 @@ enrichment::_revigo(){
 
 	# don't to 10**(-df$log10_p.value), values will get too small and treemap will fail
 	# don't kick not representative values
+	# df$count needs to be present in goenrichment.tsv
 	commander::makecmd -a _cmds2_revigo -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
 			suppressMessages(library("treemap"));
 			args <- commandArgs(TRUE);
-			revigo <- args[1];
-			outf <- args[2];
-			domain <- args[3];
-			df <- read.table(revigo, header=T, sep="\t");
-			df$log10_p.value = -(df$log10_p.value);
-			df$representative <- df[sapply(df$representative,function(x) which(df$term_ID==x)),"description"];
-			pdf(outf, width=16, height=9);
-			treemap(df, index = "representative", vSize = "log10_p.value", type = "categorical",
-				vColor = "representative", title = domain, inflate.labels = T,
-				lowerbound.cex.labels = 0, force.print.labels = T, position.legend = "none");
-			graphics.off();
-		'
-	CMD
-		"$outdir/revigo.tsv" "$outdir/treemap.pdf" $domain
-	CMD
-
-	# df$count needs to be present in goenrichment.tsv
-	commander::makecmd -a _cmds2_revigo -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-		Rscript - <<< '
-			args <- commandArgs(TRUE);
 			gsea <- args[1];
+
 			revigo <- args[2];
-			outf <- args[3];
+			outdir <- args[3];
 			domain <- args[4];
-			c <- read.table(gsea,header=T,sep="\t");
+
+			c <- read.table(gsea, header=T, sep="\t", quote="");
 			colnames(c)[1] <- "term_ID";
-			df <- read.table(revigo,header=T,sep="\t");
-			df <- merge(df,c,by="term_ID");
-			df$description <- paste(df$description," ","(",df$count,")", sep="");
+			colnames(c)[5] <- "enricher_description";
+			df <- read.table(revigo, header=T, sep="\t", quote="");
 
-			df <- df[order(df$log10_p.value),];
-			bars <- min(10,nrow(df));
-			dfp <- head(df,bars);
-			pdf(paste0(outf,".pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
-			par(mar=c(5,max(nchar(df$description))/3+3,5,1));
-			barplot(rev(-(dfp$log10_p.value)), main=paste0(domain," (Top ",bars,")"), horiz=T, names.arg=rev(dfp$description),
-				xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(dfp$log10_p.value)+5)),
-				cex.names=0.8, las=1);
-			graphics.off();
+			if(nrow(df)>0){
+				dfp <- df;
+				dfp$log10_p.value <- -(dfp$log10_p.value);
+				dfp$representative <- df[sapply(dfp$representative,function(x) which(dfp$term_ID==x)),"description"];
+				pdf(file.path(outdir,"treemap.pdf"), width=16, height=9);
+				treemap(dfp, index = "representative", vSize = "log10_p.value", type = "categorical",
+					vColor = "representative", title = domain, inflate.labels = T,
+					lowerbound.cex.labels = 0, force.print.labels = T, position.legend = "none");
+				graphics.off();
 
-			bars <- nrow(df);
-			dfp <- df;
-			pdf(paste0(outf,".full.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
-			par(mar=c(5,max(nchar(df$description))/3+3,5,1));
-			barplot(rev(-(dfp$log10_p.value)), main=domain, horiz=T, names.arg=rev(dfp$description),
-				xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(dfp$log10_p.value)+5)),
-				cex.names=0.8, las=1);
-			graphics.off();
+				df <- merge(df,c,by="term_ID");
+				df$description <- paste0(df$description," (",df$count,")");
+				df <- df[df$term_ID %in% df$representative,];
+				df <- df[order(df$log10_p.value),];
+				bars <- min(10,nrow(df));
+				dfp <- head(df,bars);
+				pdf(file.path(outdir,"barplot_revigo.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
+				par(mar=c(5,max(nchar(df$description))/3+3,5,1));
+				barplot(rev(-(dfp$log10_p.value)), main=paste0(domain," (Top ",bars,")"), horiz=T, names.arg=rev(dfp$description),
+					xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(dfp$log10_p.value)+5)),
+					cex.names=0.8, las=1);
+				graphics.off();
 
-
-			df <- df[df$term_ID %in% df$representative,];
-
-			df <- df[order(df$log10_p.value),];
-			bars <- min(10,nrow(df));
-			dfp <- head(df,bars);
-			pdf(paste0(outf,"_revigo.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
-			par(mar=c(5,max(nchar(df$description))/3+3,5,1));
-			barplot(rev(-(dfp$log10_p.value)), main=paste0(domain," (Top ",bars,")"), horiz=T, names.arg=rev(dfp$description),
-				xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(dfp$log10_p.value)+5)),
-				cex.names=0.8, las=1);
-			graphics.off();
-
-			bars <- nrow(df);
-			dfp <- df;
-			pdf(paste0(outf,"_revigo.full.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
-			par(mar=c(5,max(nchar(df$description))/3+3,5,1));
-			barplot(rev(-(dfp$log10_p.value)), main=domain, horiz=T, names.arg=rev(dfp$description),
-				xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(dfp$log10_p.value)+5)),
-				cex.names=0.8, las=1);
-			graphics.off();
+				bars <- nrow(df);
+				dfp <- df;
+				pdf(file.path(outdir,"barplot_revigo.full.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
+				par(mar=c(5,max(nchar(df$description))/3+3,5,1));
+				barplot(rev(-(dfp$log10_p.value)), main=domain, horiz=T, names.arg=rev(dfp$description),
+					xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(dfp$log10_p.value)+5)),
+					cex.names=0.8, las=1);
+				graphics.off();
+			};
 		'
 	CMD
-		"$orafile" "$outdir/revigo.tsv" "$outdir/barplot" $(echo $domain | sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/')
+		"$orafile" "$outdir/revigo.tsv" "$outdir" $(echo $domain | sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/')
 	CMD
 
 	return 0
@@ -314,15 +382,15 @@ enrichment::go(){
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
-			-g <gofile>   | path to
+			-g <gofile>   | path to 4-column tab separated file
 			                ..
-			                ENSG00000199065 GO:0005615 cellular_component
-			                ENSG00000199065 GO:1903231 molecular_function
-			                ENSG00000199065 GO:0035195 biological_process
+			                ENSG00000199065 GO:0005615 cellular_component extracellular space
+			                ENSG00000199065 GO:1903231 molecular_function mRNA binding involved in posttranscriptional gene silencing
+			                ENSG00000199065 GO:0035195 biological_process gene silencing by miRNA
 			                ..
 			-r <mapper>   | array of bams within array of
 			-i <deseqdir> | for gsea path to
-			-j <countsdir>| for gmt background creation path to
+			-j <countsdir>| of joined tpms for ora gmt background creation
 			-c <cmpfiles> | array of
 			-l <idfiles>  | for ora array of (does not require -i -r -c)
 
@@ -375,7 +443,7 @@ enrichment::go(){
 
 	for m in "${_mapper_go[@]}"; do
 		for f in "${_cmpfiles_go[@]}"; do
-			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
+			mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
 			i=0
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
@@ -413,7 +481,7 @@ enrichment::go(){
 	local x
 	for f in "${enrichmentfiles[@]}"; do
 		x=$(head "$f" | wc -l)
-		[[ $x -lt 2 ]] && commander::warn "no enriched go terms in $f" && continue
+		[[ $x -lt 2 ]] && commander::warn "no enriched go terms in $f"
 		odir="$(dirname "$f")"
 		domain="$(basename "$odir")"
 		enrichment::_revigo -1 cmd3 -2 cmd4 -d $domain -i "$f" -o "$odir"

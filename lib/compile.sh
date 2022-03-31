@@ -160,8 +160,8 @@ compile::conda_tools() {
 				nlopt "r-base>=4" \
 				r-biocmanager r-devtools r-codetools \
 				bioconductor-biomart bioconductor-biocparallel bioconductor-genefilter bioconductor-deseq2 bioconductor-dexseq bioconductor-clusterprofiler bioconductor-tcgautils \
-				r-survminer bioconductor-impute bioconductor-preprocesscore bioconductor-go.db bioconductor-annotationdbi \
-				r-reshape2 r-wgcna r-dplyr r-tidyverse r-ggpubr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-treemap r-data.table
+				r-survminer bioconductor-impute bioconductor-preprocesscore bioconductor-go.db bioconductor-annotationdbi bioconductor-enrichplot \
+				r-reshape2 r-wgcna r-dplyr r-tidyverse r-ggpubr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-treemap r-data.table r-ggridges r-ashr
 		fi
 
 		tmpdir="$insdir/tmp"
@@ -222,8 +222,10 @@ compile::conda_tools() {
 		cmd2=()
 		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
-			install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
-			devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
+				options(unzip="$(command -v unzip)");
+				Sys.setenv(TAR="$(command -v tar)");
+				install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
+				devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
 			'
 		CMD
 
@@ -238,9 +240,10 @@ compile::conda_tools() {
 	}
 
 	# better do not predefine python version. if tool recipe depends on earlier version, conda installs an older or the oldest version (freebayes)
-	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 peakachu diego gatk4 freebayes varscan igv intervene raxml metilene; do
+	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 peakachu diego gatk4 freebayes varscan igv intervene raxml metilene umitools methyldackel; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
+		[[ $tool == "bwa" ]] && tool+=" bwa-mem2"
 		$upgrade && ${envs[$n]:=false} || {
 			doclean=true
 

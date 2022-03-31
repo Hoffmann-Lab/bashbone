@@ -30,6 +30,7 @@ my %m;
 open F, "<".$ARGV[0] or die $!;
 while(<F>){
 	chomp;
+	next if /^(\s*$|#)/;
 	my @l = split /\t+/;
 	next unless $l[2] eq 'exon';
 	$l[-1]=~/gene_id\s+(\S+)/;
