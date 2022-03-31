@@ -31,14 +31,15 @@ if ($ARGV[1]){
 	open I,"<$ARGV[1]" or die $!;
 		while(<I>){
 			chomp;
+			next if /^(\s*$|#)/;
 			my @l=split/\t/;
 			next unless $l[2] eq 'gene';
 			my ($g,$n,$b) = ('','','');
 			if ($l[-1]=~/gene_id\s+\"([^\"]+)/){
 				$g = $1;
 				next if exists $mps{$g};
-				if ($l[-1]=~/gene_name\s+\"([^\"]+)/){
-					$n = $1;
+				if ($l[-1]=~/(gene_n|N)ame\s+\"([^\"]+)/){
+					$n = $+;
 					$mps{$g} = $n;
 				}
 				if ($l[-1]=~/gene_(bio)?type\s+\"([^\"]+)/){
