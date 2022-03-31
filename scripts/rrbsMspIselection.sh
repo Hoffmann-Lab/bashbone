@@ -42,7 +42,7 @@ cat <<- EOF
 	R2 starts with CGA or CAA
 
 	VERSION
-	0.1.1
+	0.1.2
 
 	SYNOPSIS MERGE
 	$(basename $0) -i <fastq1> -j <fastq2> -o <fastq1> -p <fastq2>
@@ -52,7 +52,7 @@ cat <<- EOF
 	-t [value]  | threads ($t) used for output compression using pigz (fallback: gzip)
 	-d [value]  | optional. maximum length of diversity adapter (implies strict motif selection)
 	-i [path]   | input SE or first mate fastq(.gz|bz2)
-	-j [path]   | input mate pair fastq(.gz|bz2) or unmapped R2 to be processed in SE manner
+	-j [path]   | input mate pair fastq(.gz|bz2) or without -i to process R2 in SE manner
 	-o [path]   | output path for gzip compressed SE or first mate fastq.gz file
 	-p [path]   | output path for gzip compressed second mate fastq.gz file
 	-c [value]  | number bases to be clipped at R2 5' (default: 2)
@@ -81,8 +81,8 @@ while getopts i:j:o:p:d:t:c:hvs ARG; do
 	case $ARG in
 		i) i="$OPTARG"; readlink -e "$i" &> /dev/null || { echo "error. can not find $i" >&2; exit 1; };;
 		j) j="$OPTARG"; readlink -e "$j" &> /dev/null || { echo "error. can not find $j" >&2; exit 1; };;
-		o) o="$OPTARG"; mkdir -p "$(dirname "$o")" || { echo "error. can write to $o" >&2; exit 1; };;
-		p) p="$OPTARG"; mkdir -p "$(dirname "$p")" || { echo "error. can write to $p" >&2; exit 1; };;
+		o) o="$OPTARG"; mkdir -p "$(dirname "$o")" || { echo "error. can not write to $o" >&2; exit 1; };;
+		p) p="$OPTARG"; mkdir -p "$(dirname "$p")" || { echo "error. can not write to $p" >&2; exit 1; };;
 		d) d=$OPTARG;;
 		t) t=$OPTARG;;
 		c) c=$OPTARG;;
@@ -104,24 +104,24 @@ if [[ $i ]] && [[ $j ]]; then
 
 	if [[ $d -gt 0 ]]; then
 		if $v; then
-			paste <($open "$i" | paste - - - -) <($open "$j" | paste - - - -) | perl -F'\t' -slane '$r1=substr($F[1],0,$d+3); unless($r1=~/(CGG|TGG)/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7]); next} $r1p=$-[0]; $r2=substr($F[5],0,$d+3); unless($r2=~/(CAA|CGA)/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7])}' -- -d=$d > >($z > "$o") 2> >($z > "$p")
+			paste <($open "$i" | paste - - - -) <($open "$j" | paste - - - -) | perl -F'\t' -slane '$r1=substr($F[1],0,$d+3); unless($r1=~/(CGG|TGG)/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7]); next} $r1p=$-[0]; $r2=substr($F[5],0,$d+3); unless($r2=~/(CAA|CGA)/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7])}' -- -d=$d > >($z > "$o") 2> >($z > "$p") | cat
 		else
 			# 3rd base of cutting site should be high quality
-			paste <($open "$i" | paste - - - -) <($open "$j" | paste - - - -) | perl -F'\t' -slane '$r1=substr($F[1],0,$d+3); next unless $r1=~/(CGG|TGG)/; $r1p=$-[0]; $r2=substr($F[5],0,$d+3); next unless $r2=~/(CAA|CGA)/; $r2p=$-[0]; $F[1]=substr($F[1],$r1p); $F[3]=substr($F[3],$r1p); $F[5]=substr($F[5],$r2p+$c); $F[7]=substr($F[7],$r2p+$c); print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7])' -- -d=$d -c=$c > >($z > "$o") 2> >($z > "$p")
+			paste <($open "$i" | paste - - - -) <($open "$j" | paste - - - -) | perl -F'\t' -slane '$r1=substr($F[1],0,$d+3); next unless $r1=~/(CGG|TGG)/; $r1p=$-[0]; $r2=substr($F[5],0,$d+3); next unless $r2=~/(CAA|CGA)/; $r2p=$-[0]; $F[1]=substr($F[1],$r1p); $F[3]=substr($F[3],$r1p); $F[5]=substr($F[5],$r2p+$c); $F[7]=substr($F[7],$r2p+$c); print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7])' -- -d=$d -c=$c > >($z > "$o") 2> >($z > "$p") | cat
 		fi
 	else
 		if $s; then
 			if $v; then
-				paste <($open "$i" | paste - - - -) <($open "$j" | paste - - - -) | perl -F'\t' -lane 'unless($F[1]=~/^(C|T)GG/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7]); next} unless($F[5]=~/^C(G|A)A/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7])}' > >($z > "$o") 2> >($z > "$p")
+				paste <($open "$i" | paste - - - -) <($open "$j" | paste - - - -) | perl -F'\t' -lane 'unless($F[1]=~/^(C|T)GG/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7]); next} unless($F[5]=~/^C(G|A)A/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7])}' > >($z > "$o") 2> >($z > "$p") | cat
 			else
-				paste <($open "$i" | paste - - - -) <($open "$j" | paste - - - -) | perl -F'\t' -slane 'next unless $F[1]=~/^(C|T)GG/; next unless $F[5]=~/^C(GA)A/; $F[5]=substr($F[5],$c); $F[7]=substr($F[7],$c); print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7])' -- -c=$c > >($z > "$o") 2> >($z > "$p")
+				paste <($open "$i" | paste - - - -) <($open "$j" | paste - - - -) | perl -F'\t' -slane 'next unless $F[1]=~/^(C|T)GG/; next unless $F[5]=~/^C(GA)A/; $F[5]=substr($F[5],$c); $F[7]=substr($F[7],$c); print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7])' -- -c=$c > >($z > "$o") 2> >($z > "$p") | cat
 			fi
 		else
 			if $v; then
-				paste <($open "$i" | paste - - - -) <($open "$j" | paste - - - -) | perl -F'\t' -lane 'unless($F[1]=~/^(CG\w|TG\w|NGG|CNG|TNG)/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7]); next} if($F[1]=~/^(C|T)GG/){unless($F[5]=~/^(CA\w|CG\w|NAA|NGA|CNA)/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7]); next}}else{unless($F[5]=~/^(CAA|CGA)/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7])}}' > >($z > "$o") 2> >($z > "$p")
+				paste <($open "$i" | paste - - - -) <($open "$j" | paste - - - -) | perl -F'\t' -lane 'unless($F[1]=~/^(CG\w|TG\w|NGG|CNG|TNG)/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7]); next} if($F[1]=~/^(C|T)GG/){unless($F[5]=~/^(CA\w|CG\w|NAA|NGA|CNA)/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7]); next}}else{unless($F[5]=~/^(CAA|CGA)/){print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7])}}' > >($z > "$o") 2> >($z > "$p") | cat
 			else
 				# less stringent R1 motif if R2 motif ok or vice versa
-				paste <($open "$i" | paste - - - -) <($open "$j" | paste - - - -) | perl -F'\t' -slane 'next unless $F[1]=~/^(CG\w|TG\w|NGG|CNG|TNG)/; if($F[1]=~/^(C|T)GG/){next unless $F[5]=~/^(CA\w|CG\w|NAA|NGA|CNA)/}else{next unless $F[5]=~/^(CAA|CGA)/} $F[5]=substr($F[5],$c); $F[7]=substr($F[7],$c); print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7])' -- -c=$c > >($z > "$o") 2> >($z > "$p")
+				paste <($open "$i" | paste - - - -) <($open "$j" | paste - - - -) | perl -F'\t' -slane 'next unless $F[1]=~/^(CG\w|TG\w|NGG|CNG|TNG)/; if($F[1]=~/^(C|T)GG/){next unless $F[5]=~/^(CA\w|CG\w|NAA|NGA|CNA)/}else{next unless $F[5]=~/^(CAA|CGA)/} $F[5]=substr($F[5],$c); $F[7]=substr($F[7],$c); print join("\n",@F[0..3]); print STDERR join("\n",@F[4..7])' -- -c=$c > >($z > "$o") 2> >($z > "$p") | cat
 			fi
 		fi
 	fi
@@ -129,15 +129,20 @@ else
 	pigz -h &> /dev/null && z="pigz -k -c -p $t" || z="gzip -k -c"
 
 	if $v; then
-		[[ $i ]] && $open "$i" | paste - - - - | perl -F'\t' -slane '$r1=substr($F[1],0,$d+3); unless($r1=~/(CGG|TGG)/){print join("\n",@F)}' -- -d=$d > >($z > "$o")
-		[[ $j ]] && $open "$j" | paste - - - - | perl -F'\t' -slane '$r2=substr($F[1],0,$d+3); unless($r2=~/(CAA|CGA)/){print join("\n",@F)}' -- -d=$d > >($z > "$p")
+		if [[ $i ]]; then
+			$open "$i" | paste - - - - | perl -F'\t' -slane '$r1=substr($F[1],0,$d+3); unless($r1=~/(CGG|TGG)/){print join("\n",@F)}' -- -d=$d > >($z > "$o") | cat
+		else
+			$open "$j" | paste - - - - | perl -F'\t' -slane '$r2=substr($F[1],0,$d+3); unless($r2=~/(CAA|CGA)/){print join("\n",@F)}' -- -d=$d > >($z > "$p") | cat
+		fi
 	else
 		# for SE or unmapped R1 input
-		[[ $i ]] && $open "$i" | paste - - - - | perl -F'\t' -slane '$r1=substr($F[1],0,$d+3); next unless $r1=~/(CGG|TGG)/; $r1p=$-[0]; $F[1]=substr($F[1],$r1p); $F[3]=substr($F[3],$r1p); print join("\n",@F)' -- -d=$d > >($z > "$o")
-		# for unmapped R2 input
-		[[ $j ]] && $open "$j" | paste - - - - | perl -F'\t' -slane '$r2=substr($F[1],0,$d+3); next unless $r2=~/(CAA|CGA)/; $r2p=$-[0]; $F[1]=substr($F[1],$r2p+$c); $F[3]=substr($F[3],$r2p+$c); print join("\n",@F)' -- -d=$d -c=$c > >($z > "$p")
+		if [[ $i ]]; then
+			$open "$i" | paste - - - - | perl -F'\t' -slane '$r1=substr($F[1],0,$d+3); next unless $r1=~/(CGG|TGG)/; $r1p=$-[0]; $F[1]=substr($F[1],$r1p); $F[3]=substr($F[3],$r1p); print join("\n",@F)' -- -d=$d > >($z > "$o") | cat
+		else
+			# for unmapped R2 input
+			$open "$j" | paste - - - - | perl -F'\t' -slane '$r2=substr($F[1],0,$d+3); next unless $r2=~/(CAA|CGA)/; $r2p=$-[0]; $F[1]=substr($F[1],$r2p+$c); $F[3]=substr($F[3],$r2p+$c); print join("\n",@F)' -- -d=$d -c=$c > >($z > "$p") | cat
+		fi
 	fi
 fi
 
 exit $((${PIPESTATUS[@]/%/+}0))
-
