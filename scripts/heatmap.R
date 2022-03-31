@@ -11,10 +11,10 @@ cluster = args[1]
 # ggplot default is 7x7
 w = as.integer(args[2])
 h = as.integer(args[3])
-experiments = read.table(args[4], header = T, sep = ',', stringsAsFactors = F)
+experiments = read.table(args[4], header = T, sep = ',', stringsAsFactors = F, quote="")
 #experiments = data.frame(condition = df$condition, sample = df$sample)
 io = args[5]
-input = read.table(io, header = T, sep = '\t', stringsAsFactors = F)
+input = read.table(io, header = T, sep = '\t', stringsAsFactors = F, quote="")
 keylabel = args[6]
 # appended to "Heatmap of <nrow> "
 title = args[7]
