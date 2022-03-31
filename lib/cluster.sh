@@ -15,20 +15,20 @@ cluster::coexpression_deseq(){
 			-t <threads>  | number of
 			-M <maxmemory>| amount of
 			-c <cmpfiles> | array of
-			-l <idfiles>  | array of
+			-l <idfiles>  | empty array to be filled with returned cluster gene lists
 			-r <mapper>   | array of bams within array of
-			-f <value>    | [0123] filter input for padj < 0.05 (0) log2foldchange > 0.5 (1) basemean > 5 (2) lower 30% percentile (3)
+			-f <value>    | [01234] filter input for padj < 0.05 (0) log2foldchange > 0.5 (1) basemean > 5 (2) lower 30% percentile (3) tpm > 5 (4)
 			-g <gtf>      | path to (optional)
 			-b <biotype>  | within gtf
 			-p <tmpdir>   | path to
-			-i <countsdir>| path to
+			-i <countsdir>| path to joined counts dir
 			-j <deseqdir> | path to
 			-o <outdir>   | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir deseqdir countsdir clusterfilter=0 biotype gtf
+	local OPTIND arg mandatory skip=false threads outdir tmpdir deseqdir countsdir clusterfilter=NA biotype gtf
 	declare -n _mapper_coexpression _cmpfiles_coexpression _idfiles_coexpression
 	while getopts 'S:s:f:b:g:t:M:c:r:p:i:j:o:l:' arg; do
 		case $arg in
@@ -59,7 +59,7 @@ cluster::coexpression_deseq(){
 
 	commander::printinfo "inferring coexpression"
 
-	declare -a mapdata cmd1
+	declare -a mapdata cmd1 tpmtojoin
 	declare -A visited
 	local m f i c t e odir cdir ddir params tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
@@ -69,23 +69,28 @@ cluster::coexpression_deseq(){
 		cdir="$countsdir/$m"
 		ddir="$deseqdir/$m"
 		mkdir -p "$odir"
-		visited=()
 
+		visited=()
+		tpmtojoin=()
 		rm -f "$joined"
 		for f in "${_cmpfiles_coexpression[@]}"; do
 			mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
 			i=0
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
-					[[ ${visited["$c-vs-$t"]} ]] && continue || visited["$c-vs-$t"]=1
 
-					awk 'NR>1' "$ddir/$c-vs-$t/deseq.full.tsv" | sort -k1,1V | cut -f 1,2,3,7 | sed 's/NA/0/g' > "$tojoin"
+					awk 'NR>1' "$ddir/$c-vs-$t/deseq.full.tsv" | sort -k1,1V | cut -f 1,2,3,7 | sed -E 's/\s+NA(\s+|$)/\t0\1/g' > "$tojoin"
 					if [[ -s "$joined" ]]; then
 						join -t $'\t' "$joined" "$tojoin" > "$tmp"
 						mv "$tmp" "$joined"
 					else
 						mv "$tojoin" "$joined"
 					fi
+
+					# while read -r sample condition library replicate factors; do
+					# 	[[ ${visited["$sample.$replicate"]} ]] && continue || visited["$sample.$replicate"]=1
+					# 	tpmtojoin+=("$(realpath -s "$countsdir/$m/$sample"*.+(genecounts|counts).+(reduced|htsc).tpm | head -1)")
+					# done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 				done
 			done
 		done
@@ -105,15 +110,22 @@ cluster::coexpression_deseq(){
 				print $F[0] if $okmean+$okfc+$okpval == 3;
 			} elsif ($cf=~/[01]{2,2}/) {
 				print $F[0] if $okfc+$okpval == 2;
-			} elsif ($sc==0) {
+			} elsif ($cf==0) {
 				print $F[0] if $okpval == 1;
-			} elsif	($sc==1) {
+			} elsif	($cf==1) {
 				print $F[0] if $okfc == 1;
 			} else {
 				print $F[0];
 			}
 		' -- -cf=$clusterfilter "$odir/experiments.deseq.tsv" > "$odir/experiments.filtered.genes"
 		# 0 padj 1 fc>0.5 2 basemean > 5 3 30% see below
+
+		if [[ $clusterfilter =~ 4 ]]; then
+			#helper::multijoin -f $(printf '"%s" ' "${tpmtojoin[@]}") | awk '{i=2; ok=0; while(i<NF){if($i>=5){ok=1} i=i+1} if(ok){print $1}}' | grep -F -f "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
+			awk '{i=2; ok=0; while(i<NF){if($i>=5){ok=1} i=i+1} if(ok){print $1}}' "$cdir/experiments.tpm" | grep -F -f "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
+			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
+			tfiles+=("$tmp.filtered.genes")
+		fi
 
 		[[ $biotype && "$biotype" != "." ]] && {
 			perl -F'\t' -slane '
@@ -127,13 +139,12 @@ cluster::coexpression_deseq(){
 					}
 				}
 			' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
-			grep -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
+			grep -F -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			tfiles+=("$tmp.genes" "$tmp.filtered.genes")
 		}
 
 		for e in tpm vsc; do
-			[[ ! -s "$cdir/experiments.$e" ]] && continue
 			head -1 "$cdir/experiments.$e" > "$odir/experiments.filtered.$e"
 			grep -f "$odir/experiments.filtered.genes" "$cdir/experiments.$e" >> "$odir/experiments.filtered.$e"
 
@@ -157,7 +168,6 @@ cluster::coexpression_deseq(){
 	for m in "${_mapper_coexpression[@]}"; do
 		cdir="$countsdir/$m"
 		for e in tpm vsc; do
-			[[ ! -s "$cdir/experiments.$e" ]] && continue
 			wdir="$outdir/$m/$e"
 
 			# work on modules
@@ -302,7 +312,7 @@ cluster::coexpression(){
 			-M <maxmemory>| amount of
 			-l <idfiles>  | array of
 			-r <mapper>   | array of bams within array of
-			-f <value>    | [23] filter input for TPM > 5 (2) lower 30% percentile (3)
+			-f <value>    | [34] filter input for lower 30% percentile (3) tpm > 5 (4)
 			-g <gtf>      | path to (optional)
 			-b <biotype>  | within gtf
 			-p <tmpdir>   | path to
@@ -312,7 +322,7 @@ cluster::coexpression(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory outdir tmpdir countsdir biotype gtf clusterfilter=0
+	local OPTIND arg mandatory skip=false threads maxmemory outdir tmpdir countsdir biotype gtf clusterfilter=NA
 	declare -n _mapper_coexpression _idfiles_coexpression
 	while getopts 'S:s:f:b:g:t:M:c:r:p:i:j:o:l:' arg; do
 		case $arg in
@@ -341,43 +351,35 @@ cluster::coexpression(){
 
 	commander::printinfo "inferring coexpression"
 
-	declare -a cmd1
-	local m f cdir odir suff header sample countfile tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
-	local tojoin="$tmp.tojoin" joined="$tmp.joined"
-	tfiles+=("$tmp" "$tojoin" "$joined")
+	declare -a cmd1 cmd2 tojoin
+	local m f odir suff header sample countfile
 	for m in "${_mapper_coexpression[@]}"; do
-		cdir="$countsdir/$m"
 		odir="$outdir/$m"
 		mkdir -p "$odir"
 
 		declare -n _bams_coexpression=$m
 		suff=$(cat <(echo -e "${_bams_coexpression[0]}\n${_bams_coexpression[1]}") | rev | paste - - | sed -E 's/(.+\.).+\t\1.+/\1/' | rev)
-		header='id'
-
-		rm -f "$joined"
+		header="id"
+		tojoin=()
 		for f in "${_bams_coexpression[@]}"; do
 			sample=$(basename $f $suff)
-			countfile=$(readlink -e "$countsdir/$m/$sample"*.tpm | head -1)
+			tojoin+=("$(realpath -s "$countsdir/$m/$sample"*.+(genecounts|counts).+(reduced|htsc).tpm | head -1)")
 			header+="\t$sample"
-
-			sort -k 1,1V "$countfile" > "$tojoin"
-			if [[ -s "$joined" ]]; then
-				join -t $'\t' "$joined" "$tojoin" > "$tmp"
-				mv "$tmp" "$joined"
-			else
-				mv "$tojoin" "$joined"
-			fi
 		done
 
-		echo -e "$header" > "$odir/experiments.tpm"
-		cat "$joined" >> "$odir/experiments.tpm"
+		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+			helper::multijoin
+				-h "$(echo -e "$header")"
+				-o "$odir/experiments.tpm"
+				-f $(printf '"%s" ' "${tojoin[@]}");
+		CMD
 
-		commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+		commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 			Rscript - <<< '
 				args <- commandArgs(TRUE);
 				intsv <- args[1];
 				outf <- args[2];
-				df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names = F);
+				df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names = F, quote="");
 				df <- log(df+1);
 				df <- df-rowMeans(df);
 				df <- df/apply(df,1,sd);
@@ -391,17 +393,19 @@ cluster::coexpression(){
 
 	if $skip; then
 		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
 	else
 		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
 	fi
 
-	declare -a cmd2
-	local m odir params
+	declare -a cmd3
+	local m odir params tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.filter)"
 	for m in "${_mapper_coexpression[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
 
-		if [[ $clusterfilter =~ 2 ]]; then
+		if [[ $clusterfilter =~ 4 ]]; then
 			awk '{i=2; ok=0; while(i<NF){if($i>=5){ok=1} i=i+1} if(ok){print $1}}' "$odir/experiments.tpm" > "$odir/experiments.filtered.genes"
 		else
 			awk '{print $1}' "$odir/experiments.tpm" > "$odir/experiments.filtered.genes"
@@ -419,34 +423,32 @@ cluster::coexpression(){
 					}
 				}
 			' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
-			grep -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
+			grep -F -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			tfiles+=("$tmp.genes" "$tmp.filtered.genes")
 		}
 
 		head -1 "$odir/experiments.tpm" > "$odir/experiments.filtered.tpm"
-		grep -f "$odir/experiments.filtered.genes" "$odir/experiments.tpm" >> "$odir/experiments.filtered.tpm"
+		grep -F -f "$odir/experiments.filtered.genes" "$odir/experiments.tpm" >> "$odir/experiments.filtered.tpm"
 
 		params=FALSE
 		[[ $clusterfilter =~ 3 ]] && params=TRUE
-		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
 			wgcna.R $((maxmemory/1024/2)) TPM $params "$odir/experiments.filtered.tpm" "$odir"
 		CMD
 	done
 
 	if $skip; then
-		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $threads -a cmd3
 	fi
 
-	declare -a cmd3
+	declare -a cmd4
 	local m e i j wdir odir type
 	for m in "${_mapper_coexpression[@]}"; do
 		wdir="$outdir/$m"
 		for e in tpm; do
-			[[ ! -s "$wdir/experiments.$e" ]] && continue
-
 			# work on modules
 			echo "$(head -1 $wdir/experiments.$e) type" | tr ' ' '\t' > "$wdir/modules.$e"
 			cp "$wdir/modules.$e" "$wdir/modules.$e.zscores"
@@ -467,18 +469,18 @@ cluster::coexpression(){
 				grep -f "$odir/genes.list" "$wdir/experiments.$e" | sed "s/$/\t$type/" | tee -a "$wdir/modules.$e" >> "$odir/experiments.$e"
 				grep -f "$odir/genes.list" "$wdir/experiments.$e.zscores" | sed "s/$/\t$type/" | tee -a "$wdir/modules.$e.zscores" >> "$odir/experiments.$e.zscores"
 
-				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
 					vizco.R Module ${e^^*} "$odir/experiments.$e" "$odir/experiments.$e"
 				CMD
-				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
 					vizco.R Module Z-Score "$odir/experiments.$e.zscores" "$odir/experiments.$e.zscores"
 				CMD
 			done
 
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
 				vizco.R Modules ${e^^*} "$wdir/modules.$e" "$wdir/modules.$e"
 			CMD
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
 				vizco.R Modules Z-Score "$wdir/modules.$e.zscores" "$wdir/modules.$e.zscores"
 			CMD
 
@@ -510,18 +512,18 @@ cluster::coexpression(){
 				done
 
 				# Modules as legend title is correct here
-				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
 					vizco.R Modules ${e^^*} "$odir/experiments.$e" "$odir/experiments.$e"
 				CMD
-				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
 					vizco.R Modules Z-Score "$odir/experiments.$e.zscores" "$odir/experiments.$e.zscores"
 				CMD
 			done
 
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
 				vizco.R Cluster ${e^^*} "$wdir/cluster.$e" "$wdir/cluster.$e"
 			CMD
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
 				vizco.R Cluster Z-Score "$wdir/cluster.$e.zscores" "$wdir/cluster.$e.zscores"
 			CMD
 
@@ -529,9 +531,9 @@ cluster::coexpression(){
 	done
 
 	if $skip; then
-		commander::printcmd -a cmd3
+		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -v -b -t $threads -a cmd4
 	fi
 
 	return 0
