@@ -28,7 +28,7 @@ setEPS(width=8, height=8, onefile=T)
 ##### deseq
 
 
-experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F)
+experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F, quote="")
 colnames(experiments)[1:4] = c("sample","countfile","condition","replicate")
 
 # create design formula from factors under exclusion of potential linear combinations
@@ -40,9 +40,11 @@ get_design = function(experiments,interactionterms=F){
 			v = experiments[,f]
 			# levels(xyxy) -> 2 > 1 && xyxy @ aabb -> a:xy , b:xy -> {x,y} > 0 i.e. no linear combination
 			# whereas levels(xxxx) -> 1 and xyzz @ aabb -> a:xy , b:z -> {} == 0 i.e. deseq error
-			if (length(levels(as.factor(v))) > 1 && length(Reduce(intersect, split(v,experiments$condition))) > 0){
+
+			# turnoed off for now, should be handled by user
+			#if (length(levels(as.factor(v))) > 1 && length(Reduce(intersect, split(v,experiments$condition))) > 0){
 				factors = c(factors,f)
-			}
+			#}
 		}
 	}
 	if(interactionterms){
@@ -100,7 +102,7 @@ for (method in c("log","vsd","rld")){
 			geom_point(size = 3) +
 			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
 			ylab(paste0("PC2: ",percentVar[2], "% variance"))
-		ggsave(file.path(outdir,paste("pca_12_",method,".pdf",sep="")))
+		suppressMessages(ggsave(file.path(outdir,paste("pca_12_",method,".pdf",sep=""))))
 		# stat_ellipse() +
 
 		ggplot(data, aes(PC1, PC3, color = condition, group = condition, shape = replicate)) +
@@ -112,7 +114,7 @@ for (method in c("log","vsd","rld")){
 			geom_point(size = 3) +
 			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
 			ylab(paste0("PC3: ",percentVar[3], "% variance"))
-		ggsave(file.path(outdir,paste("pca_13_",method,".pdf",sep="")))
+		suppressMessages(ggsave(file.path(outdir,paste("pca_13_",method,".pdf",sep=""))))
 		# stat_ellipse() +
 
 		ggplot(data, aes(PC2, PC3, color = condition, group = condition, shape = replicate)) +
@@ -124,7 +126,7 @@ for (method in c("log","vsd","rld")){
 			geom_point(size = 3) +
 			xlab(paste0("PC2: ",percentVar[2], "% variance")) +
 			ylab(paste0("PC3: ",percentVar[3], "% variance"))
-		ggsave(file.path(outdir,paste("pca_23_",method,".pdf",sep="")))
+		suppressMessages(ggsave(file.path(outdir,paste("pca_23_",method,".pdf",sep=""))))
 		# stat_ellipse() +
 	})
 }
@@ -338,6 +340,11 @@ get_table = function(dds){
 	# shrinkage can be used for data visualization and ranking of RNA-Seq data (remove high LFCs from lowly expressed genes with high variability among samples and estimate moderate FCs more close to reality) if DESeq() was executed with betaPrior=FALSE, which is the default since v1.16
 	ddsrshrunk <- lfcShrink(dds, contrast=c("condition",treat[i],ctr[i]), res=ddsr, type="ashr", parallel = TRUE, BPPARAM = BPPARAM) # 'apeglm' and 'ashr' outperform the original 'normal' shrinkage estimator. but ‘apeglm’ requires use of ‘coef’ i.e. a name from resultsNames
 
+	ddsrshrunk = ddsrshrunk[order(ddsrshrunk$padj) , ]
+	write.table(data.frame(id=rownames(ddsrshrunk),ddsrshrunk), row.names = F,
+		file=file.path(odir,"deseq.fcshrunk.tsv"), quote=F, sep="\t"
+	)
+
 	ddsr = ddsr[order(ddsr$padj) , ]
 	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
 		file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
@@ -365,7 +372,7 @@ get_table = function(dds){
 		pdf(file.path(odir,"ma_plot.pdf"))
 		plotMA(ddsr)
 		graphics.off()
-		pdf(file.path(odir,"ma_plot.shrunk.pdf"))
+		pdf(file.path(odir,"ma_plot.fcfinshrunk.pdf"))
 		plotMA(ddsrshrunk)
 		graphics.off()
 	}
@@ -387,7 +394,7 @@ get_table = function(dds){
 			geom_point(size = 3) +
 			xlab(paste("PC1:",percentVar[1],"% variance",sep=" ")) +
 			ylab(paste("PC2:",percentVar[2],"% variance",sep=" "))
-		ggsave(file.path(odir,"pca.pdf"))
+		suppressMessages(ggsave(file.path(odir,"pca.pdf")))
 	})
 	# stat_ellipse() +
 
@@ -426,7 +433,7 @@ get_table = function(dds){
 
 		# ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ]
 		# topids = rownames(ddsr)[1:min(50,nrow(ddsr))]
-		topids = head(ids[rev(order(abs(ddsrshrunk[rownames(ddsrshrunk) %in% rownames(ddsr),]$log2FoldChange)))],n=50)
+		topids = head(rownames(ddsr)[rev(order(abs(ddsrshrunk[rownames(ddsrshrunk) %in% rownames(ddsr),]$log2FoldChange)))],n=50)
 
 		vsc = vsc[rownames(vsc) %in% topids , ]
 		write.table(data.frame(id=rownames(vsc),vsc), row.names = F,
@@ -462,8 +469,24 @@ get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 
 	design_interactionterms = get_design(experiments,T)
 	design(dds) = as.formula(design_interactionterms)
-	#cat(paste("calculating effects (interaction terms) of secondary factors on ",ctr," vs ",treat," with design formula: ",design_interactionterms,"\n",sep=""))
-	#DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM)
+
+	# each condition needs all factors - twice to be able to run Ca_Fx vs Cb_Fx with replicates
+	# use try catch to ensure this
+	try = tryCatch(
+		{
+			DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM)
+		},
+		error = function(e){
+			cat(e)
+			return(NA)
+		}
+	)
+	if(is.na(try)){
+		cat(paste("calculating effects (interaction terms) of secondary factors not possible\n",sep=""))
+		return()
+	} else {
+		cat(paste("calculating effects (interaction terms) of secondary factors\n",sep=""))
+	}
 
 	for (f in 5:ncol(experiments)){
 		fac = colnames(experiments)[f]
