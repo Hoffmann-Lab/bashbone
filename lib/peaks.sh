@@ -97,14 +97,15 @@ peaks::macs(){
 			-i <tidx>       | array of IP* bam idices within -r (if paired input, requires also -a)
 			-o <outdir>     | path to
 			-p <tmpdir>     | path to
+			-y <pointy>     | true/false call only pointy peaks
 			-z <strict>     | true/false peak filters
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false ripseq=false genome threads memory maxmemory fragmentsize outdir tmpdir strict=false
+	local OPTIND arg mandatory skip=false skipmd5=false ripseq=false genome threads memory maxmemory fragmentsize outdir tmpdir strict=false pointy=false
 	declare -n _mapper_macs _nidx_macs _tidx_macs
-	while getopts 'S:s:t:m:M:g:f:q:r:a:i:o:p:z:' arg; do
+	while getopts 'S:s:t:m:M:g:f:q:r:a:i:o:p:z:y:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -119,6 +120,7 @@ peaks::macs(){
 			i)	_tidx_macs=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			y)	pointy=$OPTARG;;
 			z)	strict=$OPTARG;;
 			*) _usage;;
 		esac
@@ -127,7 +129,7 @@ peaks::macs(){
 	[[ $_nidx_macs ]] && [[ ! $_tidx_macs ]] && _usage
 
 	declare -n _bams_macs=${_mapper_macs[0]}
-	if [[ ! $_tidx_macs ]]; then
+	if [[ ! $_nidx_macs && ! $_tidx_macs ]]; then
 		declare -a tidx_macs=("${!_bams_macs[@]}") # use all bams as unpaired input unless -a and -i
 		_tidx_macs=tidx_macs
 	fi
@@ -148,31 +150,31 @@ peaks::macs(){
 	local numchr=$(samtools view -H "${_bams_macs[0]}" | grep -c '^@SQ')
 	local buffer=$(( (1024*1024*memory)/(numchr*mult) ))
 
-	local instances ithreads
+	local instances instances2 ithreads ithreads2
+	instances=$((${#_bams_macs[@]} * ${#_mapper_macs[@]}))
+	read -r instances ithreads < <(configure::instances_by_threads -T $threads -i $instances)
 	if [[ $buffer -lt 100000 ]]; then
 		params+=" --buffer-size $buffer"
-		read -r instances ithreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
+		read -r instances2 ithreads2 < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
 	else
-		read -r instances ithreads < <(configure::instances_by_memory -T $threads -m $(( (numchr*buffer*mult)/1024/1024 )) -M "$maxmemory")
+		read -r instances2 ithreads2 < <(configure::instances_by_memory -T $threads -m $(( (numchr*buffer*mult)/1024/1024 )) -M "$maxmemory")
 	fi
 
 	if $strict; then
-		params+=' -q 0.05' # macs default. may chnaged to 0.01
+		params+=' -q 0.05' # macs default. might be changed to 0.01
 	else
-		params+=' -p 0.01' # encode setting for downstream IDR
+		params+=' -p 0.01' # encode setting for downstream IDR. might be changed to -q 0.1
 	fi
 
 	# infer SE or PE
-	#x=$(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 1)
-	#[[ $x -gt 0 ]] && params+=' -f BAMPE ' || params+=' -f BAM'
-	params+=' -f BAM'
+	# x=$(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 1)
+	# [[ $x -gt 0 ]] && params+=' -f BAMPE ' || params+=' -f BAM'
+	# params+=' -f BAM'
 	# do never use BAMPE! the only difference to BAM is the estimation of fragment sizes by the insert of both mates
-	# in both cases only R1 is used to call peaks. one may circumvent this by splitNcigar strings (i.e change PNEXT in BAMs) or use custom tagAlign/BED format solutions
-
-	$ripseq && fragmentsize=$((fragmentsize/2)) # decrease it to get narrow peaks within rna based read distribution landscapes
+	# in both cases only R1 is used to call peaks. one may circumvent this by splitNcigar strings (i.e change PNEXT in BAMs) or use custom tagAlign/BED format solutions in conjunction with bedtools -split
 
 	local m i f o odir nf
-	declare -a cmd1 cmd2
+	declare -a cmd1 cmd2 cmd3
 	for m in "${_mapper_macs[@]}"; do
 		declare -n _bams_macs=$m
 		odir="$outdir/$m/macs"
@@ -183,23 +185,60 @@ peaks::macs(){
 			if [[ ${_nidx_macs[$i]} ]]; then
 				nf="${_bams_macs[${_nidx_macs[$i]}]}"
 				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
-				nf="-c '$nf'"
+
+				# encode replaces read name by static N and score by max value 1000 to spare disk space
+				# SE: bedtools bamtobed -i $nf | awk -v OFS='\t' '{$4="N"; $5="1000"; print}' | gzip -nc > $nf.tagAlign.gz # bed3+3
+				# PE: bedtools bamtobed -bedpe -mate1 -i <(samtools view -F 2028 -F 256 -F 4 -f 2 $nf -u | samtools sort -n -O BAM $nf) | awk -v OFS='\t' '{print $1,$2,$3,"N",1000,$9; print $4,$5,$6,"N",1000,$10}' | gzip -nc > $nf.tagAlign.gz
+
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bedtools bamtobed -split -i "$nf"
+				CMD
+					pigz -p $ithreads -k -c > "${nf%.*}.bed.gz"
+				CMD
+				nf="-c '${nf%.*}.bed.gz'"
 			else
 				unset nf
 				o="$(basename "$f")"
 				o="${o%.*}"
 			fi
 
-			mkdir -p "$odir/$o"
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				bedtools bamtobed -split -i "$f"
+			CMD
+				pigz -p $ithreads -k -c > "${f%.*}.bed.gz"
+			CMD
+			f="${f%.*}.bed.gz"
 
+			mkdir -p "$odir/$o"
 			printf '' > "$odir/$o/$o.model_peaks.narrowPeak"
-			# mfold parameter (default: --mfold 5 50) is hard to estimate for small genome sizes and or huge coverages - as of chip-exo (-m 5 100) or RIP-seq
-			# the first can be tackled by downsampling, but the latter also faces strong variation in base gene expression levels, which makes model estimation nearly impossible
-			if ! $ripseq; then
+			if $ripseq; then # works also for atac seq: shift -75 (encode) to -100 and extsize 150 (encode) to 200
+				# mfold parameter (default: --mfold 5 50) is hard to estimate for small genome sizes and or huge coverages - as of chip-exo (-m 5 100) or RIP-seq
+				# the first can be tackled by downsampling, but the latter also faces strong variation in base gene expression levels, which makes model estimation nearly impossible
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 					macs2 callpeak
+					-f BED
+					-t "$f"
+					$nf
+					-g $genomesize
+					--outdir "$odir/$o"
+					-n "$o.nomodel"
+					--tempdir "${tdirs[-1]}"
+					-B
+					--SPMR
+					--keep-dup all
+					--verbose 2
+					--nomodel
+					--shift $($pointy && echo "-$((fragmentsize/8))" || echo "-$((fragmentsize/2))")
+					--extsize $($pointy && echo "$((fragmentsize/2))" || echo $fragmentsize)
 					$params
+				CMD
+			else
+				# pointy for chip-exo: shift 0, extsize 30-50, bw 150, m 5 100-200
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+					macs2 callpeak
+					-f BED
 					-t "$f"
 					$nf
 					-g $genomesize
@@ -210,30 +249,33 @@ peaks::macs(){
 					--SPMR
 					--keep-dup all
 					--verbose 2
+					$params
+					$($pointy && echo "-m 5 150 --bw 150")
+				CMD
+
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+					macs2 callpeak
+					-f BED
+					-t "$f"
+					$nf
+					-g $genomesize
+					--outdir "$odir/$o"
+					-n "$o.nomodel"
+					--tempdir "${tdirs[-1]}"
+					-B
+					--SPMR
+					--keep-dup all
+					--verbose 2
+					--nomodel
+					--shift 0
+					--extsize $($pointy && echo "$((fragmentsize/4))" || echo $fragmentsize)
+					$params
 				CMD
 			fi
 
-			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-				macs2 callpeak
-				$params
-				-t "$f"
-				$nf
-				-g $genomesize
-				--outdir "$odir/$o"
-				-n "$o.nomodel"
-				--tempdir "${tdirs[-1]}"
-				-B
-				--SPMR
-				--keep-dup all
-				--verbose 2
-				--nomodel
-				--shift 0
-				--extsize $fragmentsize
-			CMD
-
 			# keep summit of peak with highest summit enrichment
-			commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
+			commander::makecmd -a cmd3 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
 				sort -k1,1 -k2,2n -k3,3n "$odir/$o/$o.nomodel_peaks.narrowPeak" "$odir/$o/$o.model_peaks.narrowPeak"
 			CMD
 				awk '$2>=0 && $3>=0'
@@ -259,9 +301,11 @@ peaks::macs(){
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	else
-		commander::runcmd -c macs -v -b -t $instances -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -c macs -v -b -t $instances2 -a cmd2
+		commander::runcmd -v -b -t $threads -a cmd3
 	fi
 
 	return 0
@@ -292,6 +336,7 @@ peaks::macs_idr(){
 			-k <pidx>       | array of IP* bam pools idices within -r
 			-o <outdir>     | path to
 			-p <tmpdir>     | path to
+			-y <pointy>     | true/false call only pointy peaks
 			-z <strict>     | true/false peak filters
 
 			requires prior execution of alignment::mkreplicates
@@ -299,9 +344,9 @@ peaks::macs_idr(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false ripseq=false genome threads memory maxmemory fragmentsize outdir tmpdir strict=false
+	local OPTIND arg mandatory skip=false ripseq=false genome threads memory maxmemory fragmentsize outdir tmpdir strict=false pointy=false
 	declare -n _mapper_macs _nidx_macs _nridx_macs _tidx_macs _ridx_macs _pidx_macs
-	while getopts 'S:s:t:m:M:g:f:q:r:a:b:i:j:k:o:p:z:' arg; do
+	while getopts 'S:s:t:m:M:g:f:q:r:a:b:i:j:k:o:p:z:y:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -319,6 +364,7 @@ peaks::macs_idr(){
 			k)	((++mandatory)); _pidx_macs=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			y)	pointy=$OPTARG;;
 			z)	strict=$OPTARG;;
 			*) _usage;;
 		esac
@@ -327,8 +373,6 @@ peaks::macs_idr(){
 
 	commander::printinfo "peak calling macs"
 
-	# get effective genome size
-	# if multimapped reads: genome minus Ns , else genome minus Ns minus repetetive Elements
 	declare -n _bams_macs=${_mapper_macs[0]}
 	local genomesize nf="${_bams_macs[${_nidx_macs[0]}]}"
 	local x=$(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 256)
@@ -338,35 +382,28 @@ peaks::macs_idr(){
 		genomesize=$(unique-kmers.py -k 100 "$genome" 2>&1 | tail -1 | awk '{print $NF}')
 	fi
 
-	local params='' mult=5 # macs min mem in byte according to manual is numchr * buffer=100000 * mult=2 - observation max mem used ~ mult=5
+	local params='' mult=5
 	local numchr=$(samtools view -H "$nf" | grep -c '^@SQ')
 	local buffer=$(( (1024*1024*memory)/(numchr*mult) ))
 
-	local instances ithreads
+	local instances instances2 ithreads ithreads2
+	instances=$((${#_bams_macs[@]} * ${#_mapper_macs[@]}))
+	read -r instances ithreads < <(configure::instances_by_threads -T $threads -i $instances)
 	if [[ $buffer -lt 100000 ]]; then
 		params+=" --buffer-size $buffer"
-		read -r instances ithreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
+		read -r instances2 ithreads2 < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
 	else
-		read -r instances ithreads < <(configure::instances_by_memory -T $threads -m $(( (numchr*buffer*mult)/1024/1024 )) -M "$maxmemory")
+		read -r instances2 ithreads2 < <(configure::instances_by_memory -T $threads -m $(( (numchr*buffer*mult)/1024/1024 )) -M "$maxmemory")
 	fi
 
 	if $strict; then
-		params+=' -q 0.05' # macs default. may chnaged to 0.01
+		params+=' -q 0.05'
 	else
-		params+=' -p 0.01' # encode setting for downstream IDR
+		params+=' -p 0.01'
 	fi
 
-	# infer SE or PE
-	#x=$(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 1)
-	#[[ $x -gt 0 ]] && params+=' -f BAMPE ' || params+=' -f BAM'
-	params+=' -f BAM'
-	# do never use BAMPE! the only difference to BAM is the estimation of fragment sizes by the insert of both mates
-	# in both cases only R1 is used to call peaks. one may circumvent this by splitNcigar strings (i.e change PNEXT in BAMs) or use custom tagAlign/BED format solutions
-
-	$ripseq && fragmentsize=$((fragmentsize/2)) # decrease it to get narrow peaks within rna based read distribution landscapes
-
 	local m i f o odir nf tf rf pf nrf pff nff x
-	declare -a cmd1 cmd2 cmd3 cmd4 toidr
+	declare -a cmd1 cmd2 cmd3 cmd4 cmd5 toidr
 	for m in "${_mapper_macs[@]}"; do
 		declare -n _bams_macs=$m
 		odir="$outdir/$m/macs"
@@ -382,14 +419,46 @@ peaks::macs_idr(){
 				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				mkdir -p "$odir/$o"
 
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bedtools bamtobed -split -i "$nf"
+				CMD
+					pigz -p $ithreads -k -c > "${nf%.*}.bed.gz"
+				CMD
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bedtools bamtobed -split -i "$f"
+				CMD
+					pigz -p $ithreads -k -c > "${f%.*}.bed.gz"
+				CMD
+				nf="${nf%.*}.bed.gz"
+				f="${f%.*}.bed.gz"
+
+				mkdir -p "$odir/$o"
 				printf '' > "$odir/$o/$o.model_peaks.narrowPeak"
-				# mfold parameter (default: --mfold 5 50) is hard to estimate for small genome sizes and or huge coverages - as of chip-exo (-m 5 100) or RIP-seq
-				# the first can be tackled by downsampling, but the latter also faces strong variation in base gene expression levels, which makes model estimation nearly impossible
-				if ! $ripseq; then
+				if $ripseq; then
 					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
-					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 						macs2 callpeak
+						-f BED
+						-t "$f"
+						-c "$nf"
+						-g $genomesize
+						--outdir "$odir/$o"
+						-n "$o.nomodel"
+						--tempdir "${tdirs[-1]}"
+						-B
+						--SPMR
+						--keep-dup all
+						--verbose 2
+						--nomodel
+						--shift $($pointy && echo "-$((fragmentsize/8))" || echo "-$((fragmentsize/2))")
+						--extsize $($pointy && echo "$((fragmentsize/2))" || echo $fragmentsize)
 						$params
+					CMD
+				else
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+						macs2 callpeak
+						-f BED
 						-t "$f"
 						-c "$nf"
 						-g $genomesize
@@ -400,30 +469,32 @@ peaks::macs_idr(){
 						--SPMR
 						--keep-dup all
 						--verbose 2
+						$params
+						$($pointy && echo "-m 5 150 --bw 150")
+					CMD
+
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+						macs2 callpeak
+						-f BED
+						-t "$f"
+						-c "$nf"
+						-g $genomesize
+						--outdir "$odir/$o"
+						-n "$o.nomodel"
+						--tempdir "${tdirs[-1]}"
+						-B
+						--SPMR
+						--keep-dup all
+						--verbose 2
+						--nomodel
+						--shift 0
+						--extsize $($pointy && echo "$((fragmentsize/4))" || echo $fragmentsize)
+						$params
 					CMD
 				fi
 
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					macs2 callpeak
-					$params
-					-t "$f"
-					-c "$nf"
-					-g $genomesize
-					--outdir "$odir/$o"
-					-n "$o.nomodel"
-					--tempdir "${tdirs[-1]}"
-					-B
-					--SPMR
-					--keep-dup all
-					--verbose 2
-					--nomodel
-					--shift 0
-					--extsize $fragmentsize
-				CMD
-
-				# keep summit of peak with highest summit enrichment
-				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
+				commander::makecmd -a cmd3 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
 					sort -k1,1 -k2,2n -k3,3n "$odir/$o/$o.nomodel_peaks.narrowPeak" "$odir/$o/$o.model_peaks.narrowPeak"
 				CMD
 					awk '$2>=0 && $3>=0'
@@ -448,8 +519,8 @@ peaks::macs_idr(){
 			done
 
 			peaks::_idr \
-				-1 cmd3 \
-				-2 cmd4 \
+				-1 cmd4 \
+				-2 cmd5 \
 				-t "${toidr[0]}" \
 				-r "${toidr[1]}" \
 				-p "${toidr[2]}" \
@@ -477,8 +548,8 @@ peaks::macs_idr(){
 			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
 
 			peaks::_idr \
-				-1 cmd3 \
-				-2 cmd4 \
+				-1 cmd4 \
+				-2 cmd5 \
 				-t "${toidr[0]}" \
 				-r "${toidr[1]}" \
 				-p "${toidr[2]}" \
@@ -491,11 +562,13 @@ peaks::macs_idr(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
+		commander::printcmd -a cmd5
 	else
-		commander::runcmd -c macs -v -b -t $instances -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -c macs -v -b -t $instances2 -a cmd2
 		commander::runcmd -v -b -t $threads -a cmd3
 		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -v -b -t $threads -a cmd5
 	fi
 
 	return 0
@@ -552,18 +625,19 @@ peaks::gem(){
 		esac
 	done
 	[[ $mandatory -lt 6 ]] && _usage
-	$ripseq && [[ ! $_strandness_gem ]] && _usage
+
+	$ripseq && [[ ${#_strandness_gem[@]} -eq 0 ]] && _usage
 	[[ $_nidx_gem ]] && [[ ! $_tidx_gem ]] && _usage
 
 	declare -n _bams_gem=${_mapper_gem[0]}
-	if [[ ! $_tidx_gem ]]; then
+	if [[ ! $_nidx_gem && ! $_tidx_gem ]]; then
 		declare -a tidx_gem=("${!_bams_gem[@]}") # use all bams as unpaired input unless -a and -i
 		_tidx_gem=tidx_gem
 	fi
 
 	commander::printinfo "peak calling gem"
 
-	local minstances mthreads jmem jgct jcgct instances=$(( ${#_tidx_gem[@]} * $($pointy && echo 1 || echo 2)  * ${#_mapper_gem[@]} ))
+	local minstances mthreads jmem jgct jcgct instances=$(( ${#_tidx_gem[@]} * ${#_mapper_gem[@]} ))
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i $instances -T $threads -m $memory -M "$maxmemory")
 
 	# get effective genome size
@@ -600,7 +674,7 @@ peaks::gem(){
 
 	local params='' params2='' strandness=0
 	if $ripseq; then
-		local x=$(samtools view -F 4 "${_bams_gem[0]}" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 1)
+		local x=$(samtools view -F 4 "${_bams_gem[0]}" | head -10000 | cat <(samtools view -H "${_bams_gem[0]}") - | samtools view -c -f 1)
 		[[ $x -eq 0 ]] && strandness=${_strandness_gem["${_bams_gem[0]}"]}
 		if [[ $strandness -ne 0 ]]; then
 			params+=' --strand_type 1'
@@ -611,6 +685,24 @@ peaks::gem(){
 		# in case of PE this leads to duplicated peaks on both strands since orientation is not inferred from first in pair read
 		# -> use this parameter only in case of strand specific SE reads
 		[[ $_nidx_gem ]] && params+=' --nd 2' # --nd 2 is designed for RNA based approaches and uses the control data to model the noise
+
+		params+=" --d '$(dirname "$(which gem)")/Read_Distribution_CLIP.txt'"
+		if $pointy; then
+			params+=' --smooth 5'
+		fi
+		# if very narrow peaks i.e. more pointy signals needs to be deteced (e.g. clip or chip-exo), then
+		# decrease smoothing width for read distribution estimation from default 30 bp to e.g. 5 via --smooth 5
+		# if enough initial peaks can be found, re-estimation of the read distribution takes place
+		# see ${out}_outputs/*.Read_Distributions.png to compare distributions.
+		# Ideally, the read distribution of later rounds should be smooth and similar to that of round 0 (i.e. the read distribution model file)
+		# If learned distributions shifts too much from the initial distribution one can use option --constant_model_range to use the event predictions from round 0
+	else
+		if $pointy; then
+			params+=" --d '$(dirname "$(which gem)")/Read_Distribution_ChIP-exo.txt'"
+			params+=' --smooth 5'
+		else
+			params+=" --d '$(dirname "$(which gem)")/Read_Distribution_default.txt'"
+		fi
 	fi
 
 	if $strict; then
@@ -627,9 +719,8 @@ peaks::gem(){
 	# use always --fold 1 cutoff (no big difference to --fold 2 at proper q-value cutoff), to make gem behaves as expected with respect to the -q 0 exceptional behaviour
 	# in combination with --nf (disables fold and shape filters), in strict mode, gem reaches highest overlap with macs strict -q 0.05 results
 
-
-	local m i f o o1 o2 odir nf distfile
-	declare -a cmd1 cmd2 cmd3
+	local m i f o odir nf
+	declare -a cmd1 cmd2
 	for m in "${_mapper_gem[@]}"; do
 		declare -n _bams_gem=$m
 		odir="$outdir/$m/gem"
@@ -647,58 +738,7 @@ peaks::gem(){
 				o="${o%.*}"
 			fi
 
-			o1="$o.default"
-			o2="$o.pointy"
-			mkdir -p "$odir/$o1" "$odir/$o2"
-			if $pointy; then
-				echo > "$odir/$o1/$o1.narrowPeak"
-			else
-				distfile="$(dirname "$(which gem)")/Read_Distribution_default.txt"
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					unset DISPLAY
-				CMD
-					gem
-						-Xmx${jmem}m
-						-XX:ParallelGCThreads=$jgct
-						-XX:ConcGCThreads=$jcgct
-						-Djava.io.TMPDIR="$tmpdir"
-						--t $mthreads
-						--genome "$tdir"
-						--g "$tdir/chr.info"
-						--out "$odir/$o1"
-						--expt "$f"
-						$nf
-						--f SAM
-						--nrf
-						--sl
-						--s $genomesize
-						--outNP
-						--d "$distfile"
-						--fold 1
-						--nf
-						$params
-				CMD
-
-				# col 4 (Fold) is NaN unless ctr is given. else IP base mean (col 2)
-				commander::makecmd -a cmd2 -s '|' -o "$odir/$o1/$o1.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-					paste "$odir/$o1/$o1.GPS_events.narrowPeak" <(tail -n +2 "$odir/$o1/$o1.GPS_events.txt")
-				CMD
-					perl -lane 'if($F[13] eq "NaN"){$F[6]=$F[11]}else{$F[6]=$F[13]}; print join"\t",@F[0..9]'
-				CMD
-			fi
-
-			# if very narrow peaks i.e. more pointy signals needs to be deteced (e.g. clip or chip-exo), then
-			# decrease smoothing width for read distribution estimation from default 30 bp to e.g. 5 via --smooth 5
-			# if enough initial peaks can be found, re-estimation of the read distribution takes place
-			# see ${out}_outputs/*.Read_Distributions.png to compare distributions.
-			# Ideally, the read distribution of later rounds should be smooth and similar to that of round 0 (i.e. the read distribution model file)
-			# If learned distributions shifts too much from the initial distribution one can use option --constant_model_range to use the event predictions from round 0
-			if $ripseq; then
-				distfile="$(dirname "$(which gem)")/Read_Distribution_CLIP.txt"
-			else
-				distfile="$(dirname "$(which gem)")/Read_Distribution_ChIP-exo.txt"
-			fi
-
+			mkdir -p "$odir/$o"
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				unset DISPLAY
 			CMD
@@ -710,7 +750,7 @@ peaks::gem(){
 					--t $mthreads
 					--genome "$tdir"
 					--g "$tdir/chr.info"
-					--out "$odir/$o2"
+					--out "$odir/$o"
 					--expt "$f"
 					$nf
 					--f SAM
@@ -718,47 +758,19 @@ peaks::gem(){
 					--sl
 					--s $genomesize
 					--outNP
-					--d $distfile
 					--fold 1
 					--nf
-					--smooth 5
 					$params
 			CMD
 
+			# gem does not predict a true summit of its peaks
 			# col 4 (Fold) is NaN unless ctr is given. else IP base mean (col 2)
-			commander::makecmd -a cmd2 -s '|' -o "$odir/$o2/$o2.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-				paste "$odir/$o2/$o2.GPS_events.narrowPeak" <(tail -n +2 "$odir/$o2/$o2.GPS_events.txt")
+			commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- 'CMD' {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- 'CMD'
+				paste "$odir/$o/$o.GPS_events.narrowPeak" <(tail -n +2 "$odir/$o/$o.GPS_events.txt")
 			CMD
 				perl -lane 'if($F[13] eq "NaN"){$F[6]=$F[11]}else{$F[6]=$F[13]}; print join"\t",@F[0..9]'
 			CMD
-
-			commander::makecmd -a cmd3 -s '|' -o "$odir/$o1.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
-				sort -k1,1 -k2,2n -k3,3n "$odir/$o1/$o1.narrowPeak"
-			CMD
-				sed -E '/^chr(M|X|Y|[0-9]+)/!{s/^chr//}'
-			CMD
-				awk -v OFS='\t' '$2>=0 && $3>=0{$4="."; $10=-1; print}'
-			CMD
-				bedtools merge $params2 -c 4,5,6,7,8,9,10 -o distinct,max,distinct,max,max,max,distinct
-			CMD
-				awk -v OFS='\t' '{$4="peak_"NR; print}'
-			CMD
-
-			commander::makecmd -a cmd3 -s '|' -o "$odir/$o2.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
-				sort -k1,1 -k2,2n -k3,3n "$odir/$o2/$o2.narrowPeak"
-			CMD
-				sed -E '/^chr(M|X|Y|[0-9]+)/!{s/^chr//}'
-			CMD
-				awk -v OFS='\t' '$2>=0 && $3>=0{$4="."; $10=-1; print}'
-			CMD
-				bedtools merge $params2 -c 4,5,6,7,8,9,10 -o distinct,max,distinct,max,max,max,distinct
-			CMD
-				awk -v OFS='\t' '{$4="peak_"NR; print}'
-			CMD
-
-			# gem does not predict a true summit of its peaks
-			commander::makecmd -a cmd3 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
-				sort -k1,1 -k2,2n -k3,3n "$odir/$o1/$o1.narrowPeak" "$odir/$o2/$o2.narrowPeak"
+				sort -k1,1 -k2,2n -k3,3n
 			CMD
 				sed -E '/^chr(M|X|Y|[0-9]+)/!{s/^chr//}'
 			CMD
@@ -774,11 +786,9 @@ peaks::gem(){
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-		commander::printcmd -a cmd3
 	else
 		commander::runcmd -v -b -t $minstances -a cmd1
 		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
 	fi
 
 	return 0
@@ -843,18 +853,16 @@ peaks::gem_idr(){
 		esac
 	done
 	[[ $mandatory -lt 10 ]] && _usage
-	$ripseq && [[ ! $_strandness_gem ]] && _usage
+	$ripseq && [[ ${#_strandness_gem[@]} -eq 0 ]] && _usage
 
 	commander::printinfo "peak calling gem"
 
-	local minstances mthreads jmem jgct jcgct instances=$(( ${#_nidx_gem[@]} * $($pointy && echo 1 || echo 2) * ${#_mapper_gem[@]} ))
+	local minstances mthreads jmem jgct jcgct instances=$(( ${#_nidx_gem[@]} * ${#_mapper_gem[@]} ))
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i $instances -T $threads -m $memory -M "$maxmemory")
 
 	declare -n _bams_gem=${_mapper_gem[0]}
 	local nf="${_bams_gem[${_nidx_gem[0]}]}"
 
-	# get effective genome size
-	# if multimapped reads: genome minus Ns , else genome minus Ns minus repetetive Elements
 	local genomesize
 	local x=$(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 256)
 	if [[ $x -gt 0 ]]; then
@@ -893,30 +901,29 @@ peaks::gem_idr(){
 			params+=' --strand_type 1'
 			params2+=' -s' # for bedtools merge
 		fi
-		# --strand_type 1 disables search for asymmetry between sense and antisense mapped reads. instead leads to strand specific peak calls based on read orientation
-		# if data is paired end, mates will be analyzed individually as single end reads
-		# in case of PE this leads to duplicated peaks on both strands since orientation is not inferred from first in pair read
-		# -> use this parameter only in case of strand specific SE reads
 		params+=' --nd 2'
-		# --nd 2 is designed for RNA based approaches and uses the control data to model the noise
+
+		params+=" --d '$(dirname "$(which gem)")/Read_Distribution_CLIP.txt'"
+		if $pointy; then
+			params+=' --smooth 5'
+		fi
+	else
+		if $pointy; then
+			params+=" --d '$(dirname "$(which gem)")/Read_Distribution_ChIP-exo.txt'"
+			params+=' --smooth 5'
+		else
+			params+=" --d '$(dirname "$(which gem)")/Read_Distribution_default.txt'"
+		fi
 	fi
 
 	if $strict; then
 		params+=" -q $(echo 0.05 | awk '{print -log($1)/log(10)}')"
-		# 0.05 finds ~twice more good enriched peaks than the default 0.01
 	else
 		params+=' -q 0 --relax'
-		# encode uses -q 0 (1)- which behaves very strange: its much! more stringend than -q 1 (0.1) ~ similar to -q 3 (0.001) unless --fold 1 is used
-		# in the gem source there must be some relaxation which kinda adds a small number to q-vlaue cutoff which will lead to 10^-($q+0.001) = 0.001 instead of expected 1
-		# when --fold 1 is used, it behaves as expected and -q 0 leads to loose results, despite much less (~20 fold) peaks than than macs -p 0.01
-		# --relax leads to more peaks, but in contrast to --nf, the overlap with macs does not increase, thus --relax adds more low scored FP for IDR
 	fi
-	# summary:
-	# use always --fold 1 cutoff (no big difference to --fold 2 at proper q-value cutoff), to make gem behaves as expected with respect to the -q 0 exceptional behaviour
-	# in combination with --nf (disables fold and shape filters), in strict mode, gem reaches highest overlap with macs strict -q 0.05 results
 
-	local m i f o o1 o2 distfile odir nf tf rf pf nrf pff nff x
-	declare -a cmd1 cmd2 cmd3 cmd4 cmd5 toidr
+	local m i f o odir nf tf rf pf nrf pff nff x
+	declare -a cmd1 cmd2 cmd3 cmd4 toidr
 	for m in "${_mapper_gem[@]}"; do
 		declare -n _bams_gem=$m
 		odir="$outdir/$m/gem"
@@ -931,56 +938,7 @@ peaks::gem_idr(){
 			for f in "$tf" "$rf" "$pf"; do
 				o=$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')
 
-				o1="$o.default"
-				o2="$o.pointy"
-				mkdir -p "$odir/$o1" "$odir/$o2"
-				if $pointy; then
-					echo > "$odir/$o1/$o1.narrowPeak"
-				else
-					distfile="$(dirname "$(which gem)")/Read_Distribution_default.txt"
-					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						unset DISPLAY
-					CMD
-						gem
-							-Xmx${jmem}m
-							-XX:ParallelGCThreads=$jgct
-							-XX:ConcGCThreads=$jcgct
-							-Djava.io.TMPDIR="$tmpdir"
-							--t $mthreads
-							--genome "$tdir"
-							--g "$tdir/chr.info"
-							--out "$odir/$o1"
-							--expt "$f"
-							--ctrl "$nf"
-							--f SAM
-							--nrf
-							--sl
-							--s $genomesize
-							--outNP
-							--d "$distfile"
-							--fold 1
-							--nf
-							$params
-					CMD
-
-					commander::makecmd -a cmd2 -s '|' -o "$odir/$o1/$o1.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-						paste "$odir/$o1/$o1.GPS_events.narrowPeak" <(tail -n +2 "$odir/$o1/$o1.GPS_events.txt")
-					CMD
-						perl -lane '$F[6]=$F[13]; print join"\t",@F[0..9]'
-					CMD
-				fi
-
-				# if very narrow peaks i.e. more pointy signals needs to be deteced (e.g. clip or chip-exo), then
-				# decrease smoothing width for read distribution estimation from default 30 bp to e.g. 5 via --smooth 5
-				# if enough initial peaks can be found, re-estimation of the read distribution takes place
-				# see ${out}_outputs/*.Read_Distributions.png to compare distributions.
-				# Ideally, the read distribution of later rounds should be smooth and similar to that of round 0 (i.e. the read distribution model file)
-				# If learned distributions shifts too much from the initial distribution one can use option --constant_model_range to use the event predictions from round 0
-				if $ripseq; then
-					distfile="$(dirname "$(which gem)")/Read_Distribution_CLIP.txt"
-				else
-					distfile="$(dirname "$(which gem)")/Read_Distribution_ChIP-exo.txt"
-				fi
+				mkdir -p "$odir/$o"
 
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					unset DISPLAY
@@ -993,7 +951,7 @@ peaks::gem_idr(){
 						--t $mthreads
 						--genome "$tdir"
 						--g "$tdir/chr.info"
-						--out "$odir/$o2"
+						--out "$odir/$o1"
 						--expt "$f"
 						--ctrl "$nf"
 						--f SAM
@@ -1001,46 +959,17 @@ peaks::gem_idr(){
 						--sl
 						--s $genomesize
 						--outNP
-						--d $distfile
 						--fold 1
 						--nf
-						--smooth 5
 						$params
 				CMD
 
-				commander::makecmd -a cmd2 -s '|' -o "$odir/$o2/$o2.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-					paste "$odir/$o2/$o2.GPS_events.narrowPeak" <(tail -n +2 "$odir/$o2/$o2.GPS_events.txt")
+				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- 'CMD' {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- 'CMD'
+					paste "$odir/$o/$o.GPS_events.narrowPeak" <(tail -n +2 "$odir/$o/$o.GPS_events.txt")
 				CMD
 					perl -lane '$F[6]=$F[13]; print join"\t",@F[0..9]'
 				CMD
-
-				commander::makecmd -a cmd3 -s '|' -o "$odir/$o1.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
-					sort -k1,1 -k2,2n -k3,3n "$odir/$o1/$o1.narrowPeak"
-				CMD
-					sed -E '/^chr(M|X|Y|[0-9]+)/!{s/^chr//}'
-				CMD
-					awk -v OFS='\t' '$2>=0 && $3>=0{$4="."; $10=-1; print}'
-				CMD
-					bedtools merge $params2 -c 4,5,6,7,8,9,10 -o distinct,max,distinct,max,max,max,distinct
-				CMD
-					awk -v OFS='\t' '{$4="peak_"NR; print}'
-				CMD
-
-				commander::makecmd -a cmd3 -s '|' -o "$odir/$o2.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
-					sort -k1,1 -k2,2n -k3,3n "$odir/$o2/$o2.narrowPeak"
-				CMD
-					sed -E '/^chr(M|X|Y|[0-9]+)/!{s/^chr//}'
-				CMD
-					awk -v OFS='\t' '$2>=0 && $3>=0{$4="."; $10=-1; print}'
-				CMD
-					bedtools merge $params2 -c 4,5,6,7,8,9,10 -o distinct,max,distinct,max,max,max,distinct
-				CMD
-					awk -v OFS='\t' '{$4="peak_"NR; print}'
-				CMD
-
-				# gem does not predict a true summit of its peaks
-				commander::makecmd -a cmd3 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
-					sort -k1,1 -k2,2n -k3,3n "$odir/$o1/$o1.narrowPeak" "$odir/$o2/$o2.narrowPeak"
+					sort -k1,1 -k2,2n -k3,3n
 				CMD
 					sed -E '/^chr(M|X|Y|[0-9]+)/!{s/^chr//}'
 				CMD
@@ -1055,8 +984,8 @@ peaks::gem_idr(){
 			done
 
 			peaks::_idr \
-				-1 cmd4 \
-				-2 cmd5 \
+				-1 cmd3 \
+				-2 cmd4 \
 				-t "${toidr[0]}" \
 				-r "${toidr[1]}" \
 				-p "${toidr[2]}" \
@@ -1084,8 +1013,8 @@ peaks::gem_idr(){
 			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
 
 			peaks::_idr \
-				-1 cmd4 \
-				-2 cmd5 \
+				-1 cmd3 \
+				-2 cmd4 \
 				-t "${toidr[0]}" \
 				-r "${toidr[1]}" \
 				-p "${toidr[2]}" \
@@ -1098,13 +1027,11 @@ peaks::gem_idr(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
-		commander::printcmd -a cmd5
 	else
 		commander::runcmd -v -b -t $minstances -a cmd1
 		commander::runcmd -v -b -t $threads -a cmd2
 		commander::runcmd -v -b -t $threads -a cmd3
 		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
 	fi
 
 	return 0
@@ -1122,13 +1049,14 @@ peaks::peakachu() {
 			-a <nidx>       | array of normal bam idices within -r (if paired input, requires also -i)
 			-i <tidx>       | array of IP* bam idices within -r (if paired input, requires also -a)
 			-o <outdir>     | path to
+			-z <strict>     | true/false peak filters
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false genome threads fragmentsize outdir
+	local OPTIND arg mandatory skip=false skipmd5=false genome threads fragmentsize outdir strict=false
 	declare -n _mapper_peakachu _nidx_peakachu _tidx_peakachu
-	while getopts 'S:s:t:f:r:a:i:o:' arg; do
+	while getopts 'S:s:t:f:r:a:i:o:z:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -1138,6 +1066,7 @@ peaks::peakachu() {
 			i)	_tidx_peakachu=$OPTARG;;
 			f)	((++mandatory)); fragmentsize=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			z)	strict=$OPTARG;;
 			*) _usage;;
 		esac
 	done
@@ -1145,7 +1074,7 @@ peaks::peakachu() {
 	[[ $_nidx_peakachu ]] && [[ ! $_tidx_peakachu ]] && _usage
 
 	declare -n _bams_peakachu=${_mapper_peakachu[0]}
-	if [[ ! $_tidx_peakachu ]]; then
+	if [[ ! $_nidx_peakachu && ! $_tidx_peakachu ]]; then
 		declare -a tidx_peakachu=("${!_bams_peakachu[@]}") # use all bams as unpaired input unless -a and -i
 		_tidx_peakachu=tidx_peakachu
 	fi
@@ -1191,7 +1120,7 @@ peaks::peakachu() {
 				--norm_method deseq
 				--mad_multiplier 0.0
 				--fc_cutoff 2
-				--padj_threshold 0.05
+				--padj_threshold $($strict && echo 0.05 || echo 0.1)
 				--output_folder "$odir/$o"
 		CMD
 
@@ -1235,13 +1164,14 @@ peaks::peakachu_idr() {
 			-j <ridx>       | array of IP* bam replicates idices within -r
 			-k <pidx>       | array of IP* bam pools idices within -r
 			-o <outdir>     | path to
+			-z <strict>     | true/false peak filters
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false genome threads fragmentsize outdir
+	local OPTIND arg mandatory skip=false skipmd5=false genome threads fragmentsize outdir strict=false
 	declare -n _mapper_peakachu _nidx_peakachu _nridx_peakachu _tidx_peakachu _ridx_peakachu _pidx_peakachu
-	while getopts 'S:s:t:f:r:a:b:i:j:k:o:' arg; do
+	while getopts 'S:s:t:f:r:a:b:i:j:k:o:z:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -1254,6 +1184,7 @@ peaks::peakachu_idr() {
 			j)	((++mandatory)); _ridx_peakachu=$OPTARG;;
 			k)	((++mandatory)); _pidx_peakachu=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			z)	strict=$OPTARG;;
 			*) _usage;;
 		esac
 	done
@@ -1295,7 +1226,7 @@ peaks::peakachu_idr() {
 						--norm_method deseq
 						--mad_multiplier 0.0
 						--fc_cutoff 2
-						--padj_threshold 0.05
+						--padj_threshold $($strict && echo 0.05 || echo 0.1)
 						--output_folder "$odir/$o"
 				CMD
 
@@ -1404,7 +1335,7 @@ peaks::m6aviewer() {
 	[[ $_nidx_m6aviewer ]] && [[ ! $_tidx_m6aviewer ]] && _usage
 
 	declare -n _bams_m6aviewer=${_mapper_m6aviewer[0]}
-	if [[ ! $_tidx_m6aviewer ]]; then
+	if [[ ! $_nidx_m6aviewer && ! $_tidx_m6aviewer ]]; then
 		declare -a tidx_m6aviewer=("${!_bams_m6aviewer[@]}") # use all bams as unpaired input unless -a and -i
 		_tidx_m6aviewer=tidx_m6aviewer
 	fi
