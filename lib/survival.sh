@@ -173,10 +173,10 @@ survival::ssgsea(){
 			n="${n%.*}"
 			sed -E -e ':a;N;$!ba' -e 's/(^\s+|\s+$)//g' -e's/\s+/\t/g' -e "s/^/$n\tna\t/" "$f" >> "$outdir/input.gmt"
 		else
-			readlink -e "$f" >> "$outdir/gmt.list"
+			realpath -s "$f" >> "$outdir/gmt.list"
 		fi
 	done
-	[[ -s "$outdir/input.gmt" ]] && readlink -e "$outdir/input.gmt" >> "$outdir/gmt.list"
+	[[ -s "$outdir/input.gmt" ]] && realpath -s "$outdir/input.gmt" >> "$outdir/gmt.list"
 
 	local gct="$outdir/input.gct"
 	if [[ "$(head -1 "$counts")" =~ ^# ]]; then
