@@ -16,12 +16,13 @@ genome::mkdict() {
 			-t <threads>  | number of
 			-i <genome>   | path to
 			-p <tmpdir>   | path to
+			-F            | force
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads genome tmpdir skip=false skipmd5=false
-	while getopts 'S:s:5:t:i:p:' arg; do
+	local OPTIND arg mandatory threads genome tmpdir skip=false skipmd5=false force=false
+	while getopts 'S:s:5:t:i:p:F' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -29,6 +30,7 @@ genome::mkdict() {
 			t) ((++mandatory)); threads=$OPTARG;;
 			i) ((++mandatory)); genome="$OPTARG";;
 			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			F) force=true;;
 			*) _usage;;
 		esac
 	done
@@ -77,7 +79,7 @@ genome::mkdict() {
 			md5dict=$(md5sum "$dict" | cut -d ' ' -f 1)
 			thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 			[[ -s "${genome%.*}.dict" ]] && thismd5dict=$(md5sum "${genome%.*}.dict" | cut -d ' ' -f 1)
-			if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5dict" || "$thismd5dict" != "$md5dict" ]]; then
+			if $force || [[ "$thismd5genome" != "$md5genome" || ! "$thismd5dict" || "$thismd5dict" != "$md5dict" ]]; then
 				commander::runcmd -v -b -t $threads -a cmd2
 			fi
 		fi
@@ -100,27 +102,33 @@ genome::view(){
 			-o <outdir>   | path to batch skript and snapshot files
 			-l <files>    | array of gtf/bed/bam/narrowPeak/... file paths to load
 			-i <ids>      | array of gene ids to goto and make snapshots
+			-j <label>    | array of label for snapshots of gene ids to goto
 			-p <pos>      | array of positions to goto and make snapshots (chrom:start-stop)
+			-q <pos>      | array of label for snapshots of positions to goto
 			-d <number>   | delay seconds between positions
 			-r <range>    | of visibility in kb (default: 1000)
+			-v <visable>  | pixels per panel (default: 1000)
 			-e            | automatically exit after last position
 			-s            | do snapshots per position/id
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory genome gtf delay=0 outdir autoexit=false snapshots=false memory range
-	declare -n _ids_view _pos_view _files_view
-	while getopts 'm:g:o:l:i:p:d:r:es' arg; do
+	local OPTIND arg mandatory genome gtf delay=0 outdir autoexit=false snapshots=false memory range hight=1000
+	declare -n _ids_view _pos_view _ids_label_view _pos_label_view _files_view
+	while getopts 'm:g:o:l:i:j:p:q:d:r:v:es' arg; do
 		case $arg in
 			m)	memory=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			l)	_files_view=$OPTARG;;
 			i)	_ids_view=$OPTARG;;
+			j)	_ids_label_view=$OPTARG;;
 			p)	_pos_view=$OPTARG;;
+			q)	_pos_label_view=$OPTARG;;
 			d)	delay=$((OPTARG*1000));;
 			r)	range=$OPTARG;;
+			v)	hight=$OPTARG;;
 			s)	snapshots=true;;
 			e)	autoexit=true;;
 			*) _usage;;
@@ -170,13 +178,14 @@ genome::view(){
 		SAM.MAX_VISIBLE_RANGE=${range:-1000}
 	EOF
 
-	local i f="$outdir/run.batch"
+	local i x l f="$outdir/run.batch"
 
 	# the genome path will always be interpreted as an id and thus must not be quoted!
 	cat <<- EOF > "$f"
 		new
 		snapshotDirectory "$outdir"
 		setSleepInterval 0
+		maxPanelHeight $hight
 
 		genome $genome
 	EOF
@@ -185,7 +194,9 @@ genome::view(){
 	done
 	echo "sort FIRSTOFPAIRSTRAND" >> "$f"
 
-	for i in "${_ids_view[@]}"; do
+	for x in "${!_ids_view[@]}"; do
+		i="${_ids_view[$x]}"
+		l="${_ids_label_view[$x]}"
 		echo "goto $(grep -E -m 1 $'\t'gene$'\t'".+gene_id \"$i\"" $gtf | awk '{print $1":"$4"-"$5}')" >> $f
 		if [[ $delay -gt 0 ]]; then
 			cat <<- EOF >> $f
@@ -194,9 +205,16 @@ genome::view(){
 				setSleepInterval 0
 			EOF
 		fi
-		$snapshots && echo "snapshot $i.jpg" >> $f
+		if $snapshots; then
+			cat <<- EOF >> $f
+				snapshot ${l:+$l.}$i.png
+				snapshot ${l:+$l.}.$i.svg
+			EOF
+		fi
 	done
-	for i in "${_pos_view[@]}"; do
+	for x in "${!_pos_view[@]}"; do
+		i="${_pos_view[$x]}"
+		l="${_pos_label_view[$x]}"
 		echo "goto $i" >> $f
 		if [[ $delay -gt 0 ]]; then
 			cat <<- EOF >> $f
@@ -208,7 +226,8 @@ genome::view(){
 		if $snapshots; then
 			cat <<- EOF >> $f
 				collapse
-				snapshot $i.png
+				snapshot ${l:+$l.}$i.png
+				snapshot ${l:+$l.}$i.svg
 			EOF
 		fi
 	done
