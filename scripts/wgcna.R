@@ -13,7 +13,7 @@ args = commandArgs(TRUE)
 memory = as.numeric(args[1])
 datatype = args[2] # 'TPM' (will be log transformed) or deseq 'VSC'
 filter = as.logical(args[3])
-counts_raw = read.table(args[4], header=T, sep='\t', stringsAsFactors=F, row.names=1)
+counts_raw = read.table(args[4], header=T, sep='\t', stringsAsFactors=F, row.names=1, quote="")
 outdir = args[5]
 
 #counts_raw[is.na(counts_raw)] = 0
