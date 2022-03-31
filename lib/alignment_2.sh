@@ -51,15 +51,17 @@ alignment::slice(){
 	mkdir -p "$tmpdir/genome"
 	samtools view -H "${_bams_slice[0]}" | sed -En '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t0\t\2/p}' > $tmpdir/genome/chr.bed
 	# do not use process substitution as Rscript argument - sometimes R swallows parts
+	# in case of thousands of contigs, sum of lengths in binpacking function causes integer out bounds and function will never terminate
+	# -> divide lengths by 1000
 	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
 			suppressMessages(library("knapsack"));
 			args <- commandArgs(TRUE);
 			slices <- as.numeric(args[1]);
 			odir <- args[2];
-			df <- read.table(args[3], header=F, sep="\t", stringsAsFactors=F);
+			df <- read.table(args[3], header=F, sep="\t", stringsAsFactors=F, quote="");
 
-			len <- as.integer(df[,3]/10+1);
+			len <- as.integer(df[,3]/1000+1);
 			srt <- sort(len,decreasing=T,index.return=1);
 			len <- srt$x;
 			df <- df[srt$ix,];
@@ -82,8 +84,15 @@ alignment::slice(){
 		$minstances "$tmpdir/genome" "$tmpdir/genome/chr.bed"
 	CMD
 
-	rm -f "$tmpdir/genome/slice".*.bed
-	commander::runcmd -v -b -t $threads -a cmd1
+	if $skip; then
+		for i in $(seq 1 $minstances); do
+			touch "$tmpdir/genome/slice.$i.bed"
+		done
+		commander::printcmd -a cmd1
+	else
+		rm -f "$tmpdir/genome/slice".*.bed
+		commander::runcmd -v -b -t $threads -a cmd1
+	fi
 
 	for m in "${_mapper_slice[@]}"; do
 		declare -n _bams_slice=$m
@@ -128,16 +137,22 @@ alignment::slice(){
 }
 
 alignment::rmduplicates(){
+	declare -a tdirs
+	_cleanup::alignment::rmduplicates(){
+		rm -rf "${tdirs[@]}"
+	}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-k             | keep marked duplicates in bam
+			-l             | true/false legacy mode. true:MarkDuplikates/UMI-tools, false: MarkDuplicatesWithMateCigar/UmiAwareMarkDuplicatesWithMateCigar - for fixmated PE (MC tag) or SE DNA-seq else fallback to legacy! (default: true)
 			-t <threads>   | number of
 			-m <memory>    | amount of
 			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
+			-3 <fastqUMI>  | array of
 			-c <sliceinfo> | array of
 			-p <tmpdir>    | path to
 			-o <outdir>    | path to
@@ -145,18 +160,20 @@ alignment::rmduplicates(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir outdir regex remove=true
-	declare -n _mapper_rmduplicates _bamslices_rmduplicates
-	while getopts 'S:s:t:m:M:x:r:c:p:o:k' arg; do
+	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir outdir regex remove=true legacy=true
+	declare -n _mapper_rmduplicates _bamslices_rmduplicates _umi_rmduplicates
+	while getopts 'S:s:t:m:M:x:r:3:c:p:o:l:k' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			k)	remove=false;;
+			l)	legacy=$OPTARG;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
 			M)	maxmemory=$OPTARG;;
 			x)	regex="$OPTARG";;
 			r)	((++mandatory)); _mapper_rmduplicates=$OPTARG;;
+			3)	_umi_rmduplicates=$OPTARG;;
 			c)	((++mandatory)); _bamslices_rmduplicates=$OPTARG;;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
@@ -167,20 +184,68 @@ alignment::rmduplicates(){
 
 	commander::printinfo "removing duplicates"
 
-	local minstances mthreads ithreads jmem jgct jcgct
+	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 	local nfh=$(($(ulimit -n)/minstances))
 	[[ ! $nfh ]] || [[ $nfh -le 1 ]] && nfh=$((1024/minstances))
 
-	local m i o slice instances ithreads odir
+	local m i o e slice instances ithreads odir params x catcmd oinstances othreads
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
-		((instances+=${#_bams_rmduplicates[@]}))
+		i=$(wc -l < "${_bamslices_rmduplicates[${_bams_rmduplicates[0]}]}")
+		((instances+=i*${#_bams_rmduplicates[@]}))
+		((oinstances+=${#_bams_rmduplicates[@]}))
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+	read -r oinstances othreads < <(configure::instances_by_threads -i $oinstances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3
-	[[ $regex ]] && regex="READ_NAME_REGEX='$regex'" # default is to follow casava i.e. split by 5 or 7 colons and use the last 3 groups i.e. \s+:\d+:\d+:\d+.*
+	# to get MC tags use a mapper like bwa or
+	# samtools sort -n | samtools fixmate or
+	# picard FixMateInformation
+	declare -a cmdsort
+	if [[ $_umi_rmduplicates ]]; then
+
+		for i in "${!_umi_rmduplicates[@]}"; do
+			helper::basename -f "${_umi_rmduplicates[$i]}" -o o -e e
+			e=$(echo $e | cut -d '.' -f 1)
+			o="$tmpdir/$o.$e.gz"
+
+			helper::makecatcmd -c catcmd -f "${_umi_rmduplicates[$i]}"
+
+			commander::makecmd -a cmdsort -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
+				$catcmd "${_umi_rmduplicates[$i]}" | paste - - - -
+			CMD
+				awk -v OFS='\t' '{print $1,$(NF-2),$(NF-1),$NF}'
+			CMD
+				LC_ALL=C sort --parallel=$mthreads -S ${memory}M -T "$tmpdir" -k1,1V
+			CMD
+				tr '\t' '\n'
+			CMD
+				bgzip -@ $threads -c > "$o"
+			CMD
+			_umi_rmduplicates[$i]="$o"
+		done
+
+		if $legacy; then # umitools for SE and PE. handles large split reads since simple 5' position based dedup
+			x=$(samtools view -F 4 "${_bams_rmduplicates[0]}" | head -10000 | cat <(samtools view -H "${_bams_rmduplicates[0]}") - | samtools view -c -f 1)
+			[[ $x -gt 0 ]] && params="--paired"
+		else # picard UmiAwareMarkDuplicatesWithMateCigar for PE without N-cigar but with MC tag (works also for SE without MC). due to 5'trimming searches +- readlenght around 5' position for reads of identical fragment
+			x=$(samtools view -F 4 "${_bams_rmduplicates[0]}" | head -10000 | cat <(samtools view -H "${_bams_rmduplicates[0]}") - | samtools view -c -f 1 -d MC)
+			[[ $x -eq 0 ]] && legacy=true || params=""
+			[[ $regex ]] && params+=" READ_NAME_REGEX='$regex'" # default is to follow casava i.e. split by 5 or 7 colons and use the last 3 groups i.e. \s+:\d+:\d+:\d+.*
+		fi
+	else # picard MarkDuplicates for SE (and PE) and large splits
+		params="MarkDuplicates"
+		if ! $legacy; then
+			x=$(samtools view -F 4 "${_bams_rmduplicates[0]}" | head -10000 | cat <(samtools view -H "${_bams_rmduplicates[0]}") - | samtools view -c -f 1 -d MC)
+			[[ $x -gt 0 ]] && params="MarkDuplicatesWithMateCigar"
+			# MarkDuplicatesWithMateCigar works for PE with MC tag as well as SE but for SE result is identical to MarkDuplicates
+		fi
+		[[ $regex ]] && params+=" READ_NAME_REGEX='$regex'"
+		legacy=false # for runcmd conda env selection
+	fi
+
+	declare -a tomerge cmd1 cmd2 cmd3 cmd4
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
 		odir="$outdir/$m"
@@ -188,31 +253,124 @@ alignment::rmduplicates(){
 		for i in "${!_bams_rmduplicates[@]}"; do
 			tomerge=()
 			while read -r slice; do
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					picard
-						-Xmx${jmem}m
-						-XX:ParallelGCThreads=$jgct
-						-XX:ConcGCThreads=$jcgct
-						-Djava.io.tmpdir="$tmpdir"
-						MarkDuplicates
-						I="$slice"
-						O="$slice.rmdup"
-						M="$slice.metrics"
-						$regex
-						REMOVE_DUPLICATES=$remove
-						ASSUME_SORT_ORDER=coordinate
-						VALIDATION_STRINGENCY=SILENT
-						VERBOSITY=WARNING
-						MAX_FILE_HANDLES=$nfh
-				CMD
-				# note REMOVE_DUPLICATES=true removes, without -> marks
-				# alternative1: samtools sort -n -u -@ $threads -T $tmp/$prefix1 $bam | samtools fixmate -@ $threads -m -u - - | samtools sort -u -@ $threads -T $tmp/$prefix2 | samtools markdup -r -S -T $tmp/$prefix3 -u -@ $threads - $bam.rmdup
-				# note: -r removes, without -> marks
-				# alternative2: samtools sort -n -@ $threads -O SAM -T $tmp/$prefix1 $bam | samblaster --removeDups --addMateTags | samtools sort -@ $threads -O BAM -T $tmp/$prefix2 > $bam.rmdup
-				# note: --removeDups removes, else use --excludeDups. requires setupped RG in SAM header
-				# alternative3: sambamba
+				if [[ $_umi_rmduplicates ]]; then
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rmduplicates)")
 
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
+						rm -f "${tdirs[-1]}/$(basename "$slice")"*;
+					CMD
+						samtools sort
+							-n
+							-@ $ithreads
+							-O SAM
+							-T "${tdirs[-1]}/$(basename "$slice")"
+							"$slice"
+					CMD
+						| perl -slane '
+							BEGIN{
+								open(F, "pigz -p 1 -cd \"$f\" | paste - - - - |")
+							}
+							if(/^@\S\S\s/){print; next}
+							while($l[0] ne $F[0]){
+								$l=<F>;
+								exit unless defined $l;
+								@l=split(/\t/,$l);
+								$l[0]=~s/^.//
+							}
+							print join"\t",(@F,"RX:Z:$l[1]")
+						'
+					CMD
+						-- -f="${_umi_rmduplicates[$i]}"
+					CMD
+						| samtools sort
+							-@ $ithreads
+							-O BAM
+							-T "${tdirs[-1]}/$(basename "$slice").rx"
+						> "$slice.rx";
+					CMD
+						samtools index -@ $ithreads "$slice.rx" "$slice.rx.bai"
+					CMD
+
+					# commander::makecmd -a cmd -s ';' -c {COMMANDER[0]}<<- CMD
+					# 	fgbio
+					# 		-Xmx${jmem}m
+					# 		-XX:ParallelGCThreads=$jgct
+					# 		-XX:ConcGCThreads=$jcgct
+					# 		-Djava.io.tmpdir="$tmpdir"
+					# 		--tmp-dir="${tdirs[-1]}"
+					# 	AnnotateBamWithUmis
+					# 		-s true
+					# 		-t RX
+					# 		-i "$slice.nsorted"
+					# 		-f "${_umi_rmduplicates[$i]}"
+					# 		-o "$slice"
+					# CMD
+					# inefficient piece of shit even if name sorted input complains about offending records and uses >10gb ram
+					# alternative for unsorted files
+					# samtools view -h results-RRBS_pilot/F_anselli/mapped/bwa/no001-1_Fmi_439_NN_RRBS_S1_R1_001.unique.sorted.bam | awk -v umi=RAW-RRBS_pilot/no001-1_Fmi_439_NN_RRBS_S1_UMI_001.fastq.gz 'BEGIN{while(("zcat \""umi"\" | paste - - - -" |& getline)){m[$1]=$(NF-2)}}{if($0~/^@\S\S\s+\S/){print}else{print $0"\tRX:Z:"m["@"$1]}}' | samtools view -@ 56 -b > dedub.bam
+					# less memory consumption than fgbio, but 1/3 more memory than perl hash (still too much ~6 times uncompressed umi fq)
+
+					if $legacy; then
+						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+							umi_tools dedup
+							-I "$slice.rx"
+							-S "$slice.rmdup"
+							--temp-dir "${tdirs[-1]}"
+							--extract-umi-method tag
+							--umi-tag RX
+							--method directional
+							--edit-distance-threshold 1
+							$params
+						CMD
+					else
+						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+							picard
+								-Xmx${jmem}m
+								-XX:ParallelGCThreads=$jgct
+								-XX:ConcGCThreads=$jcgct
+								-Djava.io.tmpdir="$tmpdir"
+								UmiAwareMarkDuplicatesWithMateCigar
+								$params
+								I="$slice.rx"
+								O="$slice.rmdup"
+								M="$slice.metrics"
+								UMI_METRICS_FILE="$slice.umimetrics"
+								MAX_EDIT_DISTANCE_TO_JOIN=1
+								UMI_TAG_NAME=RX
+								CLEAR_DT=false
+								REMOVE_DUPLICATES=$remove
+								ASSUME_SORT_ORDER=coordinate
+								VALIDATION_STRINGENCY=SILENT
+								VERBOSITY=WARNING
+								MAX_FILE_HANDLES=$nfh
+						CMD
+					fi
+				else
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+						picard
+							-Xmx${jmem}m
+							-XX:ParallelGCThreads=$jgct
+							-XX:ConcGCThreads=$jcgct
+							-Djava.io.tmpdir="$tmpdir"
+							$params
+							I="$slice"
+							O="$slice.rmdup"
+							M="$slice.metrics"
+							REMOVE_DUPLICATES=$remove
+							ASSUME_SORT_ORDER=coordinate
+							VALIDATION_STRINGENCY=SILENT
+							VERBOSITY=WARNING
+							MAX_FILE_HANDLES=$nfh
+					CMD
+					# note REMOVE_DUPLICATES=true removes, without -> marks
+					# alternative1: samtools sort -n -u -@ $threads -T $tmp/$prefix1 $bam | samtools fixmate -@ $threads -m -u - - | samtools sort -u -@ $threads -T $tmp/$prefix2 | samtools markdup -r -S -T $tmp/$prefix3 -u -@ $threads - $bam.rmdup
+					# note: -r removes, without -> marks
+					# alternative2: samtools sort -n -@ $threads -O SAM -T $tmp/$prefix1 $bam | samblaster --removeDups --addMateTags | samtools sort -@ $threads -O BAM -T $tmp/$prefix2 > $bam.rmdup
+					# note: --removeDups removes, else use --excludeDups. requires setupped RG in SAM header
+					# alternative3: sambamba
+				fi
+
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					mv "$slice.rmdup" "$slice"
 				CMD
 					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
@@ -225,9 +383,9 @@ alignment::rmduplicates(){
 			o="${o%.*}.rmdup.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
-					-@ $ithreads
+					-@ $othreads
 					-f
 					-c
 					-p
@@ -241,13 +399,21 @@ alignment::rmduplicates(){
 	done
 
 	if $skip; then
+		commander::printcmd -a cmdsort
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
+		commander::printcmd -a cmd4
 	else
-		commander::runcmd -c picard -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -t $minstances -a cmdsort
+		commander::runcmd -v -b -t $instances -a cmd1
+		if $legacy; then
+			commander::runcmd -c umitools -v -b -t $minstances -a cmd2
+		else
+			commander::runcmd -c picard -v -b -t $minstances -a cmd2
+		fi
 		commander::runcmd -v -b -t $instances -a cmd3
+		commander::runcmd -v -b -t $oinstances -a cmd4
 	fi
 
 	return 0
@@ -412,7 +578,7 @@ alignment::clipmateoverlaps() {
 
 	commander::printinfo "clipping ends of overlapping mate pairs"
 
-	local m i o slice odir instances ithreads minstances mthreads poolsize=$((memory/1500*1000000))
+	local m i o slice odir instances ithreads minstances mthreads poolsize=$((memory*1000000/1500))
 	[[ $poolsize -eq 0 ]] && poolsize=1000000
 	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
 
@@ -1061,7 +1227,6 @@ alignment::leftalign() {
 			while read -r slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
 
-
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					samtools reheader -c "sed -E 's/\tSO:.+/\tSO:undefined/'" "$slice" > "$slice.reheader"
 				CMD
@@ -1083,9 +1248,9 @@ alignment::leftalign() {
 				CMD
 
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-					cd "${tdirs[-1]}"
+					rm -f "${tdirs[-1]}/$(basename "${slice%.*}")"*
 				CMD
-					samtools sort -@ $ithreads -O BAM -T "$(basename "${slice%.*}")" "$slice.leftaln" > "$slice"
+					samtools sort -@ $ithreads -O BAM -T "${tdirs[-1]}/$(basename "${slice%.*}")" "$slice.leftaln" > "$slice"
 				CMD
 					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 				CMD
