@@ -108,14 +108,15 @@ bisulfite::segemehl() {
 			-p <tmpdir>     | path to
 			-1 <fastq1>     | array of
 			-2 <fastq2>     | array of
+			-F              | force index
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome gaidx ctidx outdir tmpdir mode=1 accuracy insertsize
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gaidx ctidx outdir tmpdir mode=1 accuracy insertsize forceidx=false
 	declare -n _fq1_segemehl _fq2_segemehl _mapper_segemehl
 	declare -g -a segemehl=()
-	while getopts 'S:s:5:t:a:i:g:x:y:m:r:o:p:1:2:' arg; do
+	while getopts 'S:s:5:t:a:i:g:x:y:m:r:o:p:1:2:F' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -127,7 +128,7 @@ bisulfite::segemehl() {
 			g)	((++mandatory)); genome="$OPTARG";;
 			x)	((++mandatory)); ctidx="$OPTARG";;
 			y)	((++mandatory)); gaidx="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG/segemehl"; mkdir -p "$outdir";;
+			o)	((++mandatory)); outdir="$OPTARG/segemehl"; mkdir -p "$outdir"; outdir=$(realpath -s "$outdir");;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			r)	((++mandatory))
 				_mapper_segemehl=$OPTARG
@@ -135,6 +136,7 @@ bisulfite::segemehl() {
 			;;
 			1)	((++mandatory)); _fq1_segemehl=$OPTARG;;
 			2)	_fq2_segemehl=$OPTARG;;
+			F)	forceidx=true;;
 			*)	_usage;;
 		esac
 	done
@@ -152,7 +154,7 @@ bisulfite::segemehl() {
 		local thismd5genome thismd5segemehlbs
 		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 		[[ -s "$ctidx" ]] && thismd5segemehlbs=$(md5sum "$ctidx" | cut -d ' ' -f 1)
-		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5segemehlbs" || "$thismd5segemehlbs" != "$md5segemehlbs" ]]; then
+		if $forceidx || [[ "$thismd5genome" != "$md5genome" || ! "$thismd5segemehlbs" || "$thismd5segemehlbs" != "$md5segemehlbs" ]]; then
 			commander::printinfo "indexing genome for segemehl bisulfite mode"
 			declare -a cmdidx
 			# lister/cokus mode use the same index, thus it does not matter if indexed with -F 1 or -F 2
@@ -182,11 +184,11 @@ bisulfite::segemehl() {
 				segemehl
 				$params
 				-F $mode
-				-i "$ctidx"
-				-j "$gaidx"
-				-d "$genome"
-				-q "${_fq1_segemehl[$i]}"
-				-p "${_fq2_segemehl[$i]}"
+				-i "$(realpath -s "$ctidx")"
+				-j "$(realpath -s "$gaidx")"
+				-d "$(realpath -s "$genome")"
+				-q "$(realpath -s "${_fq1_segemehl[$i]}")"
+				-p "$(realpath -s "${_fq2_segemehl[$i]}")"
 				-t $threads
 				-b
 				-o "$o.bam"
@@ -198,10 +200,10 @@ bisulfite::segemehl() {
 				segemehl
 				$params
 				-F $mode
-				-i "$ctidx"
-				-j "$gaidx"
-				-d "$genome"
-				-q "${_fq1_segemehl[$i]}"
+				-i "$(realpath -s "$ctidx")"
+				-j "$(realpath -s "$gaidx")"
+				-d "$(realpath -s "$genome")"
+				-q "$(realpath -s "${_fq1_segemehl[$i]}")"
 				-t $threads
 				-b
 				-o "$o.bam"
@@ -232,14 +234,15 @@ bisulfite::bwa() {
 			-o <outdir>     | path to
 			-1 <fastq1>     | array of
 			-2 <fastq2>     | array of
+			-F              | force index
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome outdir
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome outdir forceidx=false
 	declare -n _fq1_bwa _fq2_bwa _mapper_bwa
 	declare -g -a bwa=()
-	while getopts 'S:s:5:t:a:i:g:m:r:o:p:1:2:' arg; do
+	while getopts 'S:s:5:t:a:i:g:m:r:o:p:1:2:F' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -253,13 +256,13 @@ bisulfite::bwa() {
 			;;
 			1)	((++mandatory)); _fq1_bwa=$OPTARG;;
 			2)	_fq2_bwa=$OPTARG;;
+			F)	forceidx=true;;
 			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "bisufite mapping bwa"
-
 	if $skipmd5; then
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	else
@@ -270,7 +273,7 @@ bisulfite::bwa() {
 		local thismd5genome thismd5bwameth
 		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 		[[ -s "$genome.bwameth.c2t.pac" ]] && thismd5bwameth=$(md5sum "$genome.bwameth.c2t.pac" | cut -d ' ' -f 1)
-		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5bwameth" || "$thismd5bwameth" != "$md5bwameth" ]]; then
+		if $forceidx || [[ "$thismd5genome" != "$md5genome" || ! "$thismd5bwameth" || "$thismd5bwameth" != "$md5bwameth" ]]; then
 			commander::printinfo "indexing genome for bwameth"
 			declare -a cmdidx
 			commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD
@@ -290,7 +293,7 @@ bisulfite::bwa() {
 		o="$outdir/$o"
 
 		if [[ ${_fq2_bwa[$i]} ]]; then
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
 				bwameth.py
 					--do-not-penalize-chimeras
 					--read-group '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
@@ -298,14 +301,18 @@ bisulfite::bwa() {
 					--reference "$genome"
 					"${_fq1_bwa[$i]}" "${_fq2_bwa[$i]}"
 			CMD
-				sed -E ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/(NM:i:\S+)(.*)\t(MD:Z:\S+)(.*)\t(RG:Z:\S+)(.*)\tYC:Z:(\S+)(.*)/HI:i:0\tNH:i:1\t\1\t\3\tXD:i:0\tXF:i:0\tXB:Z:F1\/\7\t\5\tYZ:Z:0\tYC:Z:\7\2\4\6\8/'
+				tee >(samtools view -@ $((threads/2+1)) -b > "$o.raw.bam")
 			CMD
-				samtools view -@ $threads -b > "$o.bam"
+				sed -E -e ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/\tYC:Z:(\S+)/\tHI:i:0\tXD:i:0\tXF:i:0\tXB:Z:F1\/\1\tYZ:Z:0\tYC:Z:\1/'
 			CMD
+				samtools view -@ $((threads/2+1)) -b > "$o.bam"
+			CMD
+			# working: sed -E -e ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/(NM:i:\S+)(.*)\t(MD:Z:\S+)(.*)\t(RG:Z:\S+)(.*)\tYC:Z:(\S+)(.*)/HI:i:0\t\1\t\3\tXD:i:0\tXF:i:0\tXB:Z:F1\/\7\t\5\tYZ:Z:0\tYC:Z:\7\2\4\6\8/'
+			# try short as implemented
 			# sed corrects SA and XA tags, which bwameth does not change back from c2t (f+r) chromosomes i.e. (f|r)chr to chr
 			# and adds/reorderes tags into segemehl like output for haarz: #bwa2sege -e 's/(NM:i:\S+)\t(MD:Z:\S+).+YC:Z:(\S+).+/HI:i:0\tNH:i:1\t\1\t\2\tXD:i:0\tXF:i:0\tXB:Z:F1\/\3\tRG:Z:A1\tYZ:Z:0/'
 		else
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
 				bwameth.py
 					--do-not-penalize-chimeras
 					--read-group '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
@@ -313,9 +320,11 @@ bisulfite::bwa() {
 					--reference "$genome"
 					"${_fq1_bwa[$i]}"
 			CMD
-				sed -E ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a'
+				tee >(samtools view -@ $((threads/2+1)) -b > "$o.raw.bam")
 			CMD
-				samtools view -@ $threads -b > "$o.bam"
+				sed -E -e ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/(NM:i:\S+)(.*)\t(MD:Z:\S+)(.*)\t(RG:Z:\S+)(.*)\tYC:Z:(\S+)(.*)/HI:i:0\t\1\t\3\tXD:i:0\tXF:i:0\tXB:Z:F1\/\7\t\5\tYZ:Z:0\tYC:Z:\7\2\4\6\8/'
+			CMD
+				samtools view -@ $((threads/2+1)) -b > "$o.bam"
 			CMD
 		fi
 		bwa+=("$o.bam")
@@ -332,6 +341,9 @@ bisulfite::bwa() {
 
 #todo gem: gem-mapper -p --bisulfite-mode -I c2t+g2a.fa.gem -s 1 -p -M 4 && bs_call -r genome.fa.gz -p -L5
 
+bisulfite::haarz(){
+	bisulfite::mecall "$@"
+}
 
 bisulfite::mecall(){
 	declare -a tdirs
@@ -371,7 +383,7 @@ bisulfite::mecall(){
 	done
 	[[ $mandatory -lt 5 ]] && _usage
 
-	commander::printinfo "calling methylated sites"
+	commander::printinfo "methylation calling haarz"
 
 	declare -n _bams_haarz=${_mapper_haarz[0]}
 	local ithreads imemory instances=$((${#_bams_haarz[@]}*${#_mapper_haarz[@]}))
@@ -379,9 +391,10 @@ bisulfite::mecall(){
 	read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads)
 
 	local m f o odir
+	declare -a cmd1 cmd2 cmd3 cmd4
 	for m in "${_mapper_haarz[@]}"; do
 		declare -n _bams_haarz=$m
-		odir="$outdir/$m"
+		odir="$outdir/$m/haarz"
 		mkdir -p "$odir"
 
 		for f in "${_bams_haarz[@]}"; do
@@ -442,6 +455,86 @@ bisulfite::mecall(){
 	return 0
 }
 
+bisulfite::methyldackel(){
+	declare -a tfiles
+	_cleanup::bisulfite::methyldackel(){
+		rm -f "${tfiles[@]}"
+	}
+
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip> | true/false return
+			-s <softskip> | true/false only print commands
+			-t <threads>  | number of
+			-g <genome>   | path to
+			-x <context>  | Cp* base - default: CG
+			-r <mapper>   | array of bams within array of
+			-o <outdir>   | path to
+			-p <tmpdir>   | path to
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads genome outdir tmpdir context=CG
+	declare -n _mapper_methyldackel
+	while getopts 'S:s:t:m:r:g:x:o:p:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			x)	context=CG;;
+			r)	((++mandatory)); _mapper_methyldackel=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 5 ]] && _usage
+
+	commander::printinfo "methylation calling methyldackel"
+
+	declare -a cmd1 cmd2
+	local m f o odir tmp
+	for m in "${_mapper_methyldackel[@]}"; do
+		declare -n _bams_methyldackel=$m
+		odir="$outdir/$m/methyldackel"
+		mkdir -p "$odir"
+
+		for f in "${_bams_methyldackel[@]}"; do
+			o=$(basename $f)
+			o=${o%.*}
+
+			tmp="$(mktemp -u -p "$tmpdir" cleanup.XXXXXXXXXX.methyldackel)"
+			tfiles+=("${tmp}_CpG.bedGraph")
+
+			commander::makecmd -a cmd1 -s '|' -o "$odir/$o.$context.full.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+				ln -s /dev/stdout "${tfiles[-1]}";
+				MethylDackel extract -q 0 --keepDupes --keepSingleton --keepDiscordant -@ $threads -o "$tmp" "$genome" "$f"
+			CMD
+				awk -F '\t' -v OFS='\t' 'NF==6{print $1,$2,$3,($5/($5+$6)),($5+$6)}'
+			CMD
+
+			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				awk '\$NF>=10' "$odir/$o.$context.full.bed"
+			CMD
+				cut -f 1-4 > "$odir/$o.$context.bed"
+			CMD
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+	else
+		commander::runcmd -c methyldackel -v -b -t 1 -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
+	fi
+
+	return 0
+}
+
 bisulfite::metilene(){
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
@@ -457,13 +550,15 @@ bisulfite::metilene(){
 			-i <methdir>    | path to
 			-o <outdir>     | path to
 			-p <tmpdir>     | path to
+			-d <tool>       | use if subdir in methdir. name identical to subdir. parameter can be used multiple times
 		EOF
 		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads genome mecalldir outdir tmpdir min=0.8 cap=999999 context=CG
+	declare -a tools=("")
 	declare -n _mapper_metilene _cmpfiles_metilene
-	while getopts 'S:s:t:c:m:u:x:r:i:o:p:' arg; do
+	while getopts 'S:s:t:c:m:u:x:r:i:o:p:d:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -476,6 +571,7 @@ bisulfite::metilene(){
 			i)	((++mandatory)); mecalldir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			d)	tools+=("/$OPTARG");;
 			*)	_usage;;
 		esac
 	done
@@ -483,7 +579,7 @@ bisulfite::metilene(){
 
 	commander::printinfo "differential methylation analyses"
 
-	declare -a cmd1 cmd2 cmd3 mapdata
+	declare -a cmd1 cmd2 cmd3 mapdata tools=("")
 
 	local m f i c t odir sample condition library replicate factors crep trep
 	for m in "${_mapper_metilene[@]}"; do
@@ -492,45 +588,48 @@ bisulfite::metilene(){
 
 		for f in "${_cmpfiles_metilene[@]}"; do
 			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
-			i=0
-			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
-				crep=$(awk -v s=$c -v n=$min '$2==s{i=i+1}END{if(n>1){if(i<n){n=i} print n}else{printf "%0.f", i*n}}' "$f")
-				[[ $crep -gt $cap ]] && crep=$cap
+			for tool in "${tools[@]}"; do
+				i=0
+				for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
+					crep=$(awk -v s=$c -v n=$min '$2==s{i=i+1}END{if(n>1){if(i<n){n=i} print n}else{printf "%0.f", i*n}}' "$f")
+					[[ $crep -gt $cap ]] && crep=$cap
 
-				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
-					odir="$outdir/$m/$c-vs-$t"
-					mkdir -p "$odir"
-					tomerge=()
-					header="chr sta pos"
-					trep=$(awk -v s=$t -v n=$min '$2==s{i=i+1}END{if(n>1){if(i<n){n=i} print n}else{printf "%0.f", i*n}}' "$f")
-					[[ $trep -gt $cap ]] && trep=$cap
+					for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
+						odir="$outdir/$m$tool/$c-vs-$t"
+						mkdir -p "$odir"
+						tomerge=()
+						header="chr sta pos"
+						trep=$(awk -v s=$t -v n=$min '$2==s{i=i+1}END{if(n>1){if(i<n){n=i} print n}else{printf "%0.f", i*n}}' "$f")
+						[[ $trep -gt $cap ]] && trep=$cap
 
-					unset sample condition library replicate factors
-					while read -r sample condition library replicate factors; do
-						tomerge+=("$(readlink -e "$mecalldir/$m/$sample"*.$context.bed | head -1)")
-						header+=" ${condition}_$replicate"
-					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
+						unset sample condition library replicate factors
+						while read -r sample condition library replicate factors; do
+							# tomerge+=("$(readlink -e "$mecalldir/$m/$sample"*.$context.bed | head -1)")
+							tomerge+=("$(find -L "$mecalldir/$m/$tool" -maxdepth 1 -name "$sample*.$context.bed" -print -quit)")
+							header+=" ${condition}_$replicate"
+						done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 
-					commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						{	sed 's/ /\t/g' <<< "$header";
-							bedtools unionbedg
-								-filler .
-								-i $(printf '"%s" ' "${tomerge[@]}");
-						}
-					CMD
-						cut -f 1,3- > $odir/merates.bedg
-					CMD
+						commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+							{	sed 's/ /\t/g' <<< "$header";
+								bedtools unionbedg
+									-filler .
+									-i $(printf '"%s" ' "${tomerge[@]}");
+							}
+						CMD
+							cut -f 1,3- > $odir/merates.bedg
+						CMD
 
-					bisulfite::_metilene \
-						-1 cmd2 \
-						-2 cmd3 \
-						-t $threads \
-						-i "$odir/merates.bedg" \
-						-a $c \
-						-b $t \
-						-x $crep \
-						-y $trep \
-						-o "$odir"
+						bisulfite::_metilene \
+							-1 cmd2 \
+							-2 cmd3 \
+							-t $threads \
+							-i "$odir/merates.bedg" \
+							-a $c \
+							-b $t \
+							-x $crep \
+							-y $trep \
+							-o "$odir"
+					done
 				done
 			done
 		done
