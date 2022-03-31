@@ -24,13 +24,18 @@ A bash library for workflow and pipeline design within but not restricted to the
 ## Covered Tasks
 
 - For paired-end and single-end derived raw sequencing or prior mapped read data
-  - RNA-Seq protocols
-  - DNA-Seq protocols
-  - Bisulfite converted DNA-Seq protocols
-- Data preprocessing (quality check, adapter clipping, quality trimming, error correction, artificial rRNA depletion)
+  - RNA-Seq protocols (RNA, RIP, m6A, ..)
+  - DNA-Seq protocols (WGS, ChIP, Chip-exo, ATAC, CAGE, Quant, Cut&Tag, ..)
+  - Bisulfite converted DNA-Seq protocols (WGBS, RRBS)
+- Data quality anlysis and preprocessing
+  - adapter and poly-mono/di-nucleotide clipping
+  - quality trimming
+  - error correction
+  - artificial rRNA depletion
 - Read alignment and post-processing
   - knapsack problem based slicing of alignment files for parallel task execution
-  - sorting, filtering, unique alignment extraction, removal of optical duplicates
+  - sorting, filtering,
+  - UMI based deduplication or removal of optical and PCR duplicates
   - generation of pools and pseudo-replicates
   - read group modification, split N-cigar reads, left-alignment and base quality score recalibration
 - Gene fusion detection
@@ -38,11 +43,11 @@ A bash library for workflow and pipeline design within but not restricted to the
 - Expression analysis
   - Read quantification, TPM and Z-score normalization and heatmap plotting
   - Inference of strand specific library preparation methods
-  - Inference of differential expression as well as co-expression clusters
+  - Inference of differential expression as well as clusters of co-expression
   - Detection of differential splice junctions and differential exon usage
   - Gene ontology (GO) gene set enrichment and over representation analysis plus semantic similarity based clustering
 - Implementation of Encode3 best-practice ChIP-Seq Peak calling
-  - Peak calling from RIP-Seq, MeRIP-Seq, m6A-Seq and other related *IP-Seq data
+  - Peak calling from RIP-Seq, MeRIP-Seq, m6A-Seq and other related IP-Seq data
   - Inference of effective genome sizes
 - Variant detection from DNA or RNA sequencing experiments
   - Integration of multiple solutions for germline and somatic calling
@@ -84,6 +89,7 @@ Load the library and list available functions. Each function comes with a usage.
 ```bash
 source ./activate.sh
 bashbone -h
+bashbone -l
 ```
 
 ## Developers centerpiece
@@ -143,26 +149,6 @@ x.print
 
 # Installation
 
-## Base installation of programming languages and libraries to a get enclosed scripts to operate.
-
-```bash
-./setup.sh -i conda -d <path/to/installation>
-source <path/of/installation/latest/bashbone/activate.sh>
-bashbone -h
-```
-
-Afterwards, activate bashbone conda base environment and check out stand-alone scripts to e.g. retrieve SRA datasets, or genomes (convert them into a transcriptome) and calulate transcripts per million (TPM). Finally, stop conda.
-
-```bash
-source <path/of/installation/latest/bashbone/activate.sh>
-bashbone -c
-./dlgenome.sh -h
-./sra-dump.sh -h
-./genome2transcriptome.pl
-./tpm.pl
-bashbone -s
-```
-
 ## Full installation of all third party tools used in bashbone functions
 
 ```bash
@@ -171,13 +157,13 @@ source <path/of/installation/latest/bashbone/activate.sh>
 bashbone -h
 ```
 
-### Upgrade to a newer release (sources only)
+## Upgrade to a newer release (sources only)
 
 ```bash
 ./setup.sh -i upgrade -d <path/of/installation>
 ```
 
-### Update tools
+## Update tools
 
 The setup routine will always install the latest software via conda, which can be updated by running the related setup functions again.
 
@@ -251,7 +237,7 @@ And this desired output (N=2 vs N=2 each):
 
 Then the info file should consist of:
 
-- At least 4 columns (`<name>`, `<main-factor>`, `single-end|paired-end`, `<replicate>`)
+- At least 4 tab-separated columns (`<name>`, `<main-factor>`, `single-end|paired-end`, `<replicate>`)
 - Optionally, additional factors
 - First column needs to consist of unique prefixes of input fastq basenames which can be expand to full file names
 
@@ -337,10 +323,12 @@ cluster::coexpression -t $threads -M $memory -g $gtf -b protein_coding -f 02 -i 
 | Arriba        | <https://github.com/suhrig/arriba/>                                 | NA |
 | BamUtil       | <https://genome.sph.umich.edu/wiki/BamUtil>                         | 10.1101/gr.176552.114 |
 | BWA           | <https://github.com/lh3/bwa>                                        | 10.1093/bioinformatics/btp324 |
-| BWA-meth      | <https://github.com/brentp/bwa-meth>                                        | arXiv:1401.1129 |
+| BWA-mem2      | <https://github.com/bwa-mem2/bwa-mem2>                              | 10.1109/IPDPS.2019.00041 |
+| BWA-meth      | <https://github.com/brentp/bwa-meth>                                | arXiv:1401.1129 |
 | BCFtools      | <http://www.htslib.org/doc/bcftools.html>                           | 10.1093/bioinformatics/btr509 |
 | BEDTools      | <https://bedtools.readthedocs.io>                                   | 10.1093/bioinformatics/btq033 |
 | bgztail       | <https://github.com/circulosmeos/bgztail>                           | NA |
+| clusterProfiler | <https://guangchuangyu.github.io/software/clusterProfiler>        | 10.1089/omi.2011.0118 |
 | Cutadapt      | <https://cutadapt.readthedocs.io/en/stable>                         | 10.14806/ej.17.1.200 |
 | DESeq2        | <https://bioconductor.org/packages/release/bioc/html/DESeq2.html>   | 10.1186/s13059-014-0550-8 |
 | DEXSeq        | <https://bioconductor.org/packages/release/bioc/html/DEXSeq.html>   | 10.1101/gr.133744.111 |
@@ -372,6 +360,7 @@ cluster::coexpression -t $threads -M $memory -g $gtf -b protein_coding -f 02 -i 
 | STAR          | <https://github.com/alexdobin/STAR>                                 | 10.1093/bioinformatics/bts635 |
 | STAR-Fusion   | <https://github.com/STAR-Fusion/STAR-Fusion/wiki>                   | 10.1101/120295 |
 | Trimmomatic   | <http://www.usadellab.org/cms/?page=trimmomatic>                    | 10.1093/bioinformatics/btu170 |
+| UMI-tools     | <https://github.com/CGATOxford/UMI-tools>                           | 10.1101/gr.209601.116 |
 | VarDict       | <https://github.com/AstraZeneca-NGS/VarDict>                        | 10.1093/nar/gkw227 |
 | VarScan       | <http://dkoboldt.github.io/varscan>                                 | 10.1101/gr.129684.111 |
 | vcflib        | <https://github.com/vcflib/vcflib>                                  | NA |
@@ -382,7 +371,6 @@ cluster::coexpression -t $threads -M $memory -g $gtf -b protein_coding -f 02 -i 
 
 | Tool | Source | DOI |
 | ---  | ---    | --- |
-| clusterProfiler | <https://guangchuangyu.github.io/software/clusterProfiler> | NA |
 | HISAT2          | <https://daehwankimlab.github.io/hisat2>                   | 10.1038/nmeth.3317 |
 | SnpEff          | <https://pcingola.github.io/SnpEff>                        | 10.4161/fly.19695 |
 
