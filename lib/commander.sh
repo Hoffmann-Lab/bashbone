@@ -255,6 +255,7 @@ commander::runcmd(){
 			printf '{\n%s\n} & { wait $!; } &>/dev/null \nexit 0\n' "${_cmds_runcmd[$i]}" >> "$sh"
 			# run asynchronous and use wait to get rid of terminated messages
 			# attention: do not kill -INT since INT is ignored in subshells due to a wierd POSIX requirement on disabled jobcontrol: set +m; bash -c 'trap "echo INT" INT; trap -p' & wait $!
+			# workaround via env: set +m; env --default-signal=SIGINT,SIGQUIT bash -c 'trap "echo INT" INT; trap -p' & wait $!
 			echo "$sh"
 		done | setsid --wait env time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {} &
 		pgid=$!
