@@ -341,19 +341,24 @@ cluster::coexpression -t $threads -M $memory -g $gtf -b protein_coding -f 02 -i 
 | GATK          | <https://github.com/broadinstitute/gatk>                            | 10.1101/gr.107524.110 <br> 10.1038/ng.806 |
 | GEM           | <https://groups.csail.mit.edu/cgs/gem>                              | 10.1371/journal.pcbi.1002638 |
 | GSEABase      | <https://bioconductor.org/packages/release/bioc/html/GSEABase.html> | NA |
+| GoSemSim      | <http://bioconductor.org/packages/release/bioc/html/GOSemSim.html>  | 10.1093/bioinformatics/btq064 |
 | HTSeq         | <https://htseq.readthedocs.io>                                      | 10.1093/bioinformatics/btu638 |
 | IDR           | <https://github.com/kundajelab/idr>                                 | 10.1214/11-AOAS466 |
 | IGV           | <http://software.broadinstitute.org/software/igv>                   | 10.1038/nbt.1754 |
 | Intervene     | <https://github.com/asntech/intervene>                              | 10.1186/s12859-017-1708-7 |
 | khmer         | <https://khmer.readthedocs.io>                                      | 10.12688/f1000research.6924.1 |
+| m6aViewer     | <http://dna2.leeds.ac.uk/m6a/>                                      | 10.1261/rna.058206.116 |
 | Macs2         | <https://github.com/macs3-project/MACS>                             | 10.1186/gb-2008-9-9-r137 |
+| MethylDackel  | <https://github.com/dpryan79/MethylDackel>                          | NA |
 | metilene      | <https://www.bioinf.uni-leipzig.de/Software/metilene/>              | 10.1101/gr.196394.115 |
+| PEAKachu      | <https://github.com/tbischler/PEAKachu>                             | NA |
 | Picard        | <http://broadinstitute.github.io/picard>                            | NA |
 | Platypus      | <https://rahmanteamdevelopment.github.io/Platypus>                  | 10.1038/ng.3036 |
 | RAxML         | <https://cme.h-its.org/exelixis/web/software/raxml/index.html>      | 10.1093/bioinformatics/btl446 |
 | Rcorrector    | <https://github.com/mourisl/Rcorrector>                             | 10.1186/s13742-015-0089-y |
-| ReSeqC        | <http://rseqc.sourceforge.net>                                      | 10.1093/bioinformatics/bts356 |
+| RSeQC         | <http://rseqc.sourceforge.net>                                      | 10.1093/bioinformatics/bts356 |
 | REVIGO        | <https://code.google.com/archive/p/revigo-standalone>               | 10.1371/journal.pone.0021800 |
+| RRVGO         | <https://ssayols.github.io/rrvgo>                                   | NA |
 | SAMtools      | <http://www.htslib.org/doc/samtools.html>                           | 10.1093/bioinformatics/btp352 |
 | segemehl      | <http://www.bioinf.uni-leipzig.de/Software/segemehl>                | 10.1186/gb-2014-15-2-r34 <br> 10.1371/journal.pcbi.1000502 |
 | SortMeRNA     | <https://bioinfo.lifl.fr/RNA/sortmerna>                             | 10.1093/bioinformatics/bts611 |
