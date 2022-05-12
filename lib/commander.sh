@@ -59,7 +59,6 @@ commander::printerr(){
 	return 0
 }
 
-
 commander::makecmd2(){
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
