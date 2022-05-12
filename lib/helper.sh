@@ -29,14 +29,12 @@ helper::makevcfzipcmd() {
 
 	local f
 	for f in "${tozip_vcfzip[@]}"; do
-		declare -n _f_vcfzip="$f"
-		readlink -e "$_f_vcfzip" | file -f - | grep -qF 'compressed' || {
+		readlink -e "$f" | file -f - | grep -qF 'compressed' || {
 			commander::makecmd -a _cmds_vcfzip -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bgzip -f -@ $threads < "$_f_vcfzip" > "$_f_vcfzip.gz"
+				bgzip -f -@ $threads < "$f" > "$f.gz"
 			CMD
-				tabix -f -p vcf "$_f_vcfzip.gz"
+				tabix -f -p vcf "$f.gz"
 			CMD
-			_f_vcfzip="$_f_vcfzip.gz"
 		}
 	done
 
