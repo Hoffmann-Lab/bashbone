@@ -259,6 +259,98 @@ enrichment::_gsea(){
 	return 0
 }
 
+
+enrichment::_reducego(){
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-1 <cmds1>    | array of
+			-g <gofile>   | path to 4-column tab separated file with BP, MF and CC or see column 3 below
+			                ..
+			                ENSG00000199065 GO:0005615 cellular_component extracellular space
+			                ENSG00000199065 GO:1903231 molecular_function mRNA binding involved in posttranscriptional gene silencing
+			                ENSG00000199065 GO:0035195 biological_process gene silencing by miRNA
+			                ..
+			-d <domain>   | biological_process or cellular_component or molecular_function
+			-i <orafile>  | path to
+			-o <outdir>   | path to
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory threads domain gofile orafile outdir
+	declare -n _cmds1_reduce
+	while getopts '1:2:d:i:g:o:' arg; do
+		case $arg in
+			1)	((++mandatory)); _cmds1_reduce=$OPTARG;;
+			d)	((++mandatory)); domain=$OPTARG;;
+			i)	((++mandatory)); orafile="$OPTARG";;
+			g)	((++mandatory)); gofile="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG";;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 5 ]] && _usage
+
+	commander::makecmd -a _cmds1_reduce -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+		Rscript - <<< '
+			args <- commandArgs(TRUE);
+			libdir <- args[1];
+			ora <- args[2];
+			odir <- args[3];
+			domain <- args[4];
+			domshort <- args[5];
+
+			.libPaths(c(libdir,.libPaths()));
+			suppressMessages(library(rrvgo));
+			suppressMessages(library(ggplot2));
+
+			df <- read.table(ora, stringsAsFactors = F, quote = "", header = T, sep="\t");
+			if(nrow(df)>2){
+				m <- calculateSimMatrix(df$id, orgdb="org.My.eg.db", ont=domshort, method="Wang", keytype="GID");
+				if(! is.na(m) && nrow(m)>2){
+					df <- reduceSimMatrix(m, setNames(-log10(df$padj), df$id), threshold=0.7, orgdb="org.My.eg.db", keytype="GID");
+					write.table(df, row.names = F, file = file.path(odir,"goenrichment_reduced.tsv"), quote=F, sep="\t");
+
+					pdf(file.path(odir,"treemap.pdf"), width=16, height=9);
+					treemapPlot(df, force.print.labels=T);
+					graphics.off();
+
+					p <- scatterPlot(m, df, labelSize=2);
+					ggsave(file.path(odir,"semantic_space.pdf"), plot=p, width=16, height=9);
+
+					dfp <- df[df$go %in% unique(df$parent),];
+					dfp$count <- sapply(unique(df$parent), function(x) sum(df$parent==x));
+					dfp$term <- paste0(dfp$term," (",dfp$count,")");
+					df <- dfp;
+
+					bars <- min(10,nrow(df));
+					dfp <- head(df,bars);
+					pdf(file.path(odir,"barplot_reduced.pdf"),width=max(nchar(dfp$term))/5,height=bars/2+1.8);
+					par(mar=c(5,max(nchar(dfp$term))/3+3,5,1));
+					barplot(rev(dfp$score), main=paste0(domain," (Top ",bars,")"), horiz=T, names.arg=rev(dfp$term),
+						xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(dfp$score+5)),
+						cex.names=0.8, las=1);
+					graphics.off();
+
+					bars <- nrow(df);
+					dfp <- df;
+					pdf(file.path(odir,"barplot_reduced.full.pdf"),width=max(nchar(dfp$term))/5,height=bars/2+1.8);
+					par(mar=c(5,max(nchar(dfp$term))/3+3,5,1));
+					barplot(rev(dfp$score), main=domain, horiz=T, names.arg=rev(dfp$term),
+						xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(dfp$score+5)),
+						cex.names=0.8, las=1);
+					graphics.off();
+				};
+			};
+		'
+	CMD
+		"$(dirname "$gofile")/oRgdb" "$orafile" "$outdir" $(echo $domain | sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/') $(echo $domain | sed -E 's/([^_]{1,1})[^_]*_(\S{1,1}).+/\u\1\u\2/')
+	CMD
+
+	return 0
+}
+
 enrichment::_revigo(){
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
@@ -289,23 +381,27 @@ enrichment::_revigo(){
 	# for pvalue instead of padj do revigo <(awk 'NR>1 && \$3<=0.05' $odir/gsea.tsv) --stdout
 	# need to remove [_'"\t*$#%^!]
 	# use own buffered reader to handle corner case where orafile is empty or revigo db does not contain any go term and thus instead of an error returns userValue_2 to userValue_XXXXXX in a single line
-	commander::makecmd -a _cmds1_revigo -s ' ' -o "$outdir/revigo.tsv" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
+	commander::makecmd -a _cmds1_revigo -s ' ' -o "$outdir/revigo.tsv" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- 'CMD'
 		l=""; while read -N 1 c; do
-			if [[ "$c" == $'\n' ]];
-				then echo "$l";
+			if [[ "$c" == $'\n' ]]; then
+				[[ ! $pgid ]] && pgid=$l || echo "$l";
 				l="";
 			else
 				l+="$c";
 				if [[ "$l" =~ userVal ]]; then
 					cut -f 1-6 <<< "$l";
+					sleep 1;
+					env kill -TERM -- -$pgid &> /dev/null || true;
 					break;
 				fi;
 			fi;
-		done
+		done < <(setsid --wait bash -c "echo \$((\$(ps -o pgid= -p \$\$))); revigo -Xmx1024m -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1 <(awk 'NR>1 && \$4<=0.05 {print \$1\"\\t\"\$4}'
 	CMD
-		< <(revigo <(awk 'NR>1 && \$4<=0.05 {print \$1"\t"\$4}' "$orafile") --stdout)
+		'$orafile')
 	CMD
-		| perl -lane '
+		--stdout" & wait $! 2> /dev/null || { e=$?; [[ $e -eq 15 || $e -eq 0 ]] && exit 0 || exit $e; }
+	CMD
+		) | perl -lane '
 			next if $.<3;
 			if($.>3){
 				$F[2]=~s/(^[\W_]+|[\W_]+$)//g;
@@ -351,8 +447,8 @@ enrichment::_revigo(){
 				df <- df[order(df$log10_p.value),];
 				bars <- min(10,nrow(df));
 				dfp <- head(df,bars);
-				pdf(file.path(outdir,"barplot_revigo.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
-				par(mar=c(5,max(nchar(df$description))/3+3,5,1));
+				pdf(file.path(outdir,"barplot_revigo.pdf"),width=max(nchar(dfp$description))/5,height=bars/2+1.8);
+				par(mar=c(5,max(nchar(dfp$description))/3+3,5,1));
 				barplot(rev(-(dfp$log10_p.value)), main=paste0(domain," (Top ",bars,")"), horiz=T, names.arg=rev(dfp$description),
 					xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(dfp$log10_p.value)+5)),
 					cex.names=0.8, las=1);
@@ -360,8 +456,8 @@ enrichment::_revigo(){
 
 				bars <- nrow(df);
 				dfp <- df;
-				pdf(file.path(outdir,"barplot_revigo.full.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
-				par(mar=c(5,max(nchar(df$description))/3+3,5,1));
+				pdf(file.path(outdir,"barplot_revigo.full.pdf"),width=max(nchar(dfp$description))/5,height=bars/2+1.8);
+				par(mar=c(5,max(nchar(dfp$description))/3+3,5,1));
 				barplot(rev(-(dfp$log10_p.value)), main=domain, horiz=T, names.arg=rev(dfp$description),
 					xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(-(dfp$log10_p.value)+5)),
 					cex.names=0.8, las=1);
@@ -393,7 +489,6 @@ enrichment::go(){
 			-j <countsdir>| of joined tpms for ora gmt background creation
 			-c <cmpfiles> | array of
 			-l <idfiles>  | for ora array of (does not require -i -r -c)
-
 		EOF
 		return 1
 	}
@@ -484,15 +579,19 @@ enrichment::go(){
 		[[ $x -lt 2 ]] && commander::warn "no enriched go terms in $f"
 		odir="$(dirname "$f")"
 		domain="$(basename "$odir")"
-		enrichment::_revigo -1 cmd3 -2 cmd4 -d $domain -i "$f" -o "$odir"
+		#enrichment::_revigo -1 cmd3 -2 cmd4 -d $domain -i "$f" -o "$odir"
+		enrichment::_reducego -1 cmd3 -d $domain -i "$f" -g "$gofile" -o "$odir"
 	done
 
 	if $skip; then
 		commander::printcmd -a cmd3
-		commander::printcmd -a cmd4
+		# commander::printcmd -a cmd4
 	else
+		# local instances ithreads
+		# read -r instances ithreads < <(configure::instances_by_memory -m 1024 -T $threads)
+		# commander::runcmd -v -b -t $instances -a cmd3
+		# commander::runcmd -v -b -t $threads -a cmd4
 		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
 	fi
 
 	return 0
