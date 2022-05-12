@@ -28,7 +28,7 @@ variants::vcfzip() {
 	commander::printinfo "compressing vcf file"
 
 	declare -a cmd1
-	helper::makevcfzipcmd -a cmd1 -t $threads -z vcf
+	helper::makevcfzipcmd -a cmd1 -t $threads -z "$vcf"
 
 	if $skip; then
 		commander::printcmd -a cmd1
