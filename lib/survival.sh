@@ -2,32 +2,39 @@
 # (c) Konstantin Riege
 
 survival::gettcga() {
+	local tmpdir
+	_cleanup::survival::gettcga(){
+		rm -rf "$tmpdir"
+	}
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
-			-t <threads>  | number of
-			-i <tcga-ids> | array of
-			-o <outdir>   | path to
+			-t <threads>  | number of (requiered)
+			-i <tcga-ids> | array of (e.g. TCGA-READ or TCGA-UCS)
+			-o <outdir>   | path to (requiered)
+			-p <tmpdir>   | path to (requiered)
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir
+	local OPTIND arg mandatory skip=false threads outdir tmpdir
 	declare -a ids;
-	while getopts 'S:s:t:i:o:' arg; do
+	while getopts 'S:s:t:i:o:p:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			i)	declare -n _ids_getfpkm=$OPTARG
-				ids=("${_ids_getfpkm[@]}");;
-			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir/FPKM";;
+				ids=("${_ids_getfpkm[@]}")
+			;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && _usage
+	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "downloading tcga datasets"
 	[[ ! $ids ]] && ids=($(Rscript - <<< 'library(TCGAbiolinks); tcga.cdr=TCGAbiolinks:::getGDCprojects()$id; cat(tcga.cdr[grep("TCGA-",tcga.cdr)])'))
@@ -48,85 +55,59 @@ survival::gettcga() {
 
 	# see https://www.bioconductor.org/packages/devel/bioc/vignettes/TCGAbiolinks/inst/doc/download_prepare.html
 	# data.category = "Gene Expression Quantification" | "Isoform Expression Quantification" | "miRNA Expression Quantification"
-	# workflow.type = "HTSeq - FPKM-UQ" | "HTSeq - FPKM" | "HTSeq - Counts"
+	# new as of april 2022: harmonized tables: workflow.type = "STAR - counts" which contains tpm, fpkm, counts, fpkm_uq
+	# old: workflow.type = "HTSeq - FPKM-UQ" | "HTSeq - FPKM" | "HTSeq - Counts"
 	# "The upper quartile FPKM (FPKM-UQ) is a modified FPKM calculation in which the total protein-coding read count is replaced by the 75th percentile read count value for the sample."
 
-	declare -a cmd1 cmd2
+	declare -a cmd1
 	local i
+	tmpdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.tcga)"
 	for i in "${ids[@]}"; do
 		commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 			Rscript - <<< '
 				suppressMessages({library(TCGAbiolinks);
 					library(SummarizedExperiment);
+					library(stringr);
 				});
-				args = commandArgs(TRUE);
-				odir = args[1];
-				q <- GDCquery(project = args[2],
-					data.category = "Transcriptome Profiling",
-					data.type = "Gene Expression Quantification",
-					workflow.type = "HTSeq - FPKM"
+				args <- commandArgs(TRUE);
+				tdir <- args[1];
+				odir <- file.path(args[2],"TCGA_gene_expression");
+				p <- args[3];
+
+				setwd(args[1]);
+				q <- GDCquery(project=p,
+					data.category="Transcriptome Profiling",
+					data.type="Gene Expression Quantification",
+					workflow.type="STAR - Counts"
 				);
-				GDCdownload(q, directory=file.path(odir,"FPKM"));
-				data = GDCprepare(q, save = T, save.filename=file.path(odir,"FPKM",paste0(type,".Rdata")), directory=file.path(odir,"FPKM"));
-				map = getResults(q)[c("cases","file_id")];
-				colnames(map) = c("barcode","file_id");
-				map$barcode = str_replace_all(map$barcode, "\\W", ".");
-				write.table(map, row.names = F, file=file.path(odir,"FPKM",paste0(type,".case2id.tsv")), quote=F, sep="\t");
+
+				GDCdownload(q, directory=odir);
+				se <- GDCprepare(q, save = T, save.filename=file.path(odir,paste0(p,".Rdata")), directory=file.path(odir));
+				clin <- as.data.frame(colData(se));
+				df <- getResults(q)[c("cases","file_id")];
+				names(df)[1] <- "barcode";
+				clin <- merge(clin,df,by="barcode");
+				write.table(clin, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.full.tsv")), quote=F, sep="\t");
+				clin <- clin[,c("barcode","vital_status","days_to_death","days_to_last_follow_up")];
+				write.table(clin, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.tsv")), quote=F, sep="\t");
+				df <- as.data.frame(assays(se)$tpm_unstrand);
+				df <- cbind(sapply(rownames(df),function(x) str_replace(x,"\\.[0-9]+$",""), USE.NAMES = F),df);
+				names(df)[1] <- "gene_id";
+				write.table(df, row.names=F, file=file.path(odir,paste0(p,".TPM.tsv")), quote=F, sep="\t");
+				df <- as.data.frame(assays(se)$fpkm_unstrand);
+				df <- cbind(sapply(rownames(df),function(x) str_replace(x,"\\.[0-9]+$",""), USE.NAMES = F),df);
+				names(df)[1] <- "gene_id";
+				write.table(df, row.names=F, file=file.path(odir,paste0(p,".FPKM.tsv")), quote=F, sep="\t");
 			'
 		CMD
-			"$outdir" "$i"
+			"$tmpdir" "$(realpath -s "$outdir")" "$i"
 		CMD
 	done
 
-	commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-		Rscript - <<< '
-			suppressMessages({library(TCGAbiolinks);
-				library(SummarizedExperiment);
-				library(stringr);
-			});
-			args = commandArgs(TRUE);
-			odir = args[1];
-			clinical=data.frame();
-			fpkm=data.frame();
-			for (type in args[2:length(args)]){
-				cat(paste0("working on ",type,"\n"));
-				load(file.path(odir,"FPKM",paste0(type,".Rdata")));
-				df = as.data.frame(colData(data));
-				df = df[,sapply(df,is.vector)];
-				df$barcode = str_replace_all(df$barcode, "\\W", ".");
-				write.table(df, row.names = F, file=file.path(odir,"FPKM",paste0(type,".CLINICAL.full.tsv")), quote=F, sep="\t");
-				write.table(df[c("barcode","vital_status","days_to_death","days_to_last_follow_up")], row.names = F, file=file.path(odir,"FPKM",paste0(type,".CLINICAL.tsv")), quote=F, sep="\t");
-				if(nrow(clinical)==0){
-					clinical = df;
-				} else {
-					cols = intersect(colnames(clinical), colnames(df));
-					clinical = rbind(clinical[,cols], df[,cols]);
-				};
-				df = assay(data);
-				df = data.frame(gene_id=rownames(df),df);
-				write.table(df, row.names = F, file=file.path(odir,"FPKM",paste0(type,".FPKM.tsv")), quote=F, sep="\t");
-				if(nrow(fpkm)==0){
-					fpkm=df;
-				}else{
-					fpkm = merge(fpkm, df, by="gene_id");
-				};
-			};
-			cat("saving..\n");
-			write.table(clinical, row.names = F, file=file.path(odir,"CLINICAL.full.tsv"), quote=F, sep="\t");
-			clinical = clinical[c("barcode","vital_status","days_to_death","days_to_last_follow_up")];
-			write.table(clinical, row.names = F, file=file.path(odir,"CLINICAL.tsv"), quote=F, sep="\t");
-			write.table(fpkm, row.names = F, file=file.path(odir,"FPKM.tsv"), quote=F, sep="\t");
-		'
-	CMD
-		"$outdir" $(printf '"%s" ' "${ids[@]}")
-	CMD
-
 	if $skip; then
 		commander::printcmd -a cmd1
-		commander::printcmd -a cmd2
 	else
 		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
 	fi
 
 	return 0
@@ -138,7 +119,6 @@ survival::ssgsea(){
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
-			-t <threads>  | number of
 			-f <fpkms>    | path to tsv or gct
 			-c <clinical> | path to clinical file
 			-l <idfiles>  | array of gmt files or id lists
@@ -147,13 +127,12 @@ survival::ssgsea(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir counts clinical
+	local OPTIND arg mandatory skip=false outdir counts clinical
 	declare -n _sets_ssgsea
-	while getopts 'S:s:t:f:l:c:o:' arg; do
+	while getopts 'S:s:f:l:c:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
-			t)	((++mandatory)); threads=$OPTARG;;
 			f)	((++mandatory)); counts="$OPTARG";;
 			c)	clinical="$OPTARG";;
 			l)	((++mandatory)); _sets_ssgsea=$OPTARG;;
@@ -161,7 +140,7 @@ survival::ssgsea(){
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "performing ssgsea"
 
@@ -228,9 +207,9 @@ survival::ssgsea(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -v -b -t 1 -a cmd1
+		commander::runcmd -v -b -t 1 -a cmd2
+		commander::runcmd -v -b -t 1 -a cmd3
 	fi
 
 	return 0
