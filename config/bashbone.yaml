@@ -19,6 +19,7 @@ dependencies:
   - binutils_linux-64=2.36
   - bioconductor-annotate=1.72.0
   - bioconductor-annotationdbi=1.56.1
+  - bioconductor-annotationforge=1.36.0
   - bioconductor-biobase=2.54.0
   - bioconductor-biocfilecache=2.2.0
   - bioconductor-biocgenerics=0.40.0
@@ -54,6 +55,7 @@ dependencies:
   - bioconductor-qvalue=2.26.0
   - bioconductor-raggedexperiment=1.18.0
   - bioconductor-rhtslib=1.26.0
+  - bioconductor-rrvgo=1.6.0
   - bioconductor-rsamtools=2.10.0
   - bioconductor-rtracklayer=1.54.0
   - bioconductor-s4vectors=0.32.0
@@ -112,6 +114,7 @@ dependencies:
   - jbig=2.1
   - jpeg=9e
   - kernel-headers_linux-64=2.6.32
+  - keyutils=1.6.1
   - khmer=3.0.0a3
   - kiwisolver=1.3.2
   - krb5=1.19.2
@@ -170,7 +173,7 @@ dependencies:
   - numpy=1.21.5
   - openjdk=8.0.112
   - openjpeg=2.4.0
-  - openssl=1.1.1l
+  - openssl=1.1.1n
   - ossuuid=1.6.2
   - packaging=21.3
   - paml=4.9
@@ -188,6 +191,7 @@ dependencies:
   - perl-bio-eutilities=1.75
   - perl-bio-featureio=1.6.905
   - perl-bio-samtools=1.43
+  - perl-bio-searchio-hmmer=1.7.3
   - perl-bio-tools-phylo-paml=1.7.3
   - perl-bio-tools-run-alignment-clustalw=1.7.4
   - perl-bio-tools-run-alignment-tcoffee=1.7.4
@@ -205,6 +209,8 @@ dependencies:
   - perl-data-dumper=2.173
   - perl-data-stag=0.14
   - perl-db-file=1.855
+  - perl-db_file=1.857
+  - perl-dbd-sqlite=1.70
   - perl-dbi=1.642
   - perl-devel-stacktrace=2.04
   - perl-digest-hmac=1.03
@@ -408,7 +414,7 @@ dependencies:
   - r-htmlwidgets=1.5.4
   - r-httpuv=1.6.5
   - r-httr=1.4.2
-  - r-hwriter=1.3.2
+  - r-hwriter=1.3.2.1
   - r-ids=1.0.1
   - r-igraph=1.2.11
   - r-ini=0.3.1
@@ -455,6 +461,7 @@ dependencies:
   - r-mvtnorm=1.1_3
   - r-nlme=3.1_155
   - r-nloptr=1.2.2.3
+  - r-nlp=0.2_1
   - r-nnet=7.3_17
   - r-numderiv=2016.8_1.1
   - r-openssl=1.4.6
@@ -485,11 +492,14 @@ dependencies:
   - r-ps=1.6.0
   - r-purrr=0.3.4
   - r-quantreg=5.88
+  - r-r.methodss3=1.8.1
+  - r-r.oo=1.24.0
+  - r-r.utils=2.11.0
   - r-r6=2.5.1
   - r-rappdirs=0.3.3
   - r-rcmdcheck=1.4.0
   - r-rcolorbrewer=1.1_2
-  - r-rcpp=1.0.8
+  - r-rcpp=1.0.8.3
   - r-rcpparmadillo=0.10.8.1.0
   - r-rcppeigen=0.3.3.9.1
   - r-rcurl=1.98_1.6
@@ -526,6 +536,7 @@ dependencies:
   - r-sessioninfo=1.2.2
   - r-shadowtext=0.1.1
   - r-shiny=1.7.1
+  - r-slam=0.1_50
   - r-snow=0.4_4
   - r-sourcetools=0.1.7
   - r-sp=1.4_6
@@ -549,6 +560,7 @@ dependencies:
   - r-tidyverse=1.3.1
   - r-timedate=3043.102
   - r-tinytex=0.36
+  - r-tm=0.7_8
   - r-treemap=2.4_3
   - r-truncnorm=1.0_8
   - r-tweenr=1.0.2
@@ -564,6 +576,7 @@ dependencies:
   - r-wgcna=1.69
   - r-whisker=0.4
   - r-withr=2.4.3
+  - r-wordcloud=2.6
   - r-xfun=0.29
   - r-xml=3.99_0.8
   - r-xml2=1.3.3
