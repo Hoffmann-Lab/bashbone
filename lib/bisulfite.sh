@@ -229,6 +229,7 @@ bisulfite::bwa() {
 			-s <softskip>   | true/false only print commands
 			-5 <skip>       | true/false md5sums, indexing respectively
 			-t <threads>    | number of
+			-a <accuracy>   | optional: 80 to 100
 			-r <mapper>     | array of bams within array of
 			-g <genome>     | path to
 			-o <outdir>     | path to
@@ -239,10 +240,10 @@ bisulfite::bwa() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome outdir forceidx=false
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome outdir forceidx=false accuracy
 	declare -n _fq1_bwa _fq2_bwa _mapper_bwa
 	declare -g -a bwa=()
-	while getopts 'S:s:5:t:a:i:g:m:r:o:p:1:2:F' arg; do
+	while getopts 'S:s:5:t:a:g:r:o:1:2:F' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -250,6 +251,7 @@ bisulfite::bwa() {
 			t)	((++mandatory)); threads=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG/bwa"; mkdir -p "$outdir";;
+			a)	accuracy=$OPTARG;;
 			r)	((++mandatory))
 				_mapper_bwa=$OPTARG
 				_mapper_bwa+=(bwa)
@@ -287,45 +289,50 @@ bisulfite::bwa() {
 	fi
 
 	declare -a cmd1
-	local o e
+	local o e readlength params=""
 	for i in "${!_fq1_bwa[@]}"; do
 		helper::basename -f "${_fq1_bwa[$i]}" -o o -e e
 		o="$outdir/$o"
 
+		helper::makecatcmd -c catcmd -f "${_fq1_bwa[$i]}"
+		readlength=$($catcmd "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%.f",l/(NR/4))}')
+		[[ $accuracy ]] && params='--score '$(echo $accuracy | awk -v l=$readlength '{printf("%.f",l-l*(1-$1/100)*5)}')
+
 		if [[ ${_fq2_bwa[$i]} ]]; then
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
 				bwameth.py
+					$params
 					--do-not-penalize-chimeras
 					--read-group '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
 					--threads $threads
 					--reference "$genome"
 					"${_fq1_bwa[$i]}" "${_fq2_bwa[$i]}"
 			CMD
-				tee >(samtools view -@ $((threads/2+1)) -b > "$o.raw.bam")
+				sed 's/\t\t/\t*\t/'
 			CMD
 				sed -E -e ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/\tYC:Z:(\S+)/\tHI:i:0\tXD:i:0\tXF:i:0\tXB:Z:F1\/\1\tYZ:Z:0\tYC:Z:\1/'
 			CMD
 				samtools view -@ $((threads/2+1)) -b > "$o.bam"
 			CMD
-			# working: sed -E -e ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/(NM:i:\S+)(.*)\t(MD:Z:\S+)(.*)\t(RG:Z:\S+)(.*)\tYC:Z:(\S+)(.*)/HI:i:0\t\1\t\3\tXD:i:0\tXF:i:0\tXB:Z:F1\/\7\t\5\tYZ:Z:0\tYC:Z:\7\2\4\6\8/'
-			# try short as implemented
+			# tee >(samtools view -@ $((threads/2+1)) -b > "$o.raw.bam")
 			# sed corrects SA and XA tags, which bwameth does not change back from c2t (f+r) chromosomes i.e. (f|r)chr to chr
-			# and adds/reorderes tags into segemehl like output for haarz: #bwa2sege -e 's/(NM:i:\S+)\t(MD:Z:\S+).+YC:Z:(\S+).+/HI:i:0\tNH:i:1\t\1\t\2\tXD:i:0\tXF:i:0\tXB:Z:F1\/\3\tRG:Z:A1\tYZ:Z:0/'
 		else
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
 				bwameth.py
+					$params
 					--do-not-penalize-chimeras
 					--read-group '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
 					--threads $threads
 					--reference "$genome"
 					"${_fq1_bwa[$i]}"
 			CMD
-				tee >(samtools view -@ $((threads/2+1)) -b > "$o.raw.bam")
+				sed 's/\t\t/\t*\t/'
 			CMD
-				sed -E -e ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/(NM:i:\S+)(.*)\t(MD:Z:\S+)(.*)\t(RG:Z:\S+)(.*)\tYC:Z:(\S+)(.*)/HI:i:0\t\1\t\3\tXD:i:0\tXF:i:0\tXB:Z:F1\/\7\t\5\tYZ:Z:0\tYC:Z:\7\2\4\6\8/'
+				sed -E -e ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/\tYC:Z:(\S+)/\tHI:i:0\tXD:i:0\tXF:i:0\tXB:Z:F1\/\1\tYZ:Z:0\tYC:Z:\1/'
 			CMD
 				samtools view -@ $((threads/2+1)) -b > "$o.bam"
 			CMD
+			# tee >(samtools view -@ $((threads/2+1)) -b > "$o.raw.bam")
 		fi
 		bwa+=("$o.bam")
 	done
