@@ -90,6 +90,7 @@ pheatmap(m, color=color,
 
 
 if(datatype != "TPM" && datatype != "VSC") quit()
+if(ncol(m) < 3) quit()
 
 suppressMessages(library(ggplot2))
 suppressMessages(library(scales))
