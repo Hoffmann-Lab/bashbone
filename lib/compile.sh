@@ -159,8 +159,8 @@ compile::conda_tools() {
 				java-jdk \
 				nlopt "r-base>=4" \
 				r-biocmanager r-devtools r-codetools \
-				bioconductor-biomart bioconductor-biocparallel bioconductor-genefilter bioconductor-deseq2 bioconductor-dexseq bioconductor-clusterprofiler bioconductor-tcgautils \
-				r-survminer bioconductor-impute bioconductor-preprocesscore bioconductor-go.db bioconductor-annotationdbi bioconductor-enrichplot \
+				bioconductor-biomart bioconductor-biocparallel bioconductor-genefilter bioconductor-deseq2 bioconductor-dexseq bioconductor-clusterprofiler bioconductor-tcgautils r-r.utils \
+				r-survminer bioconductor-impute bioconductor-preprocesscore bioconductor-go.db bioconductor-annotationdbi bioconductor-annotationforge bioconductor-enrichplot bioconductor-rrvgo \
 				r-reshape2 r-wgcna r-dplyr r-tidyverse r-ggpubr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-treemap r-data.table r-ggridges r-ashr
 		fi
 
@@ -219,6 +219,7 @@ compile::conda_tools() {
 		CMD
 
 		# as of 2022, conda can install all r-packages without conflicts. instead manual compilation causes troubles
+		# bioconductor-tcgabiolinks conda package is outdated and errornous. Apr 2022 tcga db changed way to access, thus latest tcgabiolinks from git required
 		cmd2=()
 		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
@@ -226,6 +227,8 @@ compile::conda_tools() {
 				Sys.setenv(TAR="$(command -v tar)");
 				install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
 				devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
+				devtools::install_github("BioinformaticsFMRP/TCGAbiolinksGUI.data", upgrade="never", force=T, clean=T, destdir="$tmpdir");
+				devtools::install_github("BioinformaticsFMRP/TCGAbiolinks", upgrade="never", force=T, clean=T, destdir="$tmpdir");
 			'
 		CMD
 
@@ -330,10 +333,15 @@ compile::conda_tools() {
 			conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool bwa-mem2
 		fi
 		# get latest functions from pull requensts like support for bwa-mem2 and report of supplementary/split alignments
-		curl -s "https://raw.githubusercontent.com/brentp/bwa-meth/master/bwameth.py" > "$insdir/conda/envs/bwameth/bin/bwameth.py"
-		sed -i 's/-CM/-C -Y/' "$insdir/conda/envs/bwameth/bin/bwameth.py"
+		curl -s "https://raw.githubusercontent.com/brentp/bwa-meth/master/bwameth.py" | \
+			sed -E -e '/--threads/{s/$/\n    p.add_argument("-s", "--score", type=int, default=40)/}' \
+			-e '/threads=args.threads/{s/$/\n            score=args.score,/}' \
+			-e 's/threads=1,/threads=1, score=40,/' \
+			-e 's/"\|bwa(.+) -T 40 -B 2 -L 10 -CM/f"|bwa\1 -T {score} -B 2 -L 10 -C -Y/' \
+		> "$insdir/conda/envs/bwameth/bin/bwameth.py"
 		# by removal of -M splits/chimeric reads are marked as supplementary (which is the way to go!).
 		# -Y: apply soft-clipping instead of hard clipping to keep sequence info in bam (can be changed via)
+		# squeeze in score parameter to control bwa minoutscore
 
 		mkdir -p "$insdir/conda/env_exports"
 		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"

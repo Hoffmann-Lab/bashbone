@@ -134,11 +134,15 @@ preprocess::fastqc() {
 
 	commander::printinfo "calculating qualities"
 
+	local instances=$((${#_fq1_fastqc[@]}+${#_fq2_fastqc[@]})) ithreads jmem jgct jcgct
+	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i $instances -T $threads)
+
 	declare -a cmd1
 	local f
 	for f in {"${_fq1_fastqc[@]}","${_fq2_fastqc[@]}"}; do
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fastqc)")
 		commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+			JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir'"
 			fastqc
 			-d "${tdirs[-1]}"
 			-outdir "$outdir"
@@ -195,11 +199,11 @@ preprocess::rmpolynt(){
 	declare -a poly
 	local i
 	for i in A C G T; do
-		poly+=("$(printf "$i%.0s" {1..100})X")
+		poly+=("$(printf "$i%.0s" {1..200})X")
 	done
 	if $dinuc; then
 		for i in AB CD GH TV; do #iupac
-			poly+=("$(printf "$i%.0s" {1..100})X")
+			poly+=("$(printf "$i%.0s" {1..200})X")
 		done
 	fi
 

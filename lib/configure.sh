@@ -5,34 +5,68 @@ configure::exit(){
 	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
+			-x <exit>     | code
 			-p <pid>      | process id
 			-f <function> | to call - ALWAYS LAST OPTION
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory pid exitfun
-	while getopts ':p:f:' arg; do
+	local OPTIND arg mandatory pid exitfun ex
+	while getopts ':p:f:x:' arg; do
 		case $arg in
+			x)	((++mandatory)); ex=$OPTARG;;
 			p)	((++mandatory)); pid=$OPTARG;;
 			f)	exitfun=$OPTARG;;
 			:)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 1 ]] && _usage
+	[[ $mandatory -lt 2 ]] && _usage
 
 	[[ $exitfun ]] && {
-		shift $((OPTIND-(OPTIND-4))) # -p P -f F
-		$exitfun "$@"
+		shift $((OPTIND-(OPTIND-6))) # -x X -p P -f F
+		$exitfun "$@" $ex
 	}
 
-	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2)) # pstree < 23.0-1 : /proc/<id> no such file bug https://bugs.launchpad.net/ubuntu/+source/psmisc/+bug/1629839
-	{ kill -TERM "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # true due to grep and tail process ids of pstree pipeline
+	[[ $ex -gt 0 ]] && env kill -TERM -- -$$
+	exit $ex
+}
+
+configure::exit_job(){
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-x <exit>     | code
+			-p <pid>      | process id
+			-f <function> | to call - ALWAYS LAST OPTION
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory pid exitfun ex
+	while getopts ':p:f:x:' arg; do
+		case $arg in
+			x)	((++mandatory)); ex=$OPTARG;;
+			p)	((++mandatory)); pid=$OPTARG;;
+			f)	exitfun=$OPTARG;;
+			:)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 2 ]] && _usage
+
+	[[ $exitfun ]] && {
+		shift $((OPTIND-(OPTIND-6))) # -x X -p P -f F
+		$exitfun "$@" $ex
+	}
+
+	# pstree < 23.0-1 : /proc/<id> no such file bug https://bugs.launchpad.net/ubuntu/+source/psmisc/+bug/1629839
+	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | grep -vFw $pid)) # use grep -v or tail -n +2 to not kill leader process to ensure valid exit code - eg. 255 for xargs termination
+	{ env kill -TERM "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # true due to grep and tail process ids of pstree pipeline
 	#kill -PIPE $p # is captured by bashbone. does not print termination message
 	#kill -INT $p # graceful kill. due to interrupt by user. probably captured by job or simply not delivered
 	#kill -TERM $p # graceful kill like INT but due to other process. probably captured by job.
 	#kill -KILL $p # cannot be captured. no job cleanup traps invoked
-	return 0
+	exit $ex
 }
 
 configure::err(){
@@ -68,11 +102,20 @@ configure::err(){
 		read -r fun line src < <(declare -F "$fun") # requires shopt -s extdebug
 		[[ $- =~ i ]] && ((lineno+=line)) # do not!! use [[ ${BASH_EXECUTION_STRING} ]] || ((lineno+=line))
 	}
-	if (cd "$wdir"; [[ -e $src ]]); then # self sourcing by commander::runcmd and commander::qsubcmd with cleanup function may causes src to be removed before reaching this point
-		local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+	# if (cd "$wdir"; [[ -e "$src" ]]); then # self sourcing by commander::runcmd and commander::qsubcmd with cleanup function may causes src to be removed before reaching this point
+	# 	local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+	# 	[[ $fun ]] && src="$src ($fun)"
+	# 	commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
+	# else
+	# 	[[ $fun ]] && src="$src ($fun)"
+	# 	commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno"
+	# fi
+
+	# src comes from BASH_SOURCE and should be absolute by activate.sh
+	if [[ -e "$src" ]]; then # self sourcing by commander::runcmd and commander::qsubcmd with cleanup function may causes src to be removed before reaching this point
+		local cmd=$(awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 		[[ $fun ]] && src="$src ($fun)"
 		commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
-		# commander::printerr "$(eval "echo -e \"$cmd\"")"
 	else
 		[[ $fun ]] && src="$src ($fun)"
 		commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno"
@@ -140,7 +183,7 @@ configure::memory_by_instances(){
 	done
 	[[ $mandatory -lt 1 ]] && _usage
 
-	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F MemAvailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
 	[[ ! $maxmemory ]] && maxmemory=$m
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
 	local t=$($dryrun && [[ $maxthreads ]] && echo $maxthreads || grep -cF processor /proc/cpuinfo)
@@ -177,7 +220,8 @@ configure::instances_by_memory(){
 	done
 	[[ $mandatory -lt 1 ]] && _usage
 
-	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F MemAvailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+	[[ ! $maxmemory ]] && maxmemory=$m
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
 	local t=$($dryrun && [[ $maxthreads ]] && echo $maxthreads || grep -cF processor /proc/cpuinfo)
 	[[ ! $maxthreads ]] && maxthreads=$t
@@ -218,7 +262,7 @@ configure::jvm(){
 		esac
 	done
 
-	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F -i memtotal /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F MemAvailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
 	[[ ! $maxmemory ]] && maxmemory=$m
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
 	local t=$($dryrun && [[ $maxthreads ]] && echo $maxthreads || grep -cF processor /proc/cpuinfo)
