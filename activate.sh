@@ -25,8 +25,7 @@ while getopts ':i:c:x:a:h' arg; do
 		i)	BASHBONE_TOOLSDIR="$OPTARG";;
 		c)	BASHBONE_CONDA="$OPTARG";;
 		x)	BASHBONE_EXITFUN="$OPTARG";;
-		a)	BASHBONE_OPTARG="$OPTARG";;
-		:)	echo "argument missing" >&2; return 1;;
+		a)  shift $((OPTIND-2)); break;;
 		h)	cat <<- 'EOF'
 				This is bashbone activation script.
 
@@ -41,10 +40,10 @@ while getopts ':i:c:x:a:h' arg; do
 				-c <activate> | true/false conda from [-i]/conda/bin
 				                default: false
 				-x <fun>      | an optional function or command to be called upon EXIT signal. this function or command will receive the exit code as last argument
-				-a <optarg>   | use in case bashbone is sourced in a script wich makes use of optargs
+				-a <optarg>   | use as last option in case bashbone is sourced in a script wich makes use of optargs
 
 				Example:
-				source activate.sh -i <path> -c true -x "<fun> [<arg>..]" -a "$*"
+				source activate.sh -i <path> -c true -x "<fun> [<arg>..]" -a "$@"
 				bashbone -h
 				bashbone -x
 			EOF
@@ -52,7 +51,6 @@ while getopts ':i:c:x:a:h' arg; do
 		;;
 	esac
 done
-
 
 # +m turns off job control to avoid "done" or "terminated" messages when waiting for asynchronouse subshells because subshells will not run in own process groups anymore
 set +m -o pipefail -o errtrace -o functrace # traces enable trap to know local scope of functions and shubshells that inherit ERR trap (-o errtrace) and RETURN and DEBUG trap (-o functrace)
@@ -71,25 +69,23 @@ enable -n kill # either disable bash builtin kill here or use always "env kill"
 if [[ $BASHBONE_PGID ]]; then
 	if [[ $$ -eq $BASHBONE_PGID ]]; then
 		# fire last, global cleanup function and kill all remaining subshells
-		trap '_trap_e=$?; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; configure::exit -x $_trap_e -p $$ -f "$BASHBONE_EXITFUN"' EXIT
+		trap '_trap_e=$?; trap "" INT TERM; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; configure::exit -x $_trap_e -p $$ -f "$BASHBONE_EXITFUN"' EXIT
 	else
-		trap '_trap_e=$?; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; configure::exit_job -x $_trap_e -p $$ -f "$BASHBONE_EXITFUN"' EXIT
+		trap '_trap_e=$?; trap "" INT TERM; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; configure::exit_job -x $_trap_e -p $$ -f "$BASHBONE_EXITFUN"' EXIT
 		# runcmd without setsid: don't kill $$ == pgid, in case of error simply exit with 255 for further traceback
 		# runcmd with setsid: kill -- -$$ does not work because $$ is not process group leader
 	fi
-	true
 else
 	if [[ $$ -eq $(($(ps -o pgid= -p $$))) ]]; then
 		export BASHBONE_PGID=$$
 	else
-		exec setsid --wait env bash "$0" "$BASHBONE_OPTARG"
+		exec setsid --wait env bash "$0" "$@"
 	fi
 fi
-unset BASHBONE_OPTARG
 
 _bashbone_settrap(){
 	# silence error messages which go out of sync, when e.g. TERM signal is received from failed sibling xargs job. INT signal is often not correctly received and thus needs to trigger ERR manually. note that INT/ctr-c by user kills subshells immediately -> no cleanup for inner subshell functions possible
-	trap '_trap_e=$?; BASHBONE_ERROR="false"; (exit $_trap_e)' INT TERM
+	trap '_trap_e=$?; trap "" INT TERM; BASHBONE_ERROR="false"; (exit $_trap_e)' INT TERM
 }
 _bashbone_settrap
 

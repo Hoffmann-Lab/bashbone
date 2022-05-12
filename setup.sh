@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-source "$(dirname "$(readlink -e "$0")")/activate.sh" -c false || exit 1
+source "$(dirname "$(readlink -e "$0")")/activate.sh" -c false -a "$@" || exit 1
 
 THREADS=$(cat /proc/cpuinfo | grep -cF processor)
 VERBOSITY=0
