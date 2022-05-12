@@ -414,13 +414,13 @@ alignment::bwa() {
 		o1="$outdir/$o1"
 
 		helper::makecatcmd -c catcmd -f "${_fq1_bwa[$i]}"
-		readlength=$($catcmd "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%d",l/(NR/4))}')
+		readlength=$($catcmd "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%.f",l/(NR/4))}')
 
 		if $forcemem || [[ $readlength -gt 70 ]]; then
 			# minOUTscore:30 @ MM/indelpenalty:4/6 -> (100-30)/5=~14% errors -> increase minOUTscore
 			# 100*(1-95/100)*6 = 25 allowed penalties -> minOUTscore = 70
 			# => minOUTscore = readlength − readlength*(1−accuracy/100)*5
-			[[ $accuracy ]] && params='-T '$(echo $accuracy | awk -v l=$readlength '{printf("%.d",l-l*(1-$1/100)*6)}')
+			[[ $accuracy ]] && params='-T '$(echo $accuracy | awk -v l=$readlength '{printf("%.f",l-l*(1-$1/100)*5)}')
 			if [[ ${_fq2_bwa[$i]} ]]; then
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					$bwacmd mem
@@ -449,7 +449,7 @@ alignment::bwa() {
 				CMD
 			fi
 		else
-			[[ $accuracy ]] && params='-n '$(echo $accuracy | awk -v l=$readlength '{printf("%.d",l*(1-$1/100))}')
+			[[ $accuracy ]] && params='-n '$(echo $accuracy | awk -v l=$readlength '{printf("%.f",l*(1-$1/100))}')
 			if [[ ${_fq2_bwa[$i]} ]]; then
 				helper::basename -f "${_fq2_bwa[$i]}" -o o2 -e e2
 				o2="$outdir/$o2"
@@ -680,8 +680,9 @@ alignment::_uniqify() {
 		# 		"$sambam"
 		# 		> "$_returnfile_uniqify"
 		# CMD
-		commander::makecmd -a _cmds2_uniqify -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-			LC_ALL=C samtools view
+		commander::makecmd -a _cmds2_uniqify -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+			samtools view
+				-h
 				-q 1
 				$params
 				-@ $ithreads
@@ -703,7 +704,7 @@ alignment::_uniqify() {
 		if [[ $version -lt 12 ]]; then
 			# sed is faster than grep here
 			commander::makecmd -a _cmds2_uniqify -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-				LC_ALL=C samtools view
+				samtools view
 					$params
 					-h
 					-@ $ithreads
