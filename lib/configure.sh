@@ -28,7 +28,7 @@ configure::exit(){
 		$exitfun "$@" $ex
 	}
 
-	[[ $ex -gt 0 ]] && env kill -TERM -- -$$
+	{ env kill -TERM -- -$$ && wait $$; } &> /dev/null || true
 	exit $ex
 }
 
@@ -61,7 +61,7 @@ configure::exit_job(){
 
 	# pstree < 23.0-1 : /proc/<id> no such file bug https://bugs.launchpad.net/ubuntu/+source/psmisc/+bug/1629839
 	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | grep -vFw $pid)) # use grep -v or tail -n +2 to not kill leader process to ensure valid exit code - eg. 255 for xargs termination
-	{ env kill -TERM "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null || true # true due to grep and tail process ids of pstree pipeline
+	{ env kill -TERM "${pids[@]}"; wait "${pids[@]}"; } &> /dev/null || true # true due to grep and tail process ids of pstree pipeline
 	#kill -PIPE $p # is captured by bashbone. does not print termination message
 	#kill -INT $p # graceful kill. due to interrupt by user. probably captured by job or simply not delivered
 	#kill -TERM $p # graceful kill like INT but due to other process. probably captured by job.
