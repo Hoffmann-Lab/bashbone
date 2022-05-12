@@ -25,7 +25,7 @@ while getopts ':i:c:x:a:h' arg; do
 		i)	BASHBONE_TOOLSDIR="$OPTARG";;
 		c)	BASHBONE_CONDA="$OPTARG";;
 		x)	BASHBONE_EXITFUN="$OPTARG";;
-		a)  shift $((OPTIND-2)); break;;
+		a)	shift $((OPTIND-2)); break;;
 		h)	cat <<- 'EOF'
 				This is bashbone activation script.
 
@@ -66,21 +66,20 @@ enable -n kill # either disable bash builtin kill here or use always "env kill"
 # BASHPID set to last nested subshell pid keeps constant during trace -> contrast to LINENO which referes to recent BASH_LINENO[0] (in line to BASH_SOURCE[@]/FUNCNAME[@])
 # send PIPE signal to all nested subshells (parent pids between $BASHPID and $$) to kill them silently -> no conflict with 141/PIPE catched in ERR trap, since kill alone does not invoke ERR, despite of trap being inherited, without calling wait $! to receive exit code e.g. cat <(kill -PIPE $BASHPID) && echo mustNotShow vs cat <(kill -PIPE $BASHPID) && wait $! && echo mustNotShow
 # main as function name is not set from interactive shells or script execution as an other process like xargs -I {} bash -c '{}'
-if [[ $BASHBONE_PGID ]]; then
-	if [[ $$ -eq $BASHBONE_PGID ]]; then
-		# fire last, global cleanup function and kill all remaining subshells
-		trap '_trap_e=$?; trap "" INT TERM; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; configure::exit -x $_trap_e -p $$ -f "$BASHBONE_EXITFUN"' EXIT
-	else
-		trap '_trap_e=$?; trap "" INT TERM; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; configure::exit_job -x $_trap_e -p $$ -f "$BASHBONE_EXITFUN"' EXIT
-		# runcmd without setsid: don't kill $$ == pgid, in case of error simply exit with 255 for further traceback
-		# runcmd with setsid: kill -- -$$ does not work because $$ is not process group leader
-	fi
-else
+if [[ ! $BASHBONE_PGID ]]; then
 	if [[ $$ -eq $(($(ps -o pgid= -p $$))) ]]; then
 		export BASHBONE_PGID=$$
 	else
 		exec setsid --wait env bash "$0" "$@"
 	fi
+fi
+if [[ $$ -eq $BASHBONE_PGID ]]; then
+	# fire last, global cleanup function and kill all remaining subshells
+	trap '_trap_e=$?; trap "" INT TERM; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; configure::exit -x $_trap_e -p $$ -f "$BASHBONE_EXITFUN"' EXIT
+else
+	trap '_trap_e=$?; trap "" INT TERM; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; configure::exit_job -x $_trap_e -p $$ -f "$BASHBONE_EXITFUN"' EXIT
+	# runcmd without setsid: don't kill $$ == pgid, in case of error simply exit with 255 for further traceback
+	# runcmd with setsid: kill -- -$$ does not work because $$ is not process group leader
 fi
 
 _bashbone_settrap(){
