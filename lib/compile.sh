@@ -45,7 +45,6 @@ compile::all(){
 	compile::conda_tools -i "$insdir" -t $threads
 	compile::java -i "$insdir" -t $threads
 	compile::trimmomatic -i "$insdir" -t $threads
-	compile::sortmerna -i "$insdir" -t $threads
 	compile::segemehl -i "$insdir" -t $threads
 	compile::starfusion -i "$insdir" -t $threads
 	compile::preparedexseq -i "$insdir" -t $threads
@@ -55,8 +54,9 @@ compile::all(){
 	compile::idr -i "$insdir" -t $threads
 	compile::newicktopdf -i "$insdir" -t $threads
 	compile::ssgsea -i "$insdir" -t $threads
-	compile::bgztail -i "$insdir" -t $threads
+	compile::gztool -i "$insdir" -t $threads
 	compile::mdless -i "$insdir" -t $threads
+	compile::pugz -i "$insdir" -t $threads
 
 	return 0
 }
@@ -126,7 +126,7 @@ compile::conda_tools() {
 		rm -rf "$tmpdir"
 	}
 
-	local insdir threads upgrade=false tool n star_version bin doclean=false cfg=false src="$(dirname "$(readlink -e "$0")")"
+	local insdir threads upgrade=false tool n star_version bin doclean=false cfg=false src="$(dirname "$(readlink -e "$0")")" f
 	declare -A envs
 	commander::printinfo "installing conda tools"
 	compile::_parse -r insdir -s threads -c upgrade -f cfg "$@"
@@ -146,6 +146,7 @@ compile::conda_tools() {
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
 			conda env create -n $n --force --file "$src/config/$n.yaml"
 		else
+			# "libfuse<3" libarchive for fuse-archive
 			conda create -y -n $n
 			conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 				gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
@@ -291,6 +292,55 @@ compile::conda_tools() {
 		fi
 
 		mkdir -p "$insdir/conda/env_exports"
+		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+	}
+	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	done
+
+	# prepared for sortmrna >4 , but newer versions have extreme runtime troubles
+	tool="sortmerna<3"
+	n=${tool/=*/}
+	n=${n//[^[:alpha:]]/}
+	$upgrade && ${envs[$n]:=false} || {
+		doclean=true
+
+		commander::printinfo "setup conda $n env"
+		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+			conda env create -n $n --force --file "$src/config/$n.yaml"
+		else
+			conda create -y -n $n
+			conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda "$tool"
+		fi
+
+		git clone https://github.com/biocore/sortmerna.git "$insdir/conda/envs/sortmerna/src"
+		mv "$insdir/conda/envs/sortmerna/src/data/rRNA_databases/" "$insdir/conda/envs/sortmerna/"
+		mkdir -p "$insdir/conda/envs/sortmerna/rRNA_databases/index"
+		rm -rf  "$insdir/conda/envs/sortmerna/src"
+
+		declare -a cmdidx tdirs
+		for f in "$insdir/conda/envs/sortmerna/rRNA_databases/"*.fasta; do
+			# v4
+			# tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sortmerna)")
+			# commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD
+			# 	sortmerna
+			# 	--ref "$f"
+			# 	--index 1
+			# 	-L 18
+			# 	--workdir "${tdirs[-1]}"
+			# 	--idx-dir "$insdir/conda/envs/sortmerna/rRNA_databases/index"
+			# CMD
+
+			# v2
+			commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD
+				indexdb_rna
+				--ref "$f","$insdir/conda/envs/sortmerna/rRNA_databases/index/$(basename "$f" .fasta)-L18"
+				-m 4096
+				-L 18
+			CMD
+		done
+		commander::runcmd -c sortmerna -t $threads -a cmdidx
+
 		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
 	}
 	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
@@ -484,7 +534,7 @@ compile::trimmomatic(){
 	compile::_parse -r insdir -s threads "$@"
 	source "$insdir/conda/bin/activate" bashbone
 	url='http://www.usadellab.org/cms/?page=trimmomatic'
-	url='http://www.usadellab.org/cms/'$(curl -s "$url" | grep Version | grep -oE '[^"]+Trimmomatic-[0-9]+\.[0-9]+\.zip' | sort -Vr | head -1)
+	url='http://www.usadellab.org/cms/'$(curl -s "$url" | grep Version | grep -oE '[^"]+Trimmomatic-[0-9]+\.[0-9]+\.zip' | head -1)
 	wget -q "$url" -O "$insdir/trimmomatic.zip"
 	unzip -o -d "$insdir" "$insdir/trimmomatic.zip"
 	rm "$insdir/trimmomatic.zip"
@@ -497,7 +547,7 @@ compile::trimmomatic(){
 }
 
 compile::sortmerna() {
-	local insdir threads url
+	local insdir threads url i
 
 	commander::printinfo "installing sortmerna"
 	compile::_parse -r insdir -s threads "$@"
@@ -511,13 +561,16 @@ compile::sortmerna() {
 	./configure --prefix="$PWD"
 	make -j $threads
 	make install -i # ignore errors caused by --prefix=$PWD
+
+	commander::printinfo "indexing databases"
+	cp -r rRNA_databases index bin
+	for i in bin/rRNA_databases/*.fasta; do
+		o="bin/index/$(basename "$i" .fasta)-L18"
+		echo -ne "bin/indexdb_rna --ref '$i','$o' -m 4096 -L 18\0"
+	done | xargs -0 -P $threads -I {} bash -c {}
+
 	mkdir -p "$insdir/latest"
 	ln -sfn "$PWD/bin" "$insdir/latest/sortmerna"
-	commander::printinfo "indexing databases"
-for i in rRNA_databases/*.fasta; do
-	o="index/$(basename "$i" .fasta)-L18"
-	echo -ne "bin/indexdb_rna --ref '$i','$o' -m 4096 -L 18\0"
-done | xargs -0 -P $threads -I {} bash -c {}
 
 	return 0
 }
@@ -529,7 +582,7 @@ compile::segemehl() {
 	compile::_parse -r insdir -s threads "$@"
 	source "$insdir/conda/bin/activate" bashbone
 	url='http://www.bioinf.uni-leipzig.de/Software/segemehl/downloads/'
-	url="$url"$(curl -s "$url" | grep -oE 'segemehl-[0-9\.]+\.tar\.gz' | sort -Vr | head -1)
+	url="$url"$(curl -s "$url" | grep -oE 'segemehl-[0-9\.]+\.tar\.gz' | tail -1)
 	wget -q "$url" -O "$insdir/segemehl.tar.gz"
 	tar -xzf "$insdir/segemehl.tar.gz" -C "$insdir"
 	rm "$insdir/segemehl.tar.gz"
@@ -546,8 +599,8 @@ compile::segemehl() {
 	cat <<- 'EOF' > "$insdir/latest/segemehl/segemehl"
 		#!/usr/bin/env bash
 		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
-		l=$(pkg-config --variable=libdir htslib)
-		[[ $l ]] && export LD_LIBRARY_PATH=$l
+		l="$(pkg-config --variable=libdir htslib)"
+		[[ $l ]] && export LD_LIBRARY_PATH="$l"
 		$(cd "$(dirname "$0")" && echo "$PWD")/segemehl.x $*
 	EOF
 	cat <<- 'EOF' > $insdir/latest/segemehl/haarz
@@ -568,7 +621,7 @@ compile::starfusion() {
 	commander::printinfo "installing starfusion"
 	compile::_parse -r insdir -s threads "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	url='https://github.com/'$(curl -s https://github.com/STAR-Fusion/STAR-Fusion/releases | grep -oE 'STAR-Fusion/\S+STAR-Fusion-v[0-9\.]+\.FULL\.tar\.gz' | sort -Vr | head -1)
+	url='https://github.com/'$(curl -s https://github.com/STAR-Fusion/STAR-Fusion/releases | grep -oE 'STAR-Fusion/\S+STAR-Fusion-v[0-9\.]+\.FULL\.tar\.gz' | head -1)
 	wget -q "$url" -O "$insdir/starfusion.tar.gz"
 	tar -xzf "$insdir/starfusion.tar.gz" -C "$insdir"
 	rm "$insdir/starfusion.tar.gz"
@@ -622,7 +675,7 @@ compile::gem() {
 	compile::_parse -r insdir -s threads "$@"
 	source "$insdir/conda/bin/activate" bashbone
 	url='https://groups.csail.mit.edu/cgs/gem/download/'
-	url="$url"$(curl -s "$url" | grep -oE "gem.v[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
+	url="$url"$(curl -s "$url" | grep -oE "gem.v[0-9\.]+\.tar\.gz" | tail -1)
 	version=$(basename "$url" | sed -E 's/gem.v([0-9\.]+)\.tar\.gz/\1/')
 	wget -q "$url" -O "$insdir/gem.tar.gz"
 	tar -xzf "$insdir/gem.tar.gz" -C "$insdir"
@@ -666,7 +719,7 @@ compile::idr() {
 	compile::_parse -r insdir -s threads "$@"
 	source "$insdir/conda/bin/activate" bashbone
 	url='https://github.com/kundajelab/idr'
-	url="$url/"$(curl -s "$url/tags" | grep -oE "archive\S+\/[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
+	url="$url/"$(curl -s "$url/tags" | grep -oE "archive\S+\/[0-9\.]+\.tar\.gz" | head -1)
 	wget -q $url -O $insdir/idr.tar.gz
 	tar -xzf "$insdir/idr.tar.gz" -C "$insdir"
 	rm "$insdir/idr.tar.gz"
@@ -720,23 +773,24 @@ compile::ssgsea() {
 	return 0
 }
 
-compile::bgztail() {
-	local insdir threads url
+compile::gztool() {
+	local insdir threads url version
 
-	commander::printinfo "installing bgztail"
+	commander::printinfo "installing gztool"
 	compile::_parse -r insdir -s threads "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	url='https://github.com/circulosmeos/bgztail'
-	url="$url/"$(curl -s "$url/tags" | grep -oE "archive\S+\/v[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
-	wget -q "$url" -O "$insdir/bgztail.tar.gz"
-	tar -xzf "$insdir/bgztail.tar.gz" -C "$insdir"
-	rm "$insdir/bgztail.tar.gz"
-	cd "$(ls -dv "$insdir/bgztail"-*/ | tail -1)"
-	mkdir -p bin
-	mv bgztail bin
-	chmod 755 bin/bgztail
+	url='https://github.com/circulosmeos/gztool'
+	url="$(curl -s "$url/releases" | grep -oE 'https[^"]+linux.x86_64' | head -1)"
+
+	version="$(basename "$(dirname "$url")")"
+	version=${version/v/}
+	cd $insdir
+	mkdir -p "$insdir/gztool-$version/bin"
+	cd $insdir/gztool-$version
+	wget -q "$url" -O bin/gztool
+	chmod 755 bin/gztool
 	mkdir -p "$insdir/latest"
-	ln -sfn "$PWD/bin" "$insdir/latest/bgztail"
+	ln -sfn "$PWD/bin" "$insdir/latest/gztool"
 
 	return 0
 }
@@ -748,7 +802,7 @@ compile::mdless() {
 	compile::_parse -r insdir -s threads "$@"
 	source "$insdir/conda/bin/activate" bashbone
 	url='https://github.com/ttscoff/mdless'
-	url="$url/"$(curl -s "$url/releases" | grep -oE "archive\S+\/[0-9\.]+\.tar\.gz" | sort -Vr | head -1)
+	url="https://github.com$(curl -s "$url/releases" | grep -E '[^"]+[0-9\.]+\.tar\.gz' | head -1)"
 	wget -q "$url" -O "$insdir/mdless.tar.gz"
 	tar -xzf "$insdir/mdless.tar.gz" -C "$insdir"
 	rm "$insdir/mdless.tar.gz"
@@ -756,6 +810,56 @@ compile::mdless() {
 	sed -i 's@require@$LOAD_PATH.unshift(File.expand_path("../../lib", __FILE__))\nrequire@' mdless
 	mkdir -p "$insdir/latest"
 	ln -sfn "$PWD" "$insdir/latest/mdless"
+
+	return 0
+}
+
+# compile::ratarmount() {
+# 	local insdir threads url version
+
+# 	commander::printinfo "installing ratarmount"
+# 	compile::_parse -r insdir -s threads "$@"
+# 	source "$insdir/conda/bin/activate" bashbone
+# 	url='https://github.com/mxmlnkn/ratarmount'
+# 	url="https://github.com/"$(curl -s "$url/releases" | grep -oE "\/mxmlnkn\/\S+AppImage" | head -1)
+# 	version="$(basename "$(dirname "$url")")"
+# 	version=${version/#v/}
+# 	mkdir -p "$insdir/ratarmount-$version/bin"
+# 	wget -q "$url" -O "$insdir/ratarmount-$version/bin/ratarmount"
+# 	chmod 755 "$insdir/ratarmount-$version/bin/ratarmount"
+# 	mkdir -p "$insdir/latest"
+# 	ln -sfn "$insdir/ratarmount-$version/bin" "$insdir/latest/ratarmount"
+
+# 	return 0
+# }
+
+# compile::fusearchive(){
+# 	local insdir threads url
+# 	commander::printinfo "installing fuse-archive"
+# 	compile::_parse -r insdir -s threads "$@"
+# 	source "$insdir/conda/bin/activate" bashbone
+# 	cd "$insdir"
+# 	git clone https://github.com/google/fuse-archive.git
+# 	cd fuse-archive
+# 	make -j $threads
+# 	mv out bin
+# 	ln -sfn "$PWD/bin" "$insdir/latest/fusearchive"
+
+# 	return 0
+# }
+
+compile::pugz(){
+	local insdir threads url
+	commander::printinfo "installing pugz"
+	compile::_parse -r insdir -s threads "$@"
+	source "$insdir/conda/bin/activate" bashbone
+	cd "$insdir"
+	git clone https://github.com/Piezoid/pugz.git
+	cd pugz
+	make -j $threads
+	mkdir -p bin
+	mv gunzip bin/pugz
+	ln -sfn "$PWD/bin" "$insdir/latest/pugz"
 
 	return 0
 }
