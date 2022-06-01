@@ -75,7 +75,7 @@ enrichment::_ora(){
 			ora <- data.frame(matrix(ncol = 5, nrow = 0));
 			if(length(genes)>0){
 				tg <- suppressMessages(read.gmt(gmt));
-				tn <- read.table(g2n, sep="\t", stringsAsFactors=F, quote="");
+				tn <- read.table(g2n, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 				if(sum(genes %in% tg$gene)>0){
 					ora <- enricher(genes, TERM2GENE=tg, TERM2NAME=tn, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
 					if(!is.null(ora) && nrow(ora)>0){
@@ -189,14 +189,14 @@ enrichment::_gsea(){
 			odir <- args[4];
 			domain <- args[5];
 
-			df <- read.table(ddsr, header=T, sep="\t", stringsAsFactors=F, quote="");
+			df <- read.table(ddsr, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 			df <- df[!is.na(df$padj) , ];
 			df <- df[df$padj<=0.05 , ];
 
 			gsea <- data.frame(matrix(ncol = 5, nrow = 0));
 			if(nrow(df)>0){
 				tg <- suppressMessages(read.gmt(gmt));
-				tn <- read.table(g2n, sep="\t", stringsAsFactors=F, quote="");
+				tn <- read.table(g2n, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 				if(sum(df$id %in% tg$gene)>0){
 					gl <- df$log2FoldChange;
 					names(gl) <- df$id;
@@ -292,6 +292,8 @@ enrichment::_reducego(){
 	done
 	[[ $mandatory -lt 5 ]] && _usage
 
+	# sum up counts of clustered terms?
+	# dfp$count <- sapply(unique(df$parent), function(x) sum(df$count[df$parent==x]));
 	commander::makecmd -a _cmds1_reduce -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
 			args <- commandArgs(TRUE);
@@ -305,11 +307,17 @@ enrichment::_reducego(){
 			suppressMessages(library(rrvgo));
 			suppressMessages(library(ggplot2));
 
-			df <- read.table(ora, stringsAsFactors = F, quote = "", header = T, sep="\t");
+			df <- read.table(ora, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+			dfc <- df[,1:2];
+			colnames(dfc) <- c("go","count");
+
 			if(nrow(df)>2){
 				m <- calculateSimMatrix(df$id, orgdb="org.My.eg.db", ont=domshort, method="Wang", keytype="GID");
 				if(! is.na(m) && nrow(m)>2){
 					df <- reduceSimMatrix(m, setNames(-log10(df$padj), df$id), threshold=0.7, orgdb="org.My.eg.db", keytype="GID");
+					df <- merge(dfc, df, by="go");
+					df <- df[order(df$score, decreasing=T), ];
+
 					write.table(df, row.names = F, file = file.path(odir,"goenrichment_reduced.tsv"), quote=F, sep="\t");
 
 					pdf(file.path(odir,"treemap.pdf"), width=16, height=9);
@@ -320,7 +328,6 @@ enrichment::_reducego(){
 					ggsave(file.path(odir,"semantic_space.pdf"), plot=p, width=16, height=9);
 
 					dfp <- df[df$go %in% unique(df$parent),];
-					dfp$count <- sapply(unique(df$parent), function(x) sum(df$parent==x));
 					dfp$term <- paste0(dfp$term," (",dfp$count,")");
 					df <- dfp;
 
@@ -426,10 +433,10 @@ enrichment::_revigo(){
 			outdir <- args[3];
 			domain <- args[4];
 
-			c <- read.table(gsea, header=T, sep="\t", quote="");
+			c <- read.table(gsea, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 			colnames(c)[1] <- "term_ID";
 			colnames(c)[5] <- "enricher_description";
-			df <- read.table(revigo, header=T, sep="\t", quote="");
+			df <- read.table(revigo, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 
 			if(nrow(df)>0){
 				dfp <- df;
