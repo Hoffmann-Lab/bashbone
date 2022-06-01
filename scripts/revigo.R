@@ -3,7 +3,7 @@
 suppressMessages(library("httr"))
 
 args = commandArgs(TRUE)
-go = read.table(args[1], header=FALSE, sep="\t", quote="")
+go = read.table(args[1], header=FALSE, sep="\t", stringsAsFactors=F, check.names=F, quote="")
 outprefix = args[2]
 domain = args[3]
 

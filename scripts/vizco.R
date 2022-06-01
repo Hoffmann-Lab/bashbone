@@ -10,7 +10,7 @@ datatype <- args[2] # 'TPM' (will be log transformed) or deseq 'VSC' else Z-Scor
 intsv <- args[3]
 outbase <- args[4]
 
-df = read.table(intsv, header=T, sep="\t", stringsAsFactors = F, quote="")
+df = read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="")
 colnames(df)[1]="id"
 colnames(df)[ncol(df)]="type"
 
