@@ -28,7 +28,7 @@ setEPS(width=8, height=8, onefile=T)
 ##### deseq
 
 
-experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F, quote="")
+experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F, check.names=F, quote="")
 colnames(experiments)[1:4] = c("sample","countfile","condition","replicate")
 
 # create design formula from factors under exclusion of potential linear combinations
@@ -56,8 +56,18 @@ get_design = function(experiments,interactionterms=F){
 
 design = get_design(experiments)
 cat(paste("about to run pca and deseq2 with design formula: ",design,"\n",sep=""))
-dds = DESeqDataSetFromHTSeqCount(sampleTable = experiments, directory = "", design = as.formula(design))
-dds = DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM)
+suppressMessages({
+	dds = DESeqDataSetFromHTSeqCount(sampleTable = experiments, directory = "", design = as.formula(design))
+	dds = tryCatch(
+		{
+			DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM, fitType="parametric")
+		},
+		error = function(e){
+			# in case of too less genes/data points for parametric overdispersion fitting, use simple mean fitting
+			DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM, fitType="mean")
+		}
+	)
+})
 save(dds, file = file.path(outdir,"dds.Rdata"))
 
 pdf(file.path(outdir,"dispersion.pdf"))
@@ -183,9 +193,8 @@ get_heatmap = function(input,path){
 	# perform inner-group column clustering
 
 	colclustlist = list()
-	#for (condition in unique(experiments$condition)) {
 	for (condition in c(ctr[i],treat[i])) {
-		m = as.matrix(input[ , colnames(input) %in% gsub("\\W",".",experiments$sample[experiments$condition %in% condition]) ])
+		m = as.matrix(input[ , experiments$sample[experiments$condition == condition]])
 		rownames(m) = input$id
 
 		# dist(df, method = "euclidean")
