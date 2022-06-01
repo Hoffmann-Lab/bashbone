@@ -118,15 +118,17 @@ expression::diego(){
 					rm -f "$odir/groups.tsv" "$odir/list.sj.tsv" "$odir/list.ex.tsv"
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
-						echo -e "$condition\t$sample.$replicate" >> "$odir/groups.tsv"
+						#echo -e "$condition\t$sample.$replicate" >> "$odir/groups.tsv"
+						echo -e "$condition\t$condition.$replicate" >> "$odir/groups.tsv"
 
 						sjfile="$(find -L "${mappeddirs[@]}" -maxdepth 1 -name "$sample*.sj" -print -quit)"
-						[[ $sjfile ]] && echo -e "$sample.$replicate\t$sjfile" >> "$odir/list.sj.tsv"
+						#[[ $sjfile ]] && echo -e "$sample.$replicate\t$sjfile" >> "$odir/list.sj.tsv"
+						[[ $sjfile ]] && echo -e "$condition.$replicate\t$sjfile" >> "$odir/list.sj.tsv"
 
 						if $exonmode; then
-							#countfile="$(readlink -e "$countsdir/$m/$sample"*.exoncounts.htsc | head -1)"
 							countfile="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.exoncounts.htsc" -print -quit)"
-							echo -e "$sample.$replicate\t$countfile" >> "$odir/list.ex.tsv"
+							#echo -e "$sample.$replicate\t$countfile" >> "$odir/list.ex.tsv"
+							echo -e "$condition.$replicate\t$countfile" >> "$odir/list.ex.tsv"
 						fi
 
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
@@ -292,15 +294,19 @@ expression::deseq() {
 						countfile="$(realpath -s "$countsdir/$m/$sample"*.+(genecounts|counts).+(reduced|htsc) | head -1)"
 						[[ $factors ]] && factors=","$(echo $factors | sed -E 's/\s+/,/g')
 
-						echo "$sample.$replicate,$countfile,$condition,$replicate$factors" >> "$odir/$c-vs-$t/experiments.csv"
+						# echo "$sample,$countfile,$condition,$replicate$factors" >> "$odir/$c-vs-$t/experiments.csv"
+						echo "$condition.$replicate,$countfile,$condition,$replicate$factors" >> "$odir/$c-vs-$t/experiments.csv"
 
 						tojoin+=("$(realpath -s "$countsdir/$m/$sample"*.+(genecounts|counts).+(reduced|htsc).tpm | head -1)")
-						header+="\t$sample.$replicate"
+						#header+="\t$sample.$replicate"
+						header+="\t$condition.$replicate"
 						meanheader+="\t$condition"
 
 						# for global experiments file
-						[[ ${visited["$sample.$replicate"]} ]] && continue || visited["$sample.$replicate"]=1
-						echo "$sample.$replicate,$countfile,$condition,$replicate$factors" >> "$odir/experiments.csv"
+						#[[ ${visited["$sample.$replicate"]} ]] && continue || visited["$sample.$replicate"]=1
+						[[ ${visited["$condition.$replicate"]} ]] && continue || visited["$condition.$replicate"]=1
+						# echo "$sample,$countfile,$condition,$replicate$factors" >> "$odir/experiments.csv"
+						echo "$condition.$replicate,$countfile,$condition,$replicate$factors" >> "$odir/experiments.csv"
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 
 					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
@@ -316,7 +322,7 @@ expression::deseq() {
 						Rscript - <<< '
 							args <- commandArgs(TRUE);
 							tsv <- args[1];
-							df <- read.table(tsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names = F, quote="");
+							df <- read.table(tsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 							means <- t(apply(df, 1, function(x) tapply(x, colnames(df), mean)));
 							write.table(data.frame(id=rownames(means),means[,unique(colnames(df))]), row.names = F, file = tsv, quote=F, sep="\t");
 						'
@@ -329,7 +335,7 @@ expression::deseq() {
 							args <- commandArgs(TRUE);
 							intsv <- args[1];
 							outf <- args[2];
-							df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names = F, quote="");
+							df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 							df <- log(df+1);
 							df <- df-rowMeans(df);
 							df <- df/apply(df,1,sd);
@@ -345,7 +351,7 @@ expression::deseq() {
 							args <- commandArgs(TRUE);
 							intsv <- args[1];
 							outf <- args[2];
-							df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names = F, quote="");
+							df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 							df <- log(df+1);
 							df <- df-rowMeans(df);
 							df <- df/apply(df,1,sd);
@@ -356,7 +362,7 @@ expression::deseq() {
 						"$odir/$c-vs-$t/experiments.mean.tpm" "$odir/$c-vs-$t/experiments.mean.tpm.zscores"
 					CMD
 
-					# run deseq
+					# run deseq cmd3
 
 					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.tsv") -le 2 ]] && exit 0
@@ -534,11 +540,7 @@ expression::_deseq() {
 			c=${cmppairs[$i]}
 			t=${cmppairs[$((i+1))]}
 			odir="$outdir/$c-vs-$t"
-			# for f in "$odir/deseq.tsv" "$odir/deseq.full.tsv" "$odir/deseq.noNA.tsv"; do
-			# 	commander::makecmd -a _cmds2_deseq -s ';' -c {COMMANDER[0]}<<- CMD
-			# 		[[ -e "$f" ]] && annotate.pl "${gtfinfo:=0}" "$gtf" "$f"
-			# 	CMD
-			# done
+
 			commander::makecmd -a _cmds2_deseq -s ';' -c {COMMANDER[0]}<<- CMD
 				find -L "$odir"
 					-type f
@@ -605,7 +607,7 @@ expression::join(){
 	done
 	[[ $mandatory -lt 7 ]] && _usage
 
-	commander::printinfo "joining htsc, tpm, vsc, zscores and heatmaps"
+	commander::printinfo "joining tpm, vsc, zscores and heatmaps"
 
 	declare -a cmd1 cmd2 cmd3 cmd4 mapdata header meanheader tojoin
 	declare -A countfiles
@@ -629,19 +631,21 @@ expression::join(){
 
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
-						[[ ${countfiles["$sample.$replicate"]} ]] && continue
-						header[$x]="$sample.$replicate"
+						[[ ${countfiles["$condition.$replicate"]} ]] && continue
+						header[$x]="$condition.$replicate"
 						meanheader[$x]="$condition"
 						((++x))
 
 						#cf="$(readlink -e "$countsdir/$m/$sample"*.tpm | head -1)"
 						cf="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.tpm" -print -quit)"
 						cf="${cf%.*}"
-						countfiles["$sample.$replicate"]="$cf"
+						countfiles["$condition.$replicate"]="$cf"
 
 						# get column per sample and write it to counts dir for downstream joins
 						# if sample name aka input file name contains \W chars, they were auto replaced by upstream R scripts
-						perl -M'List::MoreUtils qw(first_index)' -slane 'if($.==1){$h=~s/\W/./g; $c = first_index {$_ eq $h} @F}else{print "$F[0]\t$F[$c]"}' -- -h="$sample.$replicate" "$vsc" > "$cf.vsc"
+						#perl -M'List::MoreUtils qw(first_index)' -slane 'if($.==1){$h=~s/\W/./g; $c = first_index {$_ eq $h} @F}else{print "$F[0]\t$F[$c]"}' -- -h="$condition.$replicate" "$vsc" > "$cf.vsc"
+						# updated upstream R scripts by checkn.names false
+						perl -M'List::MoreUtils qw(first_index)' -slane 'if($.==1){$c = first_index {$_ eq $h} @F}else{print "$F[0]\t$F[$c]"}' -- -h="$condition.$replicate" "$vsc" > "$cf.vsc"
 
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 				done
@@ -677,7 +681,7 @@ expression::join(){
 				Rscript - <<< '
 					args <- commandArgs(TRUE);
 					tsv <- args[1];
-					df <- read.table(tsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names = F, quote="");
+					df <- read.table(tsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 					means <- t(apply(df, 1, function(x) tapply(x, colnames(df), mean)));
 					write.table(data.frame(id=rownames(means),means[,unique(colnames(df))]), row.names = F, file = tsv, quote=F, sep="\t");
 				'
@@ -690,7 +694,7 @@ expression::join(){
 					args <- commandArgs(TRUE);
 					intsv <- args[1];
 					outf <- args[2];
-					df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names = F, quote="");
+					df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 					df <- log(df+1);
 					df <- df-rowMeans(df);
 					df <- df/apply(df,1,sd);
@@ -706,7 +710,7 @@ expression::join(){
 					args <- commandArgs(TRUE);
 					intsv <- args[1];
 					outf <- args[2];
-					df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names = F, quote="");
+					df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 					df <- log(df+1);
 					df <- df-rowMeans(df);
 					df <- df/apply(df,1,sd);
@@ -781,6 +785,148 @@ expression::join(){
 		commander::runcmd -v -b -t $threads -a cmd2
 		commander::runcmd -v -b -t $threads -a cmd3
 		commander::runcmd -v -b -t $threads -a cmd4
+	fi
+
+	return 0
+}
+
+expression::join_htsc(){
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip> | true/false return
+			-s <softskip> | true/false only print commands
+			-t <threads>  | number of
+			-r <mapper>   | array of bams within array of
+			-c <cmpfiles> | array of
+			-i <htscdir>  | path to
+			-o <outdir>   | path to
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads countsdir outdir
+    declare -n _mapper_join _cmpfiles_join
+	while getopts 'S:s:t:r:c:i:o:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_join=$OPTARG;;
+			c)	((++mandatory)); _cmpfiles_join=$OPTARG;;
+			i)	((++mandatory)); countsdir="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 5 ]] && _usage
+
+	commander::printinfo "joining htsc, zscores"
+
+	declare -a cmd1 cmd2 cmd3 cmd4 mapdata header meanheader tojoin
+	declare -A countfiles
+	local m f x i c t h mh sample condition library replicate factors cf e
+	for m in "${_mapper_join[@]}"; do
+		odir="$outdir/$m"
+		mkdir -p "$odir"
+		countfiles=()
+		header=()
+		meanheader=()
+		x=0
+		for f in "${_cmpfiles_join[@]}"; do
+			mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
+			i=0
+			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
+				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
+
+					unset sample condition library replicate factors
+					while read -r sample condition library replicate factors; do
+						[[ ${countfiles["$condition.$replicate"]} ]] && continue
+						header[$x]="$condition.$replicate"
+						meanheader[$x]="$condition"
+						((++x))
+
+						cf="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.genecounts.htsc" -print -quit)"
+						cf="${cf%.*}"
+						countfiles["$condition.$replicate"]="$cf"
+					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
+				done
+			done
+		done
+
+
+		for e in htsc; do
+			h='id'
+			mh='id'
+			tojoin=()
+			for x in "${!header[@]}"; do
+				h+="\t${header[$x]}"
+				mh+="\t${meanheader[$x]}"
+				tojoin+=("${countfiles[${header[$x]}]}.$e")
+			done
+
+			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
+				helper::multijoin
+					-h "$(echo -e "$h")"
+					-o "$odir/experiments.$e"
+					-f $(printf '"%s" ' "${tojoin[@]}");
+			CMD
+				echo -e "$mh" > "$odir/experiments.mean.$e";
+			CMD
+				tail -n +2 "$odir/experiments.$e" >> "$odir/experiments.mean.$e";
+			CMD
+				Rscript - <<< '
+					args <- commandArgs(TRUE);
+					tsv <- args[1];
+					df <- read.table(tsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+					means <- t(apply(df, 1, function(x) tapply(x, colnames(df), mean)));
+					write.table(data.frame(id=rownames(means),means[,unique(colnames(df))]), row.names = F, file = tsv, quote=F, sep="\t");
+				'
+			CMD
+				"$odir/experiments.mean.$e"
+			CMD
+
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				Rscript - <<< '
+					args <- commandArgs(TRUE);
+					intsv <- args[1];
+					outf <- args[2];
+					df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+					df <- log(df+1);
+					df <- df-rowMeans(df);
+					df <- df/apply(df,1,sd);
+					df[is.na(df)] <- 0;
+					write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
+				'
+			CMD
+				"$odir/experiments.$e" "$odir/experiments.$e.zscores"
+			CMD
+
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				Rscript - <<< '
+					args <- commandArgs(TRUE);
+					intsv <- args[1];
+					outf <- args[2];
+					df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+					df <- log(df+1);
+					df <- df-rowMeans(df);
+					df <- df/apply(df,1,sd);
+					df[is.na(df)] <- 0;
+					write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
+				'
+			CMD
+				"$odir/experiments.mean.$e" "$odir/experiments.mean.$e.zscores"
+			CMD
+
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+	else
+		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -t $threads -a cmd2
 	fi
 
 	return 0
