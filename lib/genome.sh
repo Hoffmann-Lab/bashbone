@@ -127,7 +127,7 @@ genome::indexgtf(){
 
 		dict="$(mktemp -u -p "$tmpdir" cleanup.XXXXXXXXXX.dict)"
 		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-			bgzip -f -@ $threads < "$gtf" > "$gtf.gz"
+			bgzip -k -c -@ $threads "$gtf" > "$gtf.gz"
 		CMD
 			tabix -f "$gtf.gz"
 		CMD
@@ -202,7 +202,7 @@ genome::mkgodb(){
 			suppressMessages(library(GO.db));
 			suppressMessages(library(AnnotationForge));
 
-			df <- read.table(gofile, sep="\t", quote="", stringsAsFactors=F, header=F, na.strings="", col.names=c("GID","GO","ONTOLOGY","DESCRIPTION"));
+			df <- read.table(gofile, sep="\t", stringsAsFactors=F, check.names=F, quote="", header=F, na.strings="", col.names=c("GID","GO","ONTOLOGY","DESCRIPTION"));
 			df <- unique(df[!is.na(df$GO) & !is.na(df$ONTOLOGY),c(1,2)]);
 			df$EVIDENCE <- "IEA";
 
