@@ -182,6 +182,8 @@ peaks::macs(){
 		for i in "${!_tidx_macs[@]}"; do
 			f="${_bams_macs[${_tidx_macs[$i]}]}"
 
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
+
 			if [[ ${_nidx_macs[$i]} ]]; then
 				nf="${_bams_macs[${_nidx_macs[$i]}]}"
 				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
@@ -193,9 +195,9 @@ peaks::macs(){
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bedtools bamtobed -split -i "$nf"
 				CMD
-					pigz -p $ithreads -k -c > "${nf%.*}.bed.gz"
+					pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$nf").bed.gz"
 				CMD
-				nf="-c '${nf%.*}.bed.gz'"
+				nf="-c '${tdirs[-1]}/$(basename "$nf").bed.gz'"
 			else
 				unset nf
 				o="$(basename "$f")"
@@ -205,16 +207,15 @@ peaks::macs(){
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				bedtools bamtobed -split -i "$f"
 			CMD
-				pigz -p $ithreads -k -c > "${f%.*}.bed.gz"
+				pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$f").bed.gz"
 			CMD
-			f="${f%.*}.bed.gz"
+			f="${tdirs[-1]}/$(basename "$f").bed.gz"
 
 			mkdir -p "$odir/$o"
 			printf '' > "$odir/$o/$o.model_peaks.narrowPeak"
 			if $ripseq; then # works also for atac seq: shift -75 (encode) to -100 and extsize 150 (encode) to 200
 				# mfold parameter (default: --mfold 5 50) is hard to estimate for small genome sizes and or huge coverages - as of chip-exo (-m 5 100) or RIP-seq
 				# the first can be tackled by downsampling, but the latter also faces strong variation in base gene expression levels, which makes model estimation nearly impossible
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 					macs2 callpeak
 					-f BED
@@ -235,7 +236,6 @@ peaks::macs(){
 				CMD
 			else
 				# pointy for chip-exo: shift 0, extsize 30-50, bw 150, m 5 100-200
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 					macs2 callpeak
 					-f BED
@@ -419,23 +419,24 @@ peaks::macs_idr(){
 				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				mkdir -p "$odir/$o"
 
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
+
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bedtools bamtobed -split -i "$nf"
 				CMD
-					pigz -p $ithreads -k -c > "${nf%.*}.bed.gz"
+					pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$nf").bed.gz"
 				CMD
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bedtools bamtobed -split -i "$f"
 				CMD
-					pigz -p $ithreads -k -c > "${f%.*}.bed.gz"
+					pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$f").bed.gz"
 				CMD
-				nf="${nf%.*}.bed.gz"
-				f="${f%.*}.bed.gz"
+				nf="${tdirs[-1]}/$(basename "$nf").bed.gz"
+				f="${tdirs[-1]}/$(basename "$f").bed.gz"
 
 				mkdir -p "$odir/$o"
 				printf '' > "$odir/$o/$o.model_peaks.narrowPeak"
 				if $ripseq; then
-					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 						macs2 callpeak
 						-f BED
@@ -455,7 +456,6 @@ peaks::macs_idr(){
 						$params
 					CMD
 				else
-					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 						macs2 callpeak
 						-f BED
