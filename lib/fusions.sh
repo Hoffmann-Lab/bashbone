@@ -327,7 +327,6 @@ fusions::join2arriba(){
 	}
 
 	local OPTIND arg mandatory skip=false threads countsdir deseqdir outdir tmpdir whitelist
-    declare -n _mapper_join _cmpfiles_join
 	while getopts 'S:s:t:w:r:p:i:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
