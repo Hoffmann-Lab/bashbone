@@ -364,6 +364,7 @@ bisulfite::mecall(){
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
+			-M <maxmemory>| amount of
 			-g <genome>   | path to
 			-x <context>  | Cp* base - default: CG
 			-r <mapper>   | array of bams within array of
@@ -373,13 +374,14 @@ bisulfite::mecall(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads genome outdir tmpdir context=CG
+	local OPTIND arg mandatory skip=false threads maxmemory genome outdir tmpdir context=CG
 	declare -n _mapper_haarz
-	while getopts 'S:s:t:m:r:g:x:o:p:' arg; do
+	while getopts 'S:s:t:M:r:g:x:o:p:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			x)	context=$OPTARG;;
 			r)	((++mandatory)); _mapper_haarz=$OPTARG;;
@@ -395,7 +397,7 @@ bisulfite::mecall(){
 	declare -n _bams_haarz=${_mapper_haarz[0]}
 	local ithreads imemory instances=$((${#_bams_haarz[@]}*${#_mapper_haarz[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
-	read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads)
+	read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
 
 	local m f o odir
 	declare -a cmd1 cmd2 cmd3 cmd4
@@ -413,12 +415,12 @@ bisulfite::mecall(){
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				haarz callmethyl -t $threads -d $genome -b "$f"
 			CMD
-				bgzip -f -@ $threads > "${tdirs[-1]}/$o.vcf.gz"
+				bgzip -k -c -@ $threads > "${tdirs[-1]}/$o.vcf.gz"
 			CMD
 
 			# pipe into bgzip is much faster than using bctools sort -O z
 			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bcftools sort -T "${tdirs[-1]}" -m ${imemory}M "${tdirs[-1]}/$o.vcf.gz" | bgzip -f -@ $ithreads > "$odir/$o.vcf.gz"
+				bcftools sort -T "${tdirs[-1]}" -m ${imemory}M "${tdirs[-1]}/$o.vcf.gz" | bgzip -k -c -@ $ithreads > "$odir/$o.vcf.gz"
 			CMD
 				tabix -f -p vcf "$odir/$o.vcf.gz"
 			CMD
