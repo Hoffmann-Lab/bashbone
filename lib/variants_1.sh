@@ -124,7 +124,7 @@ variants::vcfnorm() {
 			for e in fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
+					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
 				CMD
@@ -264,7 +264,7 @@ variants::panelofnormals() {
 			CMD
 
 			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bgzip -f -@ $ithreads < "$o.vcf" > "$o.vcf.gz"
+				bgzip -k -c -@ $ithreads "$o.vcf" > "$o.vcf.gz"
 			CMD
 				tabix -f -p vcf "$o.vcf.gz"
 			CMD
@@ -348,7 +348,7 @@ variants::makepondb() {
 
 			bcftools view -h "$odir/${o%.*}.vcf.gz" | head -n -1 > "${tdirs[-1]}/vcf"
 			echo -e "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tINITIALIZE" >> "${tdirs[-1]}/vcf"
-			bgzip -f -@ $threads < "${tdirs[-1]}/vcf" > "${tdirs[-1]}/vcf.gz"
+			bgzip -k -c -@ $threads "${tdirs[-1]}/vcf" > "${tdirs[-1]}/vcf.gz"
 			tabix -f -p vcf "${tdirs[-1]}/vcf.gz"
 
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -451,7 +451,7 @@ variants::tree(){
 	}
 
 	local OPTIND arg mandatory skip=false threads memory vcfdir caller outdir
-    declare -n _mapper_tree _cmpfiles_tree _idfiles_tree
+    declare -n _mapper_tree
 	while getopts 'S:s:t:m:r:i:j:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;

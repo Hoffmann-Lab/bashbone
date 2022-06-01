@@ -54,7 +54,7 @@ variants::haplotypecaller() {
 
 		tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf.gz)"
 		dbsnp="$tmpfile"
-		echo -e "##fileformat=VCFv4.0\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" | bgzip -f -@ $threads > "$tmpfile"
+		echo -e "##fileformat=VCFv4.0\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" | bgzip -k -c -@ $threads > "$tmpfile"
 		tabix -f -p vcf "$tmpfile"
 		dbsnp="$tmpfile"
 	fi
@@ -225,7 +225,7 @@ variants::haplotypecaller() {
 				CMD
 
 				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
+					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
 				CMD
@@ -540,7 +540,7 @@ variants::mutect() {
 				CMD
 
 				commander::makecmd -a cmd11 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
+					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
 				CMD
@@ -804,7 +804,7 @@ variants::bcftools() {
 				CMD
 
 				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
+					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
 				CMD
@@ -1028,7 +1028,7 @@ variants::freebayes() {
 				CMD
 
 				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
+					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
 				CMD
@@ -1301,7 +1301,7 @@ variants::varscan() {
 				CMD
 
 				commander::makecmd -a cmd8 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
+					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
 				CMD
@@ -1579,7 +1579,7 @@ variants::vardict() {
 				CMD
 
 				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
+					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
 				CMD
@@ -1822,7 +1822,7 @@ variants::vardict_threads() {
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
+					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
 				CMD
@@ -2009,7 +2009,7 @@ variants::platypus() {
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -f -@ $ithreads < "$o.$e" > "$o.$e.gz"
+					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
 				CMD
 					tabix -f -p vcf "$o.$e.gz"
 				CMD
