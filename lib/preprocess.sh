@@ -64,7 +64,7 @@ preprocess::dedup(){
 			CMD
 				awk '{if($1!=s){print}; s=$1}'
 			CMD
-				tee >(awk -F '\t' -v OFS='\n' '{print \$2,\$3,\$4,\$5}' | bgzip -@ $(((threads+1)/2)) -c > "$o1") >(awk -F '\t' -v OFS='\n' '{print \$6,\$7,\$8,\$9}' | bgzip -@ $(((threads+1)/2)) -c > "$o2") > /dev/null
+				tee >(awk -F '\t' -v OFS='\n' '{print \$2,\$3,\$4,\$5}' | helper::pgzip -t $(((threads+1)/2)) -o "$o1") >(awk -F '\t' -v OFS='\n' '{print \$6,\$7,\$8,\$9}' | helper::pgzip -t $(((threads+1)/2)) -o "$o2") > /dev/null
 			CMD
 				cat
 			CMD
@@ -81,7 +81,7 @@ preprocess::dedup(){
 			CMD
 				awk -F '\t' -v OFS='\n' '{if($1!=s){print $2,$3,$4,$5}; s=$1}'
 			CMD
-				bgzip -@ $threads -c > "$o1"
+				helper::pgzip -t $threads -o "$o1"
 			CMD
 			_fq1_dedup[$i]="$o1"
 		fi
@@ -108,6 +108,7 @@ preprocess::fastqc() {
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
+			-M <maxmemory>| amount of
 			-o <outdir>   | path to
 			-p <tmpdir>   | path to
 			-1 <fastq1>   | array of
@@ -116,13 +117,14 @@ preprocess::fastqc() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir
+	local OPTIND arg mandatory skip=false threads outdir tmpdir maxmemory
 	declare -n _fq1_fastqc _fq2_fastqc
-	while getopts 'S:s:t:p:o:1:2:' arg; do
+	while getopts 'S:s:t:M:p:o:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
+			M) maxmemory=$OPTARG;;
 			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			1) ((++mandatory)); _fq1_fastqc=$OPTARG;;
@@ -135,7 +137,7 @@ preprocess::fastqc() {
 	commander::printinfo "calculating qualities"
 
 	local instances=$((${#_fq1_fastqc[@]}+${#_fq2_fastqc[@]})) ithreads jmem jgct jcgct
-	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i $instances -T $threads)
+	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i $instances -T $threads -m 250 -M "$maxmemory")
 
 	declare -a cmd1
 	local f
@@ -288,8 +290,8 @@ preprocess::cutadapt(){
 				--trim-n
 				-j $threads
 				-m 18
-				-o >(bgzip -@ $(((threads+1)/2)) -c > "$o1")
-				-p >(bgzip -@ $(((threads+1)/2)) -c > "$o2")
+				-o >(helper::pgzip -t $(((threads+1)/2)) -o "$o1")
+				-p >(helper::pgzip -t $(((threads+1)/2)) -o "$o2")
 				"${_fq1_cutadapt[$i]}" "${_fq2_cutadapt[$i]}"
 				| cat
 			CMD
@@ -304,7 +306,7 @@ preprocess::cutadapt(){
 				--trim-n
 				-j $threads
 				-m 18
-				-o >(bgzip -@ $threads -c > "$o1")
+				-o >(helper::pgzip -t $threads -o "$o1")
 				"${_fq1_cutadapt[$i]}"
 				| cat
 			CMD
@@ -329,6 +331,7 @@ preprocess::trimmomatic() {
 			-s <softskip> | true/false only print commands
 			-b <rrbs>     | true/false if true does not trim read starts
 			-t <threads>  | number of
+			-M <maxmemory>| amount of
 			-o <outdir>   | path to
 			-p <tmpdir>   | path to
 			-1 <fastq1>   | array of
@@ -337,13 +340,14 @@ preprocess::trimmomatic() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir rrbs=false
+	local OPTIND arg mandatory skip=false threads maxmemory outdir tmpdir rrbs=false
 	declare -n _fq1_trimmomatic _fq2_trimmomatic
-	while getopts 'S:s:t:b:m:o:p:1:2:' arg; do
+	while getopts 'S:s:t:M:b:m:o:p:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
+			M) maxmemory=$OPTARG;;
 			b) rrbs=$OPTARG;;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
@@ -409,7 +413,7 @@ preprocess::trimmomatic() {
 	done
 
 	local instances ithreads jmem jgct jcgct
-	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads)
+	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads -M "$maxmemory")
 
 	# trimmomatic bottleneck are number of used compression threads (4)
 	declare -a cmd2 cmd3
@@ -436,8 +440,8 @@ preprocess::trimmomatic() {
 				-threads $threads
 				-${phred["${_fq1_trimmomatic[$i]}"]}
 				"${_fq1_trimmomatic[$i]}" "${_fq2_trimmomatic[$i]}"
-				>(bgzip -@ $(((threads+1)/2)) -c > "$o1") >(bgzip -@ $(((threads+1)/2)) -c > "$os1")
-				>(bgzip -@ $(((threads+1)/2)) -c > "$o2") >(bgzip -@ $(((threads+1)/2)) -c > "$os2")
+				>(helper::pgzip -t $(((threads+1)/2)) -o "$o1") >(helper::pgzip -t $(((threads+1)/2)) -o "$os1")
+				>(helper::pgzip -t $(((threads+1)/2)) -o "$o2") >(helper::pgzip -t $(((threads+1)/2)) -o "$os2")
 				$params
 				SLIDINGWINDOW:5:20
 				MINLEN:18
@@ -457,7 +461,7 @@ preprocess::trimmomatic() {
 				-threads $threads
 				-${phred["${_fq1_trimmomatic[$i]}"]}
 				"${_fq1_trimmomatic[$i]}"
-				>(bgzip -@ $threads -c > "$o1")
+				>(helper::pgzip -t $threads -o "$o1")
 				$params
 				SLIDINGWINDOW:5:20
 				MINLEN:18
@@ -559,8 +563,8 @@ preprocess::rcorrector(){
 					-2 "$(realpath -s "${_fq2_rcorrector[$i]}")"
 					-od "${tdirs[-1]}"
 					-t $threads
-					11> >(bgzip -@ $(((threads+1)/2)) -c > "$o1.$e1.gz")
-					12> >(bgzip -@ $(((threads+1)/2)) -c > "$o2.$e2.gz")
+					11> >(helper::pgzip -t $(((threads+1)/2)) -o "$o1.$e1.gz")
+					12> >(helper::pgzip -t $(((threads+1)/2)) -o "$o2.$e2.gz")
 					| cat
 				CMD
 					exec 11>&-; exec 12>&-
@@ -578,7 +582,7 @@ preprocess::rcorrector(){
 				-s "$(realpath -s "${_fq1_rcorrector[$i]}")"
 				-stdout
 				-t $threads
-				> >(bgzip -@ $threads -c > "$o1.$e1.gz")
+				> >(helper::pgzip -t $threads -o "$o1.$e1.gz")
 				| cat
 			CMD
 			_fq1_rcorrector[$i]="$o1.$e1.gz"
@@ -589,6 +593,173 @@ preprocess::rcorrector(){
 		commander::printcmd -a cmd1
 	else
 		commander::runcmd -c rcorrector -v -b -t 1 -a cmd1
+	fi
+
+	return 0
+}
+
+
+preprocess::sortmerna_new(){
+	declare -a tdirs
+	_cleanup::preprocess::sortmerna(){
+		rm -rf "${tdirs[@]}"
+	}
+
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip> | true/false return
+			-s <softskip> | true/false only print commands
+			-t <threads>  | number of
+			-o <outdir>   | path to
+			-p <tmpdir>   | path to
+			-1 <fastq1>   | array of
+			-2 <fastq2>   | array of
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads outdir tmpdir
+	declare -n _fq1_sortmerna _fq2_sortmerna
+	while getopts 'S:s:t:i:o:p:1:2:' arg; do
+		case $arg in
+			S) $OPTARG && return 0;;
+			s) $OPTARG && skip=true;;
+			t) ((++mandatory)); threads=$OPTARG;;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			1) ((++mandatory)); _fq1_sortmerna=$OPTARG;;
+			2) _fq2_sortmerna=$OPTARG;;
+			*) _usage;;
+		esac
+	done
+	[[ $mandatory -lt 4 ]] && _usage
+
+	commander::printinfo "filtering rRNA fragments"
+
+	declare -a cmd1 cmd2
+	local i f catcmd o1 o2 e1 e2
+	for i in "${!_fq1_sortmerna[@]}"; do
+		helper::basename -f "${_fq1_sortmerna[$i]}" -o o1 -e e1
+		e1=$(echo $e1 | cut -d '.' -f 1)
+
+		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sortmerna)")
+
+		helper::makecatcmd -c catcmd -f "${_fq1_sortmerna[$i]}"
+
+		if [[ ${_fq2_sortmerna[$i]} ]]; then
+			helper::basename -f "${_fq2_sortmerna[$i]}" -o o2 -e e2
+			e2=$(echo $e2 | cut -d '.' -f 1)
+
+			if [[ "$catcmd" == "cat" ]]; then
+				# exec/ln trick does not work any longer. outfile will be overridden
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					sortmerna
+						--index 0
+						\$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} printf "--ref %q\n" "{}")
+						--idx-dir "\$CONDA_PREFIX/rRNA_databases/index"
+						--workdir "${tdirs[-1]}"
+						--threads $threads
+						--reads "${_fq1_sortmerna[$i]}"
+						--reads "${_fq2_sortmerna[$i]}"
+						--fastx
+						--paired_out
+						--out2
+						--no-best
+						--num_alignments 1
+						--aligned "$outdir/rRNA.$o1"
+						--other "$outdir/$o1"
+				CMD
+
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+					helper::pgzip -t $threads -f "${tdirs[-1]}/${o1}_fwd.fq" -o "$outdir/$o1.$e1.gz"
+				CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+					helper::pgzip -t $threads -f "${tdirs[-1]}/${o1}_rev.fq" -o "$outdir/$o2.$e2.gz"
+				CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+					helper::pgzip -t $threads -f "${tdirs[-1]}/rRNA.${o1}_fwd.fq" -o "$outdir/rRNA.$o1.$e1.gz"
+				CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+					helper::pgzip -t $threads -f "${tdirs[-1]}/rRNA.${o1}_rev.fq" - "$outdir/rRNA.$o2.$e2.gz"
+				CMD
+			else
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					sortmerna
+						--index 0
+						\$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} printf "--ref %q\n" "{}")
+						--idx-dir "\$CONDA_PREFIX/rRNA_databases/index"
+						--workdir "${tdirs[-1]}"
+						--threads $threads
+						--reads "${_fq1_sortmerna[$i]}"
+						--reads "${_fq2_sortmerna[$i]}"
+						--fastx
+						--paired_out
+						--out2
+						--no-best
+						--num_alignments 1
+						--aligned "$outdir/rRNA.$o1"
+						--other "$outdir/$o1"
+				CMD
+					mv "$outdir/${o1}_fwd.fq.gz" "$outdir/$o1.$e1.gz";
+					mv "$outdir/${o1}_rev.fq.gz" "$outdir/$o2.$e2.gz";
+					mv "$outdir/rRNA.${o1}_fwd.fq.gz" "$outdir/rRNA.$o1.$e1.gz";
+					mv "$outdir/rRNA.${o1}_rev.fq.gz" "$outdir/rRNA.$o2.$e2.gz"
+				CMD
+			fi
+
+			_fq1_sortmerna[$i]="$outdir/$o1.$e1.gz"
+			_fq2_sortmerna[$i]="$outdir/$o2.$e2.gz"
+		else
+			if [[ "$catcmd" == "cat" ]]; then
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					sortmerna
+						--index 0
+						\$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} printf "--ref %q\n" "{}")
+						--idx-dir "\$CONDA_PREFIX/rRNA_databases/index"
+						--workdir "${tdirs[-1]}"
+						--threads $threads
+						--reads "${_fq1_sortmerna[$i]}"
+						--fastx
+						--no-best
+						--num_alignments 1
+						--aligned "${tdirs[-1]}/rRNA.$o1"
+						--other "${tdirs[-1]}/$o1"
+				CMD
+
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+					helper::pgzip -t $threads -f "${tdirs[-1]}/$o1.fq" -o "$outdir/$o1.$e1.gz"
+				CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+					helper::pgzip -t $threads -f "${tdirs[-1]}/rRNA.$o1.fq" -o "$outdir/rRNA.$o1.$e1.gz"
+				CMD
+			else
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					sortmerna
+						--index 0
+						\$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} printf "--ref %q\n" "{}")
+						--idx-dir "\$CONDA_PREFIX/rRNA_databases/index"
+						--workdir "${tdirs[-1]}"
+						--threads $threads
+						--reads "${_fq1_sortmerna[$i]}"
+						--fastx
+						--no-best
+						--num_alignments 1
+						--aligned "$outdir/rRNA.$o1"
+						--other "$outdir/$o1"
+				CMD
+			fi
+
+			_fq1_sortmerna[$i]="$outdir/$o1.$e1.gz"
+		fi
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+	else
+		commander::runcmd -c sortmerna -v -b -t 1 -a cmd1
+		commander::runcmd -c sortmerna -v -b -t 1 -a cmd2
 	fi
 
 	return 0
@@ -632,9 +803,6 @@ preprocess::sortmerna(){
 
 	commander::printinfo "filtering rRNA fragments"
 
-	local insdir="$(dirname "$(dirname "$(which sortmerna)")")"
-	local sortmernaref=$(for i in "$insdir/rRNA_databases/"*.fasta; do echo "$i,$insdir/index/$(basename "$i" .fasta)-L18"; done | sed ':a;N;$!ba; ${s/\n/:/g}')
-
 	declare -a cmd1 cmd2 cmd3
 	local i catcmd tmp o1 o2 or1 or2 e1 e2
 	for i in "${!_fq1_sortmerna[@]}"; do
@@ -666,9 +834,6 @@ preprocess::sortmerna(){
 				awk -F '\t' -v OFS='\n' '{print $1,$3,$5,$7; print $2,$4,$6,$8}'
 			CMD
 
-			# alternative:
-			# 11> >(sed -E '/^\s*$/d' | paste - - - - | awk -F '\t' -v OFS='\n' '{if(NR%2==1){print \$1,\$2,\$3,\$4 > "/dev/fd/1"}else{print \$1,\$2,\$3,\$4 > "/dev/fd/2"}}' > >(bgzip -@ $(((threads+1)/2)) -c > "$o1") 2> >(bgzip -@ $(((threads+1)/2)) -c > "$o2"))
-			# 12> >(sed -E '/^\s*$/d' | paste - - - - | awk -F '\t' -v OFS='\n' '{if(NR%2==1){print \$1,\$2,\$3,\$4 > "/dev/fd/1"}else{print \$1,\$2,\$3,\$4 > "/dev/fd/2"}}' > >(bgzip -@ $(((threads+1)/2)) -c > "$or1") 2> >(bgzip -@ $(((threads+1)/2)) -c > "$or2"))
 			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 				exec 11>&1; exec 12>&1
 			CMD
@@ -677,15 +842,16 @@ preprocess::sortmerna(){
 				ln -sfn /dev/fd/12 "$tmp.rRNA.$e1"
 			CMD
 				sortmerna
-				--ref "$sortmernaref"
+				--ref \$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} bash -c 'printf ":%q,%q" "{}" "\$(dirname "{}")/index/\$(basename "{}" .fasta)-L18"' | sed 's/://')
 				--reads "$tmp.merged.$e1"
+				--num_alignments 1
 				--fastx
 				--paired_out
 				--aligned "$tmp.rRNA"
 				--other "$tmp.ok"
 				-a $threads
-				11> >(sed -E '/^\s*$/d' | paste - - - - | tee >(sed -n '1~2{s/\t/\n/gp}' | bgzip -@ $(((threads+1)/2)) -c > "$o1") >(sed -n '2~2{s/\t/\n/gp}' | bgzip -@ $(((threads+1)/2)) -c > "$o2") > /dev/null)
-				12> >(sed -E '/^\s*$/d' | paste - - - - | tee >(sed -n '1~2{s/\t/\n/gp}' | bgzip -@ $(((threads+1)/2)) -c > "$or1") >(sed -n '2~2{s/\t/\n/gp}' | bgzip -@ $(((threads+1)/2)) -c > "$or2") > /dev/null)
+				11> >(sed -E '/^\s*$/d' | paste - - - - | tee >(sed -n '1~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$o1") >(sed -n '2~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$o2") > /dev/null)
+				12> >(sed -E '/^\s*$/d' | paste - - - - | tee >(sed -n '1~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$or1") >(sed -n '2~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$or2") > /dev/null)
 				| cat
 			CMD
 				rm -f "$tmp.merged.$e1"; exec 11>&-; exec 12>&-
@@ -714,14 +880,14 @@ preprocess::sortmerna(){
 				ln -sfn /dev/fd/12 "$tmp.rRNA.$e1"
 			CMD
 				sortmerna
-				--ref "$sortmernaref"
+				--ref \$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} bash -c 'printf ":%q,%q" "{}" "\$(dirname "{}")/index/\$(basename "{}" .fasta)-L18"' | sed 's/://')
 				--reads "$tmp.$e1"
 				--fastx
 				--aligned "$tmp.rRNA"
 				--other "$tmp.ok"
 				-a $threads
-				11> >(sed -E '/^\s*$/d' | bgzip -@ $threads -c > "$o1")
-				12> >(sed -E '/^\s*$/d' | bgzip -@ $threads -c > "$or1")
+				11> >(sed -E '/^\s*$/d' | helper::pgzip -t $threads -o "$o1")
+				12> >(sed -E '/^\s*$/d' | helper::pgzip -t $threads -o "$or1")
 				| cat
 			CMD
 				rm -f "$tmp.$e1"; exec 11>&-; exec 12>&-
@@ -736,7 +902,7 @@ preprocess::sortmerna(){
 		commander::printcmd -a cmd2
 	else
 		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t 1 -a cmd2
+		commander::runcmd -c sortmerna -v -b -t 1 -a cmd2
 	fi
 
 	return 0
@@ -873,7 +1039,7 @@ preprocess::qcstats(){
 			args <- commandArgs(TRUE);
 			intsv <- args[1];
 			outfile <- args[2];
-			m <- read.table(intsv, header=T, sep="\t", quote="");
+			m <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 			l <- length(m$type)/length(unique(m$sample));
 			l <- m$type[1:l];
 			m$type = factor(m$type, levels=l);
