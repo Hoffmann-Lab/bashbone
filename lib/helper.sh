@@ -31,7 +31,7 @@ helper::makevcfzipcmd() {
 	for f in "${tozip_vcfzip[@]}"; do
 		readlink -e "$f" | file -f - | grep -qF 'compressed' || {
 			commander::makecmd -a _cmds_vcfzip -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bgzip -f -@ $threads < "$f" > "$f.gz"
+				bgzip -k -c -@ $threads "$f" > "$f.gz"
 			CMD
 				tabix -f -p vcf "$f.gz"
 			CMD
@@ -49,21 +49,23 @@ helper::makezipcmd(){
 			-t <threads> | number of
 			-c <file>    | do compress if this is compressed
 			-z <var>     | of path to file
+			-b           | block zip via bgzip
 			example:
 			${FUNCNAME[1]} -a cmds -c f1.txt -c f2.txt -z o1 -z o2
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads=1
+	local OPTIND arg mandatory threads=1 tool="pigz -p"
 	declare -a check_makezipcmd tozip_makezipcmd
 	declare -n _cmds_makezipcmd
-	while getopts 'a:t:c:z:' arg; do
+	while getopts 'a:t:c:z:b' arg; do
 		case $arg in
 			a) ((++mandatory)); _cmds_makezipcmd=$OPTARG;;
 			t) threads=$OPTARG;;
 			c) ((++mandatory)); check_makezipcmd+=("$OPTARG");;
 			z) ((++mandatory)); tozip_makezipcmd+=("$OPTARG");;
+			b) tool="bgzip -@";;
 			*) _usage;;
 		esac
 	done
@@ -73,13 +75,61 @@ helper::makezipcmd(){
 	for i in "${!check_makezipcmd[@]}"; do
 		readlink -e "${check_makezipcmd[$i]}" | file -f - | grep -qE '(gzip|bzip)' || {
 			declare -n _f_makezipcmd=${tozip_makezipcmd[$i]}
-			# pigz -p $threads -k -c "$_f_makezipcmd" > "$_f_makezipcmd.gz"
-			commander::makecmd -a _cmds_makezipcmd -s ';' -c {COMMANDER[0]}<<- CMD
-				bgzip -@ threads -c < "$_f_makezipcmd" > "$_f_makezipcmd.gz"
+			commander::makecmd -a _cmds_makezipcmd -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- 'CMD'
+				gztool -S -x -w -f -v 0 "$_f_makezipcmd.gz" & pid=\$!
 			CMD
-			_f_makezipcmd="$_f_makezipcmd.gz"
+				$tool $threads -k -c "$_f_makezipcmd" > "$_f_makezipcmd.gz"
+			CMD
+				{ kill -TERM $pid; wait $pid; } &> /dev/null
+			CMD
+				gztool -i -x -v 0 "$_f_makezipcmd.gz"
+			CMD
 		}
 	done
+
+	return 0
+}
+
+helper::pgzip(){
+	local pid
+	_cleanup::helper::gzip(){
+		[[ $pid ]] && { kill -TERM $pid; wait $pid; } &> /dev/null || true
+	}
+
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-f <infile>  | path to. else stdin
+			-o <outfile> | path to
+			-t <threads> | number of
+			-b           | block zip via bgzip
+		EOF
+		return 1
+	}
+
+	local OPTIND arg threads=1 f o tool="pigz -p"
+	while getopts 'f:t:o:b' arg; do
+		case $arg in
+			f) f="$OPTARG";;
+			o) o="$OPTARG"; mkdir -p "$(dirname "$o")";;
+			t) threads=$OPTARG;;
+			b) tool="bgzip -@";;
+			*) _usage;;
+		esac
+	done
+	[[ ! $f && ! $o ]] && _usage
+	[[ ! $o ]] && o="$f.gz"
+
+	gztool -S -x -w -f -v 0 "$o" &
+	pid=$!
+	if [[ $f ]]; then
+		$tool $threads -k -c "$f" > "$o"
+	else
+		$tool $threads -k -c /dev/stdin > "$o"
+		# bgzip handles stdin via pipe or explicit path to file but does not work with -
+	fi
+	{ kill -TERM $pid && wait $pid; } &> /dev/null || true
+	gztool -i -x -v 0 "$o"
 
 	return 0
 }
