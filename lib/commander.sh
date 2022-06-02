@@ -303,6 +303,7 @@ commander::qsubcmd(){
 			-q <queue>     | name of sge queue
 			-p <env>       | name of parallel sge environment
 			-t <threads>   | to be allocated per instance in parallel environment
+			-s <startidx>  | submit only from jobs from cmds array beginning from given index (default: 1)
 			-a <cmds>      | array of
 			example:
 			${FUNCNAME[1]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c base -p threads -t 4 -i 2 -w -o ~/logs -a cmd
@@ -310,10 +311,10 @@ commander::qsubcmd(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv queue logdir complex params
+	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv queue logdir complex params startid=1
 	declare -n _cmds_qsubcmd # be very careful with circular name reference
 	declare -a mapdata complexes logs
-	while getopts 'vbwrt:i:o:l:p:q:c:n:a:' arg; do
+	while getopts 'vbwrt:i:o:l:p:q:c:n:a:s:' arg; do
 		case $arg in
 			v)	verbose=true;;
 			b)	benchmark=true;;
@@ -328,6 +329,7 @@ commander::qsubcmd(){
 			q)	((++mandatory)); queue="-q $OPTARG";;
 			n)	jobname="$OPTARG";;
 			a)	((++mandatory)); _cmds_qsubcmd=$OPTARG;;
+			s)	startid=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
@@ -390,7 +392,7 @@ commander::qsubcmd(){
 		while read -r l; do
 			[[ $jobid ]] || jobid=$(cut -d '.' -f 1 <<< $l)
 			# requires 1>&2 : echo "$l" | sed -E '/exited/!d; s/Job ([0-9]+)\.(.+)\./\1 job.'$jobname'.\2/;t;s/Job ([0-9]+) (.+)\./\1 job.'$jobname'.1 \2/'
-		done < <(echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | BASH_EXECUTION_STRING="shournal" qsub -terse -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
+		done < <(echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | BASH_EXECUTION_STRING="shournal" qsub -terse -sync $dowait $params ${complexes[@]} -t $startid-$id -tc $instances -S "$(env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
 
 		# use command/env qstat in case someone like me makes use of an alias :)
 		# wait until accounting record is written to epilog after jobs post-processing metrics collection
@@ -406,7 +408,7 @@ commander::qsubcmd(){
 		fi
 		return $ex
 	else
-		echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | BASH_EXECUTION_STRING="shournal" qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname
+		echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | BASH_EXECUTION_STRING="shournal" qsub -sync $dowait $params ${complexes[@]} -t $startid-$id -tc $instances -S "$(env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname
 		return 0
 	fi
 }
