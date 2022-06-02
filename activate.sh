@@ -260,11 +260,11 @@ bashbone(){
 		r)	mdless -P $BASHBONE_DIR/README.md | less; return 0;;
 		c)	source $BASHBONE_TOOLSDIR/conda/bin/activate bashbone &> /dev/null; return 0;;
 		s)	while [[ -n $CONDA_PREFIX ]]; do conda deactivate &> /dev/null; done; return 0;;
-		u)	find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n"
+		u)	[[ -e $BASHBONE_TOOLSDIR/latest ]] && find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n"
 			find "$BASHBONE_DIR/scripts/" -type f -name "*.pl" -printf "%f\n" -o -name "*.sh" -printf "%f\n" | rev | sort | rev
 			return 0
 		;;
-		v)	find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n"
+		v)	[[ -e $BASHBONE_TOOLSDIR/latest ]] && find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n" || true
 			find "$BASHBONE_DIR/scripts/" -type f -printf "%f\n" | rev | sort | rev
 			return 0
 		;;
