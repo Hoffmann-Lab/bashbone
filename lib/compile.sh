@@ -601,14 +601,14 @@ compile::segemehl() {
 		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
 		l="$(pkg-config --variable=libdir htslib)"
 		[[ $l ]] && export LD_LIBRARY_PATH="$l"
-		$(cd "$(dirname "$0")" && echo "$PWD")/segemehl.x $*
+		"$(realpath -s "$(dirname "$0")")/segemehl.x" $*
 	EOF
 	cat <<- 'EOF' > $insdir/latest/segemehl/haarz
 		#!/usr/bin/env bash
 		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
 		l="$(pkg-config --variable=libdir htslib)"
 		[[ $l ]] && export LD_LIBRARY_PATH="$l"
-		$(cd "$(dirname "$0")" && echo "$PWD")/haarz.x $*
+		"$(realpath -s "$(dirname "$0")")/haarz.x" $*
 	EOF
 
 	return 0
@@ -723,7 +723,7 @@ compile::idr() {
 	wget -q $url -O $insdir/idr.tar.gz
 	tar -xzf "$insdir/idr.tar.gz" -C "$insdir"
 	rm "$insdir/idr.tar.gz"
-	cd $(ls -vd "$insdir/idr"-*/ | tail -1)
+	cd "$(ls -vd "$insdir/idr"-*/ | tail -1)"
 	pip install numpy matplotlib scipy
 	python setup.py install
 	mkdir -p "$insdir/latest"
@@ -784,11 +784,30 @@ compile::gztool() {
 
 	version="$(basename "$(dirname "$url")")"
 	version=${version/v/}
-	cd $insdir
+	cd "$insdir"
 	mkdir -p "$insdir/gztool-$version/bin"
-	cd $insdir/gztool-$version
+	cd "$insdir/gztool-$version"
 	wget -q "$url" -O bin/gztool
 	chmod 755 bin/gztool
+	cat <<-'EOF' > bin/gztail
+	#! /usr/bin/env bash
+	[[ $# -lt 1 || "$1" =~ (^-h|[[:space:]]-h) ]] && {
+	    echo "usage: $(basename "$0") [<#>] <file.gz>"
+	    exit
+	}
+	if [[ $2 ]]; then
+	    n=$1
+	    n=$((--n))
+	    f="$2"
+	else
+	    n=9
+	    f="$1"
+	fi
+	p="$(realpath -s "$(dirname "$0")")"
+	l=$("$p/gztool" -l "$f" |& sed -nE 's/.*\s+lines\s+:\s+([0-9]+).*/\1/p')
+	"$p/gztool" -v 0 -L $((l-n)) "$f"
+	EOF
+	chmod 755 bin/gztail
 	mkdir -p "$insdir/latest"
 	ln -sfn "$PWD/bin" "$insdir/latest/gztool"
 
