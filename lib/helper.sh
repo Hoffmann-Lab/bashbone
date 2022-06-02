@@ -92,7 +92,7 @@ helper::makezipcmd(){
 
 helper::pgzip(){
 	local pid
-	_cleanup::helper::gzip(){
+	_cleanup::helper::pgzip(){
 		[[ $pid ]] && { kill -TERM $pid; wait $pid; } &> /dev/null || true
 	}
 
@@ -120,7 +120,7 @@ helper::pgzip(){
 	[[ ! $f && ! $o ]] && _usage
 	[[ ! $o ]] && o="$f.gz"
 
-	gztool -S -x -w -f -v 0 "$o" &
+	gztool -a 0 -S -x -w -f -v 0 "$o" &
 	pid=$!
 	if [[ $f ]]; then
 		$tool $threads -k -c "$f" > "$o"
