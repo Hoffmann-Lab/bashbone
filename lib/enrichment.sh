@@ -201,7 +201,7 @@ enrichment::_gsea(){
 					gl <- df$log2FoldChange;
 					names(gl) <- df$id;
 					gl <- sort(gl, decreasing = T);
-					gsea <- GSEA(gl, TERM2GENE=tg, TERM2NAME=tn, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500, eps = 0);
+					gsea <- GSEA(gl, TERM2GENE=tg, TERM2NAME=tn, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500, eps = 0, seed = T);
 
 					if(!is.null(gsea) && nrow(gsea)>0){
 						dotplot(gsea, showCategory=10, split=".sign", font.size=10)
