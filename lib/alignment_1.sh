@@ -570,7 +570,6 @@ alignment::postprocess() {
 						-1 cmd1 \
 						-2 cmd2 \
 						-t $ithreads \
-						-m $m \
 						-i "${_bams_process[$i]}" \
 						-o "$outbase" \
 						-r newbam
@@ -616,7 +615,6 @@ alignment::_uniqify() {
 			-1 <cmds1>    | array of
 			-2 <cmds2>    | array of
 			-t <threads>  | number of
-			-m <mapper>   | name of
 			-i <sam|bam>  | alignment file
 			-o <outbase>  | path to
 			-r <var>      | returned alignment file
@@ -626,13 +624,12 @@ alignment::_uniqify() {
 
 	local OPTIND arg mandatory threads sambam outbase m
 	declare -n _cmds1_uniqify _cmds2_uniqify _returnfile_uniqify
-	while getopts '1:2:t:i:o:r:m:' arg; do
+	while getopts '1:2:t:i:o:r:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_uniqify=$OPTARG;;
 			2)	((++mandatory)); _cmds2_uniqify=$OPTARG;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			i)	((++mandatory)); sambam="$OPTARG";;
-			m)	m=${OPTARG,,*};;
 			o)	((++mandatory)); outbase="$OPTARG";;
 			r)	_returnfile_uniqify=$OPTARG;;
 			*)	_usage;;
@@ -651,15 +648,6 @@ alignment::_uniqify() {
 				> "$outbase.bam"
 		CMD
 	}
-
-	#commander::makecmd -a _cmds2_uniqify -s '|' -c {COMMANDER[0]}<<- CMD
-	#	samtools view
-	#		-@ $threads
-	#		-b
-	#		-f 4
-	#		"$sambam"
-	#		> "$outbase.unmapped.bam"
-	#CMD
 
 	# infer SE or PE filter
 	local params=''
@@ -813,6 +801,63 @@ alignment::_index() {
 			"$bam"
 			"${bam%.*}.bai"
 	CMD
+
+	return 0
+}
+
+
+alignment::tobed() {
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip> | true/false return
+			-s <softskip> | true/false only print commands
+			-t <threads>  | number of
+			-r <mapper>   | array of bams within array of
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads
+	declare -n _mapper_tobed
+	while getopts 'S:s:t:r:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_tobed=$OPTARG;;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 2 ]] && _usage
+
+	local instances ithreads m f
+	for m in "${_mapper_tobam[@]}"; do
+		declare -n _bams_tobam=$m
+		((instances+=${#_bams_tobam[@]}))
+	done
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+
+	commander::printinfo "convertig alignments to bed.gz"
+
+	declare -a cmd1
+	for m in "${_mapper_tobed[@]}"; do
+		declare -n _bams_tobed=$m
+		for f in "${_bams_process[@]}"; do
+
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				bedtools bamtobed -split -i "$f"
+			CMD
+				helper::pgzip -t $ithreads -o "${f%.*}.bed.gz"
+			CMD
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+	else
+		commander::runcmd -v -b -t $instances -a cmd1
+	fi
 
 	return 0
 }
@@ -1137,7 +1182,7 @@ alignment::qcstats(){
 				args <- commandArgs(TRUE);
 				intsv <- args[1];
 				outfile <- args[2];
-				m <- read.table(intsv, header=T, sep="\t", quote="");
+				m <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 				l <- length(m$type)/length(unique(m$sample));
 				l <- m$type[1:l];
 				m$type = factor(m$type, levels=l);

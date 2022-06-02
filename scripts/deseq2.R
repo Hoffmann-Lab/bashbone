@@ -28,11 +28,23 @@ setEPS(width=8, height=8, onefile=T)
 ##### deseq
 
 
-experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F, quote="")
+experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F, check.names=F, quote="")
 colnames(experiments)[1:4] = c("sample","countfile","condition","replicate")
 
 # create design formula from factors under exclusion of potential linear combinations
 # e.g. ~ factor1 + factor2 + condition
+# note: deseq always needs more samples than coefficents
+# e.g. with four samples, you can only fit three coefficients and have a residual degree of freedom for estimating variance
+# y <- rnorm(4)
+# > dat <- data.frame(a=factor(c(0,0,1,1)),b=factor(c(0,1,1,0)),c=factor(c(0,1,1,1)))
+# > summary(lm(y ~ 1 + a + b, data=dat))$sigma
+# [1] 0.0001074134
+# > summary(lm(y ~ 1 + a + b + c, data=dat))$sigma
+# [1] NaN
+# The last line has no estimate of variance because the X matrix has four columns. The fitted values equal the observed:
+# > all(y == lm(y ~ 1 + a + b + c, data=dat)$fitted)
+# [1] TRUE
+# 13:19
 get_design = function(experiments,interactionterms=F){
 	factors = c()
 	if(length(colnames(experiments)) > 4){
@@ -56,8 +68,18 @@ get_design = function(experiments,interactionterms=F){
 
 design = get_design(experiments)
 cat(paste("about to run pca and deseq2 with design formula: ",design,"\n",sep=""))
-dds = DESeqDataSetFromHTSeqCount(sampleTable = experiments, directory = "", design = as.formula(design))
-dds = DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM)
+suppressMessages({
+	dds = DESeqDataSetFromHTSeqCount(sampleTable = experiments, directory = "", design = as.formula(design))
+	dds = tryCatch(
+		{
+			DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM, fitType="parametric")
+		},
+		error = function(e){
+			# in case of too less genes/data points for parametric overdispersion fitting, use simple mean fitting
+			DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM, fitType="mean")
+		}
+	)
+})
 save(dds, file = file.path(outdir,"dds.Rdata"))
 
 pdf(file.path(outdir,"dispersion.pdf"))
@@ -183,9 +205,8 @@ get_heatmap = function(input,path){
 	# perform inner-group column clustering
 
 	colclustlist = list()
-	#for (condition in unique(experiments$condition)) {
 	for (condition in c(ctr[i],treat[i])) {
-		m = as.matrix(input[ , colnames(input) %in% gsub("\\W",".",experiments$sample[experiments$condition %in% condition]) ])
+		m = as.matrix(input[ , experiments$sample[experiments$condition == condition]])
 		rownames(m) = input$id
 
 		# dist(df, method = "euclidean")
@@ -372,7 +393,7 @@ get_table = function(dds){
 		pdf(file.path(odir,"ma_plot.pdf"))
 		plotMA(ddsr)
 		graphics.off()
-		pdf(file.path(odir,"ma_plot.fcfinshrunk.pdf"))
+		pdf(file.path(odir,"ma_plot.fcshrunk.pdf"))
 		plotMA(ddsrshrunk)
 		graphics.off()
 	}

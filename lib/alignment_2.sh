@@ -59,7 +59,7 @@ alignment::slice(){
 			args <- commandArgs(TRUE);
 			slices <- as.numeric(args[1]);
 			odir <- args[2];
-			df <- read.table(args[3], header=F, sep="\t", stringsAsFactors=F, quote="");
+			df <- read.table(args[3], header=F, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 
 			len <- as.integer(df[,3]/1000+1);
 			srt <- sort(len,decreasing=T,index.return=1);
@@ -221,7 +221,7 @@ alignment::rmduplicates(){
 			CMD
 				tr '\t' '\n'
 			CMD
-				bgzip -@ $threads -c > "$o"
+				help::pgzip -t $threads -o "$o"
 			CMD
 			_umi_rmduplicates[$i]="$o"
 		done
@@ -1347,7 +1347,7 @@ alignment::bqsr() {
 		local tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf)"
 		dbsnp="$tmpfile"
 		echo -e "##fileformat=VCFv4.0\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" > "$dbsnp"
-		bgzip -f -@ $threads < "$dbsnp" > "$dbsnp.gz"
+		bgzip -k -c -@ $threads "$dbsnp" > "$dbsnp.gz"
 		tabix -f -p vcf "$dbsnp.gz"
 		dbsnp="$dbsnp.gz"
 	fi

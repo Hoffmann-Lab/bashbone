@@ -12,38 +12,7 @@ configure::exit(){
 		return 1
 	}
 
-	local OPTIND arg mandatory pid exitfun ex
-	while getopts ':p:f:x:' arg; do
-		case $arg in
-			x)	((++mandatory)); ex=$OPTARG;;
-			p)	((++mandatory)); pid=$OPTARG;;
-			f)	exitfun=$OPTARG;;
-			:)	_usage;;
-		esac
-	done
-	[[ $mandatory -lt 2 ]] && _usage
-
-	[[ $exitfun ]] && {
-		shift $((OPTIND-(OPTIND-6))) # -x X -p P -f F
-		$exitfun "$@" $ex
-	}
-
-	{ env kill -TERM -- -$$ && wait $$; } &> /dev/null || true
-	exit $ex
-}
-
-configure::exit_job(){
-	_usage(){
-		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-x <exit>     | code
-			-p <pid>      | process id
-			-f <function> | to call - ALWAYS LAST OPTION
-		EOF
-		return 1
-	}
-
-	local OPTIND arg mandatory pid exitfun ex
+	local OPTIND arg mandatory pid pgid exitfun ex
 	while getopts ':p:f:x:' arg; do
 		case $arg in
 			x)	((++mandatory)); ex=$OPTARG;;
@@ -60,13 +29,15 @@ configure::exit_job(){
 	}
 
 	# pstree < 23.0-1 : /proc/<id> no such file bug https://bugs.launchpad.net/ubuntu/+source/psmisc/+bug/1629839
-	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | grep -vFw $pid)) # use grep -v or tail -n +2 to not kill leader process to ensure valid exit code - eg. 255 for xargs termination
-	{ env kill -TERM "${pids[@]}"; wait "${pids[@]}"; } &> /dev/null || true # true due to grep and tail process ids of pstree pipeline
+	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | grep -vFw $pid))
+	{ env kill -TERM "${pids[@]}"; wait "${pids[@]}"; } &> /dev/null || true
+	[[ $ex -gt 0 ]] && { pgid=$(($(ps -o pgid= -p $pid))); env kill -INT -- -$pgid; sleep 1; env kill -TERM -- -$pgid; wait $pgid; } &> /dev/null || true
 	#kill -PIPE $p # is captured by bashbone. does not print termination message
-	#kill -INT $p # graceful kill. due to interrupt by user. probably captured by job or simply not delivered
-	#kill -TERM $p # graceful kill like INT but due to other process. probably captured by job.
+	#kill -INT $p # graceful kill. due to interrupt by user. probably captured by job or simply not delivered. does not print termination message
+	#kill -TERM $p # graceful kill like INT but due to other process. on exit, does not triggers ERR
 	#kill -KILL $p # cannot be captured. no job cleanup traps invoked
-	exit $ex
+
+	return 0
 }
 
 configure::err(){
@@ -183,7 +154,7 @@ configure::memory_by_instances(){
 	done
 	[[ $mandatory -lt 1 ]] && _usage
 
-	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F MemAvailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F MemAvailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
 	[[ ! $maxmemory ]] && maxmemory=$m
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
 	local t=$($dryrun && [[ $maxthreads ]] && echo $maxthreads || grep -cF processor /proc/cpuinfo)
@@ -220,7 +191,7 @@ configure::instances_by_memory(){
 	done
 	[[ $mandatory -lt 1 ]] && _usage
 
-	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F MemAvailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F MemAvailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
 	[[ ! $maxmemory ]] && maxmemory=$m
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
 	local t=$($dryrun && [[ $maxthreads ]] && echo $maxthreads || grep -cF processor /proc/cpuinfo)
@@ -262,7 +233,7 @@ configure::jvm(){
 		esac
 	done
 
-	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F MemAvailable /proc/meminfo | awk '{printf("%d",$2*0.95/1024)}')
+	local m=$($dryrun && [[ $maxmemory ]] && echo $maxmemory || grep -F MemAvailable /proc/meminfo | awk '{printf("%d",$2*0.9/1024)}')
 	[[ ! $maxmemory ]] && maxmemory=$m
 	[[ $maxmemory -gt $m ]] && maxmemory=$m
 	local t=$($dryrun && [[ $maxthreads ]] && echo $maxthreads || grep -cF processor /proc/cpuinfo)
@@ -271,6 +242,7 @@ configure::jvm(){
 	[[ ! $instances ]] && instances=$maxthreads
 
 	local jmem jgct jcgct
+	[[ $memory -gt $maxmemory ]] && memory=$maxmemory
 	local maxinstances=$((maxmemory/memory))
 	[[ $maxinstances -gt $(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) ]] && maxinstances=$(( (maxthreads+10)/ithreads==0?1:(maxthreads+10)/ithreads )) #+10 for better approximation
 	[[ ! $instances ]] && instances=$maxinstances

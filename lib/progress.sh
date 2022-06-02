@@ -19,9 +19,11 @@ progress::_bar() {
 }
 
 progress::log() {
+	declare -a pids
 	local tmpdir
 	_cleanup::progress::log(){
 		rm -rf "$tmpdir"
+		[[ $pids ]] && { env kill -PIPE ${pids[@]} && wait ${pids[@]}; } &> /dev/null || true
 	}
 
 	_usage(){
@@ -48,16 +50,25 @@ progress::log() {
 	tmpdir="$(mktemp -d -p "/dev/shm" fifo.XXXXXXXXXX)"
 	mkfifo "$tmpdir/stderr" "$tmpdir/stdout"
 	case $verbosity in
-		0)	jobs | grep -F 'progress::_bar' || progress::_bar &
-			tee -ia "$log" < "$tmpdir/stdout" | grep -E --line-buffered '^\s*(:INFO:|:BENCHMARK:|:WARNING:)' &
-			tee -ia "$log" < "$tmpdir/stderr" | grep -E --line-buffered '^\s*:ERROR:' >&2 &
-			;;
-		1)	jobs | grep -F 'progress::_bar' || progress::_bar &
-			tee -ia "$log" < "$tmpdir/stdout" | grep -E --line-buffered '^\s*(:INFO:|:CMD:|:BENCHMARK:|:WARNING:)' &
-			tee -ia "$log" < "$tmpdir/stderr" | grep -E --line-buffered '^\s*:ERROR:' >&2 &
+		0)	{ progress::_bar & } 2>/dev/null # do not use subshell here. will not terminated
+			pids+=($!)
+			# use subshells to avoid job control messages
+			( tee -ia "$log" < "$tmpdir/stdout" | { grep -E --line-buffered '^\s*(:INFO:|:BENCHMARK:|:WARNING:)' || true; } & )
+			pids+=($!)
+			( tee -ia "$log" < "$tmpdir/stderr" | { grep -E --line-buffered '^\s*:ERROR:' >&2 || true; } & )
+			pids+=($!)
 		;;
-		2)	tee -ia "$log" < "$tmpdir/stdout" &
-			tee -ia "$log" < "$tmpdir/stderr" >&2 &
+		1)	{ progress::_bar & } 2>/dev/null
+			pids+=($!)
+			( tee -ia "$log" < "$tmpdir/stdout" | { grep -E --line-buffered '^\s*(:INFO:|:CMD:|:BENCHMARK:|:WARNING:)' || true; } & )
+			pids+=($!)
+			( tee -ia "$log" < "$tmpdir/stderr" | { grep -E --line-buffered '^\s*:ERROR:' >&2 || true; } & )
+			pids+=($!)
+		;;
+		2)	( tee -ia "$log" < "$tmpdir/stdout" & )
+			pids+=($!)
+			( tee -ia "$log" < "$tmpdir/stderr" >&2 & )
+			pids+=($!)
 		;;
 		*)	_usage;;
 	esac

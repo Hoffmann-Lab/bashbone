@@ -17,7 +17,7 @@ outdir = args[2]
 dir.create(outdir, recursive = T, showWarnings = F)
 setEPS(width=8, height=8, onefile=T)
 
-experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F, quote="")
+experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F, check.names=F, quote="")
 colnames(experiments)[1:4] = c("sample","countfile","condition","replicate")
 
 # method 1

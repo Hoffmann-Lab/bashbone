@@ -90,7 +90,7 @@ commander::makecmd2(){
 	while getopts ':v:a:o:c' arg; do
 		case $arg in
 			v)	declare -n _var_makecmd=$OPTARG
-				vars+="$OPTARG=$(printf '%q;' $_var_makecmd) " # to use multi-line variable assignemnts for job shell use '%q\n'
+				vars+="$OPTARG=$(printf '%q;' "$_var_makecmd") " # to use multi-line variable assignemnts for job shell use '%q\n'
 			;;
 			a)	mandatory=1; _cmds_makecmd=$OPTARG;;
 			o)	suffix=" > '$OPTARG'";;
@@ -190,7 +190,7 @@ commander::runcmd(){
 	local tmpdir pgid
 	_cleanup::commander::runcmd(){
 		rm -rf "$tmpdir"
-		[[ $pgid ]] && { env kill -TERM -- -$pgid && wait $pgid; } &> /dev/null || true
+		[[ $pgid ]] && { env kill -INT -- -$pgid; sleep 1; env kill -TERM -- -$pgid; wait $pgid; } &> /dev/null || true
 	}
 
 	_usage(){
@@ -199,23 +199,27 @@ commander::runcmd(){
 			-v             | verbose on
 			-b             | benchmark on
 			-c <env>       | run with conda
-			-t <instances> | number of parallel
+			-i <instances> | number of parallel
+			-t <instances> | obsolete synonym for -i
+			-s <idx[:idx]> | execute only jobs from cmds array starting from given index or range (default: 1)
 			-a <cmds>      | array of
 			example:
-			${FUNCNAME[1]} -v -b -t 1 -a cmd
+			${FUNCNAME[1]} -v -b -i 2 -a cmd
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads=1 verbose=false benchmark=false cenv
+	local OPTIND arg mandatory instances=1 verbose=false benchmark=false cenv startid=1 stopid
 	declare -n _cmds_runcmd # be very careful with circular name reference
-	while getopts 'vbt:c:a:' arg; do
+	while getopts 'vbt:i:c:a:s:' arg; do
 		case $arg in
-			t)	threads=$OPTARG;;
+			t)	instances=$OPTARG;; # obsolete, for compatibility
+			i)	instances=$OPTARG;;
 			v)	verbose=true;;
 			b)	benchmark=true;;
 			c)	cenv=$OPTARG;;
 			a)	mandatory=1; _cmds_runcmd=$OPTARG;;
+			s)	IFS=":" read -r startid stopid <<< "$OPTARG";;
 			*)	_usage;;
 		esac
 	done
@@ -226,37 +230,37 @@ commander::runcmd(){
 
 	local i sh
 	tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
+	((startid--))
+	[[ $stopid ]] || stopid=${#_cmds_runcmd[@]}
+	((stopid--))
 
 	# better write to file to avoid xargs argument too long error due to -I {}
-	# old: printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $threads -I {} bash -c {}
+	# old: printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $instances -I {} bash -c {}
 	# upon error return 255 to prevent xargs to load further jobs
 	# use exit function on PPID to kill all sibling processes executed by xargs
 	if $benchmark; then
-		for i in "${!_cmds_runcmd[@]}"; do
+		for i in $(seq $startid $stopid); do
 			sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
-
-			cat <<- EOF > "$sh"
-				#!/usr/bin/env bash
-				exit::$(basename $sh)(){
-					[[ \$1 -gt 0 && \$1 ]] && { local pgid=\$((\$(ps -o pgid= -p \$\$))) && env kill -TERM -- -\$pgid; } &> /dev/null || true
-				}
-			EOF
+			echo '#!/usr/bin/env bash' > "$sh"
+			echo "BASHBONE_NOSETSID=true" >> "$sh"
 			if [[ $cenv ]]; then
-				echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$(basename $sh) -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+				echo "source '$BASHBONE_DIR/activate.sh' -c true -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 				echo "conda activate --no-stack $cenv" >> "$sh"
 			else
-				echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$(basename $sh) -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+				echo "source '$BASHBONE_DIR/activate.sh' -c false -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 			fi
-			# $verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
-			# printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
-			# echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
-			$verbose && echo 'tail -3 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
-			printf '{\n%s\n} & { wait $!; } &>/dev/null \nexit 0\n' "${_cmds_runcmd[$i]}" >> "$sh"
-			# run asynchronous and use wait to get rid of terminated messages
-			# attention: do not kill -INT since INT is ignored in subshells due to a wierd POSIX requirement on disabled jobcontrol: set +m; bash -c 'trap "echo INT" INT; trap -p' & wait $!
+			$verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
+			printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
+			echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
+			# $verbose && echo 'tail -3 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
+			#printf '{\n%s\n} &\nwait $!\nexit 0\n' "${_cmds_runcmd[$i]}" >> "$sh"
+			# run asynchronous and use wait to get rid of terminated messages. but this will print this for loop as terminated job command at wait below
+			# thus, use INT signal, but attention: kill -INT is ignored in asynchronous commands with disabled job control due to a wierd POSIX requirement: set +m; bash -c 'trap "echo INT" INT; trap -p' & wait $!
 			# workaround via env: set +m; env --default-signal=SIGINT,SIGQUIT bash -c 'trap "echo INT" INT; trap -p' & wait $!
-			echo "$sh"
-		done | setsid --wait env time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $threads -I {} bash {} &
+			if [[ $i -ge $startid && $i -le $stopid ]]; then
+				echo "$sh"
+			fi
+		done | setsid --wait env --default-signal=INT time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $instances -I {} bash {} &
 		pgid=$!
 		wait $pgid
 		# wait: capture e.g. sigint wich kills wait but setid job still running via kill at return trap
@@ -264,25 +268,21 @@ commander::runcmd(){
 		# due to set -E based error tracing, command time may leads to *** longjmp causes uninitialized stack frame ***: bash terminated
 		# workaround: use full path, which, env or $(command -v time) <- prefer env to use env bash too
 	else
-		for i in "${!_cmds_runcmd[@]}"; do
+		for i in $(seq $startid $stopid); do
 			sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
-
-			cat <<- EOF > "$sh"
-				#!/usr/bin/env bash
-				exit::$(basename $sh)(){
-					[[ \$1 -gt 0 ]] && { local pgid=\$((\$(ps -o pgid= -p \$\$))) && env kill -TERM -- -\$pgid; } &> /dev/null || true
-				}
-			EOF
+			echo '#!/usr/bin/env bash' > "$sh"
+			echo "BASHBONE_NOSETSID=true" >> "$sh"
 			if [[ $cenv ]]; then
-				echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$(basename $sh) -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+				echo "source '$BASHBONE_DIR/activate.sh' -c true -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 				echo "conda activate --no-stack $cenv" >> "$sh"
 			else
-				echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$(basename $sh) -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+				echo "source '$BASHBONE_DIR/activate.sh' -c false -i '$BASHBONE_TOOLSDIR'" >> "$sh"
 			fi
-			$verbose && echo 'tail -3 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
-			printf '{\n%s\n} & { wait $!; } &>/dev/null \nexit 0\n' "${_cmds_runcmd[$i]}" >> "$sh"
+			$verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
+			printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
+			echo "exit 0" >> "$sh"
 			echo "$sh"
-		done | setsid --wait env xargs -P $threads -I {} bash {} &
+		done | setsid --wait env --default-signal=INT xargs -P $instances -I {} bash {} &
 		pgid=$!
 		wait $pgid
 	fi
@@ -293,7 +293,7 @@ commander::runcmd(){
 commander::qsubcmd(){
 	local jobid pid
 	_cleanup::commander::qsubcmd(){
-		[[ $jobid ]] && qdel "$jobid" &> /dev/null || true
+		[[ $jobid ]] && qdel $jobid &> /dev/null || true
 		[[ $pid ]] && { env kill -PIPE $pid && wait $pid; } &> /dev/null || true
 	}
 
@@ -312,6 +312,7 @@ commander::qsubcmd(){
 			-q <queue>     | name of sge queue
 			-p <env>       | name of parallel sge environment
 			-t <threads>   | to be allocated per instance in parallel environment
+			-s <idx[:idx]> | submit only jobs from cmds array starting from given index or range (default: 1)
 			-a <cmds>      | array of
 			example:
 			${FUNCNAME[1]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c base -p threads -t 4 -i 2 -w -o ~/logs -a cmd
@@ -319,10 +320,10 @@ commander::qsubcmd(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv queue logdir complex params
+	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv queue logdir complex params startid=1 stopid
 	declare -n _cmds_qsubcmd # be very careful with circular name reference
 	declare -a mapdata complexes logs
-	while getopts 'vbwrt:i:o:l:p:q:c:n:a:' arg; do
+	while getopts 'vbwrt:i:o:l:p:q:c:n:a:s:' arg; do
 		case $arg in
 			v)	verbose=true;;
 			b)	benchmark=true;;
@@ -337,6 +338,7 @@ commander::qsubcmd(){
 			q)	((++mandatory)); queue="-q $OPTARG";;
 			n)	jobname="$OPTARG";;
 			a)	((++mandatory)); _cmds_qsubcmd=$OPTARG;;
+			s)	IFS=":" read -r startid stopid <<< "$OPTARG";;
 			*)	_usage;;
 		esac
 	done
@@ -364,10 +366,11 @@ commander::qsubcmd(){
 
 		echo '#!/usr/bin/env bash' > "$sh"
 		echo "exit::$jobname.$id(){" >> "$sh"
-		echo "echo '$jobname.$id (\$JOB_ID) exited with exit code '\$1 >> '$ex'" >> "$sh"
+		echo "echo \"$jobname.$id (\$JOB_ID) exited with exit code \$1\" >> '$ex'" >> "$sh"
 		[[ "$dowait" == "y" ]] && echo '    [[ $1 -gt 0 ]] && qdel $JOB_ID &> /dev/null || true' >> "$sh"
 		echo '}' >> "$sh"
 		echo 'PATH="${BASHBONE_SGEPATH:-$PATH}"' >> "$sh"
+		echo 'unset BASHBONE_PGID' >> "$sh"
 
 		if [[ $cenv ]]; then
 			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
@@ -380,8 +383,8 @@ commander::qsubcmd(){
 		echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 		chmod 755 "$sh"
 	done
-
-	[[ $instances ]] || instances=$id
+	[[ $stopid ]] || stopid=$id
+	[[ $instances ]] || instances=$((stopid-startid))
 
 	# compared to /usr/bin/time, bash builtin time can handle: time echo "sleep 2" | bash
 	# cons:
@@ -398,25 +401,23 @@ commander::qsubcmd(){
 		while read -r l; do
 			[[ $jobid ]] || jobid=$(cut -d '.' -f 1 <<< $l)
 			# requires 1>&2 : echo "$l" | sed -E '/exited/!d; s/Job ([0-9]+)\.(.+)\./\1 job.'$jobname'.\2/;t;s/Job ([0-9]+) (.+)\./\1 job.'$jobname'.1 \2/'
-		done < <(echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | BASH_EXECUTION_STRING="shournal" BASHBONE_PGID="" qsub -terse -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
+		done < <(echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | BASH_EXECUTION_STRING="shournal" qsub -terse -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
 
-		echo "waiting for termination of $jobid" >&2
 		# use command/env qstat in case someone like me makes use of an alias :)
 		# wait until accounting record is written to epilog after jobs post-processing metrics collection
 		while env qstat -j $jobid &> /dev/null; do
 			sleep 1
 		done
-		touch "$ex" #nfs requirent to make file visible in current shell on current nod
+		touch "$ex" #nfs requirend to make file visible in current shell on current node
 		ex=$(awk '{print $NF}' "$ex" | sort -rg | head -1)
 		# ex=$(qacct -j $jobid | awk '/^exit_status/{if($NF>x){x=$NF}}END{print x}')
 		if $benchmark; then
 			qacct -j $jobid | perl -M'List::Util qw(min max)' -lanE 'if($F[0] eq "start_time"){$d=join(" ",@F[1..$#F]); $d=`date -d "$d" +%s`; $sta=min($d,$sta?$sta:$d)} if($F[0] eq "end_time"){$d=join(" ",@F[1..$#F]); $d=`date -d "$d" +%s`; $sto=max($d,$sto?$sto:$d)} END{$s=$sto-$sta; if($s>3600){$d=3600}else{$d=60}; $hm=sprintf("%.0d",$s/$d); $hm=0 unless $hm; $ms=sprintf("%05.2f",($s/$d-$hm)*60); say ":BENCHMARK: runtime $hm:$ms [hours:]minutes:seconds"}'
 			printf ":BENCHMARK: memory %s Kbytes\n" $(qacct -j $jobid | sed -nE 's/^ru_maxrss\s+([0-9.]+)\s*$/\1/p' | sort -gr | head -1)
 		fi
-		echo "returning now" >&2
 		return $ex
 	else
-		echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | BASH_EXECUTION_STRING="shournal" BASHBONE_PGID="" qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname
+		echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | BASH_EXECUTION_STRING="shournal" qsub -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname
 		return 0
 	fi
 }

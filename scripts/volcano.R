@@ -11,7 +11,7 @@ args = commandArgs(TRUE)
 ddsr = args[1]
 outfile = args[2]
   
-df = read.table(ddsr, header=T, quote="", stringsAsFactors = F, check.names = F, sep = "\t")
+df = read.table(ddsr, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="")
 
 df$Regulation = rep("NA",nrow(df))
 df$Regulation[!is.na(df$log2FoldChange) & df$log2FoldChange<0 & !is.na(df$padj) & df$padj<=0.05] = "Down"

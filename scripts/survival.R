@@ -11,8 +11,8 @@ args = commandArgs(TRUE);
 odir = args[3];
 cat(paste0("about to generate survival curves in ",odir,"\n"))
 
-clinical = read.table(args[1], header=T, sep="\t", stringsAsFactors=F, quote="")
-scores = read.table(args[2], header=T, sep="\t", stringsAsFactors=F, quote="")
+clinical = read.table(args[1], header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="")
+scores = read.table(args[2], header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="")
 
 clinical = merge(clinical, scores, by="barcode")
 
