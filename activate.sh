@@ -257,14 +257,14 @@ bashbone(){
 	while getopts 'hrcsuvledtayx' arg; do
 		case $arg in
 		h)	_usage; return 0;;
-		r)	mdless -P $BASHBONE_DIR/README.md | less; return 0;;
-		c)	source $BASHBONE_TOOLSDIR/conda/bin/activate bashbone &> /dev/null; return 0;;
+		r)	mdless -P "$BASHBONE_DIR/README.md" | less; return 0;;
+		c)	source "$BASHBONE_TOOLSDIR/conda/bin/activate" bashbone &> /dev/null; return 0;;
 		s)	while [[ -n $CONDA_PREFIX ]]; do conda deactivate &> /dev/null; done; return 0;;
-		u)	[[ -e $BASHBONE_TOOLSDIR/latest ]] && find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n"
+		u)	[[ -e "$BASHBONE_TOOLSDIR/latest" ]] && find -L "$BASHBONE_TOOLSDIR/latest" -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n"
 			find "$BASHBONE_DIR/scripts/" -type f -name "*.pl" -printf "%f\n" -o -name "*.sh" -printf "%f\n" | rev | sort | rev
 			return 0
 		;;
-		v)	[[ -e $BASHBONE_TOOLSDIR/latest ]] && find -L $BASHBONE_TOOLSDIR/latest -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n" || true
+		v)	[[ -e "$BASHBONE_TOOLSDIR/latest" ]] && find -L "$BASHBONE_TOOLSDIR/latest" -maxdepth 2 -name "*.sh" -not -name "activate.sh" -not -name "setup.sh" -printf "%f\n" || true
 			find "$BASHBONE_DIR/scripts/" -type f -printf "%f\n" | rev | sort | rev
 			return 0
 		;;
@@ -272,8 +272,8 @@ bashbone(){
 		e)	declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
 		d)	declare -F | grep -oE '\S+::\S+' | grep -vF -e compile:: -e helper::_ | grep -F -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V; return 0;;
 		a)	declare -F | grep -oE '\S+::\S+' | sort -t ':' -k1,1 -k3,3V; return 0;;
-		t)	(	source $BASHBONE_TOOLSDIR/conda/bin/activate base
-				mapfile -t mapdata < <({ readlink -e "$BASHBONE_TOOLSDIR"/latest/* | sed -nE 's@.*\/([^/]+)-([0-9][^/]+)\/*.*@\L\1\t\2@p;'; conda list | grep -vP '^(#|_|lib|perl-|xorg-|r-(?!(base|wgcna))|r\s|python-|font|gcc_|gxx_|gfortran_|ca-certificates|pkg-config|pthread)' | tr -s ' ' '\t'; } | sort -k1,1 -k2,2Vr | cut -f 1,2)
+		t)	(	source "$BASHBONE_TOOLSDIR/conda/bin/activate" base
+				mapfile -t mapdata < <({ readlink -e "$BASHBONE_TOOLSDIR/latest/"* | sed -nE 's@.*\/([^/]+)-([0-9][^/]+)\/*.*@\L\1\t\2@p;'; conda list | grep -vP '^(#|_|lib|perl-|xorg-|r-(?!(base|wgcna))|r\s|python-|font|gcc_|gxx_|gfortran_|ca-certificates|pkg-config|pthread)' | tr -s ' ' '\t'; } | sort -k1,1 -k2,2Vr | cut -f 1,2)
 				for e in $(conda env list | grep -F "$BASHBONE_TOOLSDIR" | grep -v '^base' | cut -f 1 -d ' '); do
 					conda list -n $e | grep -vP '^(#|_|lib|perl-|xorg-|r-(?!(base|wgcna))|r\s|python-|font|gcc_|gxx_|gfortran_|ca-certificates|pkg-config|pthread)'
 				done | tr -s ' ' '\t' | sort -k1,1 -k2,2Vr | cut -f 1,2 | rev | uniq -f 1 | rev | grep -v -Fw -f <(printf "%s\n" "${mapdata[@]}" | cut -f 1) | sort -k1,1 - <(printf "%s\n" "${mapdata[@]}")
