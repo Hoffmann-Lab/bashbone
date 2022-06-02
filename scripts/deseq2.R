@@ -33,6 +33,18 @@ colnames(experiments)[1:4] = c("sample","countfile","condition","replicate")
 
 # create design formula from factors under exclusion of potential linear combinations
 # e.g. ~ factor1 + factor2 + condition
+# note: deseq always needs more samples than coefficents
+# e.g. with four samples, you can only fit three coefficients and have a residual degree of freedom for estimating variance
+# y <- rnorm(4)
+# > dat <- data.frame(a=factor(c(0,0,1,1)),b=factor(c(0,1,1,0)),c=factor(c(0,1,1,1)))
+# > summary(lm(y ~ 1 + a + b, data=dat))$sigma
+# [1] 0.0001074134
+# > summary(lm(y ~ 1 + a + b + c, data=dat))$sigma
+# [1] NaN
+# The last line has no estimate of variance because the X matrix has four columns. The fitted values equal the observed:
+# > all(y == lm(y ~ 1 + a + b + c, data=dat)$fitted)
+# [1] TRUE
+# 13:19
 get_design = function(experiments,interactionterms=F){
 	factors = c()
 	if(length(colnames(experiments)) > 4){
@@ -381,7 +393,7 @@ get_table = function(dds){
 		pdf(file.path(odir,"ma_plot.pdf"))
 		plotMA(ddsr)
 		graphics.off()
-		pdf(file.path(odir,"ma_plot.fcfinshrunk.pdf"))
+		pdf(file.path(odir,"ma_plot.fcshrunk.pdf"))
 		plotMA(ddsrshrunk)
 		graphics.off()
 	}
