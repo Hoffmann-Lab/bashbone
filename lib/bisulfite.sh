@@ -312,7 +312,7 @@ bisulfite::bwa() {
 			CMD
 				sed -E -e ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/\tYC:Z:(\S+)/\tHI:i:0\tXD:i:0\tXF:i:0\tXB:Z:F1\/\1\tYZ:Z:0\tYC:Z:\1/'
 			CMD
-				samtools view -@ $((threads/2+1)) -b > "$o.bam"
+				samtools view -@ $threads -b > "$o.bam"
 			CMD
 			# tee >(samtools view -@ $((threads/2+1)) -b > "$o.raw.bam")
 			# sed corrects SA and XA tags, which bwameth does not change back from c2t (f+r) chromosomes i.e. (f|r)chr to chr
@@ -330,7 +330,7 @@ bisulfite::bwa() {
 			CMD
 				sed -E -e ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/\tYC:Z:(\S+)/\tHI:i:0\tXD:i:0\tXF:i:0\tXB:Z:F1\/\1\tYZ:Z:0\tYC:Z:\1/'
 			CMD
-				samtools view -@ $((threads/2+1)) -b > "$o.bam"
+				samtools view -@ $threads -b > "$o.bam"
 			CMD
 			# tee >(samtools view -@ $((threads/2+1)) -b > "$o.raw.bam")
 		fi
