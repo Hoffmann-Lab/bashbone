@@ -296,6 +296,7 @@ bashbone(){
 
 			[[ $BASHBONE_PATH ]] && PATH="${PATH/$BASHBONE_PATH:/}"
 			PROMPT_COMMAND="${PROMPT_COMMAND/$'\n'_bashbone_settrap/}"
+			unset MALLOC_ARENA_MAX
 
 			local x
 			for x in $(declare -F | grep -oE '\S+::\S+') bashbone; do
