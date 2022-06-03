@@ -387,7 +387,7 @@ compile::conda_tools() {
 			sed -E -e '/--threads/{s/$/\n    p.add_argument("-s", "--score", type=int, default=40)/}' \
 			-e '/threads=args.threads/{s/$/\n            score=args.score,/}' \
 			-e 's/threads=1,/threads=1, score=40,/' \
-			-e 's/"\|bwa(.+) -T 40 -B 2 -L 10 -CM/f"|bwa\1 -T {score} -B 2 -L 10 -C -Y/' \
+			-e 's/"\|bwa(.+) -T 40 -B 2 -L 10 -CM/f"|bwa\1 -T {score} -a -B 2 -L 10 -C -Y/' \
 		> "$insdir/conda/envs/bwameth/bin/bwameth.py"
 		# by removal of -M splits/chimeric reads are marked as supplementary (which is the way to go!).
 		# -Y: apply soft-clipping instead of hard clipping to keep sequence info in bam (can be changed via)
@@ -510,7 +510,7 @@ compile::_javawrapper() {
 		java="$java"
 		[[ \$JAVA_HOME && -e "\$JAVA_HOME/bin/java" ]] && java="\$JAVA_HOME/bin/java"
 		declare -a jvm_mem_args jvm_prop_args pass_args
-		for arg in \$@; do
+		for arg in "\$@"; do
 			case \$arg in
 				-D*) jvm_prop_args+=("\$arg");;
 				-XX*) jvm_prop_args+=("\$arg");;
@@ -601,13 +601,15 @@ compile::segemehl() {
 		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
 		l="$(pkg-config --variable=libdir htslib)"
 		[[ $l ]] && export LD_LIBRARY_PATH="$l"
+		unset MALLOC_ARENA_MAX
 		"$(realpath -s "$(dirname "$0")")/segemehl.x" $*
 	EOF
-	cat <<- 'EOF' > $insdir/latest/segemehl/haarz
+	cat <<- 'EOF' > "$insdir/latest/segemehl/haarz"
 		#!/usr/bin/env bash
 		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
 		l="$(pkg-config --variable=libdir htslib)"
 		[[ $l ]] && export LD_LIBRARY_PATH="$l"
+		unset MALLOC_ARENA_MAX
 		"$(realpath -s "$(dirname "$0")")/haarz.x" $*
 	EOF
 
