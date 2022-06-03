@@ -187,9 +187,9 @@ commander::printcmd(){
 }
 
 commander::runcmd(){
-	local tmpdir pgid
+	local tmpdir pgid logdir
 	_cleanup::commander::runcmd(){
-		rm -rf "$tmpdir"
+		[[ $logdir ]] || rm -rf "$tmpdir"
 		[[ $pgid ]] && { env kill -INT -- -$pgid; sleep 1; env kill -TERM -- -$pgid; wait $pgid; } &> /dev/null || true
 	}
 
@@ -202,16 +202,21 @@ commander::runcmd(){
 			-i <instances> | number of parallel
 			-t <instances> | obsolete synonym for -i
 			-s <idx[:idx]> | execute only jobs from cmds array starting from given index or range (default: 1)
+			-n <name>      | optional. prefix of logs and jobs - should be unique
+			-o <path>      | optional. for scripts, logs and exit codes
+			-r             | optional. override existing logs
 			-a <cmds>      | array of
 			example:
 			${FUNCNAME[1]} -v -b -i 2 -a cmd
+			example2:
+			${FUNCNAME[1]} -i 2 -n current -o ~/jobs -r -a cmd
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory instances=1 verbose=false benchmark=false cenv startid=1 stopid
+	local OPTIND arg mandatory instances=1 verbose=false benchmark=false cenv startid=1 stopid override=false jobname="current"
 	declare -n _cmds_runcmd # be very careful with circular name reference
-	while getopts 'vbt:i:c:a:s:' arg; do
+	while getopts 'vbt:i:c:a:s:o:n:r' arg; do
 		case $arg in
 			t)	instances=$OPTARG;; # obsolete, for compatibility
 			i)	instances=$OPTARG;;
@@ -220,6 +225,9 @@ commander::runcmd(){
 			c)	cenv=$OPTARG;;
 			a)	mandatory=1; _cmds_runcmd=$OPTARG;;
 			s)	IFS=":" read -r startid stopid <<< "$OPTARG";;
+			r)	override=true;;
+			o)	logdir="$OPTARG"; mkdir -p "$logdir";;
+			n)	jobname="$OPTARG";;
 			*)	_usage;;
 		esac
 	done
@@ -228,8 +236,10 @@ commander::runcmd(){
 
 	$verbose && commander::printinfo "running commands of array ${!_cmds_runcmd}"
 
-	local i sh
-	tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
+	local i id sh ex log
+	[[ $logdir ]] && tmpdir="$logdir" || tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
+	[[ $jobname ]] || jobname="$(basename "$(mktemp -u -p "$tmpdir" XXXXXXXXXX)")"
+	ex="$tmpdir/exitcodes.$jobname"
 	((startid--))
 	[[ $stopid ]] || stopid=${#_cmds_runcmd[@]}
 	((stopid--))
@@ -238,29 +248,40 @@ commander::runcmd(){
 	# old: printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $instances -I {} bash -c {}
 	# upon error return 255 to prevent xargs to load further jobs
 	# use exit function on PPID to kill all sibling processes executed by xargs
+	declare -a scripts
+	for i in $(seq $startid $stopid); do
+		id=$((i+1));
+		sh="$tmpdir/job.$jobname.$id.sh"
+		log="$tmpdir/job.$jobname.$id.log"
+		$override && rm -f "$log" "$ex"
+
+		echo '#!/usr/bin/env bash' > "$sh"
+		echo "exit::$jobname.$id(){" >> "$sh"
+		echo "    echo \"$jobname.$id (\$((\$(ps -o pgid= -p \$\$)))) exited with exit code \$1\" >> '$ex'" >> "$sh"
+		echo '}' >> "$sh"
+		echo "BASHBONE_NOSETSID=true" >> "$sh"
+
+		if [[ $cenv ]]; then
+			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+			echo "conda activate --no-stack $cenv" >> "$sh"
+		else
+			echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+		fi
+
+		$verbose && echo 'tail -3 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
+		printf '{\n%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
+		echo "} 2> >(tee -ia '$log' >&2) > >(tee -ia '$log') | cat" >> "$sh"
+		echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
+		# $verbose && echo 'tail -3 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
+		#printf '{\n%s\n} &\nwait $!\nexit 0\n' "${_cmds_runcmd[$i]}" >> "$sh"
+		# run asynchronous and use wait to get rid of terminated messages. but this will print this for loop as terminated job command at wait below
+		# thus, use INT signal, but attention: kill -INT is ignored in asynchronous commands with disabled job control due to a wierd POSIX requirement: set +m; bash -c 'trap "echo INT" INT; trap -p' & wait $!
+		# workaround via env: set +m; env --default-signal=SIGINT,SIGQUIT bash -c 'trap "echo INT" INT; trap -p' & wait $!
+		scripts+=("$sh")
+	done
+
 	if $benchmark; then
-		for i in $(seq $startid $stopid); do
-			sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
-			echo '#!/usr/bin/env bash' > "$sh"
-			echo "BASHBONE_NOSETSID=true" >> "$sh"
-			if [[ $cenv ]]; then
-				echo "source '$BASHBONE_DIR/activate.sh' -c true -i '$BASHBONE_TOOLSDIR'" >> "$sh"
-				echo "conda activate --no-stack $cenv" >> "$sh"
-			else
-				echo "source '$BASHBONE_DIR/activate.sh' -c false -i '$BASHBONE_TOOLSDIR'" >> "$sh"
-			fi
-			$verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
-			printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
-			echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
-			# $verbose && echo 'tail -3 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
-			#printf '{\n%s\n} &\nwait $!\nexit 0\n' "${_cmds_runcmd[$i]}" >> "$sh"
-			# run asynchronous and use wait to get rid of terminated messages. but this will print this for loop as terminated job command at wait below
-			# thus, use INT signal, but attention: kill -INT is ignored in asynchronous commands with disabled job control due to a wierd POSIX requirement: set +m; bash -c 'trap "echo INT" INT; trap -p' & wait $!
-			# workaround via env: set +m; env --default-signal=SIGINT,SIGQUIT bash -c 'trap "echo INT" INT; trap -p' & wait $!
-			if [[ $i -ge $startid && $i -le $stopid ]]; then
-				echo "$sh"
-			fi
-		done | setsid --wait env --default-signal=INT time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $instances -I {} bash {} &
+		printf '%q\n' "${scripts[@]}" | setsid --wait env --default-signal=INT time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $instances -I {} bash {} &
 		pgid=$!
 		wait $pgid
 		# wait: capture e.g. sigint wich kills wait but setid job still running via kill at return trap
@@ -268,21 +289,7 @@ commander::runcmd(){
 		# due to set -E based error tracing, command time may leads to *** longjmp causes uninitialized stack frame ***: bash terminated
 		# workaround: use full path, which, env or $(command -v time) <- prefer env to use env bash too
 	else
-		for i in $(seq $startid $stopid); do
-			sh="$(mktemp -p "$tmpdir" job.XXXXXXXXXX.sh)"
-			echo '#!/usr/bin/env bash' > "$sh"
-			echo "BASHBONE_NOSETSID=true" >> "$sh"
-			if [[ $cenv ]]; then
-				echo "source '$BASHBONE_DIR/activate.sh' -c true -i '$BASHBONE_TOOLSDIR'" >> "$sh"
-				echo "conda activate --no-stack $cenv" >> "$sh"
-			else
-				echo "source '$BASHBONE_DIR/activate.sh' -c false -i '$BASHBONE_TOOLSDIR'" >> "$sh"
-			fi
-			$verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
-			printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
-			echo "exit 0" >> "$sh"
-			echo "$sh"
-		done | setsid --wait env --default-signal=INT xargs -P $instances -I {} bash {} &
+		printf '%q\n' "${scripts[@]}" | setsid --wait env --default-signal=INT xargs -P $instances -I {} bash {} &
 		pgid=$!
 		wait $pgid
 	fi
@@ -348,6 +355,9 @@ commander::qsubcmd(){
 
 	$verbose && commander::printinfo "running commands of array ${!_cmds_qsubcmd}"
 
+	[[ $stopid ]] || stopid=${#_cmds_qsubcmd[@]}
+	[[ $instances ]] || instances=$((stopid-startid))
+
 	[[ $penv ]] && params="$penv $threads" || params="$queue"
 	[[ $jobname ]] || jobname="$(basename "$(mktemp -u -p "$logdir" XXXXXXXXXX)")"
 	local ex="$logdir/exitcodes.$jobname"
@@ -357,7 +367,7 @@ commander::qsubcmd(){
 	local i id sh
 	for i in "${!_cmds_qsubcmd[@]}"; do
 		id=$((i+1))
-		if $override; then
+		if $override && [[ $id -ge $startid && $id -le $stopid ]]; then
 			rm -f "$logdir/job.$jobname.$id.log" "$ex"
 			touch "$logdir/job.$jobname.$id.log" # for tail -f
 		fi
@@ -366,11 +376,11 @@ commander::qsubcmd(){
 
 		echo '#!/usr/bin/env bash' > "$sh"
 		echo "exit::$jobname.$id(){" >> "$sh"
-		echo "echo \"$jobname.$id (\$JOB_ID) exited with exit code \$1\" >> '$ex'" >> "$sh"
+		echo "    echo \"$jobname.$id (\$JOB_ID) exited with exit code \$1\" >> '$ex'" >> "$sh"
 		[[ "$dowait" == "y" ]] && echo '    [[ $1 -gt 0 ]] && qdel $JOB_ID &> /dev/null || true' >> "$sh"
 		echo '}' >> "$sh"
 		echo 'PATH="${BASHBONE_SGEPATH:-$PATH}"' >> "$sh"
-		echo 'unset BASHBONE_PGID' >> "$sh"
+		echo "BASHBONE_NOSETSID=true" >> "$sh"
 
 		if [[ $cenv ]]; then
 			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
@@ -383,8 +393,6 @@ commander::qsubcmd(){
 		echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 		chmod 755 "$sh"
 	done
-	[[ $stopid ]] || stopid=$id
-	[[ $instances ]] || instances=$((stopid-startid))
 
 	# compared to /usr/bin/time, bash builtin time can handle: time echo "sleep 2" | bash
 	# cons:
