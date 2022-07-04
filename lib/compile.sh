@@ -178,8 +178,8 @@ compile::conda_tools() {
 		declare -a cmd2
 		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
+				options(unzip="$(which unzip)");
+				Sys.setenv(TAR="$(which tar)");
 				install.packages(c("BiocManager","devtools","codetools"),
 					repos="http://cloud.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
 			'
@@ -189,8 +189,8 @@ compile::conda_tools() {
 		declare -a cmd3
 		commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
+				options(unzip="$(which unzip)");
+				Sys.setenv(TAR="$(which tar)");
 				BiocManager::install(c("biomaRt","BiocParallel","genefilter","DESeq2","DEXSeq","clusterProfiler","TCGAutils","TCGAbiolinks","survminer","impute","preprocessCore","GO.db","AnnotationDbi"),
 					ask=F, Ncpus=$threads, clean=T, destdir="$tmpdir");
 			'
@@ -201,8 +201,8 @@ compile::conda_tools() {
 		declare -a cmd4
 		commander::makecmd -a cmd4 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
+				options(unzip="$(which unzip)");
+				Sys.setenv(TAR="$(which tar)");
 				install.packages(c("reshape2","WGCNA","dplyr","tidyverse","ggpubr","ggplot2","gplots","RColorBrewer","svglite","pheatmap","treemap","data.table"),
 					repos="http://cloud.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
 				install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
@@ -213,8 +213,8 @@ compile::conda_tools() {
 		declare -a cmd5
 		commander::makecmd -a cmd5 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
+				options(unzip="$(which unzip)");
+				Sys.setenv(TAR="$(which tar)");
 				devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
 			'
 		CMD
@@ -224,8 +224,8 @@ compile::conda_tools() {
 		cmd2=()
 		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
+				options(unzip="$(which unzip)");
+				Sys.setenv(TAR="$(which tar)");
 				install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
 				devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
 				devtools::install_github("BioinformaticsFMRP/TCGAbiolinksGUI.data", upgrade="never", force=T, clean=T, destdir="$tmpdir");
@@ -233,11 +233,11 @@ compile::conda_tools() {
 			'
 		CMD
 
-		commander::runcmd -c bashbone -t 1 -a cmd1
-		commander::runcmd -c bashbone -t 1 -a cmd2
-		# commander::runcmd -c bashbone -t 1 -a cmd3
-		# commander::runcmd -c bashbone -t 1 -a cmd4
-		# commander::runcmd -c bashbone -t $threads -a cmd5
+		commander::runcmd -c bashbone -i 1 -a cmd1
+		commander::runcmd -c bashbone -i 1 -a cmd2
+		# commander::runcmd -c bashbone -i 1 -a cmd3
+		# commander::runcmd -c bashbone -i 1 -a cmd4
+		# commander::runcmd -c bashbone -i $threads -a cmd5
 
 		mkdir -p "$insdir/conda/env_exports"
 		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" | grep -vE -- '-\s+idr=' > "$insdir/conda/env_exports/$n.yaml"
@@ -339,7 +339,7 @@ compile::conda_tools() {
 				-L 18
 			CMD
 		done
-		commander::runcmd -c sortmerna -t $threads -a cmdidx
+		commander::runcmd -c sortmerna -i $threads -a cmdidx
 
 		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
 	}

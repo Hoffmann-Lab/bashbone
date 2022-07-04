@@ -49,7 +49,7 @@ genome::mkdict() {
 
 		dict="$(mktemp -u -p "$tmpdir" cleanup.XXXXXXXXXX.dict)"
 		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-			picard
+			MALLOC_ARENA_MAX=4 picard
 				-Xmx${jmem}m
 				-XX:ParallelGCThreads=$jgct
 				-XX:ConcGCThreads=$jcgct
@@ -74,13 +74,13 @@ genome::mkdict() {
 			commander::printcmd -a cmd1
 			commander::printcmd -a cmd2
 		else
-			commander::runcmd -c picard -v -b -t $threads -a cmd1
+			commander::runcmd -c picard -v -b -i $threads -a cmd1
 			local md5dict thismd5genome thismd5dict
 			md5dict=$(md5sum "$dict" | cut -d ' ' -f 1)
 			thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
 			[[ -s "${genome%.*}.dict" ]] && thismd5dict=$(md5sum "${genome%.*}.dict" | cut -d ' ' -f 1)
 			if $force || [[ "$thismd5genome" != "$md5genome" || ! "$thismd5dict" || "$thismd5dict" != "$md5dict" ]]; then
-				commander::runcmd -v -b -t $threads -a cmd2
+				commander::runcmd -v -b -i $threads -a cmd2
 			fi
 		fi
 	fi
@@ -139,7 +139,7 @@ genome::indexgtf(){
 		else
 			local thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
 			if $force || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
-				commander::runcmd -v -b -t 1 -a cmd1
+				commander::runcmd -v -b -i 1 -a cmd1
 			fi
 		fi
 	fi
@@ -229,7 +229,7 @@ genome::mkgodb(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
+		commander::runcmd -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -304,18 +304,19 @@ genome::view(){
 		SAM.FILTER_FAILED_READS=false
 		SAM.ALIGNMENT_SCORE_THRESHOLD=0
 		SAM.QUALITY_THRESHOLD=0
-		SAM.SORT_OPTION=START
 		SAM.COLOR_BY=FIRST_OF_PAIR_STRAND
 		DETAILS_BEHAVIOR=CLICK
 		DEFAULT_GENOME_KEY=current
 
 		##RNA
+		SAM.SORT_OPTION=START
 		SAM.SHOW_JUNCTION_TRACK=true
 		SAM.SHOW_COV_TRACK=true
 		SAM.SHOW_ALIGNMENT_TRACK=true
 		SAM.MAX_VISIBLE_RANGE=${range:-1000}
 
 		##THIRD_GEN
+		SAM.SORT_OPTION=START
 		SAM.DOWNSAMPLE_READS=false
 		SAM.MAX_VISIBLE_RANGE=${range:-1000}
 	EOF
@@ -400,7 +401,7 @@ genome::view(){
 
 	declare -a cmd1
 	commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-		java
+		MALLOC_ARENA_MAX=4 java
 			--module-path="\$CONDA_PREFIX/lib/igv"
 			-Xmx${memory}m
 			@"\$CONDA_PREFIX/lib/igv/igv.args"

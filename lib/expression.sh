@@ -84,8 +84,8 @@ expression::diego(){
 			CMD
 		fi
 
-		commander::runcmd -c diego -v -b -t $threads -a cmdprep1
-		commander::runcmd -c htseq -v -b -t $threads -a cmdprep2
+		commander::runcmd -c diego -v -b -i $threads -a cmdprep1
+		commander::runcmd -c htseq -v -b -i $threads -a cmdprep2
 	fi
 
 	if $exonmode; then
@@ -222,8 +222,8 @@ expression::diego(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c diego -v -b -t $threads -a cmd1
-		commander::runcmd -c diego -v -b -t $threads -a cmd2
+		commander::runcmd -c diego -v -b -i $threads -a cmd1
+		commander::runcmd -c diego -v -b -i $threads -a cmd2
 	fi
 
 	return 0
@@ -486,13 +486,13 @@ expression::deseq() {
 		commander::printcmd -a cmd5
 		commander::printcmd -a cmd6
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $instances -a cmd3
-		# commander::runcmd -v -b -t $threads -a cmdanno
-		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
-		commander::runcmd -v -b -t $threads -a cmd6
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd3
+		# commander::runcmd -v -b -i $threads -a cmdanno
+		commander::runcmd -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
+		commander::runcmd -v -b -i $threads -a cmd6
 	fi
 
 	return 0
@@ -781,10 +781,10 @@ expression::join(){
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
 	fi
 
 	return 0
@@ -925,8 +925,8 @@ expression::join_htsc(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0

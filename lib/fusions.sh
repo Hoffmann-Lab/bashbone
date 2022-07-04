@@ -134,7 +134,7 @@ fusions::starfusion(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c starfusion -v -b -t 1 -a cmd1
+		commander::runcmd -c starfusion -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -300,7 +300,7 @@ fusions::arriba(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c arriba -v -b -t $threads -a cmd1
+		commander::runcmd -c arriba -v -b -i $threads -a cmd1
 	fi
 
 	return 0

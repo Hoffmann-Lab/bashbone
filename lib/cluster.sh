@@ -154,7 +154,7 @@ cluster::coexpression_deseq(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd1
 	fi
 
 	declare -a cmd2
@@ -285,7 +285,7 @@ cluster::coexpression_deseq(){
 	if $skip; then
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0
@@ -389,8 +389,8 @@ cluster::coexpression(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	declare -a cmd3
@@ -436,7 +436,7 @@ cluster::coexpression(){
 	if $skip; then
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd3
 	fi
 
 	declare -a cmd4
@@ -528,7 +528,7 @@ cluster::coexpression(){
 	if $skip; then
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd4
 	fi
 
 	return 0

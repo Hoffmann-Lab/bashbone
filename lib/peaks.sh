@@ -303,9 +303,9 @@ peaks::macs(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -t $instances -a cmd1
-		commander::runcmd -c macs -v -b -t $instances2 -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -v -b -i $instances -a cmd1
+		commander::runcmd -c macs -v -b -i $instances2 -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
 	fi
 
 	return 0
@@ -564,11 +564,11 @@ peaks::macs_idr(){
 		commander::printcmd -a cmd4
 		commander::printcmd -a cmd5
 	else
-		commander::runcmd -v -b -t $instances -a cmd1
-		commander::runcmd -c macs -v -b -t $instances2 -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
+		commander::runcmd -v -b -i $instances -a cmd1
+		commander::runcmd -c macs -v -b -i $instances2 -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
 	fi
 
 	return 0
@@ -669,7 +669,7 @@ peaks::gem(){
 	if $skip; then
 		commander::printcmd -a cmdg
 	else
-		commander::runcmd -v -b -t $threads -a cmdg
+		commander::runcmd -v -b -i $threads -a cmdg
 	fi
 
 	local params='' params2='' strandness=0
@@ -787,8 +787,8 @@ peaks::gem(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0
@@ -890,7 +890,7 @@ peaks::gem_idr(){
 	if $skip; then
 		commander::printcmd -a cmdg
 	else
-		commander::runcmd -v -b -t $threads -a cmdg
+		commander::runcmd -v -b -i $threads -a cmdg
 	fi
 
 	local params='' params2='' strandness=0
@@ -1028,10 +1028,10 @@ peaks::gem_idr(){
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
 	fi
 
 	return 0
@@ -1142,8 +1142,8 @@ peaks::peakachu() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c peakachu -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -c peakachu -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0
@@ -1291,10 +1291,10 @@ peaks::peakachu_idr() {
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -c peakachu -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -c peakachu -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
 	fi
 
 	return 0
@@ -1411,8 +1411,8 @@ peaks::m6aviewer() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0
@@ -1569,10 +1569,10 @@ peaks::m6aviewer_idr() {
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
 	fi
 
 	return 0

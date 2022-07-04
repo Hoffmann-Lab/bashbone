@@ -33,7 +33,7 @@ variants::vcfzip() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd1
 	fi
 
 	return 0
@@ -140,10 +140,10 @@ variants::vcfnorm() {
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $instances -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $instances -a cmd4
 	fi
 
 	return 0
@@ -220,7 +220,7 @@ variants::panelofnormals() {
 			while read -r slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					gatk
+					MALLOC_ARENA_MAX=4 gatk
 						--java-options '
 								-Xmx${jmem}m
 								-XX:ParallelGCThreads=$jgct
@@ -276,9 +276,9 @@ variants::panelofnormals() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $instances -a cmd3
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd3
 	fi
 
 	return 0
@@ -352,7 +352,7 @@ variants::makepondb() {
 			tabix -f -p vcf "${tdirs[-1]}/vcf.gz"
 
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				gatk
+				MALLOC_ARENA_MAX=4 gatk
 					--java-options '
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
@@ -375,7 +375,7 @@ variants::makepondb() {
 
 		# alternative rm "$odir/pondb" && --genomicsdb-workspace-path "$odir/pondb" or --overwrite-existing-genomicsdb-workspace true
 		commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-			gatk
+			MALLOC_ARENA_MAX=4 gatk
 				--java-options '
 					-Xmx${jmem}m
 					-XX:ParallelGCThreads=$jgct
@@ -401,7 +401,7 @@ variants::makepondb() {
 		CMD
 			touch "$odir/blocked"
 		CMD
-			gatk
+			MALLOC_ARENA_MAX=4 gatk
 				--java-options '
 					-Xmx${jmem}m
 					-XX:ParallelGCThreads=$jgct
@@ -426,9 +426,9 @@ variants::makepondb() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd2
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd3
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd1
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd2
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd3
 	fi
 
 	return 0
@@ -589,15 +589,15 @@ variants::tree(){
 		commander::printcmd -a cmd8
 		commander::printcmd -a cmd9
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t 1 -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
-		commander::runcmd -v -b -t $threads -a cmd6
-		commander::runcmd -v -b -t $threads -a cmd7
-		commander::runcmd -v -b -t $threads -a cmd8
-		commander::runcmd -c raxml -v -b -t 1 -a cmd9
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i 1 -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
+		commander::runcmd -v -b -i $threads -a cmd6
+		commander::runcmd -v -b -i $threads -a cmd7
+		commander::runcmd -v -b -i $threads -a cmd8
+		commander::runcmd -c raxml -v -b -i 1 -a cmd9
 	fi
 
 	return 0

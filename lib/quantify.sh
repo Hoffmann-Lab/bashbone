@@ -93,7 +93,7 @@ quantify::featurecounts() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c subread -v -b -t $instances -a cmd1
+		commander::runcmd -c subread -v -b -i $instances -a cmd1
 	fi
 
 	return 0
@@ -166,9 +166,9 @@ quantify::tpm() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd1
 	fi
-	#commander::runcmd -v -b -t $threads -a cmd2
+	#commander::runcmd -v -b -i $threads -a cmd2
 
 	return 0
 }

@@ -70,7 +70,7 @@ visualize::venn() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c intervene -v -b -t $threads -a cmd1
+		commander::runcmd -c intervene -v -b -i $threads -a cmd1
 	fi
 
 	return 0

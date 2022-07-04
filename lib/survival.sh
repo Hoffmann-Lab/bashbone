@@ -107,7 +107,7 @@ survival::gettcga() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd1
 	fi
 
 	return 0
@@ -207,9 +207,9 @@ survival::ssgsea(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t 1 -a cmd2
-		commander::runcmd -v -b -t 1 -a cmd3
+		commander::runcmd -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i 1 -a cmd2
+		commander::runcmd -v -b -i 1 -a cmd3
 	fi
 
 	return 0
