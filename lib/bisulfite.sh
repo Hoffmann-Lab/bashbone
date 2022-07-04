@@ -78,7 +78,7 @@ bisulfite::mspicut() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
+		commander::runcmd -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -161,7 +161,7 @@ bisulfite::segemehl() {
 			commander::makecmd -a cmdidx -s '|' -c {COMMANDER[0]}<<- CMD
 				segemehl -F 1 -x "$ctidx" -y "$gaidx" -d "$genome"
 			CMD
-			commander::runcmd -v -b -t $threads -a cmdidx
+			commander::runcmd -v -b -i $threads -a cmdidx
 			commander::printinfo "updating md5 sums"
 			thismd5segemehlbs=$(md5sum "$ctidx" | cut -d ' ' -f 1)
 			sed -i "s/md5segemehlbs=.*/md5segemehlbs=$thismd5segemehlbs/" $genome.md5.sh
@@ -215,7 +215,7 @@ bisulfite::segemehl() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
+		commander::runcmd -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -281,7 +281,7 @@ bisulfite::bwa() {
 			commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD
 				bwameth.py index-mem2 "$genome"
 			CMD
-			commander::runcmd -c bwameth -v -b -t $threads -a cmdidx
+			commander::runcmd -c bwameth -v -b -i $threads -a cmdidx
 			commander::printinfo "updating md5 sums"
 			thismd5bwameth=$(md5sum "$genome.bwameth.c2t.pac" | cut -d ' ' -f 1)
 			sed -i "s/md5bwameth=.*/md5bwameth=$thismd5bwameth/" "$genome.md5.sh"
@@ -340,7 +340,7 @@ bisulfite::bwa() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c bwameth -v -b -t 1 -a cmd1
+		commander::runcmd -c bwameth -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -455,10 +455,10 @@ bisulfite::mecall(){
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t $instances -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
 	fi
 
 	return 0
@@ -537,8 +537,8 @@ bisulfite::methyldackel(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c methyldackel -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -c methyldackel -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0
@@ -565,7 +565,7 @@ bisulfite::metilene(){
 	}
 
 	local OPTIND arg mandatory skip=false threads genome mecalldir outdir tmpdir min=0.8 cap=999999 context=CG
-	declare -a tools=("")
+	declare -a tools
 	declare -n _mapper_metilene _cmpfiles_metilene
 	while getopts 'S:s:t:c:m:u:x:r:i:o:p:d:' arg; do
 		case $arg in
@@ -585,10 +585,11 @@ bisulfite::metilene(){
 		esac
 	done
 	[[ $mandatory -lt 6 ]] && _usage
+	[[ $tools ]] || tools=("") # for backwards compatibility
 
 	commander::printinfo "differential methylation analyses"
 
-	declare -a cmd1 cmd2 cmd3 mapdata tools=("")
+	declare -a cmd1 cmd2 cmd3 mapdata
 
 	local m f i c t odir sample condition library replicate factors crep trep
 	for m in "${_mapper_metilene[@]}"; do
@@ -596,7 +597,7 @@ bisulfite::metilene(){
 		mkdir -p "$odir"
 
 		for f in "${_cmpfiles_metilene[@]}"; do
-			mapfile -t mapdata < <(cut -d $'\t' -f 2 $f | uniq)
+			mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
 			for tool in "${tools[@]}"; do
 				i=0
 				for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
@@ -614,7 +615,7 @@ bisulfite::metilene(){
 						unset sample condition library replicate factors
 						while read -r sample condition library replicate factors; do
 							# tomerge+=("$(readlink -e "$mecalldir/$m/$sample"*.$context.bed | head -1)")
-							tomerge+=("$(find -L "$mecalldir/$m/$tool" -maxdepth 1 -name "$sample*.$context.bed" -print -quit)")
+							tomerge+=("$(find -L "$mecalldir/$m$tool" -maxdepth 1 -name "$sample*.$context.bed" -print -quit)")
 							header+=" ${condition}_$replicate"
 						done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 
@@ -649,9 +650,9 @@ bisulfite::metilene(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -c metilene -v -b -t 1 -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -c metilene -v -b -i 1 -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
 	fi
 
 	return 0
