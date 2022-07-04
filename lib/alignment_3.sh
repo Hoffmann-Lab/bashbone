@@ -194,9 +194,9 @@ alignment::mkreplicates() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -t $instances1 -a cmd1
-		commander::runcmd -v -b -t $instances2 -a cmd2
-		commander::runcmd -v -b -t $instances1 -a cmd3
+		commander::runcmd -v -b -i $instances1 -a cmd1
+		commander::runcmd -v -b -i $instances2 -a cmd2
+		commander::runcmd -v -b -i $instances1 -a cmd3
 	fi
 
 	return 0
@@ -241,7 +241,7 @@ alignment::strandsplit(){
 	commander::printinfo "splitting alignments according to strandness"
 
 	declare -a cmd1
-	local m f odir b
+	local m f odir b x
 	for m in "${_mapper_strandsplit[@]}"; do
 		declare -n _bams_strandsplit=$m
 		for f in "${_bams_strandsplit[@]}"; do
@@ -249,6 +249,7 @@ alignment::strandsplit(){
 				commander::warn "library preparation for $f was not strand specific. skipping."
 				continue
 			fi
+
 			if [[ _strandness_strandsplit["$f"] -eq 1 ]]; then
 				s="+"
 				r="-"
@@ -260,57 +261,72 @@ alignment::strandsplit(){
 			b="${b%.*}"
 			o="${f%.*}"
 
-			# 98 = proper-pair + first-in-pair + mate-reverse
-			# 146 = poper-pair + second-in-pair + reverse
+			# infer SE or PE filter
+			x=$(samtools view -F 4 "$f" | head -10000 | cat <(samtools view -H "$f") - | samtools view -c -f 1)
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)")
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				rm -f "${tdirs[-1]}/$b"*
-			CMD
-				samtools merge
-				-f
-				-c
-				-p
-				-@ $threads
-				"$o.$s.bam"
-				<(samtools view -u -F 4 -f 98 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R1")
-				<(samtools view -u -F 4 -f 146 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R2")
-			CMD
-			if [[ $gtf ]]; then
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					samtools view
-					-u
-					-M
-					-L <(awk -v OFS="\\t" '\$3=="gene" && \$7=="$s"{print \$1,\$4-1,\$5}' "$gtf")
-					"$o.$s.bam"
+
+			if [[ $x -gt 0 ]]; then
+				# 98 = proper-pair + first-in-pair + mate-reverse
+				# 146 = poper-pair + second-in-pair + reverse
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					rm -f "${tdirs[-1]}/$b"*
 				CMD
-					samtools sort -@ $threads -O bam -T "${tdirs[-1]}/$b" > "$o.$s.filtered.bam"
+					samtools merge
+					-f
+					-c
+					-p
+					-@ $threads
+					"$o.$s.bam"
+					<(samtools view -u -F 4 -f 98 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R1")
+					<(samtools view -u -F 4 -f 146 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R2")
+				CMD
+			else
+				# 16 = reverse
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					rm -f "${tdirs[-1]}/$b"*
+				CMD
+					samtools view -u -F 4 -F 16 "$f" | samtools sort -O BAM -@ $threads -T "${tdirs[-1]}/$b" > "$o.$s.bam"
 				CMD
 			fi
 
-			# 82 = proper-pair + first-in-pair + reverse
-			# 162 = proper-pair + second-in-pair + mate-reverse
-			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)")
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				rm -f "${tdirs[-1]}/$b"*
-			CMD
-				samtools merge
-				-f
-				-c
-				-p
-				-@ $threads
-				"$o.$r.bam"
-				<(samtools view -u -F 4 -f 82 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R1")
-				<(samtools view -u -F 4 -f 162 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R2")
-			CMD
 			if [[ $gtf ]]; then
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					samtools view
-					-u
-					-M
-					-L <(awk -v OFS="\\t" '\$3=="gene" && \$7=="$r"{print \$1,\$4-1,\$5}' "$gtf")
-					"$o.$r.bam"
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					samtools index -@ $threads "$o.$s.bam" "$o.$s.bai"
 				CMD
-					samtools sort -@ $threads -O bam -T "${tdirs[-1]}/$b" > "$o.$r.filtered.bam"
+					samtools view -u -M -L <(awk -v OFS="\\t" '\$3=="gene" && \$7=="$s"{print \$1,\$4-1,\$5}' "$gtf") "$o.$s.bam" |	samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" > "$o.$s.filtered.bam"
+				CMD
+			fi
+
+			if [[ $x -gt 0 ]]; then
+				# 82 = proper-pair + first-in-pair + reverse
+				# 162 = proper-pair + second-in-pair + mate-reverse
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)")
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					rm -f "${tdirs[-1]}/$b"*
+				CMD
+					samtools merge
+					-f
+					-c
+					-p
+					-@ $threads
+					"$o.$r.bam"
+					<(samtools view -u -F 4 -f 82 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R1")
+					<(samtools view -u -F 4 -f 162 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R2")
+				CMD
+			else
+				# 16 = reverse
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					rm -f "${tdirs[-1]}/$b"*
+				CMD
+					samtools view -u -F 4 -f 16 "$f" | samtools sort -O BAM -@ $threads -T "${tdirs[-1]}/$b" > "$o.$r.bam"
+				CMD
+			fi
+
+			if [[ $gtf ]]; then
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					samtools index -@ $threads "$o.$r.bam" "$o.$r.bai"
+				CMD
+					samtools view -u -M	-L <(awk -v OFS="\\t" '\$3=="gene" && \$7=="$r"{print \$1,\$4-1,\$5}' "$gtf") "$o.$r.bam" | samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" > "$o.$r.filtered.bam"
 				CMD
 			fi
 		done
@@ -320,8 +336,8 @@ alignment::strandsplit(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t 1 -a cmd2
+		commander::runcmd -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i 1 -a cmd2
 	fi
 
 	return 0
