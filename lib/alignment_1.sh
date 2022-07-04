@@ -68,7 +68,7 @@ alignment::segemehl() {
 			commander::makecmd -a cmdidx -s '|' -c {COMMANDER[0]}<<- CMD
 				segemehl -x "$genomeidx" -d "$genome"
 			CMD
-			commander::runcmd -v -b -t $threads -a cmdidx
+			commander::runcmd -v -b -i $threads -a cmdidx
 			commander::printinfo "updating md5 sums"
 			thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
 			sed -i "s/md5segemehl=.*/md5segemehl=$thismd5segemehl/" "$genome.md5.sh"
@@ -127,7 +127,7 @@ alignment::segemehl() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
+		commander::runcmd -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -202,7 +202,7 @@ alignment::star() {
 		source "$genome.md5.sh"
 
 		declare -a cmdidx=("STAR --help | grep -m 1 -F versionGenome | sed -E 's/.+\s+(.+)/\1/'")
-		local doindex=$forceidx idxparams thisidxversion idxversion=$(commander::runcmd -c star -t $threads -a cmdidx)
+		local doindex=$forceidx idxparams thisidxversion idxversion=$(commander::runcmd -c star -i $threads -a cmdidx)
 		[[ -s "$genomeidxdir/genomeParameters.txt" ]] && thisidxversion=$(grep -m 1 -F versionGenome "$genomeidxdir/genomeParameters.txt" | sed -E 's/.+\s+(.+)/\1/')
 
 		if [[ "$thisidxversion" != "$idxversion" ]]; then
@@ -237,7 +237,7 @@ alignment::star() {
 				--genomeFastaFiles "$genome"
 				--outFileNamePrefix "$genomeidxdir/$(basename "$genome")."
 			CMD
-			commander::runcmd -c star -v -b -t $threads -a cmdidx
+			commander::runcmd -c star -v -b -i $threads -a cmdidx
 			commander::printinfo "updating md5 sums"
 			thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
 			sed -i "s/md5star=.*/md5star=$thismd5star/" "$genome.md5.sh"
@@ -322,7 +322,7 @@ alignment::star() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c star -v -b -t 1 -a cmd1
+		commander::runcmd -c star -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -376,7 +376,7 @@ alignment::bwa() {
 	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "mapping bwa"
-	declare -a cmdchk=("command -v bwa-mem2 &> /dev/null && echo bwa-mem2 || echo bwa")
+	declare -a cmdchk=("which bwa-mem2 &> /dev/null && echo bwa-mem2 || echo bwa")
 	local bwacmd=$(commander::runcmd -c bwa -a cmdchk)
 
 	if $skipmd5; then
@@ -397,7 +397,7 @@ alignment::bwa() {
 			CMD
 				$bwacmd index -p "$idxprefix" "$genome"
 			CMD
-			commander::runcmd -c bwa -v -b -t $threads -a cmdidx
+			commander::runcmd -c bwa -v -b -i $threads -a cmdidx
 			commander::printinfo "updating md5 sums"
 			thismd5bwa=$(md5sum "$idxprefix.pac" | cut -d ' ' -f 1)
 			sed -i "s/md5bwa=.*/md5bwa=$thismd5bwa/" "$genome.md5.sh"
@@ -505,8 +505,8 @@ alignment::bwa() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c bwa -v -b -t 1 -a cmd1
-		commander::runcmd -c bwa -v -b -t $instances -a cmd2
+		commander::runcmd -c bwa -v -b -i 1 -a cmd1
+		commander::runcmd -c bwa -v -b -i $instances -a cmd2
 	fi
 
 	return 0
@@ -602,8 +602,8 @@ alignment::postprocess() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $instances -a cmd1
-		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
 	fi
 	return 0
 }
@@ -779,27 +779,30 @@ alignment::_index() {
 			-1 <cmds1>    | array of
 			-t <threads>  | number of
 			-i <bam>      | sorted alignment file
+			-o <bai>      | path to. default: -i
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads bam
+	local OPTIND arg mandatory threads bam bai
 	declare -n _cmds1_index
-	while getopts '1:t:i:' arg; do
+	while getopts '1:t:i:o:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_index=$OPTARG;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			i)	((++mandatory)); bam="$OPTARG";;
+			o)	bai="$OPTARG";;
 			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 3 ]] && _usage
+	[[ $bai ]] || bai="${bam%.*}.bai"
 
 	commander::makecmd -a _cmds1_index -s '|' -c {COMMANDER[0]}<<- CMD
 		samtools index
 			-@ $threads
 			"$bam"
-			"${bam%.*}.bai"
+			"$bai"
 	CMD
 
 	return 0
@@ -856,7 +859,7 @@ alignment::tobed() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd1
 	fi
 
 	return 0
@@ -937,7 +940,7 @@ alignment::inferstrandness(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd1
 	fi
 
 	declare -a cmd2
@@ -983,7 +986,7 @@ alignment::inferstrandness(){
 		declare -a a mapdata
 		commander::printinfo "running commands of array cmd2"
 		commander::printcmd -a cmd2
-		mapfile -t mapdata < <(commander::runcmd -c rseqc -t $threads -a cmd2)
+		mapfile -t mapdata < <(commander::runcmd -c rseqc -i $threads -a cmd2)
 		for l in "${mapdata[@]}"; do
 			a=($l)
 			_strandness_inferstrandness["${a[@]:1}"]="${a[0]}"
@@ -1080,10 +1083,61 @@ alignment::bamqc(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd1
 	fi
 
 	return 0
+}
+
+alignment::bulkindex(){
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip> | true/false return
+			-s <softskip> | true/false only print commands
+			-t <threads>  | number of
+			-r <mapper>   | array of bams within array of
+			-p <tmpdir>   | path to
+			-o <outdir>   | path to
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads tmpdir outdir
+	declare -n _mapper_bulkindex
+	while getopts 'S:s:r:t:p:o:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_bulkindex=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 4 ]] && _usage
+
+	local m i bam
+	declare -a mapper_index
+	for m in "${_mapper_bulkindex[@]}"; do
+		declare -n _bams_bulkindex=$m
+		for i in "${!_bams_bulkindex[@]}"; do
+			declare -n _mi_bulkindex=$m$i
+			[[ ${#_mi_bamstats[@]} -eq 0 ]] && continue
+		 	mapper_index+=("$m$i")
+		done
+	done
+	if [[ ${#mapper_index[@]} -gt 0 ]]; then
+		alignment::postprocess \
+			-S false \
+			-s $skip \
+			-j index \
+			-t $threads \
+			-p "$tmpdir" \
+			-o "$outdir" \
+			-r mapper_index
+	fi
 }
 
 alignment::qcstats(){
@@ -1206,7 +1260,7 @@ alignment::qcstats(){
 		if $skip; then
 			commander::printcmd -a cmd1
 		else
-			commander::runcmd -v -b -t $threads -a cmd1
+			commander::runcmd -v -b -i $threads -a cmd1
 		fi
 	fi
 
