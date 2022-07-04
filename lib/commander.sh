@@ -189,8 +189,9 @@ commander::printcmd(){
 commander::runcmd(){
 	local tmpdir pgid logdir
 	_cleanup::commander::runcmd(){
+		# pgrep -g $pgid  OR  ps -o pid= -g $pgid # | ps -o ppid= -g $pgid column -t | grep -Fxc $pgid  OR  pgrep -P $pgid
+		[[ $pgid ]] && { env kill -INT -- -$pgid; sleep 1; env kill -TERM -- -$pgid; wait $pgid $(ps -o pid= --ppid $pgid); } &> /dev/null || true
 		[[ $logdir ]] || rm -rf "$tmpdir"
-		[[ $pgid ]] && { env kill -INT -- -$pgid; sleep 1; env kill -TERM -- -$pgid; wait $pgid; } &> /dev/null || true
 	}
 
 	_usage(){
@@ -233,6 +234,7 @@ commander::runcmd(){
 	done
 	[[ ! $mandatory ]] && _usage
 	[[ $_cmds_runcmd ]] || return 0
+	declare -f "$BASHBONE_HOOKCMD" &> /dev/null && $BASHBONE_HOOKCMD _cmds_runcmd
 
 	$verbose && commander::printinfo "running commands of array ${!_cmds_runcmd}"
 
@@ -240,15 +242,23 @@ commander::runcmd(){
 	[[ $logdir ]] && tmpdir="$logdir" || tmpdir=$(mktemp -d -p /dev/shm jobs.XXXXXXXXXX)
 	[[ $jobname ]] || jobname="$(basename "$(mktemp -u -p "$tmpdir" XXXXXXXXXX)")"
 	ex="$tmpdir/exitcodes.$jobname"
-	((startid--))
 	[[ $stopid ]] || stopid=${#_cmds_runcmd[@]}
-	((stopid--))
 
 	# better write to file to avoid xargs argument too long error due to -I {}
 	# old: printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $instances -I {} bash -c {}
 	# upon error return 255 to prevent xargs to load further jobs
 	# use exit function on PPID to kill all sibling processes executed by xargs
 	declare -a scripts
+	# necessary for runstat
+	cat <<- EOF > "$tmpdir/info.$jobname"
+		$startid
+		$stopid
+		$(date "+%a-%b-%d-%T-%Y")
+		$threads
+	EOF
+
+	((startid--))
+	((stopid--))
 	for i in $(seq $startid $stopid); do
 		id=$((i+1));
 		sh="$tmpdir/job.$jobname.$id.sh"
@@ -256,16 +266,25 @@ commander::runcmd(){
 		$override && rm -f "$log" "$ex"
 
 		echo '#!/usr/bin/env bash' > "$sh"
-		echo "exit::$jobname.$id(){" >> "$sh"
-		echo "    echo \"$jobname.$id (\$((\$(ps -o pgid= -p \$\$)))) exited with exit code \$1\" >> '$ex'" >> "$sh"
-		echo '}' >> "$sh"
-		echo "BASHBONE_NOSETSID=true" >> "$sh"
+		if [[ $logdir ]]; then
+			echo "exit::$jobname.$id(){" >> "$sh"
+			echo "    echo \"$jobname.$id (\$((\$(ps -o pgid= -p \$\$ 2> /dev/null)))) exited with exit code \$1\" >> '$ex'" >> "$sh"
+			echo '}' >> "$sh"
+			echo "BASHBONE_NOSETSID=true" >> "$sh"
 
-		if [[ $cenv ]]; then
-			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
-			echo "conda activate --no-stack $cenv" >> "$sh"
+			if [[ $cenv ]]; then
+				echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+				echo "conda activate --no-stack $cenv" >> "$sh"
+			else
+				echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+			fi
 		else
-			echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+			if [[ $cenv ]]; then
+				echo "source '$BASHBONE_DIR/activate.sh' -c true -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+				echo "conda activate --no-stack $cenv" >> "$sh"
+			else
+				echo "source '$BASHBONE_DIR/activate.sh' -c false -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+			fi
 		fi
 
 		$verbose && echo 'tail -3 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
@@ -277,7 +296,7 @@ commander::runcmd(){
 		# run asynchronous and use wait to get rid of terminated messages. but this will print this for loop as terminated job command at wait below
 		# thus, use INT signal, but attention: kill -INT is ignored in asynchronous commands with disabled job control due to a wierd POSIX requirement: set +m; bash -c 'trap "echo INT" INT; trap -p' & wait $!
 		# workaround via env: set +m; env --default-signal=SIGINT,SIGQUIT bash -c 'trap "echo INT" INT; trap -p' & wait $!
-		scripts+=("$sh")
+		scripts+=("$(realpath -s "$sh")") # necessary for runstat
 	done
 
 	if $benchmark; then
@@ -288,11 +307,98 @@ commander::runcmd(){
 		# time: is also a bash shell keyword which works differently and does not record memory usage
 		# due to set -E based error tracing, command time may leads to *** longjmp causes uninitialized stack frame ***: bash terminated
 		# workaround: use full path, which, env or $(command -v time) <- prefer env to use env bash too
+
+		# future feature: kill -USR1 $pgid increments (USR2 decrements) number parallel xargs processes by one
 	else
 		printf '%q\n' "${scripts[@]}" | setsid --wait env --default-signal=INT xargs -P $instances -I {} bash {} &
 		pgid=$!
 		wait $pgid
 	fi
+
+	return 0
+}
+
+commander::runalter(){
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-i <instances> | number of parallel
+			-p <id|name>   | xargs process id or job name
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory pid instances
+	while getopts 'p:i:' arg; do
+		case $arg in
+			p)	((++mandatory)); pid=$OPTARG;;
+			i)	((++mandatory)); instances=$OPTARG;;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 2 ]] && _usage
+
+	BASHBONE_ERROR="no such job name: $pid"
+	[[ $pid =~ ^[0-9]+$ ]] || pid=$(($(ps -o pgid= -p $(pgrep -o -f "job.$pid.*.sh"))))
+	BASHBONE_ERROR="not a valid job id: $pid"
+	[[ "$(ps -o comm= -p $pid)" == xargs ]]
+
+	local i=$(pgrep -c -P $pid)
+	i=$((i-instances))
+	[[ $i -eq 0 ]] && return 0
+
+	if [[ $i -gt 0 ]]; then
+		# decrement
+		while [[ $((i--)) -gt 0 ]]; do
+			kill -USR2 $pid
+			sleep 0.1
+		done
+	else
+		# increment
+		while [[ $((i++)) -lt 0 ]]; do
+			kill -USR1 $pid
+			sleep 0.1
+		done
+	fi
+
+	return 0
+}
+
+commander::runstat(){
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-p <id|name>   | xargs process id or job name
+			-u <name>      | user
+		EOF
+		return 1
+	}
+
+	local OPTIND arg pid name user=".+"
+	while getopts 'p:u:' arg; do
+		case $arg in
+			p)	pid="$OPTARG";;
+			u)	user="$OPTARG";;
+			*)	_usage;;
+		esac
+	done
+
+	declare -a mapdata pgids
+	mapfile -t mapdata < <(ps -o lstart,pid,ppid,sid,pcpu,pmem,rss,etime,user,comm,args -U $(users | tr -s ' ' ',') | sed -E '1!{s/^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/\1-\2-\3-\4-\5/}')
+
+	if [[ $pid =~ ^[0-9]+$ ]]; then
+		name=".+"
+	elif [[ $pid ]]; then
+		name="$pid"
+		pid="\d+"
+	else
+		name=".+"
+		pid="\d+"
+	fi
+
+	{	echo "${mapdata[0]}" | perl -lane '$F[6]="MEMORY"; print join" ",("NAME",$F[0],"JOBID",@F[4..8],"STATE","TASKID")'
+		printf "%s\n" "${mapdata[@]}" | sort -k10,10r | perl -M'List::Util qw(max)' -slane '$gpids{$F[1]}=0 if $F[3]=~/^$p$/ && $F[1]==$F[3] && $F[8]=~/^$u$/; if (exists $gpids{$F[3]} && $F[-1]=~/job\.$n\.\d+\.sh$/ && $F[2]==$F[3]){$dirs{$F[3]}=$_=~s/.+bash (\/.*)job\.$n\.\d+\.sh$/$1/r; $jobs{$F[3]}=0; $names{$F[3]}=(split/\./,$F[-1])[-3]; $users{$F[3]}=$F[8]; $F[-1]=~s/.+\.(\d+)\.sh$/$1/; $jobs{$F[3]}=max($jbos{$F[3]},$F[-1]); print join" ",($names{$F[3]},$F[0],$F[2],@F[4..8],"r",$F[-1])}; END{for (keys %jobs){ open F, "<$dirs{$_}/info.$names{$_}"; chomp(@l=<F>); close F; print join" ",($names{$_},$l[2],$_,"* * * *",$users{$_},"q",++$jobs{$_}."-".$l[1]); } }' -- -n="$name" -p="$pid" -u="$user" | sort -k4,4V -k11,11n
+	} | column -t
 
 	return 0
 }
@@ -352,11 +458,12 @@ commander::qsubcmd(){
 
 	[[ $mandatory -lt 3 ]] && _usage
 	[[ $_cmds_qsubcmd ]] || return 0
+	declare -f "$BASHBONE_HOOKCMD" &> /dev/null && $BASHBONE_HOOKCMD _cmds_runcmd
 
 	$verbose && commander::printinfo "running commands of array ${!_cmds_qsubcmd}"
 
 	[[ $stopid ]] || stopid=${#_cmds_qsubcmd[@]}
-	[[ $instances ]] || instances=$((stopid-startid))
+	[[ $instances ]] || instances=$((stopid-startid+1))
 
 	[[ $penv ]] && params="$penv $threads" || params="$queue"
 	[[ $jobname ]] || jobname="$(basename "$(mktemp -u -p "$logdir" XXXXXXXXXX)")"
@@ -430,6 +537,70 @@ commander::qsubcmd(){
 	fi
 }
 
+commander::qalter(){
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-i <instances> | number of parallel
+			-l <complex>   | sge digestable list of consumables as key="value" pairs (see qconf -sc or qconf -mc)
+			-p <id|name>   | xargs process id or job name
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory pid instances
+	declare -a complexes
+	while getopts 'p:i:l:' arg; do
+		case $arg in
+			p)	((++mandatory)); pid=$OPTARG;;
+			i)	((++mandatory)); instances="-tc $OPTARG";;
+			l)	complexes+=("-l $OPTARG");;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 1 ]] && _usage
+
+	qalter ${complexes[@]} $instances $pid
+
+	return 0
+}
+
+commander::qstat(){
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-p <id|name>   | job id or job name
+			-u <name>      | user
+		EOF
+		return 1
+	}
+
+	local OPTIND arg pid name user=".+"
+	while getopts 'p:u:' arg; do
+		case $arg in
+			p)	pid="$OPTARG";;
+			u)	user="$OPTARG";;
+			*)	_usage;;
+		esac
+	done
+
+	if [[ $pid =~ ^[0-9]+$ ]]; then
+		name=".+"
+	elif [[ $pid ]]; then
+		name="$pid"
+		pid="\d+"
+	else
+		name=".+"
+		pid="\d+"
+	fi
+
+	{	echo "JOBID PRIOR NAME USER STATE STARTED QUEUE SLOTS TASKID"
+		env qstat -xml | tr '\n' ' ' | sed 's/<job_list[^>]*>/\n/g;s/<[^>]*>//g' | tr -s ' ' ' ' | perl -slane 'next unless $F[0]=~/^$p$/ || $F[2]=~/^$n$/ || $F[3]=~/^$u$/; unless($F[8]){$F[8]=$F[7]; $F[7]=$F[6]; $F[6]="*"} print join" ",@F; ' -- -p="$pid" -n="$name" -u="$user"
+	} | column -t
+
+	return 0
+}
+
 commander::_test(){
 	local x=${1:-'hello world'} threads=${2:-1} i=2 s
 
@@ -478,7 +649,7 @@ commander::_test(){
 		-- -x="$x"
 	CMD
 
-	commander::runcmd -v -b -t $threads -a cmd || commander::printerr "failed"
+	commander::runcmd -v -b -i $threads -a cmd || commander::printerr "failed"
 
 	commander::warn ${FUNCNAME[0]} EXPECTED OUTPUT to stderr
 	commander::printerr {COMMANDER[0]}<<-OUT
