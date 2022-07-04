@@ -25,12 +25,13 @@ configure::exit(){
 
 	[[ $exitfun ]] && {
 		shift $((OPTIND-(OPTIND-6))) # -x X -p P -f F
-		$exitfun "$@" $ex
+		$exitfun "$@" $ex || true
 	}
 
 	# pstree < 23.0-1 : /proc/<id> no such file bug https://bugs.launchpad.net/ubuntu/+source/psmisc/+bug/1629839
-	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | grep -vFw $pid))
-	{ env kill -TERM "${pids[@]}"; wait "${pids[@]}"; } &> /dev/null || true
+	{	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | grep -vFw $pid))
+		env kill -TERM "${pids[@]}"; wait "${pids[@]}"
+	} &> /dev/null || true
 	[[ $ex -gt 0 ]] && { pgid=$(($(ps -o pgid= -p $pid))); env kill -INT -- -$pgid; sleep 1; env kill -TERM -- -$pgid; wait $pgid; } &> /dev/null || true
 	#kill -PIPE $p # is captured by bashbone. does not print termination message
 	#kill -INT $p # graceful kill. due to interrupt by user. probably captured by job or simply not delivered. does not print termination message
