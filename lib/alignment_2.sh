@@ -91,7 +91,7 @@ alignment::slice(){
 		commander::printcmd -a cmd1
 	else
 		rm -f "$tmpdir/genome/slice".*.bed
-		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd1
 	fi
 
 	for m in "${_mapper_slice[@]}"; do
@@ -102,7 +102,8 @@ alignment::slice(){
 			o="$tdir"/$(basename "$f")
 			o="${o%.*}"
 
-			alignment::_index -1 cmd2 -t $ithreads -i "$f"
+			# alignment::_index -1 cmd2 -t $ithreads -i "$f" -o "$o.bai"
+			# params="-X '$o.bai'"
 
 			mapfile -t mapdata < <(find "$tmpdir/genome" -maxdepth 1 -type f -name "slice.*.bed" | sort -V)
 			printf "%s\n" "${mapdata[@]}" | sed -E "s@.+\.([0-9]+)\.bed@$o.slice.\1.bam@" > "$o.slices.info"
@@ -110,7 +111,7 @@ alignment::slice(){
 
 			for bed in "${mapdata[@]}"; do
 				i=$(basename "$bed" .bed | rev | cut -d '.' -f 1 | rev)
-				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					samtools view
 						-@ $ithreads
 						-L "$bed"
@@ -127,10 +128,10 @@ alignment::slice(){
 
 	if $skip; then
 		commander::printcmd -a cmd2
-		commander::printcmd -a cmd3
+		# commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -t $instances -a cmd2
-		commander::runcmd -v -b -t $instances -a cmd3
+		commander::runcmd -v -b -i $instances -a cmd2
+		# commander::runcmd -v -b -i $instances -a cmd3
 	fi
 
 	return 0
@@ -324,7 +325,7 @@ alignment::rmduplicates(){
 						CMD
 					else
 						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-							picard
+							MALLOC_ARENA_MAX=4 picard
 								-Xmx${jmem}m
 								-XX:ParallelGCThreads=$jgct
 								-XX:ConcGCThreads=$jcgct
@@ -347,7 +348,7 @@ alignment::rmduplicates(){
 					fi
 				else
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-						picard
+						MALLOC_ARENA_MAX=4 picard
 							-Xmx${jmem}m
 							-XX:ParallelGCThreads=$jgct
 							-XX:ConcGCThreads=$jcgct
@@ -405,15 +406,15 @@ alignment::rmduplicates(){
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -t $minstances -a cmdsort
-		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -i $minstances -a cmdsort
+		commander::runcmd -v -b -i $instances -a cmd1
 		if $legacy; then
-			commander::runcmd -c umitools -v -b -t $minstances -a cmd2
+			commander::runcmd -c umitools -v -b -i $minstances -a cmd2
 		else
-			commander::runcmd -c picard -v -b -t $minstances -a cmd2
+			commander::runcmd -c picard -v -b -i $minstances -a cmd2
 		fi
-		commander::runcmd -v -b -t $instances -a cmd3
-		commander::runcmd -v -b -t $oinstances -a cmd4
+		commander::runcmd -v -b -i $instances -a cmd3
+		commander::runcmd -v -b -i $oinstances -a cmd4
 	fi
 
 	return 0
@@ -482,7 +483,7 @@ alignment::clipmateoverlaps_alt() {
 				# fgbio clips half the overlap from both reads, thus does not produce unmapped reads
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fgbio)")
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					fgbio
+					MALLOC_ARENA_MAX=4 fgbio
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
 						-XX:ConcGCThreads=$jcgct
@@ -530,9 +531,9 @@ alignment::clipmateoverlaps_alt() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -c fgbio -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $instances -a cmd2
-		commander::runcmd -v -b -t $instances -a cmd3
+		commander::runcmd -c fgbio -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd3
 	fi
 
 	return 0
@@ -645,9 +646,9 @@ alignment::clipmateoverlaps() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -c bamutil -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $instances -a cmd2
-		commander::runcmd -v -b -t $instances -a cmd3
+		commander::runcmd -c bamutil -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd3
 	fi
 
 	return 0
@@ -714,7 +715,7 @@ alignment::reorder() {
 
 			while read -r slice; do
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					picard
+					MALLOC_ARENA_MAX=4 picard
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
 						-XX:ConcGCThreads=$jcgct
@@ -761,9 +762,9 @@ alignment::reorder() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -c picard -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $instances -a cmd2
-		commander::runcmd -v -b -t $instances -a cmd3
+		commander::runcmd -c picard -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd3
 	fi
 
 	return 0
@@ -856,7 +857,7 @@ alignment::addreadgroup() {
 			o="${o%.*}"
 			while read -r slice; do
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					picard
+					MALLOC_ARENA_MAX=4 picard
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
 						-XX:ConcGCThreads=$jcgct
@@ -902,9 +903,9 @@ alignment::addreadgroup() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -c picard -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $instances -a cmd2
-		commander::runcmd -v -b -t $instances -a cmd3
+		commander::runcmd -c picard -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd3
 	fi
 
 	return 0
@@ -984,7 +985,7 @@ alignment::splitncigar() {
 			while read -r slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					gatk
+					MALLOC_ARENA_MAX=4 gatk
 						--java-options '
 							-Xmx${jmem}m
 							-XX:ParallelGCThreads=$jgct
@@ -1033,9 +1034,9 @@ alignment::splitncigar() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $instances -a cmd2
-		commander::runcmd -v -b -t $instances -a cmd3
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd3
 	fi
 
 	return 0
@@ -1104,7 +1105,7 @@ alignment::soft2hardclip() {
 				# --upgrade-clipping=true updates softclipped sites to hard clipped ones (or vice versa) prior to do any other (optional) operation
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fgbio)")
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					fgbio
+					MALLOC_ARENA_MAX=4 fgbio
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
 						-XX:ConcGCThreads=$jcgct
@@ -1152,9 +1153,9 @@ alignment::soft2hardclip() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -c fgbio -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $instances -a cmd2
-		commander::runcmd -v -b -t $instances -a cmd3
+		commander::runcmd -c fgbio -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd3
 	fi
 
 	return 0
@@ -1232,7 +1233,7 @@ alignment::leftalign() {
 				CMD
 					mv "$slice.reheader" "$slice"
 				CMD
-					gatk
+					MALLOC_ARENA_MAX=4 gatk
 						--java-options '
 								-Xmx${jmem}m
 								-XX:ParallelGCThreads=$jgct
@@ -1288,9 +1289,9 @@ alignment::leftalign() {
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $instances -a cmd2
-		commander::runcmd -v -b -t $instances -a cmd3
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd3
 	fi
 
 	return 0
@@ -1389,7 +1390,7 @@ alignment::bqsr() {
 				#
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					gatk
+					MALLOC_ARENA_MAX=4 gatk
 						--java-options '
 								-Xmx${jmem}m
 								-XX:ParallelGCThreads=$jgct
@@ -1456,10 +1457,10 @@ alignment::bqsr() {
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd2
-		commander::runcmd -v -b -t $instances -a cmd3
-		commander::runcmd -v -b -t $instances -a cmd4
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd1
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd3
+		commander::runcmd -v -b -i $instances -a cmd4
 	fi
 
 	return 0
