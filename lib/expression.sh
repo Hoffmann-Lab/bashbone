@@ -46,7 +46,7 @@ expression::diego(){
 			e)	exonmode=$OPTARG;;
 			i)	countsdir="$OPTARG";;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
-			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir"; outdir="$(realpath -s "$outdir")";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			F)	forceidx=true;;
 			*)	_usage;;
 		esac
@@ -84,19 +84,19 @@ expression::diego(){
 			CMD
 		fi
 
-		commander::runcmd -c diego -v -b -t $threads -a cmdprep1
-		commander::runcmd -c htseq -v -b -t $threads -a cmdprep2
+		commander::runcmd -c diego -v -b -i $threads -a cmdprep1
+		commander::runcmd -c htseq -v -b -i $threads -a cmdprep2
 	fi
 
 	if $exonmode; then
 		quantify::featurecounts \
 			-S false \
-			-s "$skip" \
+			-s $skip \
 			-t $threads \
 			-p $tmpdir \
 			-g "${gtf%.*}.aggregated.gtf" \
 			-l exon \
-			-f exon_id \
+			-f exon \
 			-o "$countsdir" \
 			-r _mapper_diego \
 			-x _strandness_diego
@@ -121,14 +121,14 @@ expression::diego(){
 						#echo -e "$condition\t$sample.$replicate" >> "$odir/groups.tsv"
 						echo -e "$condition\t$condition.$replicate" >> "$odir/groups.tsv"
 
-						sjfile="$(find -L "${mappeddirs[@]}" -maxdepth 1 -name "$sample*.sj" -print -quit)"
-						#[[ $sjfile ]] && echo -e "$sample.$replicate\t$sjfile" >> "$odir/list.sj.tsv"
-						[[ $sjfile ]] && echo -e "$condition.$replicate\t$sjfile" >> "$odir/list.sj.tsv"
+						sjfile="$(find -L "${mappeddirs[@]}" -maxdepth 1 -name "$sample*.sj" -print -quit | grep .)"
+						#echo -e "$sample.$replicate\t$sjfile" >> "$odir/list.sj.tsv"
+						echo -e "$condition.$replicate\t$(realpath -se "$sjfile")" >> "$odir/list.sj.tsv"
 
 						if $exonmode; then
-							countfile="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.exoncounts.htsc" -print -quit)"
+							countfile="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.exoncounts.htsc" -print -quit | grep .)"
 							#echo -e "$sample.$replicate\t$countfile" >> "$odir/list.ex.tsv"
-							echo -e "$condition.$replicate\t$countfile" >> "$odir/list.ex.tsv"
+							echo -e "$condition.$replicate\t$(realpath -se "$countfile")" >> "$odir/list.ex.tsv"
 						fi
 
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
@@ -141,11 +141,11 @@ expression::diego(){
 								cd "${tdirs[-1]}"
 							CMD
 								pre_segemehl.pl
-									-l "$odir/list.sj.tsv"
-									-a "$(realpath -s "${gtf%.*}.diego.bed")"
+									-l "$(realpath -se "$odir/list.sj.tsv")"
+									-a "$(realpath -se "${gtf%.*}.diego.bed")"
 									-o "input.sj.tsv"
 							CMD
-								mv input.sj.tsv "$odir/input.sj.tsv"
+								mv input.sj.tsv "$(realpath -s "$odir/input.sj.tsv")"
 							CMD
 						elif [[ $m == "star" ]]; then
 							tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.diego)")
@@ -153,10 +153,10 @@ expression::diego(){
 								cd "${tdirs[-1]}"
 							CMD
 								pre_STAR.py
-									-l "$odir/list.sj.tsv"
-									-d "$(realpath -s "${gtf%.*}.diego.bed")"
+									-l "$(realpath -se "$odir/list.sj.tsv")"
+									-d "$(realpath -se "${gtf%.*}.diego.bed")"
 							CMD
-								mv junction_table.txt "$odir/input.sj.tsv"
+								mv junction_table.txt "$(realpath -s "$odir/input.sj.tsv")"
 							CMD
 						fi
 						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
@@ -188,8 +188,8 @@ expression::diego(){
 							cd "${tdirs[-1]}"
 						CMD
 							HTseq2DIEGO.pl
-								-i "$odir/list.ex.tsv"
-								-o "$odir/input.ex.tsv"
+								-i "$(realpath -se "$odir/list.ex.tsv")"
+								-o "$(realpath -s "$odir/input.ex.tsv")"
 						CMD
 						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 							diego.py
@@ -222,8 +222,8 @@ expression::diego(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c diego -v -b -t $threads -a cmd1
-		commander::runcmd -c diego -v -b -t $threads -a cmd2
+		commander::runcmd -c diego -v -b -i $threads -a cmd1
+		commander::runcmd -c diego -v -b -i $threads -a cmd2
 	fi
 
 	return 0
@@ -239,30 +239,32 @@ expression::deseq() {
 			-r <mapper>   | array of bams within array of
 			-g <gtf>      | path to
 			-c <cmpfiles> | array of
-			-i <htscdir>  | path to
+			-i <countsdir>| path to
 			-o <outdir>   | path to
+			-f <feature>  | feature (default: gene)
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads countsdir outdir gtf gtfinfo
+	local OPTIND arg mandatory skip=false threads countsdir outdir gtf gtfinfo feature="gene"
 	declare -n _mapper_deseq _cmpfiles_deseq
-	while getopts 'S:s:t:r:g:c:i:o:' arg; do
+	while getopts 'S:s:t:r:g:c:i:o:f:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			r)	((++mandatory)); _mapper_deseq=$OPTARG;;
-			g)	gtf="$OPTARG"; gtfinfo="$(readlink -e "$gtf"*.+(info|descr) | head -1 || true)";;
+			g)	gtf="$OPTARG"; gtfinfo="$([[ -s "$gtf.info" ]] && echo "$gtf.info" || true)";;
 			c)	((++mandatory)); _cmpfiles_deseq=$OPTARG;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			f)	feature="$OPTARG";;
 			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 5 ]] && _usage
 
-	commander::printinfo "principal component and differential gene expression analyses"
+	commander::printinfo "principal component and differential expression analyses"
 
 	local instances=${#_mapper_deseq[@]} ithreads
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 64 -T $threads)
@@ -291,13 +293,13 @@ expression::deseq() {
 					mkdir -p "$odir/$c-vs-$t"
 					head -1 "$odir/experiments.csv" > "$odir/$c-vs-$t/experiments.csv"
 					while read -r sample condition library replicate factors; do
-						countfile="$(realpath -s "$countsdir/$m/$sample"*.+(genecounts|counts).+(reduced|htsc) | head -1)"
+						countfile="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc" -print -quit | grep .)"
 						[[ $factors ]] && factors=","$(echo $factors | sed -E 's/\s+/,/g')
 
 						# echo "$sample,$countfile,$condition,$replicate$factors" >> "$odir/$c-vs-$t/experiments.csv"
 						echo "$condition.$replicate,$countfile,$condition,$replicate$factors" >> "$odir/$c-vs-$t/experiments.csv"
 
-						tojoin+=("$(realpath -s "$countsdir/$m/$sample"*.+(genecounts|counts).+(reduced|htsc).tpm | head -1)")
+						tojoin+=("$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc.tpm" -print -quit | grep .)")
 						#header+="\t$sample.$replicate"
 						header+="\t$condition.$replicate"
 						meanheader+="\t$condition"
@@ -324,7 +326,7 @@ expression::deseq() {
 							tsv <- args[1];
 							df <- read.table(tsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 							means <- t(apply(df, 1, function(x) tapply(x, colnames(df), mean)));
-							write.table(data.frame(id=rownames(means),means[,unique(colnames(df))]), row.names = F, file = tsv, quote=F, sep="\t");
+							write.table(data.frame(id=rownames(means),means[,unique(colnames(df))],check.names=F), row.names = F, file = tsv, quote=F, sep="\t");
 						'
 					CMD
 						"$odir/$c-vs-$t/experiments.mean.tpm"
@@ -340,7 +342,7 @@ expression::deseq() {
 							df <- df-rowMeans(df);
 							df <- df/apply(df,1,sd);
 							df[is.na(df)] <- 0;
-							write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
+							write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
 						'
 					CMD
 						"$odir/$c-vs-$t/experiments.tpm" "$odir/$c-vs-$t/experiments.tpm.zscores"
@@ -356,7 +358,7 @@ expression::deseq() {
 							df <- df-rowMeans(df);
 							df <- df/apply(df,1,sd);
 							df[is.na(df)] <- 0;
-							write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
+							write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
 						'
 					CMD
 						"$odir/$c-vs-$t/experiments.mean.tpm" "$odir/$c-vs-$t/experiments.mean.tpm.zscores"
@@ -371,7 +373,7 @@ expression::deseq() {
 					CMD
 						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm" >> "$odir/$c-vs-$t/heatmap.tpm"
 					CMD
-						heatmap.R TRUE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.tpm" "TPM" "most differentially expressed genes"
+						heatmap.R TRUE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.tpm" "TPM" "most differentially expressed ${feature}s"
 					CMD
 
 					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
@@ -381,7 +383,7 @@ expression::deseq() {
 					CMD
 						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.tpm.zscores"
 					CMD
-						heatmap.R TRUE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.tpm.zscores" "Z-Score" "most differentially expressed genes"
+						heatmap.R TRUE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.tpm.zscores" "Z-Score" "most differentially expressed ${feature}s"
 					CMD
 
 					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
@@ -391,7 +393,7 @@ expression::deseq() {
 					CMD
 						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm" >> "$odir/$c-vs-$t/heatmap.mean.tpm"
 					CMD
-						heatmap.R FALSE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.mean.tpm" "TPM" "most differentially expressed genes"
+						heatmap.R FALSE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.mean.tpm" "TPM" "most differentially expressed ${feature}s"
 					CMD
 
 					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
@@ -401,20 +403,15 @@ expression::deseq() {
 					CMD
 						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.mean.tpm.zscores"
 					CMD
-						heatmap.R FALSE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.mean.tpm.zscores" "Z-Score" "most differentially expressed genes"
+						heatmap.R FALSE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.mean.tpm.zscores" "Z-Score" "most differentially expressed ${feature}s"
 					CMD
 
 					if [[ $gtf ]]; then
-						# for h in "$odir/$c-vs-$t/deseq.tsv" "$odir/$c-vs-$t/deseq.full.tsv" "$odir/$c-vs-$t/deseq.noNA.tsv"; do
-						# 	commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
-						# 		annotate.pl "${gtfinfo:=0}" "$gtf" "$h"
-						# 	CMD
-						# done
 						commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
 							find -L "$odir/$c-vs-$t"
 								-type f
 								"(" -name "deseq.tsv" -or -name "deseq.noNA.tsv" -or -name "deseq.full.tsv" -or -name "deseq.fcshrunk.tsv" ")"
- 								-exec annotate.pl "${gtfinfo:=0}" "$gtf" "{}" \;
+ 								-exec annotate.pl "${gtfinfo:=0}" "$gtf" $feature "{}" \;
 						CMD
 
 						commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD
@@ -437,7 +434,7 @@ expression::deseq() {
 									"$odir/$c-vs-$t/heatmap.mean.$e.ps" "$odir/$c-vs-$t/heatmap.mean.$e.zscores.ps"; do
 								commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
 									if [[ -e "$h" ]]; then
-										annotate.pl "${gtfinfo:=0}" "$gtf" "$h";
+										annotate.pl "${gtfinfo:=0}" "$gtf" $feature "$h";
 										ps2pdf \$(grep -m 1 -F BoundingBox ${h%.*}.annotated.ps | awk '{print "-g"\$4*10"x"\$5*10}') ${h%.*}.annotated.ps ${h%.*}.annotated.pdf;
 									fi
 								CMD
@@ -486,13 +483,13 @@ expression::deseq() {
 		commander::printcmd -a cmd5
 		commander::printcmd -a cmd6
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $instances -a cmd3
-		# commander::runcmd -v -b -t $threads -a cmdanno
-		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
-		commander::runcmd -v -b -t $threads -a cmd6
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd3
+		# commander::runcmd -v -b -i $threads -a cmdanno
+		commander::runcmd -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
+		commander::runcmd -v -b -i $threads -a cmd6
 	fi
 
 	return 0
@@ -509,22 +506,24 @@ expression::_deseq() {
 			-g <gtf>     | path to
 			-c <cmps>    | string of pairs
 			-o <outdir>  | path to
+			-f <feature> | feature (default: gene)
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads csvfile gtf outdir gtfinfo
+	local OPTIND arg mandatory threads csvfile gtf outdir gtfinfo feature="gene"
 	declare -n _cmds1_deseq _cmds2_deseq
 	declare -a cmppairs
-	while getopts '1:2:t:i:g:c:o:' arg; do
+	while getopts '1:2:t:i:g:c:o:f:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_deseq=$OPTARG;;
 			2)	((++mandatory)); _cmds2_deseq=$OPTARG;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			i)	((++mandatory)); csvfile="$OPTARG";;
-			g)	gtf="$OPTARG"; gtfinfo="$(readlink -e "$gtf"*.+(info|descr) | head -1 || true)";;
+			g)	gtf="$OPTARG"; gtfinfo="$([[ -s "$gtf.info" ]] && echo "$gtf.info" || true)";;
 			c)	((++mandatory)); mapfile -t -d ' ' cmppairs < <(printf '%s' "$OPTARG");;
 			o)	((++mandatory)); outdir="$OPTARG";;
+			f)	feature="$OPTARG";;
 			*)	_usage;;
 		esac
 	done
@@ -545,7 +544,7 @@ expression::_deseq() {
 				find -L "$odir"
 					-type f
 					"(" -name "deseq.tsv" -or -name "deseq.noNA.tsv" -or -name "deseq.full.tsv" ")"
-					-exec annotate.pl "${gtfinfo:=0}" "$gtf" "{}" \;
+					-exec annotate.pl "${gtfinfo:=0}" "$gtf" $feature "{}" \;
 			CMD
 
 			for f in "$odir/heatmap.vsc.ps" "$odir/heatmap.vsc.zscores.ps" \
@@ -553,7 +552,7 @@ expression::_deseq() {
 					"$odir/heatmap.mean.vsc.ps" "$odir/heatmap.mean.vsc.zscores.ps"; do
 				commander::makecmd -a _cmds2_deseq -s ';' -c {COMMANDER[0]}<<- CMD
 					if [[ -e "$f" ]]; then
-						annotate.pl "${gtfinfo:=0}" "$gtf" "$f";
+						annotate.pl "${gtfinfo:=0}" "$gtf" $feature "$f";
 						ps2pdf \$(grep -m 1 -F BoundingBox ${f%.*}.annotated.ps | awk '{print "-g"\$4*10"x"\$5*10}') ${f%.*}.annotated.ps ${f%.*}.annotated.pdf;
 					fi
 				CMD
@@ -564,7 +563,7 @@ expression::_deseq() {
 	return 0
 }
 
-expression::join(){
+expression::join_deseq(){
 	declare -a tfiles
 	_cleanup::expression::join(){
 		rm -f "${tfiles[@]}"
@@ -580,27 +579,29 @@ expression::join(){
 			-p <tmpdir>   | path to
 			-r <mapper>   | array of bams within array of
 			-c <cmpfiles> | array of
-			-i <htscdir>  | path to
+			-i <countsdir>| path to
 			-j <deseqdir> | path to
 			-o <outdir>   | path to
+			-f <feature>  | feature (default: gene)
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads countsdir deseqdir outdir tmpdir gtf gtfinfo joinheatmaps=true
+	local OPTIND arg mandatory skip=false threads countsdir deseqdir outdir tmpdir gtf gtfinfo joinheatmaps=true feature="gene"
     declare -n _mapper_join _cmpfiles_join
-	while getopts 'S:s:t:g:r:p:c:i:j:o:n' arg; do
+	while getopts 'S:s:t:g:r:p:c:i:j:o:f:n' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
-			g)	gtf="$OPTARG"; gtfinfo="$(readlink -e "$gtf"*.+(info|descr) | head -1 || true)";;
+			g)	gtf="$OPTARG"; gtfinfo="$([[ -s "$gtf.info" ]] && echo "$gtf.info" || true)";;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			r)	((++mandatory)); _mapper_join=$OPTARG;;
 			c)	((++mandatory)); _cmpfiles_join=$OPTARG;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
 			j)	((++mandatory)); deseqdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			f)	feature="$OPTARG";;
 			n)	joinheatmaps=false;;
 			*)	_usage;;
 		esac
@@ -636,17 +637,11 @@ expression::join(){
 						meanheader[$x]="$condition"
 						((++x))
 
-						#cf="$(readlink -e "$countsdir/$m/$sample"*.tpm | head -1)"
-						cf="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.tpm" -print -quit)"
-						cf="${cf%.*}"
+						cf="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc.tpm" -print -quit | grep .)"
+						cf="${cf/%\.htsc\.tpm/}"
 						countfiles["$condition.$replicate"]="$cf"
-
 						# get column per sample and write it to counts dir for downstream joins
-						# if sample name aka input file name contains \W chars, they were auto replaced by upstream R scripts
-						#perl -M'List::MoreUtils qw(first_index)' -slane 'if($.==1){$h=~s/\W/./g; $c = first_index {$_ eq $h} @F}else{print "$F[0]\t$F[$c]"}' -- -h="$condition.$replicate" "$vsc" > "$cf.vsc"
-						# updated upstream R scripts by checkn.names false
-						perl -M'List::MoreUtils qw(first_index)' -slane 'if($.==1){$c = first_index {$_ eq $h} @F}else{print "$F[0]\t$F[$c]"}' -- -h="$condition.$replicate" "$vsc" > "$cf.vsc"
-
+						perl -M'List::MoreUtils qw(first_index)' -slane 'if($.==1){$c = first_index {$_ eq $h} @F}else{print "$F[0]\t$F[$c]"}' -- -h="$condition.$replicate" "$vsc" > "$cf.htsc.vsc"
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 				done
 			done
@@ -658,7 +653,7 @@ expression::join(){
 		height=$(cat "$topids" | wc -l | awk '{h=($1/50)*8; if(h<2){h=2}; printf "%0.f",h}')
 		width=$(cat "$deseqdir/$m/experiments.csv" | wc -l | awk '{printf "%0.f",$1/10+6}')
 
-		for e in tpm vsc; do
+		for e in htsc htsc.tpm htsc.vsc; do
 			h='id'
 			mh='id'
 			tojoin=()
@@ -667,6 +662,7 @@ expression::join(){
 				mh+="\t${meanheader[$x]}"
 				tojoin+=("${countfiles[${header[$x]}]}.$e")
 			done
+			e=${e#*.}
 
 			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
 				helper::multijoin
@@ -683,7 +679,7 @@ expression::join(){
 					tsv <- args[1];
 					df <- read.table(tsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 					means <- t(apply(df, 1, function(x) tapply(x, colnames(df), mean)));
-					write.table(data.frame(id=rownames(means),means[,unique(colnames(df))]), row.names = F, file = tsv, quote=F, sep="\t");
+					write.table(data.frame(id=rownames(means),means[,unique(colnames(df))],check.names=F), row.names = F, file = tsv, quote=F, sep="\t");
 				'
 			CMD
 				"$odir/experiments.mean.$e"
@@ -699,7 +695,7 @@ expression::join(){
 					df <- df-rowMeans(df);
 					df <- df/apply(df,1,sd);
 					df[is.na(df)] <- 0;
-					write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
+					write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
 				'
 			CMD
 				"$odir/experiments.$e" "$odir/experiments.$e.zscores"
@@ -715,19 +711,19 @@ expression::join(){
 					df <- df-rowMeans(df);
 					df <- df/apply(df,1,sd);
 					df[is.na(df)] <- 0;
-					write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
+					write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
 				'
 			CMD
 				"$odir/experiments.mean.$e" "$odir/experiments.mean.$e.zscores"
 			CMD
 
-			if $joinheatmaps && [[ $(wc -l < "$topids") -gt 1 ]]; then
+			if $joinheatmaps && [[ "$e" != "htsc" && $(wc -l < "$topids") -gt 1 ]]; then
 				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					head -1 "$odir/experiments.$e" > "$deseqdir/$m/heatmap.$e"
 				CMD
 					grep -F -f "$topids" "$odir/experiments.$e" >> "$deseqdir/$m/heatmap.$e"
 				CMD
-					heatmap.R TRUE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.$e" "${e^^}" "most differentially expressed genes"
+					heatmap.R TRUE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.$e" "${e^^}" "most differentially expressed ${feature}s"
 				CMD
 
 				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -735,7 +731,7 @@ expression::join(){
 				CMD
 					grep -F -f "$topids" "$odir/experiments.$e.zscores" >> "$deseqdir/$m/heatmap.$e.zscores"
 				CMD
-					heatmap.R TRUE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.$e.zscores" "Z-Score" "most differentially expressed genes"
+					heatmap.R TRUE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.$e.zscores" "Z-Score" "most differentially expressed ${feature}s"
 				CMD
 
 				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -743,7 +739,7 @@ expression::join(){
 				CMD
 					grep -F -f "$topids" "$odir/experiments.mean.$e" >> "$deseqdir/$m/heatmap.mean.$e"
 				CMD
-					heatmap.R FALSE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.mean.$e" "${e^^}" "most differentially expressed genes"
+					heatmap.R FALSE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.mean.$e" "${e^^}" "most differentially expressed ${feature}s"
 				CMD
 
 				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -751,21 +747,15 @@ expression::join(){
 				CMD
 					grep -F -f "$topids" "$odir/experiments.mean.$e.zscores" >> "$deseqdir/$m/heatmap.mean.$e.zscores"
 				CMD
-					heatmap.R FALSE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.mean.$e.zscores" "Z-Score" "most differentially expressed genes"
+					heatmap.R FALSE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.mean.$e.zscores" "Z-Score" "most differentially expressed ${feature}s"
 				CMD
 
 				if [[ $gtf ]]; then
 					for f in "$deseqdir/$m/heatmap.$e.localclust.ps" "$deseqdir/$m/heatmap.$e.globalclust.ps" \
 							"$deseqdir/$m/heatmap.$e.zscores.localclust.ps" "$deseqdir/$m/heatmap.$e.zscores.globalclust.ps" \
 							"$deseqdir/$m/heatmap.mean.$e.ps" "$deseqdir/$m/heatmap.mean.$e.zscores.ps"; do
-						# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-						# 	if [[ -e "$f" ]]; then
-						# 		annotate.pl "${gtfinfo:=0}" "$gtf" "$f";
-						# 		ps2pdf \$(grep -m 1 -F BoundingBox ${f%.*}.annotated.ps | awk '{print "-g"\$4*10"x"\$5*10}') ${f%.*}.annotated.ps ${f%.*}.annotated.pdf;
-						# 	fi
-						# CMD
 						commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-							annotate.pl "${gtfinfo:=0}" "$gtf" "$f"
+							annotate.pl "${gtfinfo:=0}" "$gtf" $feature "$f"
 						CMD
 							ps2pdf \$(grep -m 1 -F BoundingBox ${f%.*}.annotated.ps | awk '{print "-g"\$4*10"x"\$5*10}') ${f%.*}.annotated.ps ${f%.*}.annotated.pdf
 						CMD
@@ -781,16 +771,16 @@ expression::join(){
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
 	fi
 
 	return 0
 }
 
-expression::join_htsc(){
+expression::join(){
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -799,15 +789,16 @@ expression::join_htsc(){
 			-t <threads>  | number of
 			-r <mapper>   | array of bams within array of
 			-c <cmpfiles> | array of
-			-i <htscdir>  | path to
+			-i <countsdir>| path to
 			-o <outdir>   | path to
+			-f <feature>  | feature (default: gene)
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads countsdir outdir
+	local OPTIND arg mandatory skip=false threads countsdir outdir feature="gene"
     declare -n _mapper_join _cmpfiles_join
-	while getopts 'S:s:t:r:c:i:o:' arg; do
+	while getopts 'S:s:t:r:c:i:o:f:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -816,11 +807,11 @@ expression::join_htsc(){
 			c)	((++mandatory)); _cmpfiles_join=$OPTARG;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			f)	feature="$OPTARG";;
 			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 5 ]] && _usage
-
 	commander::printinfo "joining htsc, zscores"
 
 	declare -a cmd1 cmd2 cmd3 cmd4 mapdata header meanheader tojoin
@@ -845,17 +836,15 @@ expression::join_htsc(){
 						header[$x]="$condition.$replicate"
 						meanheader[$x]="$condition"
 						((++x))
-
-						cf="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.genecounts.htsc" -print -quit)"
-						cf="${cf%.*}"
+						cf="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc.tpm" -print -quit | grep .)"
+						cf="${cf/%\.htsc\.tpm/}"
 						countfiles["$condition.$replicate"]="$cf"
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 				done
 			done
 		done
 
-
-		for e in htsc; do
+		for e in htsc htsc.tpm; do
 			h='id'
 			mh='id'
 			tojoin=()
@@ -864,6 +853,7 @@ expression::join_htsc(){
 				mh+="\t${meanheader[$x]}"
 				tojoin+=("${countfiles[${header[$x]}]}.$e")
 			done
+			e=${e#*.}
 
 			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
 				helper::multijoin
@@ -880,7 +870,7 @@ expression::join_htsc(){
 					tsv <- args[1];
 					df <- read.table(tsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 					means <- t(apply(df, 1, function(x) tapply(x, colnames(df), mean)));
-					write.table(data.frame(id=rownames(means),means[,unique(colnames(df))]), row.names = F, file = tsv, quote=F, sep="\t");
+					write.table(data.frame(id=rownames(means),means[,unique(colnames(df))],check.names=F), row.names = F, file = tsv, quote=F, sep="\t");
 				'
 			CMD
 				"$odir/experiments.mean.$e"
@@ -896,7 +886,7 @@ expression::join_htsc(){
 					df <- df-rowMeans(df);
 					df <- df/apply(df,1,sd);
 					df[is.na(df)] <- 0;
-					write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
+					write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
 				'
 			CMD
 				"$odir/experiments.$e" "$odir/experiments.$e.zscores"
@@ -912,7 +902,7 @@ expression::join_htsc(){
 					df <- df-rowMeans(df);
 					df <- df/apply(df,1,sd);
 					df[is.na(df)] <- 0;
-					write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
+					write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
 				'
 			CMD
 				"$odir/experiments.mean.$e" "$odir/experiments.mean.$e.zscores"
@@ -925,8 +915,8 @@ expression::join_htsc(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0

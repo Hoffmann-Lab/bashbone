@@ -1,9 +1,26 @@
 #! /usr/bin/env Rscript
-# (c) Konstantin Riege, Jeanne Wilbrand
-suppressMessages(library("pheatmap"))
-suppressMessages(library("RColorBrewer"))
+# (c) Konstantin Riege
+args = commandArgs(TRUE)
 
-args <- commandArgs(TRUE);
+if(length(args)<4){
+	cat("plot feature heatmap and TPM/VSC trajectories per wgcna cluster\n")
+	cat("\n")
+	cat("usage parameter: <[Cluster|Module]:type> <[VSC|TPM|s]:data-type> <f:matrix> <f:outbase>\n")
+	cat('example: Cluster Z-score "/path/to/matrix.tsv" "/path/to/outbase"\n')
+	cat("\n")
+	cat("matrix: tab separated with header and feature ids/label.\n")
+	cat("id       sample1 sample2 sample3 ..\n")
+	cat("feature1 value1  value2  value3  ..\n")
+	cat("..\n")
+	quit("no",1)
+}
+
+options(warn=-1)
+
+suppressMessages({
+	library(pheatmap)
+	library(RColorBrewer)
+})
 
 type <- args[1] #e.g. Cluster or Module/Modules
 datatype <- args[2] # 'TPM' (will be log transformed) or deseq 'VSC' else Z-Score
@@ -46,7 +63,7 @@ if (datatype == "TPM") {
 	labeldatatype <- paste("log2",datatype,sep=" ")
 }
 
-write.table(data.frame(id=rownames(m),m,type=ac), quote=FALSE, row.names=F, sep="\t",
+write.table(data.frame(id=rownames(m),m,type=ac,check.names=F), quote=FALSE, row.names=F, sep="\t",
 	file = paste(outbase, "heatmap.tsv", sep=".")
 )
 
@@ -92,10 +109,12 @@ pheatmap(m, color=color,
 if(datatype != "TPM" && datatype != "VSC") quit()
 if(ncol(m) < 3) quit()
 
-suppressMessages(library(ggplot2))
-suppressMessages(library(scales))
-suppressMessages(library(reshape2))
-suppressMessages(library(data.table))
+suppressMessages({
+	library(ggplot2)
+	library(scales)
+	library(reshape2)
+	library(data.table)
+})
 
 # get cluster count
 cluster_count <- length(unique(df$type))

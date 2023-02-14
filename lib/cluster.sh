@@ -28,9 +28,9 @@ cluster::coexpression_deseq(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir deseqdir countsdir clusterfilter=NA biotype gtf
+	local OPTIND arg mandatory skip=false threads outdir tmpdir deseqdir countsdir clusterfilter=NA biotype gtf feature="gene"
 	declare -n _mapper_coexpression _cmpfiles_coexpression _idfiles_coexpression
-	while getopts 'S:s:f:b:g:t:M:c:r:p:i:j:o:l:' arg; do
+	while getopts 'S:s:f:b:g:t:M:c:r:p:i:j:o:l:f:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -46,6 +46,7 @@ cluster::coexpression_deseq(){
 			j)	((++mandatory)); deseqdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			l)	_idfiles_coexpression=$OPTARG;;
+			f)	feature=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
@@ -126,13 +127,13 @@ cluster::coexpression_deseq(){
 				if($#F<5){
 					print $F[0] if $F[2]==$cb;
 				} else {
-					$F[-1]=~/gene_(bio)?type\s+"([^"]+)/;
-					if ($2 =~ /$cb/ && $F[-1]=~/gene_id\s+"([^"]+)/){
+					$F[-1]=~/${ft}_(bio)?type\s+"([^"]+)/;
+					if ($2 =~ /$cb/ && $F[-1]=~/${ft}_id\s+"([^"]+)/){
 						print $1 unless exists $m{$1};
 						$m{$1}=1;
 					}
 				}
-			' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
+			' -- -cb="$biotype" -ft="$feature" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
 			grep -Fw -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			tfiles+=("$tmp.genes" "$tmp.filtered.genes")
@@ -154,7 +155,7 @@ cluster::coexpression_deseq(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd1
 	fi
 
 	declare -a cmd2
@@ -285,7 +286,7 @@ cluster::coexpression_deseq(){
 	if $skip; then
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0
@@ -312,13 +313,14 @@ cluster::coexpression(){
 			-p <tmpdir>   | path to
 			-i <countsdir>| path to
 			-o <outdir>   | path to
+			-f <feature>  | feature (default: gene)
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory outdir tmpdir countsdir biotype gtf clusterfilter=NA
+	local OPTIND arg mandatory skip=false threads maxmemory outdir tmpdir countsdir biotype gtf clusterfilter=NA feature="gene"
 	declare -n _mapper_coexpression _idfiles_coexpression
-	while getopts 'S:s:f:b:g:t:M:c:r:p:i:j:o:l:' arg; do
+	while getopts 'S:s:f:b:g:t:M:c:r:p:i:j:o:l:f:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -332,6 +334,7 @@ cluster::coexpression(){
 			i)	((++mandatory)); countsdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
 			l)	_idfiles_coexpression=$OPTARG;;
+			f)	feature=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
@@ -357,7 +360,7 @@ cluster::coexpression(){
 		tojoin=()
 		for f in "${_bams_coexpression[@]}"; do
 			sample=$(basename $f $suff)
-			tojoin+=("$(realpath -s "$countsdir/$m/$sample"*.+(genecounts|counts).+(reduced|htsc).tpm | head -1)")
+			tojoin+=("$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc.tpm" -print -quit | grep .)")
 			header+="\t$sample"
 		done
 
@@ -378,7 +381,7 @@ cluster::coexpression(){
 				df <- df-rowMeans(df);
 				df <- df/apply(df,1,sd);
 				df[is.na(df)] <- 0;
-				write.table(data.frame(id=rownames(df),df), row.names = F, file = outf, quote=F, sep="\t");
+				write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
 			'
 		CMD
 			"$odir/experiments.tpm" "$odir/experiments.tpm.zscores"
@@ -389,8 +392,8 @@ cluster::coexpression(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	declare -a cmd3
@@ -411,13 +414,13 @@ cluster::coexpression(){
 				if($#F<5){
 					print $F[0] if $F[2]==$cb;
 				} else {
-					$F[-1]=~/gene_(bio)?type\s+"([^"]+)/;
-					if ($2 =~ /$cb/ && $F[-1]=~/gene_id\s+"([^"]+)/){
+					$F[-1]=~/${ft}_(bio)?type\s+"([^"]+)/;
+					if ($2 =~ /$cb/ && $F[-1]=~/${ft}_id\s+"([^"]+)/){
 						print $1 unless exists $m{$1};
 						$m{$1}=1;
 					}
 				}
-			' -- -cb="$biotype" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
+			' -- -cb="$biotype" -ft="$feature" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
 			grep -Fw -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			tfiles+=("$tmp.genes" "$tmp.filtered.genes")
@@ -436,7 +439,7 @@ cluster::coexpression(){
 	if $skip; then
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd3
 	fi
 
 	declare -a cmd4
@@ -528,7 +531,7 @@ cluster::coexpression(){
 	if $skip; then
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd4
 	fi
 
 	return 0

@@ -47,7 +47,7 @@ progress::log() {
 	done
 	[[ $mandatory -lt 3 ]] && _usage
 
-	tmpdir="$(mktemp -d -p "/dev/shm" fifo.XXXXXXXXXX)"
+	tmpdir="$(mktemp -d -p "/tmp" fifo.XXXXXXXXXX)"
 	mkfifo "$tmpdir/stderr" "$tmpdir/stdout"
 	case $verbosity in
 		0)	{ progress::_bar & } 2>/dev/null # do not use subshell here. will not terminated

@@ -40,7 +40,7 @@ compile::all(){
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 	compile::bashbone -i "$insdir" -t $threads
-	compile::tools -i "$insdir" -t $threads
+	# compile::tools -i "$insdir" -t $threads
 	compile::conda -i "$insdir" -t $threads
 	compile::conda_tools -i "$insdir" -t $threads
 	compile::java -i "$insdir" -t $threads
@@ -51,7 +51,7 @@ compile::all(){
 	compile::revigo -i "$insdir" -t $threads
 	compile::gem -i "$insdir" -t $threads
 	compile::m6aviewer -i "$insdir" -t $threads
-	compile::idr -i "$insdir" -t $threads
+	# compile::idr -i "$insdir" -t $threads
 	compile::newicktopdf -i "$insdir" -t $threads
 	compile::ssgsea -i "$insdir" -t $threads
 	compile::gztool -i "$insdir" -t $threads
@@ -178,8 +178,8 @@ compile::conda_tools() {
 		declare -a cmd2
 		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
+				options(unzip="$(which unzip)");
+				Sys.setenv(TAR="$(which tar)");
 				install.packages(c("BiocManager","devtools","codetools"),
 					repos="http://cloud.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
 			'
@@ -189,8 +189,8 @@ compile::conda_tools() {
 		declare -a cmd3
 		commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
+				options(unzip="$(which unzip)");
+				Sys.setenv(TAR="$(which tar)");
 				BiocManager::install(c("biomaRt","BiocParallel","genefilter","DESeq2","DEXSeq","clusterProfiler","TCGAutils","TCGAbiolinks","survminer","impute","preprocessCore","GO.db","AnnotationDbi"),
 					ask=F, Ncpus=$threads, clean=T, destdir="$tmpdir");
 			'
@@ -201,8 +201,8 @@ compile::conda_tools() {
 		declare -a cmd4
 		commander::makecmd -a cmd4 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
+				options(unzip="$(which unzip)");
+				Sys.setenv(TAR="$(which tar)");
 				install.packages(c("reshape2","WGCNA","dplyr","tidyverse","ggpubr","ggplot2","gplots","RColorBrewer","svglite","pheatmap","treemap","data.table"),
 					repos="http://cloud.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
 				install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
@@ -213,8 +213,8 @@ compile::conda_tools() {
 		declare -a cmd5
 		commander::makecmd -a cmd5 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
+				options(unzip="$(which unzip)");
+				Sys.setenv(TAR="$(which tar)");
 				devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
 			'
 		CMD
@@ -224,8 +224,8 @@ compile::conda_tools() {
 		cmd2=()
 		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
-				options(unzip="$(command -v unzip)");
-				Sys.setenv(TAR="$(command -v tar)");
+				options(unzip="$(which unzip)");
+				Sys.setenv(TAR="$(which tar)");
 				install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
 				devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
 				devtools::install_github("BioinformaticsFMRP/TCGAbiolinksGUI.data", upgrade="never", force=T, clean=T, destdir="$tmpdir");
@@ -233,18 +233,18 @@ compile::conda_tools() {
 			'
 		CMD
 
-		commander::runcmd -c bashbone -t 1 -a cmd1
-		commander::runcmd -c bashbone -t 1 -a cmd2
-		# commander::runcmd -c bashbone -t 1 -a cmd3
-		# commander::runcmd -c bashbone -t 1 -a cmd4
-		# commander::runcmd -c bashbone -t $threads -a cmd5
+		commander::runcmd -c bashbone -i 1 -a cmd1
+		commander::runcmd -c bashbone -i 1 -a cmd2
+		# commander::runcmd -c bashbone -i 1 -a cmd3
+		# commander::runcmd -c bashbone -i 1 -a cmd4
+		# commander::runcmd -c bashbone -i $threads -a cmd5
 
 		mkdir -p "$insdir/conda/env_exports"
 		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" | grep -vE -- '-\s+idr=' > "$insdir/conda/env_exports/$n.yaml"
 	}
 
 	# better do not predefine python version. if tool recipe depends on earlier version, conda installs an older or the oldest version (freebayes)
-	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 peakachu diego gatk4 freebayes varscan igv intervene raxml metilene umitools methyldackel; do
+	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 peakachu diego gatk4 freebayes varscan igv intervene raxml metilene umitools methyldackel idr; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
 		[[ $tool == "bwa" ]] && tool+=" bwa-mem2"
@@ -339,7 +339,7 @@ compile::conda_tools() {
 				-L 18
 			CMD
 		done
-		commander::runcmd -c sortmerna -t $threads -a cmdidx
+		commander::runcmd -c sortmerna -i $threads -a cmdidx
 
 		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
 	}
@@ -387,7 +387,7 @@ compile::conda_tools() {
 			sed -E -e '/--threads/{s/$/\n    p.add_argument("-s", "--score", type=int, default=40)/}' \
 			-e '/threads=args.threads/{s/$/\n            score=args.score,/}' \
 			-e 's/threads=1,/threads=1, score=40,/' \
-			-e 's/"\|bwa(.+) -T 40 -B 2 -L 10 -CM/f"|bwa\1 -T {score} -B 2 -L 10 -C -Y/' \
+			-e 's/"\|bwa(.+) -T 40 -B 2 -L 10 -CM/f"|bwa\1 -T {score} -a -B 2 -L 10 -C -Y/' \
 		> "$insdir/conda/envs/bwameth/bin/bwameth.py"
 		# by removal of -M splits/chimeric reads are marked as supplementary (which is the way to go!).
 		# -Y: apply soft-clipping instead of hard clipping to keep sequence info in bam (can be changed via)
@@ -510,7 +510,7 @@ compile::_javawrapper() {
 		java="$java"
 		[[ \$JAVA_HOME && -e "\$JAVA_HOME/bin/java" ]] && java="\$JAVA_HOME/bin/java"
 		declare -a jvm_mem_args jvm_prop_args pass_args
-		for arg in \$@; do
+		for arg in "\$@"; do
 			case \$arg in
 				-D*) jvm_prop_args+=("\$arg");;
 				-XX*) jvm_prop_args+=("\$arg");;
@@ -601,14 +601,16 @@ compile::segemehl() {
 		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
 		l="$(pkg-config --variable=libdir htslib)"
 		[[ $l ]] && export LD_LIBRARY_PATH="$l"
-		"$(realpath -s "$(dirname "$0")")/segemehl.x" $*
+		unset MALLOC_ARENA_MAX
+		"$(realpath -se "$(dirname "$0")")/segemehl.x" $*
 	EOF
-	cat <<- 'EOF' > $insdir/latest/segemehl/haarz
+	cat <<- 'EOF' > "$insdir/latest/segemehl/haarz"
 		#!/usr/bin/env bash
 		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
 		l="$(pkg-config --variable=libdir htslib)"
 		[[ $l ]] && export LD_LIBRARY_PATH="$l"
-		"$(realpath -s "$(dirname "$0")")/haarz.x" $*
+		unset MALLOC_ARENA_MAX
+		"$(realpath -se "$(dirname "$0")")/haarz.x" $*
 	EOF
 
 	return 0
@@ -803,7 +805,7 @@ compile::gztool() {
 	    n=9
 	    f="$1"
 	fi
-	p="$(realpath -s "$(dirname "$0")")"
+	p="$(realpath -se "$(dirname "$0")")"
 	l=$("$p/gztool" -l "$f" |& sed -nE 's/.*\s+lines\s+:\s+([0-9]+).*/\1/p')
 	"$p/gztool" -v 0 -L $((l-n)) "$f"
 	EOF

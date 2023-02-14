@@ -1,6 +1,6 @@
 # Bashbone
 
-A bash library for workflow and pipeline design within but not restricted to the scope of Next Generation Sequencing (NGS) data analyses.
+A bash/biobash library for workflow and pipeline design within but not restricted to the scope of Next Generation Sequencing (NGS) data analyses.
 
 ## For developers
 
@@ -8,7 +8,7 @@ A bash library for workflow and pipeline design within but not restricted to the
 - Add object-oriented programming (oop) like syntactic sugar to bash variables and arrays to avoid complex parameter-expansions, variable-expansions and brace-expansions
 - Execute commands in parallel on your machine or submit them as jobs to a sun grid engine (SGE)
 - Infer number of parallel instances according to targeted memory consumption or targeted threads per instance
-- Get a full bash error stack trace upon SIGERR
+- Get a full bash error stack trace
 
 ## For users
 
@@ -92,21 +92,36 @@ bashbone -h
 bashbone -l
 ```
 
+To revert changes made to your shell environment run
+
+```bash
+bashbone -x
+```
+
 ## Developers centerpiece
 
-To create commands, print them and to execute them in parallel (according to your resources), utilize
+No installation necessary.
+
+To create commands, print and to execute them in parallel (according to your resources), inspect and modify task concurrency, utilize
 
 ```bash
 commander::makecmd
 commander::printcmd
 commander::runcmd
-# or
+commander::runstat
+commander::runalter
+# or if SGE is available
+commander::makecmd
+commander::printcmd
 commander::qsubcmd
+commander::qstat
+commander::qalter
+
 ```
 
 ### Example
 
-Showcase of the builtin file descriptors array `COMMANDER` with separator (`-s '|'`) based concatenation of interpreted and non-interpreted Here-Documents. Each concatenation will be stored as a single command in a de-referenced array (`-a cmds`) Optionally, an output file can be defined (`-o <path/to/file>`). `BASHBONE_ERROR` can be used to alter the default error message.
+Showcase using the builtin file descriptors array `COMMANDER`. Separator (`-s '|'`) based concatenation of (partial) commands from interpreted (`CMD`) and non-interpreted (`'CMD'`) Here-Documents. Each concatenation will be stored as a single command string in a de-referenced array (`-a cmds`). Optionally, an output file can be defined (`-o <path/to/file>`). `BASHBONE_ERROR` can be used to alter the default error message.
 
 ```bash
 declare -a cmds
@@ -129,27 +144,31 @@ unset BASHBONE_ERROR
 
 ### OOP bash
 
-A small excerpt of possible member functions. See `bashbone -a` helper underscore functions for a full list.
+A small excerpt of possible member(-like-)functions. See `bashbone -a` helper underscore functions for a full list.
 
 ```bash
 declare -a x
 helper::addmemberfunctions -v x
-x.push "hello"
-x.push "world"
-x.print
-x.substring 2 4
-x.print
-x.get -1
-x.pop
-x.print
+x.push "hello" "world" "and" "moon"
+x.get 1 # world
+x.get -1 # moon
+x.get 0 1 # hello world
+x.get 1 -1 # world and
+x.print # hello world and moon
 x.shift
-x.print
+x.pop
+x.print # world and
+x.substring 2 4
+x.sort
+x.uc
+x.print # D RLD
+x.length # 2
 <x.*>
 ```
 
 # Installation
 
-## Full installation of all third party tools used in bashbone functions
+## Full installation of all third party tools used in bashbones biobash functions
 
 ```bash
 ./setup.sh -i all -d <path/to/installation>
@@ -171,7 +190,7 @@ The setup routine will always install the latest software via conda, which can b
 ./setup.sh -i conda_tools -d <path/of/installation>
 ```
 
-Trimmomatic, segemehl, STAR-Fusion, GEM and mdless will be installed next to the conda environments. If new releases are available, they will be automatically fetched and installed upon running the related setup functions again.
+Trimmomatic, segemehl, STAR-Fusion, GEM, mdless and gztool will be installed next to the conda environments. If new releases are available, they will be automatically fetched and installed upon running the related setup functions again.
 
 ```bash
 ./setup.sh -i trimmomatic,segemehl,starfusion,gem,mdless -d <path/of/installation>
@@ -185,10 +204,13 @@ source <path/of/installation/latest/bashbone/activate.sh>
 bashbone -h
 ```
 
-In order to get all function work properly, enable bashbone to use conda environments. Conda can be disabled analogously.
+In order to get all function work properly, enable bashbone to use conda environments. Conda and bashbone it self can be disabled analogously.
 ```bash
 bashbone -c
+# disable conda
 bashbone -s
+# disable bashbone
+bashbone -x
 ```
 
 Shortcut:
@@ -209,7 +231,7 @@ sra-dump.sh -h
 
 ## Retrieve genomes
 
-Use the enclosed script to fetch human hg19/hg38 or mouse mm9/mm10 genomes and annotations. Plug-n-play CTAT genome resource made for gene fusion detection and shipped with STAR index can be selected optionally.
+Use the enclosed script to fetch human hg19/hg38 or mouse mm9/mm10/mm11 genomes and annotations. Plug-n-play CTAT genome resource made for gene fusion detection and shipped with STAR index can be selected optionally.
 
 ```bash
 source <path/of/installation/latest/bashbone/activate.sh> -c true
@@ -237,18 +259,18 @@ And this desired output (N=2 vs N=2 each):
 
 Then the info file should consist of:
 
-- At least 4 tab-separated columns (`<name>`, `<main-factor>`, `single-end|paired-end`, `<replicate>`)
+- At least 4 tab-separated columns (`<name>`, `<main-factor>`, `NA`, `<replicate>`)
 - Optionally, additional factors
 - First column needs to consist of unique prefixes of input fastq basenames which can be expand to full file names
 
-|        |     |            |     |        |
-| ---    | --- | ---        | --- | ---    |
-| wt1    | wt  | single-end | N1  | female |
-| wt2    | wt  | single-end | N2  | male   |
-| trA_1  | A   | single-end | N1  | female |
-| trA_2  | A   | single-end | N2  | male   |
-| trB.n1 | B   | single-end | N1  | female |
-| trB.n2 | B   | single-end | N2  | male   |
+|        |     |     |     |        |
+| ---    | --- | --- | --- | ---    |
+| wt1    | wt  | NA  | N1  | female |
+| wt2    | wt  | NA  | N2  | male   |
+| trA_1  | A   | NA  | N1  | female |
+| trA_2  | A   | NA  | N2  | male   |
+| trB.n1 | B   | NA  | N1  | female |
+| trB.n2 | B   | NA  | N2  | male   |
 
 
 ## Adapter sequences
@@ -330,7 +352,7 @@ cluster::coexpression -t $threads -M $memory -g $gtf -b protein_coding -f 02 -i 
 | gztool       | <https://github.com/circulosmeos/gztool>                             | NA |
 | clusterProfiler | <https://guangchuangyu.github.io/software/clusterProfiler>        | 10.1089/omi.2011.0118 |
 | Cutadapt      | <https://cutadapt.readthedocs.io/en/stable>                         | 10.14806/ej.17.1.200 |
-| DESeq2        | <https://bioconductor.org/packages/release/bioc/html/DESeq2.html>   | 10.1186/s13059-014-0550-8 |
+| DESeq2        | <https://bioconductor.org/packages/release/bioc/html/DESeq2.html>   | 10.1186/s13059-014-0550-8 <br> 10.1093/biostatistics/kxw041|
 | DEXSeq        | <https://bioconductor.org/packages/release/bioc/html/DEXSeq.html>   | 10.1101/gr.133744.111 |
 | DIEGO         | <http://www.bioinf.uni-leipzig.de/Software/DIEGO>                   | 10.1093/bioinformatics/btx690 |
 | DGCA          | <https://github.com/andymckenzie/DGCA>                              | 10.1186/s12918-016-0349-1 |
@@ -340,8 +362,9 @@ cluster::coexpression -t $threads -M $memory -g $gtf -b protein_coding -f 02 -i 
 | freebayes     | <https://github.com/ekg/freebayes>                                  | arXiv:1207.3907 |
 | GATK          | <https://github.com/broadinstitute/gatk>                            | 10.1101/gr.107524.110 <br> 10.1038/ng.806 |
 | GEM           | <https://groups.csail.mit.edu/cgs/gem>                              | 10.1371/journal.pcbi.1002638 |
-| GSEABase      | <https://bioconductor.org/packages/release/bioc/html/GSEABase.html> | NA |
+| GNU Parallel  | <https://www.gnu.org/software/parallel/>                            | 10.5281/zenodo.1146014 |
 | GoSemSim      | <http://bioconductor.org/packages/release/bioc/html/GOSemSim.html>  | 10.1093/bioinformatics/btq064 |
+| GSEABase      | <https://bioconductor.org/packages/release/bioc/html/GSEABase.html> | NA |
 | HTSeq         | <https://htseq.readthedocs.io>                                      | 10.1093/bioinformatics/btu638 |
 | IDR           | <https://github.com/kundajelab/idr>                                 | 10.1214/11-AOAS466 |
 | IGV           | <http://software.broadinstitute.org/software/igv>                   | 10.1038/nbt.1754 |
@@ -369,7 +392,7 @@ cluster::coexpression -t $threads -M $memory -g $gtf -b protein_coding -f 02 -i 
 | UMI-tools     | <https://github.com/CGATOxford/UMI-tools>                           | 10.1101/gr.209601.116 |
 | VarDict       | <https://github.com/AstraZeneca-NGS/VarDict>                        | 10.1093/nar/gkw227 |
 | VarScan       | <http://dkoboldt.github.io/varscan>                                 | 10.1101/gr.129684.111 |
-| vcflib        | <https://github.com/vcflib/vcflib>                                  | NA |
+| vcflib        | <https://github.com/vcflib/vcflib>                                  | 10.1371/journal.pcbi.1009123 |
 | Vt            | <https://genome.sph.umich.edu/wiki/Vt>                              | 10.1093/bioinformatics/btv112 |
 | WGCNA         | <https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA> | 10.1186/1471-2105-9-559 |
 
@@ -383,28 +406,27 @@ cluster::coexpression -t $threads -M $memory -g $gtf -b protein_coding -f 02 -i 
 
 # Supplementary information
 
-Bashbone functions can be executed in parallel instances and thus are able to be submitted as jobs into a queuing system like a Sun Grid Engine (SGE). This could be easily done by using scripts written via here-documents or via the bashbone builtin `commander::qsubcmd`. The latter makes use of array jobs, which enables to wait for completion of all jobs, handle single exit codes and amend used resources via `qalter -tc <instances> <jobname>`.
+Bashbone functions can be executed in parallel instances and thus are able to be submitted as jobs into a queuing system like a Sun Grid Engine (SGE). This could be easily done by utilizing `commander::qsubcmd. This function makes use of array jobs, which further allows to wait for completion of all jobs, handle single exit codes and alter used resources via `commander::qalter.
 
 ```bash
 source <path/of/installation/latest/muvac/activate.sh>
 declare -a cmds=()
-for i in *R1.fastq.gz; do
-	j=${i/R1/R2}
-	sh=job_$(basename $i .R1.fastq.gz)
+for f in *.fastq.gz; do
 	commander::makecmd -a cmd1 -c {COMMANDER[0]}<<- CMD
-		bashbone -h
+		fastqc $f
 	CMD
+  # or simply cmds+=("fastqc $f")
 done
-commander::qsubcmd -r -l h="<hostname>|<hostname>" -p <env> -t <threads> -i <instances> -n <jobname> -o <logdir> -a cmds
-# analogously: echo job.\$SGE_TASK_ID.sh | qsub -sync n -pe <env> <threads> -t 1-<#jobs> -tc <instances> -l h="<hostname>|<hostname>" -S /bin/bash -N <jobname> -o <logfile> -j y -V -cwd
+commander::qsubcmd -r -p <env> -t <threads> -i <instances> -n <jobname> -o <logdir> -a cmds
+commander::qstat
+commander::qalter -p <jobname|jobid> -i <instances>
 ```
 
-In some cases a glibc pthreads bug (<https://sourceware.org/bugzilla/show_bug.cgi?id=23275>) may cause pigz failures (`internal threads error`) and premature termination of tools leveraging on it e.g. Cutadapt. One can circumvent this by e.g. making use of an alternative pthreads library via `LD_PRELOAD`
+In some rare cases a glibc pthreads bug (<https://sourceware.org/bugzilla/show_bug.cgi?id=23275>) may cause pigz failures (`internal threads error`) and premature termination of tools leveraging on it e.g. Cutadapt and pigz. One can circumvent this by e.g. making use of an alternative pthreads library e.g. compiled without lock elision via `LD_PRELOAD`
 
 ```bash
 source <path/of/installation/latest/bashbone/activate.sh>
-LD_PRELOAD=/lib64/noelision/libpthread.so.0 bashbone -h
-LD_PRELOAD=/gsc/biosw/src/glibc-2.32/lib/libpthread.so.0 bashbone -h
+LD_PRELOAD=</path/to/no-elision/libpthread.so.0> <command>
 ```
 
 # Closing remarks

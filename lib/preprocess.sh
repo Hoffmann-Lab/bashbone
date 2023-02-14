@@ -90,7 +90,7 @@ preprocess::dedup(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
+		commander::runcmd -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -113,23 +113,27 @@ preprocess::fastqc() {
 			-p <tmpdir>   | path to
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
+			-a <adapter1> | array of
+			-A <adapter2> | array of
 		EOF
 		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads outdir tmpdir maxmemory
-	declare -n _fq1_fastqc _fq2_fastqc
-	while getopts 'S:s:t:M:p:o:1:2:' arg; do
+	declare -n _fq1_fastqc _fq2_fastqc _adapter1_fastqc _adapter2_fastqc
+	while getopts 'S:s:t:M:p:o:1:2:a:A:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			M) maxmemory=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			1) ((++mandatory)); _fq1_fastqc=$OPTARG;;
-			2) _fq2_fastqc=$OPTARG;;
-			*) _usage;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			1)	((++mandatory)); _fq1_fastqc=$OPTARG;;
+			2)	_fq2_fastqc=$OPTARG;;
+			a)	_adapter1_fastqc=$OPTARG;;
+			A)	_adapter2_fastqc=$OPTARG;;
+			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 4 ]] && _usage
@@ -139,11 +143,12 @@ preprocess::fastqc() {
 	local instances=$((${#_fq1_fastqc[@]}+${#_fq2_fastqc[@]})) ithreads jmem jgct jcgct
 	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i $instances -T $threads -m 250 -M "$maxmemory")
 
-	declare -a cmd1
-	local f
+	declare -a cmd1 cmd2 cmd3
+	local f b e i=0
 	for f in {"${_fq1_fastqc[@]}","${_fq2_fastqc[@]}"}; do
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fastqc)")
 		commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+			MALLOC_ARENA_MAX=4
 			JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir'"
 			fastqc
 			-d "${tdirs[-1]}"
@@ -152,13 +157,47 @@ preprocess::fastqc() {
 		CMD
 			sed -u '/Exception/{q 1};${/Analysis complete/!{q 1}}'
 		CMD
+
+		helper::basename -f "$f" -o b -e e
+		e=$(echo $e | cut -d '.' -f 1) # if e == fastq or fq : check for ${b}_fastqc.zip else $b.${e}_fastqc.zip
+		[[ $e == "fastq" || $e == "fq" ]] && f="${b}_fastqc.zip" || f="$b.${e}_fastqc.zip"
+		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+			unzip -c "$outdir/$f" "${f%.*}/fastqc_data.txt" | tac
+		CMD
+			perl -M'List::Util q(max)' -M'Switch' -lane '{
+				next unless /^\d+/;
+				shift @F;
+				$m=max(@F);
+				exit if $m<0.001;
+				$i=(grep {$F[$_]==$m} 0..$#F)[0];
+				switch($i){
+					case 0 {print "AGATCGGAAGAGC"}
+					case 1 {print "TGGAATTCTCGGGTGCCAAGG"}
+					case 2 {print "GTTCAGAGTTCTACAGTCCGACGATC"}
+					case 3 {print "CTGTCTCTTATACACATCT"}
+					case 4 {print "CGCCTTGGCCGT"}
+				}
+				exit
+			}'
+		CMD
+		# uiversal, srna3' srna5', nextera, solexa
 	done
 
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c fastqc -v -b -t $threads -a cmd1
+		commander::runcmd -c fastqc -v -b -i $threads -a cmd1
 	fi
+
+	declare -p _adapter1_fastqc | grep -q '=' && {
+		mapfile -t _adapter1_fastqc < <(commander::runcmd -i $threads -a cmd2 -s 1:${#_fq1_fastqc[@]} | sort -u)
+		if [[ $_fq2_fastqc ]]; then
+			mapfile -t _adapter2_fastqc < <(commander::runcmd -i $threads -a cmd2 -s $((${#_fq1_fastqc[@]}+1)):$((${#_fq1_fastqc[@]}+${#_fq2_fastqc[@]})) | sort -u)
+			[[ $_adapter2_fastqc ]] || _adapter2_fastqc=("${_adapter1_fastqc[@]}")
+			[[ $_adapter1_fastqc ]] || _adapter1_fastqc=("${_adapter2_fastqc[@]}")
+		fi
+		[[ $_adapter1_fastqc ]] && commander::printinfo "Inferred adapter sequences: ${_adapter1_fastqc[*]}" || commander::warn "No adapter sequence inferred"
+	}
 
 	return 0
 }
@@ -317,7 +356,7 @@ preprocess::cutadapt(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c cutadapt -v -b -t 1 -a cmd1
+		commander::runcmd -c cutadapt -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -406,7 +445,7 @@ preprocess::trimmomatic() {
 	local l
 	declare -a a mapdata
 	commander::printcmd -a cmd1
-	mapfile -t mapdata < <(commander::runcmd -t $threads -a cmd1)
+	mapfile -t mapdata < <(commander::runcmd -i $threads -a cmd1)
 	for l in "${mapdata[@]}"; do
 		a=($l)
 		phred["${a[@]:1}"]="${a[0]}"
@@ -475,7 +514,7 @@ preprocess::trimmomatic() {
 	if $skip; then
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t 1 -a cmd2
+		commander::runcmd -v -b -i 1 -a cmd2
 	fi
 
 	return 0
@@ -508,7 +547,7 @@ preprocess::rcorrector(){
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir"; outdir=$(realpath -s "$outdir");;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir"; outdir=$(realpath -se "$outdir");;
 			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_rcorrector=$OPTARG;;
 			2) _fq2_rcorrector=$OPTARG;;
@@ -539,8 +578,8 @@ preprocess::rcorrector(){
 					cd "${tdirs[-1]}"
 				CMD
 					run_rcorrector.pl
-					-1 "$(realpath -s "${_fq1_rcorrector[$i]}")"
-					-2 "$(realpath -s "${_fq2_rcorrector[$i]}")"
+					-1 "$(realpath -se "${_fq1_rcorrector[$i]}")"
+					-2 "$(realpath -se "${_fq2_rcorrector[$i]}")"
 					-od "$outdir"
 					-t $threads
 				CMD
@@ -559,8 +598,8 @@ preprocess::rcorrector(){
 					ln -sfn "/dev/fd/12" "$(basename "$o2").$r2"
 				CMD
 					run_rcorrector.pl
-					-1 "$(realpath -s "${_fq1_rcorrector[$i]}")"
-					-2 "$(realpath -s "${_fq2_rcorrector[$i]}")"
+					-1 "$(realpath -se "${_fq1_rcorrector[$i]}")"
+					-2 "$(realpath -se "${_fq2_rcorrector[$i]}")"
 					-od "${tdirs[-1]}"
 					-t $threads
 					11> >(helper::pgzip -t $(((threads+1)/2)) -o "$o1.$e1.gz")
@@ -579,7 +618,7 @@ preprocess::rcorrector(){
 				cd "${tdirs[-1]}"
 			CMD
 				run_rcorrector.pl
-				-s "$(realpath -s "${_fq1_rcorrector[$i]}")"
+				-s "$(realpath -se "${_fq1_rcorrector[$i]}")"
 				-stdout
 				-t $threads
 				> >(helper::pgzip -t $threads -o "$o1.$e1.gz")
@@ -592,7 +631,7 @@ preprocess::rcorrector(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c rcorrector -v -b -t 1 -a cmd1
+		commander::runcmd -c rcorrector -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -758,8 +797,8 @@ preprocess::sortmerna_new(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c sortmerna -v -b -t 1 -a cmd1
-		commander::runcmd -c sortmerna -v -b -t 1 -a cmd2
+		commander::runcmd -c sortmerna -v -b -i 1 -a cmd1
+		commander::runcmd -c sortmerna -v -b -i 1 -a cmd2
 	fi
 
 	return 0
@@ -901,8 +940,8 @@ preprocess::sortmerna(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -c sortmerna -v -b -t 1 -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -c sortmerna -v -b -i 1 -a cmd2
 	fi
 
 	return 0
@@ -1004,7 +1043,7 @@ preprocess::qcstats(){
 		done
 	done
 	if [[ ${#cmdqc[@]} -gt 0 ]]; then
-		commander::runcmd -b -t $threads -a cmdqc
+		commander::runcmd -b -i $threads -a cmdqc
 	fi
 
 	commander::printinfo "plotting preprocessing stats"
@@ -1023,7 +1062,7 @@ preprocess::qcstats(){
 		rm -f $o
 		for qdir in "${_qualdirs_qcstats[@]}"; do
 			tool=$(basename "$qdir")
-			c=$(unzip -p "$qdir/$qczip" "${qczip%.*}/fastqc_data.txt" | grep -m 1 -F Total | awk -v mult=$multiplier '{print $3*mult}')
+			c=$(unzip -c "$qdir/$qczip" "${qczip%.*}/fastqc_data.txt" | grep -m 1 -F Total | awk -v mult=$multiplier '{print $3*mult}')
 			counts+=($c)
 			echo -e "$b\t$tool reads\t$c" >> $o
 			perl -sle 'print join"\t",("$sample ($all)","$tool reads",(100*$c/$all))' -- -all=${counts[$((i*${#_qualdirs_qcstats[@]}))]} -c=$c -sample=$b -tool=$tool
@@ -1059,7 +1098,7 @@ preprocess::qcstats(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd1
 	fi
 
 	return 0

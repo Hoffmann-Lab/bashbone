@@ -1,12 +1,12 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-survival::gettcga() {
-	local tmpdir
+survival::gettcga(){
+	local tdir
 	_cleanup::survival::gettcga(){
-		rm -rf "$tmpdir"
+		rm -rf "$tdir"
 	}
-	_usage() {
+	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -30,7 +30,7 @@ survival::gettcga() {
 				ids=("${_ids_getfpkm[@]}")
 			;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			o)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
@@ -59,19 +59,23 @@ survival::gettcga() {
 	# old: workflow.type = "HTSeq - FPKM-UQ" | "HTSeq - FPKM" | "HTSeq - Counts"
 	# "The upper quartile FPKM (FPKM-UQ) is a modified FPKM calculation in which the total protein-coding read count is replaced by the 75th percentile read count value for the sample."
 
+	# ssm$Gene=="ENSG00000141510"
+	# df <- as.data.frame(assays(counts)$fpkm_unstrand);
+	# https://gdc.cancer.gov/resources-tcga-users/tcga-code-tables/sample-type-codes
+	# to get rid of ENGS.._PAR_Y use !duplicated, counts are always 0. otherwise sum or mean or max via dplyr: group_by(df,gene_id) %>% summarise_all(sum)
+
 	declare -a cmd1
 	local i
-	tmpdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.tcga)"
+	tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.tcga)"
 	for i in "${ids[@]}"; do
 		commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 			Rscript - <<< '
 				suppressMessages({library(TCGAbiolinks);
+					library(TCGAutils);
 					library(SummarizedExperiment);
-					library(stringr);
 				});
 				args <- commandArgs(TRUE);
-				tdir <- args[1];
-				odir <- file.path(args[2],"TCGA_gene_expression");
+				odir <- file.path(args[2],"TCGA");
 				p <- args[3];
 
 				setwd(args[1]);
@@ -80,63 +84,112 @@ survival::gettcga() {
 					data.type="Gene Expression Quantification",
 					workflow.type="STAR - Counts"
 				);
-
 				GDCdownload(q, directory=odir);
-				se <- GDCprepare(q, save = T, save.filename=file.path(odir,paste0(p,".Rdata")), directory=file.path(odir));
-				clin <- as.data.frame(colData(se));
-				df <- getResults(q)[c("cases","file_id")];
-				names(df)[1] <- "barcode";
-				clin <- merge(clin,df,by="barcode");
+				counts <- GDCprepare(q, directory=odir);
+				metadata <- getResults(q)[c("cases","sample.submitter_id","file_id")];
+				colnames(metadata) <- c("barcode","sample","file_id.star_counts");
+
+				q <- GDCquery(project=p,
+					data.category="Simple Nucleotide Variation",
+					data.type="Masked Somatic Mutation"
+				);
+				GDCdownload(q, directory=odir);
+				ssm <- GDCprepare(q, directory=odir);
+				df <- UUIDtoBarcode(getResults(q)$file_id, from_type="file_id");
+				colnames(df) <- c("file_id.somatic_mutations", "barcode.somatic_mutations");
+				df$sample <- sapply(strsplit(df$barcode.somatic_mutations, "-"), function(x){paste(x[1],x[2],x[3],x[4],sep="-")});
+				df <- df[!duplicated(df$sample),];
+				metadata <- merge(metadata, df, by="sample", all.x=T);
+
+				df <- data.frame();
+				barcodes <- ssm[ssm$Hugo_Symbol=="TP53" & ssm$Variant_Classification!="Silent",]$Tumor_Sample_Barcode;
+				if(length(barcodes)>0){
+					df <- data.frame(sample=unique(sapply(strsplit(barcodes, "-"), function(x){paste(x[1],x[2],x[3],x[4],sep="-")})), TP53_status="mutated");
+				};
+				barcodes <- ssm$Tumor_Sample_Barcode[! ssm$Tumor_Sample_Barcode %in% barcodes];
+				if(length(barcodes)>0){
+					df <- rbind(df, data.frame(sample=unique(sapply(strsplit(barcodes, "-"), function(x){paste(x[1],x[2],x[3],x[4],sep="-")})), TP53_status="wildtype"));
+				};
+				df <- df[!duplicated(df$sample),];
+				metadata <- merge(metadata, df, by="sample", all.x=T);
+
+				save(counts, ssm, metadata, file=file.path(odir,paste0(p,".Rdata")));
+
+				clin <- as.data.frame(colData(counts));
+				clin <- clin[,!sapply(clin, is.list)];
+				colnames(clin)[1] <- "barcode";
+				clin <- merge(clin, metadata[,2:ncol(metadata)], by="barcode", all.x=T);
+
+				clin <- clin[order(clin$patient, clin$sample_type_id),];
+
+				clinT <- clin[!grepl("Normal",clin$definition),];
+
+				clinTuniq <- clinT[!clinT$sample %in% clinT$sample[duplicated(clinT$sample)],];
+				clinTuniq <- clinTuniq[!clinTuniq$patient %in% clinTuniq$patient[duplicated(clinTuniq$patient)],];
+
+				clinTp53 <- clinT[!clinT$sample %in% clinT$sample[duplicated(clinT$sample)],];
+				clinTp53 <- clinT[!is.na(clinT$TP53_status),];
+				clinTp53 <- clinTp53[!clinTp53$patient %in% clinTp53$patient[duplicated(clinTp53$patient)],];
+
 				write.table(clin, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.full.tsv")), quote=F, sep="\t");
-				clin <- clin[,c("barcode","vital_status","days_to_death","days_to_last_follow_up")];
-				write.table(clin, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.tsv")), quote=F, sep="\t");
-				df <- as.data.frame(assays(se)$tpm_unstrand);
-				df <- cbind(sapply(rownames(df),function(x) str_replace(x,"\\.[0-9]+$",""), USE.NAMES = F),df);
-				names(df)[1] <- "gene_id";
-				write.table(df, row.names=F, file=file.path(odir,paste0(p,".TPM.tsv")), quote=F, sep="\t");
-				df <- as.data.frame(assays(se)$fpkm_unstrand);
-				df <- cbind(sapply(rownames(df),function(x) str_replace(x,"\\.[0-9]+$",""), USE.NAMES = F),df);
-				names(df)[1] <- "gene_id";
-				write.table(df, row.names=F, file=file.path(odir,paste0(p,".FPKM.tsv")), quote=F, sep="\t");
+				write.table(clinT, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.tumor.tsv")), quote=F, sep="\t");
+				write.table(clinTuniq, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.tsv")), quote=F, sep="\t");
+				write.table(clinTp53, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.p53.tsv")), quote=F, sep="\t");
+
+				df <- as.data.frame(assays(counts)$tpm_unstrand);
+				df$gene_id <- sapply(strsplit(rownames(df),split="\\."),function(x){x[1]});
+				df <- df[!duplicated(df$gene_id),];
+
+				write.table(df, row.names=F, file=file.path(odir,paste0(p,".TPM.full.tsv")), quote=F, sep="\t");
+				write.table(df[,colnames(df) %in% c("gene_id",clinT$barcode)], row.names=F, file=file.path(odir,paste0(p,".TPM.tumor.tsv")), quote=F, sep="\t");
+				write.table(df[,colnames(df) %in% c("gene_id",clinTuniq$barcode)], row.names=F, file=file.path(odir,paste0(p,".TPM.tsv")), quote=F, sep="\t");
+				write.table(df[,colnames(df) %in% c("gene_id",clinTp53$barcode)], row.names=F, file=file.path(odir,paste0(p,".TPM.p53.tsv")), quote=F, sep="\t");
 			'
 		CMD
-			"$tmpdir" "$(realpath -s "$outdir")" "$i"
+			"$tdir" "$(realpath -se "$outdir")" "$i"
 		CMD
 	done
 
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd1
 	fi
 
 	return 0
 }
 
 survival::ssgsea(){
-	_usage() {
+	_usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
-			-S <hardskip> | true/false return
-			-s <softskip> | true/false only print commands
-			-f <fpkms>    | path to tsv or gct
-			-c <clinical> | path to clinical file
-			-l <idfiles>  | array of gmt files or id lists
-			-o <outdir>   | path to
+			-S <hardskip>  | true/false return
+			-s <softskip>  | true/false only print commands
+			-f <counts>    | path to tsv or gct
+			-c <clinical>  | path to clinical file
+			-r <right>     | censoring. default: 1800
+			-v <variables> | array of variables from clinical file to use as covariates for cox regression. e.g. age_at_diagnosis or gender or TP53_status
+			-l <idfiles>   | array of gmt files or id lists
+			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false outdir counts clinical
+	local OPTIND arg mandatory skip=false outdir counts clinical censored=1800
 	declare -n _sets_ssgsea
-	while getopts 'S:s:f:l:c:o:' arg; do
+	declare -a covariates
+	while getopts 'S:s:f:l:c:r:o:v:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			f)	((++mandatory)); counts="$OPTARG";;
 			c)	clinical="$OPTARG";;
+			r)	censored=$OPTARG;;
 			l)	((++mandatory)); _sets_ssgsea=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			v)	declare -n _covariates_ssgsea=$OPTARG
+				covariates=("${_covariates_ssgsea[@]}")
+			;;
 			*)	_usage;;
 		esac
 	done
@@ -152,10 +205,10 @@ survival::ssgsea(){
 			n="${n%.*}"
 			sed -E -e ':a;N;$!ba' -e 's/(^\s+|\s+$)//g' -e's/\s+/\t/g' -e "s/^/$n\tna\t/" "$f" >> "$outdir/input.gmt"
 		else
-			realpath -s "$f" >> "$outdir/gmt.list"
+			realpath -se "$f" >> "$outdir/gmt.list"
 		fi
 	done
-	[[ -s "$outdir/input.gmt" ]] && realpath -s "$outdir/input.gmt" >> "$outdir/gmt.list"
+	[[ -s "$outdir/input.gmt" ]] && realpath -se "$outdir/input.gmt" >> "$outdir/gmt.list"
 
 	local gct="$outdir/input.gct"
 	if [[ "$(head -1 "$counts")" =~ ^# ]]; then
@@ -168,7 +221,7 @@ survival::ssgsea(){
 
 	# ssgsea v2 defaults: -w 0.75 -m 10 -n rank
 	# -> without permutations -p 0, results are equal to gpmodule implementation, failes with -l $threads
-	# use (combine.replace) instead of seperate up/down scores (combine.all)
+	# use (combine.replace) instead of separate up/down scores (combine.all)
 
 	# commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
 	# 	ssgsea-cli.R -p 0 -i "$outdir/input.gct" -d "$outdir/input.gmt" -o $outdir/ssgsea
@@ -198,7 +251,7 @@ survival::ssgsea(){
 	if [[ -s "$clinical" ]]; then
 		mkdir -p "$outdir/plots"
 		commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-			survival.R "$clinical" "$outdir/ssgsea.tsv" "$outdir/plots"
+			survival.R "$clinical" $censored "$outdir/ssgsea.tsv" "$outdir/plots" ${covariates[@]}
 		CMD
 	fi
 
@@ -207,9 +260,9 @@ survival::ssgsea(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t 1 -a cmd2
-		commander::runcmd -v -b -t 1 -a cmd3
+		commander::runcmd -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i 1 -a cmd2
+		commander::runcmd -v -b -i 1 -a cmd3
 	fi
 
 	return 0

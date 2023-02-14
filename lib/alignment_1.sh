@@ -4,22 +4,51 @@
 alignment::segemehl() {
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-S <hardskip>   | true/false return
-			-s <softskip>   | true/false only print commands
-			-5 <skip>       | true/false md5sums, indexing respectively
-			-t <threads>    | number of
-			-a <accuracy>   | optional: 80 to 100
-			-i <insertsize> | optional: 50 to 200000+
-			-r <mapper>     | array of bams within array of
-			-g <genome>     | path to
-			-x <genomeidx>  | path to
-			-n <nosplit>    | optional: true/false
-			-o <outdir>     | path to
-			-1 <fastq1>     | array of
-			-2 <fastq2>     | array of
-			-F              | force index
+			${FUNCNAME[1]} alignes pre-processed read data in fastq(.gz) format utilizing the mapping software segemehl
+
+			-S <hardskip>   | optional
+			                | [true|false] do nothing and return
+			-s <softskip>   | optional
+			                | [true|false] do nothing but check for files and print commands
+			-5 <skip>       | optional
+			                | true/false skip md5sum check, indexing respectively
+			-t <threads>    | mandatory
+			                | number of threads
+			-a <accuracy>   | optional
+			                | 80 to 100 (%) of required matching bases per read
+			-i <insertsize> | optional
+			                | 50 to 200000+
+			-r <mapper>     | mandatory
+			                | array of array names which contain alignment paths. segemehl will be added.
+			                | mapper+=(segemehl); segemehl=(/outdir/segemehl/1.bam /outdir/segemehl/2.bam ..)
+			-g <genome>     | mandatory
+			                | path to genome in fasta format
+			-x <genomeidx>  | mandatory
+			                | path to segemehl genome index
+			-n <nosplit>    | optional
+			                | true/false disable split read alignments. use e.g. for DNA-Seq derived data
+			-o <outdir>     | mandatory
+			                | path to output directory. subdirectory segemehl will be created according to array of array names (see -r)
+			-1 <fastq1>     | mandatory
+			                | array which contains single or first mate fastq(.gz) paths
+			-2 <fastq2>     | optional
+			                | array which contains mate pair fastq(.gz) paths
+			-F              | optional
+			                | force indexing even if md5sums match. ignored upon -5
+
+			example:
+			    declare -a fastq1=(/path/to/1.fq.gz /path/to/2.fq.gz ..)
+			    declare -a mapper=()
+			    ${FUNCNAME[1]} -5 true -t 16 -r mapper -g /path/to/genome.fa -x /path/to/genome.segemehl.idx -o /path/to/outdir -1 fastq1
+
+			access bam paths directly:
+			    printf '%s\n' "\${segemehl[@]}"
+
+			access bam paths via array of arrays:
+			    declare -n _bams=\${mapper[-1]}
+			    printf '%s\n' "\${_bams[@]}"
 		EOF
+		BASHBONE_ERROR="false"
 		return 1
 	}
 
@@ -68,7 +97,7 @@ alignment::segemehl() {
 			commander::makecmd -a cmdidx -s '|' -c {COMMANDER[0]}<<- CMD
 				segemehl -x "$genomeidx" -d "$genome"
 			CMD
-			commander::runcmd -v -b -t $threads -a cmdidx
+			commander::runcmd -v -b -i $threads -a cmdidx
 			commander::printinfo "updating md5 sums"
 			thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
 			sed -i "s/md5segemehl=.*/md5segemehl=$thismd5segemehl/" "$genome.md5.sh"
@@ -127,7 +156,7 @@ alignment::segemehl() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
+		commander::runcmd -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -141,29 +170,59 @@ alignment::star() {
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-S <hardskip>     | true/false return
-			-s <softskip>     | true/false only print commands
-			-5 <skip>         | true/false md5sums, indexing respectively
-			-t <threads>      | number of
-			-a <accuracy>     | optional: 80 to 100
-			-i <insertsize>   | optional: 0 to 200000+
-			-r <mapper>       | array of bams within array of
-			-g <genome>       | path to
-			-f <gtf>          | path to
-			-x <genomeidxdir> | path to
-			-n <nosplit>      | optional: true/false
-			-o <outdir>       | path to
-			-p <tmpdir>       | path to
-			-1 <fastq1>       | array of
-			-2 <fastq2>       | array of
-			-c <opts>         | passed to star
-			-F                | force idx
+			${FUNCNAME[1]} alignes pre-processed read data in fastq(.gz) format utilizing the mapping software STAR
+
+			-S <hardskip>     | optional
+			                  | [true|false] do nothing and return
+			-s <softskip>     | optional
+			                  | [true|false] do nothing but check for files and print commands
+			-5 <skip>         | optional
+			                  | true/false skip md5sum check, indexing respectively
+			-t <threads>      | mandatory
+			                  | number of threads
+			-a <accuracy>     | optional
+			                  | 80 to 100 (%) of required matching bases per read
+			-i <insertsize>   | optional
+			                  | 50 to 200000+
+			-r <mapper>       | mandatory
+			                  | array of array names which contain alignment paths. star will be added.
+			                  | mapper+=(star); star=(/outdir/star/1.bam /outdir/star/2.bam ..)
+			-g <genome>       | mandatory
+			                  | path to genome in fasta format
+			-f <gtf>          | optional
+			                  | path to genome annotation in gtf format. triggers creation of splice junction database during indexing
+			-x <genomeidxdir> | mandatory
+			                  | path to star genome index directory
+			-n <nosplit>      | optional
+			                  | true/false disable split read alignments. use e.g. for DNA-Seq derived data
+			-o <outdir>       | mandatory
+			                  | path to output directory. subdirectory star will be created according to array of array names (see -r)
+			-p <tmpdir>       | mandatory
+			                  | path to temporary directory
+			-1 <fastq1>       | mandatory
+			                  | array which contains single or first mate fastq(.gz) paths
+			-2 <fastq2>       | optional
+			                  | array which contains mate pair fastq(.gz) paths
+			-F                | optional
+			                  | force indexing even if md5sums match. ignored upon -5
+
+			example:
+			    declare -a fastq1=(/path/to/1.fq.gz /path/to/2.fq.gz ..)
+			    declare -a mapper=()
+			    ${FUNCNAME[1]} -5 true -t 16 -r mapper -g /path/to/genome.fa -x /path/to/genome.star.idx/ -o /path/to/outdir -p /path/to/tmpdir -1 fastq1
+
+			access bam paths directly:
+			    printf '%s\n' "\${star[@]}"
+
+			access bam paths via array of arrays:
+			    declare -n _bams=\${mapper[-1]}
+			    printf '%s\n' "\${_bams[@]}"
 		EOF
+		BASHBONE_ERROR="false"
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy insertsize nosplitaln=false inparams='' forceidx=false
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir tmpdir accuracy insertsize nosplitaln=false inparams='' forceidx=false
 	declare -n _fq1_star _fq2_star _mapper_star
 	declare -g -a star=()
 	while getopts 'S:s:5:t:g:f:x:a:n:i:r:o:p:1:2:c:F' arg; do
@@ -202,7 +261,7 @@ alignment::star() {
 		source "$genome.md5.sh"
 
 		declare -a cmdidx=("STAR --help | grep -m 1 -F versionGenome | sed -E 's/.+\s+(.+)/\1/'")
-		local doindex=$forceidx idxparams thisidxversion idxversion=$(commander::runcmd -c star -t $threads -a cmdidx)
+		local doindex=$forceidx idxparams thisidxversion idxversion=$(commander::runcmd -c star -i $threads -a cmdidx)
 		[[ -s "$genomeidxdir/genomeParameters.txt" ]] && thisidxversion=$(grep -m 1 -F versionGenome "$genomeidxdir/genomeParameters.txt" | sed -E 's/.+\s+(.+)/\1/')
 
 		if [[ "$thisidxversion" != "$idxversion" ]]; then
@@ -237,7 +296,7 @@ alignment::star() {
 				--genomeFastaFiles "$genome"
 				--outFileNamePrefix "$genomeidxdir/$(basename "$genome")."
 			CMD
-			commander::runcmd -c star -v -b -t $threads -a cmdidx
+			commander::runcmd -c star -v -b -i $threads -a cmdidx
 			commander::printinfo "updating md5 sums"
 			thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
 			sed -i "s/md5star=.*/md5star=$thismd5star/" "$genome.md5.sh"
@@ -322,7 +381,7 @@ alignment::star() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c star -v -b -t 1 -a cmd1
+		commander::runcmd -c star -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -331,21 +390,49 @@ alignment::star() {
 alignment::bwa() {
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-S <hardskip>   | true/false return
-			-s <softskip>   | true/false only print commands
-			-5 <skip>       | true/false md5sums, indexing respectively
-			-t <threads>    | number of
-			-a <accuracy>   | optional: 80 to 100
-			-r <mapper>     | array of bams within array of
-			-g <genome>     | path to
-			-x <idxprefix>  | path to
-			-f <memalgo>    | true/false force mem algorithm independend of readlength
-			-o <outdir>     | path to
-			-1 <fastq1>     | array of
-			-2 <fastq2>     | array of
-			-F              | force index
+			${FUNCNAME[1]} alignes pre-processed read data in fastq(.gz) format utilizing the mapping software BWA
+
+			-S <hardskip>  | optional
+			               | [true|false] do nothing and return
+			-s <softskip>  | optional
+			               | [true|false] do nothing but check for files and print commands
+			-5 <skip>      | optional
+			               | true/false skip md5sum check, indexing respectively
+			-t <threads>   | mandatory
+			               | number of threads
+			-a <accuracy>  | optional
+			               | 80 to 100 (%) of required matching bases per read via adjusted bwa minOUTscore parameter
+			-r <mapper>    | mandatory
+			               | array of array names which contain alignment paths. bwa will be added.
+			               | mapper+=(bwa); bwa=(/outdir/bwa/1.bam /outdir/bwa/2.bam ..)
+			-g <genome>    | mandatory
+			               | path to genome in fasta format
+			-x <idxprefix> | mandatory
+			               | path to bwa genome index directory plus common index files prefix
+			-f <memalgo>   | optional. default: true
+			               | true/false force to use mem algorithm. else determine algorithm by first 1000 reads mean length (>70 triggers mem)
+			-o <outdir>    | mandatory
+			               | path to output directory. subdirectory bwa will be created according to array of array names (see -r)
+			-1 <fastq1>    | mandatory
+			               | array which contains single or first mate fastq(.gz) paths
+			-2 <fastq2>    | optional
+			               | array which contains mate pair fastq(.gz) paths
+			-F             | optional
+			               | force indexing even if md5sums match. ignored upon -5
+
+			example:
+			    declare -a fastq1=(/path/to/1.fq.gz /path/to/2.fq.gz ..)
+			    declare -a mapper=()
+			    ${FUNCNAME[1]} -5 true -t 16 -r mapper -g /path/to/genome.fa -x /path/to/genome.bwa.idx/bwa -o /path/to/outdir -1 fastq1
+
+			access bam paths directly:
+			    printf '%s\n' "\${bwa[@]}"
+
+			access bam paths via array of arrays:
+			    declare -n _bams=\${mapper[-1]}
+			    printf '%s\n' "\${_bams[@]}"
 		EOF
+		BASHBONE_ERROR="false"
 		return 1
 	}
 
@@ -376,7 +463,7 @@ alignment::bwa() {
 	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "mapping bwa"
-	declare -a cmdchk=("command -v bwa-mem2 &> /dev/null && echo bwa-mem2 || echo bwa")
+	declare -a cmdchk=("which bwa-mem2 &> /dev/null && echo bwa-mem2 || echo bwa")
 	local bwacmd=$(commander::runcmd -c bwa -a cmdchk)
 
 	if $skipmd5; then
@@ -397,7 +484,7 @@ alignment::bwa() {
 			CMD
 				$bwacmd index -p "$idxprefix" "$genome"
 			CMD
-			commander::runcmd -c bwa -v -b -t $threads -a cmdidx
+			commander::runcmd -c bwa -v -b -i $threads -a cmdidx
 			commander::printinfo "updating md5 sums"
 			thismd5bwa=$(md5sum "$idxprefix.pac" | cut -d ' ' -f 1)
 			sed -i "s/md5bwa=.*/md5bwa=$thismd5bwa/" "$genome.md5.sh"
@@ -505,8 +592,8 @@ alignment::bwa() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c bwa -v -b -t 1 -a cmd1
-		commander::runcmd -c bwa -v -b -t $instances -a cmd2
+		commander::runcmd -c bwa -v -b -i 1 -a cmd1
+		commander::runcmd -c bwa -v -b -i $instances -a cmd2
 	fi
 
 	return 0
@@ -520,15 +607,40 @@ alignment::postprocess() {
 
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-S <hardskip> | true/false return
-			-s <softskip> | true/false only print commands
-			-j <job>      | [uniqify|sort|index]
-			-t <threads>  | number of
-			-r <mapper>   | array of bams within array of
-			-p <tmpdir>   | path to
-			-o <outdir>   | path to
+			${FUNCNAME[1]} (converts sam to bam and) either filteres alignments for uniqueness (and properly aligned mate pairs), sorts or index them.
+
+			-S <hardskip> | optional
+			              | [true|false] do nothing and return
+			-s <softskip> | optional
+			              | [true|false] do nothing but check for files and print commands
+			-j <job>      | mandatory
+			              | [uniqify|sort|index] to be applied on alignments (see -r)
+			-t <threads>  | mandatory
+			              | number of threads
+			-r <mapper>   | mandatory
+			              | array of array names which contain alignment paths. resulting files will be suffixed according to job (see -j). alignment paths will be updated.
+			              | mapper=(segemehl star); [segemehl|star]=(/outdir/[segemehl|star]/1.[unique|sorted].bam /outdir/[segemehl|star]/2.[unique|sorted].bam ..);
+			-o <outdir>   | mandatory
+			              | path to output directory. subdirectories will be created according to array of array names (see -r)
+			-p <tmpdir>   | mandatory
+			              | path to temporary directory
+
+			example:
+			    mapper=(segemehl star)
+			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
+			    ${FUNCNAME[1]} -t 16 -r mapper -j uniqify -o /path/to/outdir -p /path/to/tmpdir
+
+			access bam paths directly:
+			    printf '%s\n' "\${segemehl[@]}"
+			    printf '%s\n' "\${star[@]}"
+
+			access bam paths via array of arrays:
+			    for tool in \${mapper[@]}; do
+			        declare -n _bams=\$tool
+			        printf '%s\n' "\${_bams[@]}"
+			    done
 		EOF
+		BASHBONE_ERROR="false"
 		return 1
 	}
 
@@ -602,8 +714,8 @@ alignment::postprocess() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $instances -a cmd1
-		commander::runcmd -v -b -t $instances -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
 	fi
 	return 0
 }
@@ -611,19 +723,39 @@ alignment::postprocess() {
 alignment::_uniqify() {
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-1 <cmds1>    | array of
-			-2 <cmds2>    | array of
-			-t <threads>  | number of
-			-i <sam|bam>  | alignment file
-			-o <outbase>  | path to
-			-r <var>      | returned alignment file
+			${FUNCNAME[1]} crafts command to (convert SAM to BAM and) filter alignments for uniqueness (and properly aligned mate pairs).
+
+			-1 <cmds1>   | mandatory
+			             | first array to append commands to
+			-2 <cmds2>   | mandatory
+			             | second array to append commands to which depend on first array commands
+			-t <threads> | mandatory
+			             | number of threads
+			-i <sam|bam> | mandatory
+			             | path to alignment in SAM or BAM format
+			-o <outbase> | mandatory
+			             | path to output directory plus alignment file prefix
+			-r <var>     | optional
+			             | variable to store resulting alignment file path
+
+			example:
+			    declare -a cmds1 cmds2
+			    declare outfile=""
+			    ${FUNCNAME[1]} -1 cmds1 -2 cmds2 -t 16 -i /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -r outfile
+
+			create uniqified bam:
+			    commander::runcmd [..] -a cmds1
+			    commander::runcmd [..] -a cmds2
+
+			access uniqified bam:
+			    echo "\$outfile"
 		EOF
+		BASHBONE_ERROR="false"
 		return 1
 	}
 
-	local OPTIND arg mandatory threads sambam outbase m
-	declare -n _cmds1_uniqify _cmds2_uniqify _returnfile_uniqify
+	local OPTIND arg mandatory threads sambam outbase _returnfile_uniqify
+	declare -n _cmds1_uniqify _cmds2_uniqify
 	while getopts '1:2:t:i:o:r:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_uniqify=$OPTARG;;
@@ -631,7 +763,7 @@ alignment::_uniqify() {
 			t)	((++mandatory)); threads=$OPTARG;;
 			i)	((++mandatory)); sambam="$OPTARG";;
 			o)	((++mandatory)); outbase="$OPTARG";;
-			r)	_returnfile_uniqify=$OPTARG;;
+			r)	declare -n _returnfile_uniqify=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
@@ -730,27 +862,44 @@ alignment::_uniqify() {
 alignment::_sort() {
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-1 <cmds1>    | array of
-			-t <threads>  | number of
-			-i <bam>      | binary alignment file
-			-o <outbase>  | path to
-			-p <tmpdir>   | path to
-			-r <var>      | returned alignment file
+			${FUNCNAME[1]} crafts command to sort an alignment file by coordinate.
+
+			-1 <cmds>    | mandatory
+			             | array to append commands to
+			-t <threads> | mandatory
+			             | number of threads
+			-i <sam|bam> | mandatory
+			             | path to alignment in SAM or BAM format
+			-o <outbase> | mandatory
+			             | path to output directory plus alignment file prefix
+			-r <var>     | optional
+			             | variable to store resulting alignment file path
+
+			example:
+			    declare -a cmds
+			    declare outfile=""
+			    ${FUNCNAME[1]} -1 cmds -t 16 -i /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -r outfile
+
+			create sorted bam:
+			    commander::runcmd [..] -a cmds
+
+			access sorted bam:
+			    echo "\$outfile"
 		EOF
+		BASHBONE_ERROR="false"
 		return 1
 	}
 
-	local OPTIND arg mandatory threads bam outbase tmpdir
-	declare -n _cmds1_sort _returnfile_sort
-	while getopts '1:t:i:o:p:r:' arg; do
+	local OPTIND arg mandatory threads bam outbase _returnfile_sort tmpdir
+	declare -n _cmds1_sort
+	while getopts '1:t:i:o:r:p:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_sort=$OPTARG;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			i)	((++mandatory)); bam="$OPTARG";;
 			o)	((++mandatory)); outbase="$OPTARG";;
 			p)	((++mandatory)); tmpdir="$OPTARG";;
-			r)	_returnfile_sort=$OPTARG; ;;
+			r)	declare -n _returnfile_sort=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
@@ -775,31 +924,56 @@ alignment::_sort() {
 alignment::_index() {
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-1 <cmds1>    | array of
-			-t <threads>  | number of
-			-i <bam>      | sorted alignment file
+			${FUNCNAME[1]} crafts command to index a coordinate sorted alignment file.
+
+			-1 <cmds>    | mandatory
+			             | array to append commands to
+			-t <threads> | mandatory
+			             | number of threads
+			-i <bam>     | mandatory
+			             | path to coordinate sorted alignment in BAM format
+			-o <outbase> | optional
+			             | path to output directory plus alignment file prefix
+			-r <var>     | optional
+			             | variable to store resulting alignment index file path
+
+			example:
+			    declare -a cmds
+			    declare idxfile=""
+			    ${FUNCNAME[1]} -1 cmds -t 16 -i /path/to/alignment.bam -r idxfile
+
+			create bam index:
+			    commander::runcmd [..] -a cmds
+
+			access bam index:
+			    echo "\$idxfile"
 		EOF
+		BASHBONE_ERROR="false"
 		return 1
 	}
 
-	local OPTIND arg mandatory threads bam
+	local OPTIND arg mandatory threads bam bai _returnfile_index
 	declare -n _cmds1_index
-	while getopts '1:t:i:' arg; do
+	while getopts '1:t:i:o:r:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_index=$OPTARG;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			i)	((++mandatory)); bam="$OPTARG";;
+			o)	bai="$OPTARG.bai";;
+			r)	declare -n _returnfile_index=$OPTARG; ;;
 			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 3 ]] && _usage
+	[[ $bai ]] || bai="${bam%.*}.bai"
 
-	commander::makecmd -a _cmds1_index -s '|' -c {COMMANDER[0]}<<- CMD
+	_returnfile_index="$bai"
+
+	commander::makecmd -a _cmds1_index -s ';' -c {COMMANDER[0]}<<- CMD
 		samtools index
 			-@ $threads
 			"$bam"
-			"${bam%.*}.bai"
+			"$bai"
 	CMD
 
 	return 0
@@ -809,12 +983,34 @@ alignment::_index() {
 alignment::tobed() {
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-S <hardskip> | true/false return
-			-s <softskip> | true/false only print commands
-			-t <threads>  | number of
-			-r <mapper>   | array of bams within array of
+			${FUNCNAME[1]} converts alignments from BAM to BED format splitting N cigar strings.
+
+			-S <hardskip> | optional
+			              | [true|false] do nothing and return
+			-s <softskip> | optional
+			              | [true|false] do nothing but check for files and print commands
+			-t <threads>  | mandatory
+			              | number of threads
+			-r <mapper>   | mandatory
+			              | array of array names which contain alignment paths. resulting, compressed BED files will be placed next to them and suffixed with bed.gz.
+			              | mapper=(segemehl star); [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
+
+			example:
+			    mapper=(segemehl star)
+			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
+			    ${FUNCNAME[1]} -t 16 -r mapper
+
+			access bam paths directly:
+			    printf '%s.bed.gz\n' "\${segemehl[@]%.*}"
+			    printf '%s.bed.gz\n' "\${star[@]%.*}"
+
+			access bam paths via array of arrays:
+			    for tool in \${mapper[@]}; do
+			        declare -n _bams=\$tool
+			        printf '%s.bed.gz\n' "\${_bams[@]%.*}"
+			    done
 		EOF
+		BASHBONE_ERROR="false"
 		return 1
 	}
 
@@ -844,7 +1040,6 @@ alignment::tobed() {
 	for m in "${_mapper_tobed[@]}"; do
 		declare -n _bams_tobed=$m
 		for f in "${_bams_process[@]}"; do
-
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				bedtools bamtobed -split -i "$f"
 			CMD
@@ -856,7 +1051,7 @@ alignment::tobed() {
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd1
 	fi
 
 	return 0
@@ -878,14 +1073,15 @@ alignment::inferstrandness(){
 			-r <mapper>     | array of sorted, indexed bams within array of
 			-x <strandness> | hash per bam of
 			-g <gtf>        | path to
+			-l <level>      | feature (default: exon)
 			-p <tmpdir>     | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf level="exon" featuretag="gene_id" default
+	local OPTIND arg mandatory skip=false skipmd5=false threads outdir gtf level="exon" default tmpdir
 	declare -n _mapper_inferstrandness _strandness_inferstrandness
-	while getopts 'S:s:t:r:x:g:l:f:p:o:d:' arg; do
+	while getopts 'S:s:t:r:x:g:d:l:p:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -895,10 +1091,11 @@ alignment::inferstrandness(){
 			x)	((++mandatory)); _strandness_inferstrandness=$OPTARG;;
 			g)	gtf="$OPTARG";;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			l)	level="$OPTARG";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 3 ]] && _usage
 	[[ ! $default && ! $gtf ]] && _usage
 
 	local m f
@@ -918,9 +1115,9 @@ alignment::inferstrandness(){
 	tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)"
 	declare -a cmd1
 	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-		perl -lane '
-			next if $F[0] =~ /^(MT|chrM)/i;
-			next unless $F[2] eq "exon";
+		perl -slane '
+			next if $F[0] eq "MT" || $F[0] eq "chrM";
+			next unless $F[2] eq $lvl;
 			if($F[6] eq "+"){
 				++$plus;
 				print join"\t",($F[0],$F[3],$F[4],$F[1],0,$F[6]);
@@ -931,13 +1128,13 @@ alignment::inferstrandness(){
 			exit if $plus>2000 && $minus>2000;
 		'
 	CMD
-		"$gtf" > "$tmpfile"
+		-- -lvl="$level" "$gtf" > "$tmpfile"
 	CMD
 
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd1
 	fi
 
 	declare -a cmd2
@@ -983,7 +1180,7 @@ alignment::inferstrandness(){
 		declare -a a mapdata
 		commander::printinfo "running commands of array cmd2"
 		commander::printcmd -a cmd2
-		mapfile -t mapdata < <(commander::runcmd -c rseqc -t $threads -a cmd2)
+		mapfile -t mapdata < <(commander::runcmd -c rseqc -i $threads -a cmd2)
 		for l in "${mapdata[@]}"; do
 			a=($l)
 			_strandness_inferstrandness["${a[@]:1}"]="${a[0]}"
@@ -997,16 +1194,18 @@ alignment::add4stats(){
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
-			-r <mapper>    | array of bams within array of
+			-r <mapper>   | array of bams within array of
+			-f <force>    | true/false start from scratch
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory
+	local OPTIND arg mandatory force=false
 	declare -n _mapper_add4stats
-	while getopts 'r:' arg; do
+	while getopts 'r:f:' arg; do
 		case $arg in
 			r)	((++mandatory)); _mapper_add4stats=$OPTARG;;
+			f)	force=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
@@ -1018,7 +1217,7 @@ alignment::add4stats(){
 		for i in "${!_bams_add4stats[@]}"; do
 			declare -g -a $m$i #optional (see below), declare can be used with $var! but then without assignment
 			declare -n _mi_add4stats=$m$i # non existing reference (here $m$i) will be always globally declared ("declare -g $m$i")
-			_mi_add4stats+=("${_bams_add4stats[$i]}")
+			$force && _mi_add4stats=("${_bams_add4stats[$i]}") || _mi_add4stats+=("${_bams_add4stats[$i]}")
 		done
 	done
 	# idea for datastructure mapper(segemehl,star)
@@ -1080,7 +1279,7 @@ alignment::bamqc(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -t $instances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd1
 	fi
 
 	return 0
@@ -1148,28 +1347,30 @@ alignment::qcstats(){
 			x=${#_mi_bamstats[@]}
 			[[ $x -eq 0 ]] && continue
 
-			filter=''
+
 			b="$(basename "${_mi_bamstats[0]}")"
 			b="${b%.*}"
 			o="$odir/$b.stats"
-			all=''
-			if [[ -s "$outdir/$b.stats" ]]; then # check if there is a preprocessing fastq stats file
-				all=$(tail -1 "$outdir/$b.stats" | cut -f 3)
-				tail -1 "$outdir/$b.stats" > "$o"
-			else
-				rm -f "$o"
-			fi
+			unset all filter
 			for bam in "${_mi_bamstats[@]}"; do
-				# total = mapped + secondary + supplementary + unmapped (if bam contains unmapped, else total - secondary - supplementary = 0 = unmapped)
-				# % = mapped/total <- silly
-				# primary = mapped - secondary - supplementary
+				if [[ ! $all ]]; then
+					if [[ -s "$outdir/$b.stats" ]]; then # check if there is a preprocessing fastq stats file
+						all=$(tail -1 "$outdir/$b.stats" | cut -f 3)
+						tail -1 "$outdir/$b.stats" > "$o"
+					else
+						all=$(grep -m 1 -F primary "${bam%.*}.flagstat" | cut -d ' ' -f 1) # get all primaries ie. primary mapped + unmapped reads
+						echo -e "$b\tinput reads\t$all" > "$o"
+					fi
+				fi
+
+				# total = primary mapped + secondary + supplementary (primary mapped may include unampped reads if any i.e. 0 = total - secondary - supplementary)
+				# primary mapped = mapped - secondary - supplementary
 				[[ ! $filter ]] && filter='mapped' || filter=$(echo "${bam/\.sorted\./.}" | rev | cut -d '.' -f 2 | rev)
 				a=$(grep -m 1 -F mapped "${bam%.*}.flagstat" | cut -d ' ' -f 1)
-				s=$(grep -m 1 -F secondary "${bam%.*}.flagstat" | cut -d ' ' -f 1) # get rid of multicounts - 0 if unique reads in bam only
+				s=$(grep -m 1 -F secondary "${bam%.*}.flagstat" | cut -d ' ' -f 1)
 				c=$((a-s))
-				s=$(grep -m 1 -F supplementary "${bam%.*}.flagstat" | cut -d ' ' -f 1) # get rid of multicounts - 0 if unique reads in bam only
+				s=$(grep -m 1 -F supplementary "${bam%.*}.flagstat" | cut -d ' ' -f 1)
 				c=$((c-s))
-				[[ ! $all ]] && all=$c # set all to what was mapped in first file unless preprocessing fastq stats file was found
 				echo -e "$b\t$filter reads\t$c" >> "$o"
 			done
 			perl -F'\t' -lane '$all=$F[2] unless $all; $F[0].=" ($all)"; $F[2]=(100*$F[2]/$all); print join"\t",@F' $o | tac | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$odir/mapping.barplot.tsv"
@@ -1206,7 +1407,7 @@ alignment::qcstats(){
 		if $skip; then
 			commander::printcmd -a cmd1
 		else
-			commander::runcmd -v -b -t $threads -a cmd1
+			commander::runcmd -v -b -i $threads -a cmd1
 		fi
 	fi
 

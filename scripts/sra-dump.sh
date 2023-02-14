@@ -1,12 +1,8 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-set -o pipefail -o errtrace # for ERR trap inheritance
-# -o functrace for DEBUG and RETURN trap inheritance in case of err backtrace implementation
-
-# shopt -s extdebug # for advanced LINENO handling via read -r fun line src < <(declare -F ${FUNCNAME[0]})
-shopt -s extglob # e.g. +(a|b|c)*
-# shopt -s expand_aliases # to allow aliases in scripts
+set -o pipefail -o errtrace
+shopt -s extglob
 
 cleanup(){
 	[[ $tmp && -e "$tmp" ]] && rm -rf "$tmp"
@@ -16,16 +12,12 @@ cleanup(){
 
 trap '
 	cleanup
-	declare -a pids=($(pstree -p $$ | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | tail -n +2))
-	{ kill -INT "${pids[@]}" && wait "${pids[@]}"; } &> /dev/null
+	trap "" INT TERM; { env kill -INT -- -$$ & wait $!; sleep 0.1; env kill -TERM -- -$$ & wait $!; } &> /dev/null
 	printf "\r"
 ' EXIT
 
-trap 'exit $?' INT TERM
 trap 'exit 1' USR1
-trap 'e=$?; echo ":ERROR: ${ERROR:-an unexpected one}" 1>&2; if [[ $e -ne 141 ]]; then [[ $BASHPID -eq $$ ]] && exit $e || kill -USR1 $$; fi' ERR
-# ignore SIGPIPE caused by e.g. 'samtools view bam | head' and take care of parent exit upon subshell ERR
-# to trigger ERR during xargs runtime let jobs exit with 255 e.g. echo 'CMD || exit 255' | xargs -I {} bash -c {}
+trap 'e=$?; echo ":ERROR: ${ERROR:-an unexpected one}" 1>&2; if [[ $e -ne 141 ]]; then [[ $BASHPID -eq $$ ]] && exit $e || kill -USR1 $$; wait -f /dev/null fi' ERR
 
 usage(){
 	cat <<- EOF
@@ -36,13 +28,13 @@ usage(){
 		  - ebi uk mirror can be defined as fallback upon fastq-dump errors
 
 		VERSION
-		0.3.0
+		0.3.1
 
 		REQUIREMENTS
 		Depends on chosen options
-		  - esearch (from eutilities https://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/)
-		  - pigz (for threads > 1) and fastq-dump/fasterq-dump (from stra-toolkit https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/)
-		  - wget or curl
+		  - esearch (for non-SRR identifiers, from eutilities https://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/)
+		  - pigz (for compression threads > 1)
+		  - wget or curl or fastq-dump (from stra-toolkit https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/)
 
 		SYNOPSIS
 		$(basename "$0") [OPTIONS] [GSM|SRR|SRX|SRP] [..]
@@ -52,6 +44,7 @@ usage(){
 		-d [path] : download into this directory (default: "$PWD")
 		-p [num]  : number of maximum parallel download instances (default: 2)
 		-t [num]  : pigz compression threads per fastq-dump download instance (default: no pigz)
+		            HINT1: single threaded gzip compression may be a bottleneck regarding download speed
 		-m [path] : path to temporary directory (default: "$PWD/tmp.XXXXXXXXXX.sradump")
 		-l        : convert local sra files to compressed fastq files
 		-s        : show received meta information for given accession numbers and exit
@@ -66,8 +59,8 @@ usage(){
 		-f        : unless -a, use ebi uk mirror as fallback upon fastq-dump failures. requires -w or -c
 
 		EXAMPLES
-		$(basename "$0") -p 2 -t 4 -m /dev/shm GSM1446883 SRR1528586 SRX663213
-		$(basename "$0") -l -p 2 -t 4 -m /dev/shm /path/to/SRR1528586.sra /path/to/SRR1528588.sra
+		$(basename "$0") -p 2 -t 4 -m /tmp GSM1446883 SRR1528586 SRX663213
+		$(basename "$0") -l -p 2 -t 4 -m /tmp /path/to/SRR1528586.sra /path/to/SRR1528588.sra
 
 		REFERENCES
 		(c) Konstantin Riege
@@ -136,9 +129,15 @@ else
 			srr+=("$id")
 		} || {
 			i="${#srr[@]}"
-			srr+=($(esearch -db sra -query "$id" | efetch -format docsum | grep -oE '(S|E|D)RR[^"]+'))
-			n=$({ esearch -db sra -query "$id" | efetch -format info | grep -oE 'sample_(title|name)="[^"]+' || echo "NA"; } | sort -Vur | head -1 | cut -d '"' -f 2)
-			printf "$id\t%s\t$n\n" "${srr[@]:$i}" | tee -a "$outfile" >&2
+			#srr+=($(esearch -db sra -query "$id" | efetch -format docsum | grep -oE '(S|E|D)RR[^"]+'))
+			#n=$({ esearch -db sra -query "$id" | efetch -format info | grep -oE 'sample_(title|name)="[^"]+' || echo "NA"; } | sort -Vur | head -1 | cut -d '"' -f 2)
+			#printf "$id\t%s\t$n\n" "${srr[@]:$i}" | tee -a "$outfile" >&2
+
+			mapfile -t mapdata < <(esearch -db sra -query "$id" | efetch -format xml)
+			srr+=("$(printf '%s\n' "${mapdata[@]}" | sed -nE 's/.*accession="([SED]RR[^"]+)".*/\1/p' | sort -Vur | head -1)")
+			n="$({ printf '%s\n' "${mapdata[@]}" | grep -oE 'sample_(title|name)="[^"]+' || echo "NA"; } | sort -Vr | head -1 | cut -d '"' -f 2)"
+			meta="$(printf '%s\n' "${mapdata[@]}" | grep '<SAMPLE_ATTRIBUTE>' -A 2 | grep '<TAG>' -A 1 | grep -vx -- '--' | sed -nE 's/^\s*<([^>]+>)(.+)<\/\1/\2/p' | paste - - | awk -F '\t' '{gsub(/\s+/,"_",$1); print $1"=\""$2"\";"}' | sed ':a;N;$!ba; s/\n/ /g')"
+			printf "$id\t%s\t$n\tsample_name=\"$n;\" $meta\n" "${srr[@]:$i}" | tee -a "$outfile" >&2
 		}
 	done
 	$nodownload && exit 0

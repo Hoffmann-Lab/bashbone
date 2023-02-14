@@ -134,7 +134,7 @@ fusions::starfusion(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c starfusion -v -b -t 1 -a cmd1
+		commander::runcmd -c starfusion -v -b -i 1 -a cmd1
 	fi
 
 	return 0
@@ -169,7 +169,7 @@ fusions::arriba(){
 			5)	$OPTARG && skipmd5=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
-			v)	((++mandatory)); genomeversion="$OPTARG";;
+			v)	genomeversion="$OPTARG";;
 			a)	((++mandatory)); gtf="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG/arriba"; mkdir -p "$outdir";;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
@@ -179,7 +179,7 @@ fusions::arriba(){
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 8 ]] && _usage
+	[[ $mandatory -lt 7 ]] && _usage
 	commander::printinfo "detecting gene fusions arriba"
 
 	# Arriba STAR kickoff needs WithinBAM SoftClip or SeparateSAMold instead of Junctions (STAR-Fusion)
@@ -270,10 +270,10 @@ fusions::arriba(){
 		-g "$gtf" \
 		-p "$tmpdir"
 
-
+	cmdchk=('ls "$CONDA_PREFIX/var/lib/arriba/blacklist_'${genomeversion}'_"*.gz 2> /dev/null || mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.arriba')
+	local params="-b '$(commander::runcmd -c arriba -a cmdchk)'"
  	# for arriba 2.x -T/-P/-I are now default and -T -T/-P -P/-I -I is now -X (ie report sequences and read ides in the discarded fusions file too)
-	params=""
-	[[ $version -lt 2 ]] && params="-T -P -I"
+	[[ $version -lt 2 ]] && params+=" -T -P -I"
 
 	local m f o
 	declare -a cmd1
@@ -283,7 +283,6 @@ fusions::arriba(){
 			arriba
 				-a "$genome"
 				-g "$gtf"
-				-b "\$(ls '\$CONDA_PREFIX/var/lib/arriba/blacklist_${genomeversion}_'*.gz)"
 				-x "$f"
 				-o "$o.fusions.tsv"
 				-O "$o.fusions.discarded.tsv"
@@ -300,7 +299,7 @@ fusions::arriba(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c arriba -v -b -t $threads -a cmd1
+		commander::runcmd -c arriba -v -b -i $threads -a cmd1
 	fi
 
 	return 0

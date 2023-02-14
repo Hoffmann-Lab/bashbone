@@ -1,6 +1,5 @@
 name: mafft
 channels:
-  - iuc
   - conda-forge
   - bioconda
   - main

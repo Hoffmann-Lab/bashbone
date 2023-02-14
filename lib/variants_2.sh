@@ -95,7 +95,7 @@ variants::haplotypecaller() {
 				# Spark does not yet support -D "$dbsnp"
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					gatk
+					MALLOC_ARENA_MAX=4 gatk
 						--java-options '
 								-Xmx${jmem}m
 								-XX:ParallelGCThreads=$jgct
@@ -126,7 +126,7 @@ variants::haplotypecaller() {
 
 				if $isdna; then
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-						gatk
+						MALLOC_ARENA_MAX=4 gatk
 							--java-options '
 									-Xmx${jmem}m
 									-XX:ParallelGCThreads=$jgct
@@ -154,7 +154,7 @@ variants::haplotypecaller() {
 					CMD
 				else
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-						gatk
+						MALLOC_ARENA_MAX=4 gatk
 							--java-options '
 									-Xmx${jmem}m
 									-XX:ParallelGCThreads=$jgct
@@ -242,13 +242,13 @@ variants::haplotypecaller() {
 		commander::printcmd -a cmd6
 		commander::printcmd -a cmd7
 	else
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
-		commander::runcmd -v -b -t $threads -a cmd6
-		commander::runcmd -v -b -t $instances -a cmd7
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd1
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
+		commander::runcmd -v -b -i $threads -a cmd6
+		commander::runcmd -v -b -i $instances -a cmd7
 	fi
 
 	return 0
@@ -344,7 +344,7 @@ variants::mutect() {
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
 				# normal name defined for RGSM sam header entry by alignment::addreadgroup
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					gatk
+					MALLOC_ARENA_MAX=4 gatk
 						--java-options '
 								-Xmx${jmem}m
 								-XX:ParallelGCThreads=$jgct
@@ -394,7 +394,7 @@ variants::mutect() {
 
 				if [[ -s "$genome.small_common.vcf.gz" ]]; then
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-						gatk
+						MALLOC_ARENA_MAX=4 gatk
 							--java-options '
 								-Xmx${jmem}m
 								-XX:ParallelGCThreads=$jgct
@@ -417,7 +417,7 @@ variants::mutect() {
 					# then predict contamination as whole and filter on full set
 					##########
 					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-						gatk
+						MALLOC_ARENA_MAX=4 gatk
 							--java-options '
 								-Xmx${jmem}m
 								-XX:ParallelGCThreads=$jgct
@@ -436,7 +436,7 @@ variants::mutect() {
 				fi
 
 				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-					gatk
+					MALLOC_ARENA_MAX=4 gatk
 						--java-options '
 							-Xmx${jmem}m
 							-XX:ParallelGCThreads=$jgct
@@ -451,7 +451,7 @@ variants::mutect() {
 				CMD
 
 				commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
-					gatk
+					MALLOC_ARENA_MAX=4 gatk
 						--java-options '
 							-Xmx${jmem}m
 							-XX:ParallelGCThreads=$jgct
@@ -515,7 +515,7 @@ variants::mutect() {
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
 			commander::makecmd -a cmd9 -s ';' -c {COMMANDER[0]}<<- CMD
-				gatk
+				MALLOC_ARENA_MAX=4 gatk
 					--java-options '
 						-Xmx${jmem2}m
 						-XX:ParallelGCThreads=$jgct2
@@ -562,17 +562,17 @@ variants::mutect() {
 		commander::printcmd -a cmd10
 		commander::printcmd -a cmd11
 	else
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd1
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd2
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd3
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd4
-		commander::runcmd -c gatk -v -b -t $minstances -a cmd5
-		commander::runcmd -v -b -t $threads -a cmd6
-		commander::runcmd -v -b -t $threads -a cmd7
-		commander::runcmd -v -b -t $threads -a cmd8
-		commander::runcmd -c gatk -v -b -t $minstances2 -a cmd9
-		commander::runcmd -v -b -t $threads -a cmd10
-		commander::runcmd -v -b -t $instances -a cmd11
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd1
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd2
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd3
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd4
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd5
+		commander::runcmd -v -b -i $threads -a cmd6
+		commander::runcmd -v -b -i $threads -a cmd7
+		commander::runcmd -v -b -i $threads -a cmd8
+		commander::runcmd -c gatk -v -b -i $minstances2 -a cmd9
+		commander::runcmd -v -b -i $threads -a cmd10
+		commander::runcmd -v -b -i $instances -a cmd11
 	fi
 
 	return 0
@@ -661,8 +661,8 @@ variants::bcftools() {
 		commander::printcmd -a cmd1slice
 		commander::printcmd -a cmd2slice
 	else
-		commander::runcmd -v -b -t $threads -a cmd1slice
-		commander::runcmd -v -b -t $threads -a cmd2slice
+		commander::runcmd -v -b -i $threads -a cmd1slice
+		commander::runcmd -v -b -i $threads -a cmd2slice
 	fi
 
 
@@ -820,12 +820,12 @@ variants::bcftools() {
 		commander::printcmd -a cmd5
 		commander::printcmd -a cmd6
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
-		commander::runcmd -v -b -t $instances -a cmd6
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
+		commander::runcmd -v -b -i $instances -a cmd6
 	fi
 
 	return 0
@@ -914,8 +914,8 @@ variants::freebayes() {
 		commander::printcmd -a cmd1slice
 		commander::printcmd -a cmd2slice
 	else
-		commander::runcmd -v -b -t $threads -a cmd1slice
-		commander::runcmd -v -b -t $threads -a cmd2slice
+		commander::runcmd -v -b -i $threads -a cmd1slice
+		commander::runcmd -v -b -i $threads -a cmd2slice
 	fi
 
 
@@ -1044,12 +1044,12 @@ variants::freebayes() {
 		commander::printcmd -a cmd5
 		commander::printcmd -a cmd6
 	else
-		commander::runcmd -c freebayes -v -b -t $threads -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
-		commander::runcmd -v -b -t $instances -a cmd6
+		commander::runcmd -c freebayes -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
+		commander::runcmd -v -b -i $instances -a cmd6
 	fi
 
 	return 0
@@ -1142,8 +1142,8 @@ variants::varscan() {
 		commander::printcmd -a cmd1slice
 		commander::printcmd -a cmd2slice
 	else
-		commander::runcmd -v -b -t $threads -a cmd1slice
-		commander::runcmd -v -b -t $threads -a cmd2slice
+		commander::runcmd -v -b -i $threads -a cmd1slice
+		commander::runcmd -v -b -i $threads -a cmd2slice
 	fi
 
 
@@ -1184,7 +1184,7 @@ variants::varscan() {
 
 					# pileup can be piped into varscan. but if disk is too busy, varscan simply stops and does not wait for input stream
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-						varscan
+						MALLOC_ARENA_MAX=4 varscan
 							-Xmx${jmem}m
 							-XX:ParallelGCThreads=$jgct
 							-XX:ConcGCThreads=$jcgct
@@ -1231,7 +1231,7 @@ variants::varscan() {
 					CMD
 					# pileup can be piped into varscan. but if disk is too busy, varscan simply stops and does not wait for input stream
 					commander::makecmd -a cmd2 -s '|' -o "$slice.toreheader" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-						varscan
+						MALLOC_ARENA_MAX=4 varscan
 							-Xmx${jmem}m
 							-XX:ParallelGCThreads=$jgct
 							-XX:ConcGCThreads=$jcgct
@@ -1319,14 +1319,14 @@ variants::varscan() {
 		commander::printcmd -a cmd7
 		commander::printcmd -a cmd8
 	else
-		commander::runcmd -v -b -t $threads -a cmd1
-		commander::runcmd -c varscan -v -b -t $minstances -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
-		commander::runcmd -v -b -t $threads -a cmd6
-		commander::runcmd -v -b -t $threads -a cmd7
-		commander::runcmd -v -b -t $instances -a cmd8
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -c varscan -v -b -i $minstances -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
+		commander::runcmd -v -b -i $threads -a cmd6
+		commander::runcmd -v -b -i $threads -a cmd7
+		commander::runcmd -v -b -i $instances -a cmd8
 	fi
 
 	return 0
@@ -1427,8 +1427,8 @@ variants::vardict() {
 		commander::printcmd -a cmd1slice
 		commander::printcmd -a cmd2slice
 	else
-		commander::runcmd -v -b -t $threads -a cmd1slice
-		commander::runcmd -v -b -t $threads -a cmd2slice
+		commander::runcmd -v -b -i $threads -a cmd1slice
+		commander::runcmd -v -b -i $threads -a cmd2slice
 	fi
 
 
@@ -1456,6 +1456,7 @@ variants::vardict() {
 					# use -X 0 to not combine snps within 3 bp window into indel or complex, which in addiation reduces the risk of StringIndexOutOfBoundsException
 					# vardict will fail upon > 10 errors per region
 					commander::makecmd -a cmd1 -s '|' -o "$slice.vcf" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
+						MALLOC_ARENA_MAX=4
 						JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir' -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
 						vardict-java
 							-G "$genome"
@@ -1493,6 +1494,7 @@ variants::vardict() {
 				else
 					# prefer -fisher option (vardict skips corrupt sites) over vardict | teststrandbias.R | var2vcf_valid.pl , due to R: Error in fisher.test
 					commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+						MALLOC_ARENA_MAX=4
 						JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir' -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
 						vardict-java
 						-G "$genome"
@@ -1596,13 +1598,13 @@ variants::vardict() {
 		commander::printcmd -a cmd6
 		commander::printcmd -a cmd7
 	else
-		commander::runcmd -c vardict -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
-		commander::runcmd -v -b -t $threads -a cmd6
-		commander::runcmd -v -b -t $instances -a cmd7
+		commander::runcmd -c vardict -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
+		commander::runcmd -v -b -i $threads -a cmd6
+		commander::runcmd -v -b -i $instances -a cmd7
 	fi
 
 	return 0
@@ -1686,7 +1688,7 @@ variants::vardict_threads() {
 	if $skip; then
 		commander::printcmd -a cmd1slice
 	else
-		commander::runcmd -v -b -t $threads -a cmd1slice
+		commander::runcmd -v -b -i $threads -a cmd1slice
 	fi
 
 	local m i f nf o t e odir tdir
@@ -1710,6 +1712,7 @@ variants::vardict_threads() {
 				# use -X 0 to not combine snps within 3 bp window into indel or complex, which in addiation reduces the risk of StringIndexOutOfBoundsException
 				# vardict will fail upon > 10 errors per region
 				commander::makecmd -a cmd1 -s '|' -o "$t.toreheader" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
+					MALLOC_ARENA_MAX=4
 					JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir' -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
 					vardict-java
 						-G $genome
@@ -1747,6 +1750,7 @@ variants::vardict_threads() {
 			else
 				# prefer -fisher option (vardict skips corrupt sites) over vardict | teststrandbias.R | var2vcf_valid.pl , due to R: Error in fisher.test
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					MALLOC_ARENA_MAX=4
 					JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir' -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
 					vardict-java
 					-G $genome
@@ -1838,12 +1842,12 @@ variants::vardict_threads() {
 		commander::printcmd -a cmd5
 		commander::printcmd -a cmd6
 	else
-		commander::runcmd -c vardict -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
-		commander::runcmd -v -b -t $instances -a cmd6
+		commander::runcmd -c vardict -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
+		commander::runcmd -v -b -i $instances -a cmd6
 	fi
 
 	return 0
@@ -2025,12 +2029,12 @@ variants::platypus() {
 		commander::printcmd -a cmd5
 		commander::printcmd -a cmd6
 	else
-		commander::runcmd -c platypus -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
-		commander::runcmd -v -b -t $instances -a cmd6
+		commander::runcmd -c platypus -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
+		commander::runcmd -v -b -i $instances -a cmd6
 	fi
 
 	return 0

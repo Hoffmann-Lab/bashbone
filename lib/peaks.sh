@@ -55,7 +55,7 @@ peaks::_idr(){
 
 	local t=$(echo 0.05 | awk '{print -log($1)/log(10)}')
 	commander::makecmd -a _cmds2_idr -s '|' -o "$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-		awk -v t=$t '\$12>=t' $o
+		awk -v t=$t '\$12>=t' "$o"
 	CMD
 		cut -f 1-10
 	CMD
@@ -65,7 +65,7 @@ peaks::_idr(){
 	CMD
 
 	commander::makecmd -a _cmds2_idr -s '|' -o "$o.full.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-		cut -f 1-10 $o
+		cut -f 1-10 "$o"
 	CMD
 		sort -k1,1 -k2,2n -k3,3n
 	CMD
@@ -225,6 +225,7 @@ peaks::macs(){
 					--outdir "$odir/$o"
 					-n "$o.nomodel"
 					--tempdir "${tdirs[-1]}"
+					--call-summits
 					-B
 					--SPMR
 					--keep-dup all
@@ -245,6 +246,7 @@ peaks::macs(){
 					--outdir "$odir/$o"
 					-n "$o.model"
 					--tempdir "${tdirs[-1]}"
+					--call-summits
 					-B
 					--SPMR
 					--keep-dup all
@@ -263,6 +265,7 @@ peaks::macs(){
 					--outdir "$odir/$o"
 					-n "$o.nomodel"
 					--tempdir "${tdirs[-1]}"
+					--call-summits
 					-B
 					--SPMR
 					--keep-dup all
@@ -303,9 +306,9 @@ peaks::macs(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -t $instances -a cmd1
-		commander::runcmd -c macs -v -b -t $instances2 -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
+		commander::runcmd -v -b -i $instances -a cmd1
+		commander::runcmd -c macs -v -b -i $instances2 -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
 	fi
 
 	return 0
@@ -414,27 +417,28 @@ peaks::macs_idr(){
 			rf="${_bams_macs[${_ridx_macs[$i]}]}"
 			pf="${_bams_macs[${_pidx_macs[$i]}]}"
 
+
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				bedtools bamtobed -split -i "$nf"
+			CMD
+				pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$nf").bed.gz"
+			CMD
+			nf="${tdirs[-1]}/$(basename "$nf").bed.gz"
+
 			toidr=()
 			for f in "$tf" "$rf" "$pf"; do
-				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
-				mkdir -p "$odir/$o"
-
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
-
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bedtools bamtobed -split -i "$nf"
-				CMD
-					pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$nf").bed.gz"
-				CMD
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bedtools bamtobed -split -i "$f"
 				CMD
 					pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$f").bed.gz"
 				CMD
-				nf="${tdirs[-1]}/$(basename "$nf").bed.gz"
 				f="${tdirs[-1]}/$(basename "$f").bed.gz"
 
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				mkdir -p "$odir/$o"
+
 				printf '' > "$odir/$o/$o.model_peaks.narrowPeak"
 				if $ripseq; then
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
@@ -446,6 +450,7 @@ peaks::macs_idr(){
 						--outdir "$odir/$o"
 						-n "$o.nomodel"
 						--tempdir "${tdirs[-1]}"
+						--call-summits
 						-B
 						--SPMR
 						--keep-dup all
@@ -465,6 +470,7 @@ peaks::macs_idr(){
 						--outdir "$odir/$o"
 						-n "$o.model"
 						--tempdir "${tdirs[-1]}"
+						--call-summits
 						-B
 						--SPMR
 						--keep-dup all
@@ -483,6 +489,7 @@ peaks::macs_idr(){
 						--outdir "$odir/$o"
 						-n "$o.nomodel"
 						--tempdir "${tdirs[-1]}"
+						--call-summits
 						-B
 						--SPMR
 						--keep-dup all
@@ -564,11 +571,11 @@ peaks::macs_idr(){
 		commander::printcmd -a cmd4
 		commander::printcmd -a cmd5
 	else
-		commander::runcmd -v -b -t $instances -a cmd1
-		commander::runcmd -c macs -v -b -t $instances2 -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
-		commander::runcmd -v -b -t $threads -a cmd5
+		commander::runcmd -v -b -i $instances -a cmd1
+		commander::runcmd -c macs -v -b -i $instances2 -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -c idr -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
 	fi
 
 	return 0
@@ -669,7 +676,7 @@ peaks::gem(){
 	if $skip; then
 		commander::printcmd -a cmdg
 	else
-		commander::runcmd -v -b -t $threads -a cmdg
+		commander::runcmd -v -b -i $threads -a cmdg
 	fi
 
 	local params='' params2='' strandness=0
@@ -787,8 +794,8 @@ peaks::gem(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0
@@ -840,9 +847,9 @@ peaks::gem_idr(){
 			r)	((++mandatory)); _mapper_gem=$OPTARG;;
 			x)	_strandness_gem=$OPTARG;;
 			q)	ripseq=$OPTARG;;
-			a)	((++mandatory));_nidx_gem=$OPTARG;; # contains nridx by alignment::mkreplicates
+			a)	((++mandatory)); _nidx_gem=$OPTARG;; # contains nridx by alignment::mkreplicates
 			b)	_nridx_gem=$OPTARG;;
-			i)	((++mandatory));_tidx_gem=$OPTARG;;
+			i)	((++mandatory)); _tidx_gem=$OPTARG;;
 			j)	((++mandatory)); _ridx_gem=$OPTARG;;
 			k)	((++mandatory)); _pidx_gem=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
@@ -857,7 +864,7 @@ peaks::gem_idr(){
 
 	commander::printinfo "peak calling gem"
 
-	local minstances mthreads jmem jgct jcgct instances=$(( ${#_nidx_gem[@]} * ${#_mapper_gem[@]} ))
+	local minstances mthreads jmem jgct jcgct instances=$(( (${#_tidx_gem[@]} + ${#_ridx_gem[@]} + ${#_pidx_gem[@]}) * ${#_mapper_gem[@]} ))
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i $instances -T $threads -m $memory -M "$maxmemory")
 
 	declare -n _bams_gem=${_mapper_gem[0]}
@@ -890,7 +897,7 @@ peaks::gem_idr(){
 	if $skip; then
 		commander::printcmd -a cmdg
 	else
-		commander::runcmd -v -b -t $threads -a cmdg
+		commander::runcmd -v -b -i $threads -a cmdg
 	fi
 
 	local params='' params2='' strandness=0
@@ -951,7 +958,7 @@ peaks::gem_idr(){
 						--t $mthreads
 						--genome "$tdir"
 						--g "$tdir/chr.info"
-						--out "$odir/$o1"
+						--out "$odir/$o"
 						--expt "$f"
 						--ctrl "$nf"
 						--f SAM
@@ -1028,10 +1035,262 @@ peaks::gem_idr(){
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -t $minstances -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -v -b -i $minstances -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -c idr -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
+	fi
+
+	return 0
+}
+
+peaks::matk(){
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-t <threads>    | number of
+			-M <maxmemory>  | amount of
+			-r <mapper>     | array of sorted bams within array of
+			-a <nidx>       | array of normal bam idices within -r
+			-i <tidx>       | array of RIP* bam idices within -r
+			-o <outdir>     | path to
+			-p <tmpdir>     | path to
+
+			requires prior execution of alignment::mkreplicates
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads maxmemory outdir tmpdir
+	declare -n _mapper_matk _nidx_matk _nridx_matk _tidx_matk _ridx_matk _pidx_matk
+	while getopts 'S:s:t:M:r:x:a:b:i:j:k:o:p:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
+			r)	((++mandatory)); _mapper_matk=$OPTARG;;
+			a)	((++mandatory)); _nidx_matk=$OPTARG;; # contains nridx by alignment::mkreplicates
+			b)	_nridx_matk=$OPTARG;;
+			i)	((++mandatory)); _tidx_matk=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 6 ]] && _usage
+
+	declare -n _bams_matk=${_mapper_matk[0]}
+	if [[ ! $_nidx_matk && ! $_tidx_matk ]]; then
+		declare -a tidx_matk=("${!_bams_matk[@]}") # use all bams as unpaired input unless -a and -i
+		_tidx_matk=tidx_matk
+	fi
+
+	commander::printinfo "peak calling matk"
+
+	local minstances mthreads jmem jgct jcgct
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads -M "$maxmemory")
+
+	local m i f o odir nf
+	declare -a cmd1 cmd2
+	for m in "${_mapper_matk[@]}"; do
+		declare -n _bams_matk=$m
+		odir="$outdir/$m/matk"
+
+		for i in "${!_tidx_matk[@]}"; do
+			nf="${_bams_matk[${_nidx_matk[$i]}]}"
+			f="${_bams_matk[${_tidx_matk[$i]}]}"
+			o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+
+			mkdir -p "$odir/$o"
+
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+				OMP_NUM_THREADS=$threads matk
+					-Xmx${jmem}m
+					-XX:ParallelGCThreads=$jgct
+					-XX:ConcGCThreads=$jcgct
+					-Djava.io.TMPDIR="$tmpdir"
+					-peakCalling
+					-c 1
+					-ip "$f"
+					-input "$nf"
+					-out "$odir/$o/$o.bed"
+			CMD
+
+			commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- 'CMD'
+				samtools bedcov -Q 0 -g 1796 -j "$odir/$o/$o.bed" "$nf" "$f"
+			CMD
+				awk -v c=$(samtools idxstats "$nf" | datamash sum 3) -v i=$(samtools idxstats "$f" | datamash sum 3) '\$NF>0 && \$NF>\$(NF-1){print \$0,(\$NF/i)/((\$(NF-1)+1)/c)}'
+			CMD
+				perl -lane 'print join"\t",(@F[0..3],0,".",$F[-1],-1,-1*log($F[4])/log(10),-1)'
+			CMD
+				sort -k1,1 -k2,2n -k3,3n
+			CMD
+				bedtools merge -c 4,5,6,7,8,9,10 -o distinct,max,distinct,max,max,max,distinct
+			CMD
+				awk -v OFS='\t' '{$4="peak_"NR; print}'
+			CMD
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+	else
+		commander::runcmd -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+	fi
+
+	return 0
+}
+
+peaks::matk_idr(){
+	_usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-t <threads>    | number of
+			-M <maxmemory>  | amount of
+			-r <mapper>     | array of sorted bams within array of
+			-a <nidx>       | array of normal bam idices within -r
+			-b <nridx>      | array of normal replicates bam idices within -r (optional)
+			-i <tidx>       | array of IP* bam idices within -r
+			-j <ridx>       | array of IP* bam replicates idices within -r
+			-k <pidx>       | array of IP* bam pools idices within -r
+			-o <outdir>     | path to
+			-p <tmpdir>     | path to
+
+			requires prior execution of alignment::mkreplicates
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads maxmemory outdir tmpdir
+	declare -n _mapper_matk _nidx_matk _nridx_matk _tidx_matk _ridx_matk _pidx_matk
+	while getopts 'S:s:t:M:r:x:a:b:i:j:k:o:p:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
+			r)	((++mandatory)); _mapper_matk=$OPTARG;;
+			a)	((++mandatory)); _nidx_matk=$OPTARG;; # contains nridx by alignment::mkreplicates
+			b)	_nridx_matk=$OPTARG;;
+			i)	((++mandatory)); _tidx_matk=$OPTARG;;
+			j)	((++mandatory)); _ridx_matk=$OPTARG;;
+			k)	((++mandatory)); _pidx_matk=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 8 ]] && _usage
+
+	commander::printinfo "peak calling matk"
+
+	local minstances mthreads jmem jgct jcgct
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads -M "$maxmemory")
+
+	local m i f o odir nf tf rf pf nrf pff nff x
+	declare -a cmd1 cmd2 cmd3 cmd4 toidr
+	for m in "${_mapper_matk[@]}"; do
+		declare -n _bams_matk=$m
+		odir="$outdir/$m/matk"
+
+		for i in "${!_nidx_matk[@]}"; do
+			nf="${_bams_matk[${_nidx_matk[$i]}]}"
+			tf="${_bams_matk[${_tidx_matk[$i]}]}"
+			rf="${_bams_matk[${_ridx_matk[$i]}]}"
+			pf="${_bams_matk[${_pidx_matk[$i]}]}"
+
+			toidr=()
+			for f in "$tf" "$rf" "$pf"; do
+				o=$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')
+
+				mkdir -p "$odir/$o"
+
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					OMP_NUM_THREADS=$threads matk
+						-Xmx${jmem}m
+						-XX:ParallelGCThreads=$jgct
+						-XX:ConcGCThreads=$jcgct
+						-Djava.io.TMPDIR="$tmpdir"
+						-peakCalling
+						-c 1
+						-ip "$f"
+						-input "$nf"
+						-out "$odir/$o/$o.bed"
+				CMD
+
+				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- 'CMD'
+					samtools bedcov -Q 0 -g 1796 -j "$odir/$o/$o.bed" "$nf" "$f"
+				CMD
+					awk -v c=$(samtools idxstats "$nf" | datamash sum 3) -v i=$(samtools idxstats "$f" | datamash sum 3) '\$NF>0 && \$NF>\$(NF-1){print \$0,(\$NF/i)/((\$(NF-1)+1)/c)}'
+				CMD
+					perl -lane 'print join"\t",(@F[0..3],0,".",$F[-1],-1,-1*log($F[4])/log(10),-1)'
+				CMD
+					sort -k1,1 -k2,2n -k3,3n
+				CMD
+					bedtools merge -c 4,5,6,7,8,9,10 -o distinct,max,distinct,max,max,max,distinct
+				CMD
+					awk -v OFS='\t' '{$4="peak_"NR; print}'
+				CMD
+
+				toidr+=("$odir/$o.narrowPeak")
+			done
+
+			peaks::_idr \
+				-1 cmd3 \
+				-2 cmd4 \
+				-t "${toidr[0]}" \
+				-r "${toidr[1]}" \
+				-p "${toidr[2]}" \
+				-o "${toidr[2]%.*}.idr"
+		done
+		for i in "${!_nridx_matk[@]}"; do
+			# if a normal replicate is given, then run idr on: n-pp (1/9) + nr-pp (3/9) vs nfp-fp (11/12)
+			#                                           1  2   3   4  5  6  7  8  9   10   11  12   13  14
+			# m[N1 N2 NR1 NR2 T1 T2 R1 R2 PP1 PP2] -> m[N1 N2 NR1 NR2 T1 T2 R1 R2 PP1 PP2 NFP1 FP1 NFP2 FP2]
+			# n   1 2   3 4   11 13     # n   1  2  3  4     5  6  7  8    21 23 25 27
+			# nr  3 4                   # nr  5  6  7  8
+			# t   5 6   5 6   5  6      # t   9 10 11 12     9 10 11 12     9 10 11 12
+			# r   7 8   7 8   7  8      # r  13 14 15 16    13 14 15 16    13 14 15 16
+			# p   9 10  9 10  12 14     # p  17 18 19 20    17 18 19 20    22 24 26 28
+			nf="${_bams_matk[${_nidx_matk[$i]}]}" # 1
+			nrf="${_bams_matk[${_nridx_matk[$i]}]}" # 3
+			pf="${_bams_matk[${_pidx_matk[$i]}]}" # 9
+
+			x=$(( ${_nridx_matk[$i]} + ${_pidx_matk[$i]} )) # 12
+			pff="${_bams_matk[$x]}"
+			nff="${_bams_matk[$((x-1))]}" # 11
+
+			toidr=( "$odir/$(echo -e "$(basename "$nf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nrf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+
+			peaks::_idr \
+				-1 cmd3 \
+				-2 cmd4 \
+				-t "${toidr[0]}" \
+				-r "${toidr[1]}" \
+				-p "${toidr[2]}" \
+				-o "${toidr[2]%.*}.idr"
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+		commander::printcmd -a cmd4
+	else
+		commander::runcmd -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -c idr -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
 	fi
 
 	return 0
@@ -1142,8 +1401,8 @@ peaks::peakachu() {
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -c peakachu -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		commander::runcmd -c peakachu -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0
@@ -1291,10 +1550,10 @@ peaks::peakachu_idr() {
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -c peakachu -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
+		commander::runcmd -c peakachu -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -c idr -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
 	fi
 
 	return 0
@@ -1307,31 +1566,37 @@ peaks::m6aviewer() {
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
+			-m <memory>     | amount of
+			-M <maxmemory>  | amount of
 			-f <size>       | assumed mean fragment
 			-r <mapper>     | array of sorted bams within array of
 			-a <nidx>       | array of normal bam idices within -r (if paired input, requires also -i)
 			-i <tidx>       | array of IP* bam idices within -r (if paired input, requires also -a)
 			-o <outdir>     | path to
+			-p <tmpdir>     | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false genome threads fragmentsize outdir
+	local OPTIND arg mandatory skip=false skipmd5=false genome threads memory maxmemory fragmentsize outdir tmpdir
 	declare -n _mapper_m6aviewer _nidx_m6aviewer _tidx_m6aviewer
-	while getopts 'S:s:t:f:r:a:b:i:j:k:o:' arg; do
+	while getopts 'S:s:t:m:M:f:r:a:b:i:j:k:o:p:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			r)	((++mandatory)); _mapper_m6aviewer=$OPTARG;;
 			f)	((++mandatory)); fragmentsize=$OPTARG;;
 			a)	_nidx_m6aviewer=$OPTARG;;
 			i)	_tidx_m6aviewer=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 	[[ $_nidx_m6aviewer ]] && [[ ! $_tidx_m6aviewer ]] && _usage
 
 	declare -n _bams_m6aviewer=${_mapper_m6aviewer[0]}
@@ -1342,23 +1607,23 @@ peaks::m6aviewer() {
 
 	commander::printinfo "peak calling m6aviewer"
 
-	local x params
-	# infer SE or PE
-	x=$(samtools view -F 4 "${_bams_m6aviewer[0]}" | head -10000 | cat <(samtools view -H "${_bams_m6aviewer[0]}") - | samtools view -c -f 1)
-	[[ $x -gt 0 ]] && params='--paired_end'
+	local minstances mthreads jmem jgct jcgct
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads -m $memory -M "$maxmemory")
 
-	local m i f o odir nf tf rf pf nrf pff nff x
-	declare -a cmd1=("m6aviewer")
-	declare -a cmd2
+	local m i f o odir nf
+	declare -a cmd1 cmd2
 	for m in "${_mapper_m6aviewer[@]}"; do
 		declare -n _bams_m6aviewer=$m
 		odir="$outdir/$m/m6aviewer"
+		mkdir -p $odir
 
 		commander::printinfo {COMMANDER[0]}<<- EOF
-			load the following control and IP files as pairs into m6aviewer
-			define all loaded pairs as one group
-			use settings: fc=2, min_peak_height=50, peak_width=$((2*fragmentsize)), threads=$threads
-			after peak calling save under $odir as "results"
+			HOWTO
+			1a) settings - peak calling: minimum enrichment: 2, minimum peak height: 50, expected peak width=$((2*fragmentsize))
+			1b) settings - other: threads: $threads
+			2) load blocks of control and IP files as pairs into m6aviewer as printed below
+			3) don't group anything, uncheck "limit to" and click "find peaks"
+			4) file - save peaks to file "$odir/results"
 		EOF
 
 		for i in "${!_tidx_m6aviewer[@]}"; do
@@ -1405,14 +1670,17 @@ peaks::m6aviewer() {
 				'
 			CMD
 		done
+
+		#cmd1+=("m6aviewer -Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.TMPDIR='$tmpdir'")
+		m6aviewer -Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.TMPDIR='$tmpdir' &> /dev/null
 	done
 
 	if $skip; then
-		commander::printcmd -a cmd1
+		# commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
+		# commander::runcmd -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0
@@ -1425,6 +1693,8 @@ peaks::m6aviewer_idr() {
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
+			-m <memory>     | amount of
+			-M <maxmemory>  | amount of
 			-f <size>       | assumed mean fragment
 			-r <mapper>     | array of sorted bams within array of
 			-a <nidx>       | array of normal bam idices within -r
@@ -1433,17 +1703,20 @@ peaks::m6aviewer_idr() {
 			-j <ridx>       | array of IP* bam replicates idices within -r
 			-k <pidx>       | array of IP* bam pools idices within -r
 			-o <outdir>     | path to
+			-p <tmpdir>     | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false genome threads fragmentsize outdir
+	local OPTIND arg mandatory skip=false skipmd5=false genome threads memory maxmemory fragmentsize outdir tmpdir
 	declare -n _mapper_m6aviewer _nidx_m6aviewer _nridx_m6aviewer _tidx_m6aviewer _ridx_m6aviewer _pidx_m6aviewer
-	while getopts 'S:s:t:f:r:a:b:i:j:k:o:' arg; do
+	while getopts 'S:s:t:m:M:f:r:a:b:i:j:k:o:p:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			r)	((++mandatory)); _mapper_m6aviewer=$OPTARG;;
 			f)	((++mandatory)); fragmentsize=$OPTARG;;
 			a)	((++mandatory)); _nidx_m6aviewer=$OPTARG;;
@@ -1452,31 +1725,31 @@ peaks::m6aviewer_idr() {
 			j)	((++mandatory)); _ridx_m6aviewer=$OPTARG;;
 			k)	((++mandatory)); _pidx_m6aviewer=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 8 ]] && _usage
+	[[ $mandatory -lt 10 ]] && _usage
 
 	commander::printinfo "peak calling m6aviewer"
 
-	declare -n _bams_m6aviewer=${_mapper_m6aviewer[0]}
-	local x params nf="${_bams_m6aviewer[${_nidx_m6aviewer[0]}]}"
-	# infer SE or PE
-	x=$(samtools view -F 4 "$nf" | head -10000 | cat <(samtools view -H "$nf") - | samtools view -c -f 1)
-	[[ $x -gt 0 ]] && params='--paired_end'
+	local minstances mthreads jmem jgct jcgct
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads -m $memory -M "$maxmemory")
 
 	local m i f o odir nf tf rf pf nrf pff nff x
-	declare -a cmd1=("m6aviewer")
-	declare -a cmd2 cmd3 cmd4 toidr
+	declare -a cmd1 cmd2 cmd3 cmd4 toidr
 	for m in "${_mapper_m6aviewer[@]}"; do
 		declare -n _bams_m6aviewer=$m
 		odir="$outdir/$m/m6aviewer"
+		mkdir -p $odir
 
 		commander::printinfo {COMMANDER[0]}<<- EOF
-			load the following control and IP files as pairs into m6aviewer
-			define all loaded pairs as one group
-			use settings: fc=2, min_peak_height=50, peak_width=$((2*fragmentsize)), threads=$threads
-			after peak calling save under $odir as "results"
+			HOWTO
+			1a) settings - peak calling: minimum enrichment: 2, minimum peak height: 50, expected peak width=$((2*fragmentsize))
+			1b) settings - other: threads: $threads
+			2) load blocks of control and IP files as pairs into m6aviewer as printed below
+			3) don't group anything, uncheck "limit to" and click "find peaks"
+			4) file - save peaks to file "$odir/results"
 		EOF
 
 		for i in "${!_nidx_m6aviewer[@]}"; do
@@ -1561,18 +1834,21 @@ peaks::m6aviewer_idr() {
 				-p "${toidr[2]}" \
 				-o "${toidr[2]%.*}.idr"
 		done
+
+		#cmd1+=("m6aviewer -Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.TMPDIR='$tmpdir'")
+		m6aviewer -Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.TMPDIR='$tmpdir' &> /dev/null
 	done
 
 	if $skip; then
-		commander::printcmd -a cmd1
+		# commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -t 1 -a cmd1
-		commander::runcmd -v -b -t $threads -a cmd2
-		commander::runcmd -v -b -t $threads -a cmd3
-		commander::runcmd -v -b -t $threads -a cmd4
+		# commander::runcmd -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -c idr -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $threads -a cmd4
 	fi
 
 	return 0
