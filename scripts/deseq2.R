@@ -122,12 +122,11 @@ for (method in c("log","vsd","rld")){
 
 	normed = assay(get(method))
 	vars = rowVars(normed)
-	n = 100
-	#n = length(vars)
-	topidx = order(vars, decreasing = TRUE)[1:min(n,length(vars))]
+	n = min(10000,length(vars))
+	topidx = order(vars, decreasing = TRUE)[1:n]
 	pca = prcomp(t(normed[topidx, ]), scale = F)
 	percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
-	data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], PC4 = pca$x[,4], replicate = experiments$replicate, condition = experiments$condition)
+	data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = experiments$replicate, condition = experiments$condition)
 	write.table(data.frame(id=rownames(data),data), row.names = F,
 		file=file.path(outdir,paste("pca_12_",method,".tsv",sep="")), quote=F, sep="\t"
 	)
