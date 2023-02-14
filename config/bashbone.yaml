@@ -70,9 +70,9 @@ dependencies:
   - bz2file=0.98
   - bzip2=1.0.8
   - c-ares=1.18.1
-  - ca-certificates=2021.10.8
+  - ca-certificates=2022.5.18.1
   - cairo=1.16.0
-  - certifi=2021.10.8
+  - certifi=2022.5.18.1
   - clustalw=2.1
   - cmake=3.21.3
   - curl=7.81.0
@@ -162,6 +162,7 @@ dependencies:
   - libxslt=1.1.33
   - libzlib=1.2.11
   - lz4-c=1.9.3
+  - lzo=2.10
   - m4=1.4.18
   - make=4.3
   - matplotlib-base=3.5.1
@@ -173,7 +174,7 @@ dependencies:
   - numpy=1.21.5
   - openjdk=8.0.112
   - openjpeg=2.4.0
-  - openssl=1.1.1n
+  - openssl=1.1.1o
   - ossuuid=1.6.2
   - packaging=21.3
   - paml=4.9

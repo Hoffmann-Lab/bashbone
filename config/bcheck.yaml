@@ -1,6 +1,5 @@
 name: bcheck
 channels:
-  - iuc
   - conda-forge
   - bioconda
   - main

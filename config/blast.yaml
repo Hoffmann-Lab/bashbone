@@ -1,6 +1,5 @@
 name: blast
 channels:
-  - iuc
   - conda-forge
   - bioconda
   - main

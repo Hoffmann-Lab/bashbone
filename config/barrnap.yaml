@@ -1,6 +1,5 @@
 name: barrnap
 channels:
-  - iuc
   - conda-forge
   - bioconda
   - main

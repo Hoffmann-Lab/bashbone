@@ -1,6 +1,5 @@
 name: infernal
 channels:
-  - iuc
   - conda-forge
   - bioconda
   - main
