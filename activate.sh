@@ -6,35 +6,34 @@
 [[ "$(uname)" != "Linux" ]] && echo "unsupported operating system" >&2 && return 1
 [[ ${BASH_VERSINFO[0]} -lt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -lt 4) ]] && echo "requieres bash >= v4.4" >&2 && return 1
 
-if ${BASHBONE_NOSETSID:-false}; then
-	BASHBONE_NOSETSID=false
-	export BASHBONE_PGID=$(($(ps -o pgid= -p $$)))
-else
-	if [[ ! $BASHBONE_PGID ]]; then
-		if [[ $$ -eq $(($(ps -o pgid= -p $$))) ]]; then
-			export BASHBONE_PGID=$$
-		else
-			exec setsid --wait env bash "$0" "$@"
-		fi
-	fi
-fi
-
 declare -F bashbone &> /dev/null && bashbone -y
 mapfile -t BASCHBONE_BAK_SHOPT < <(shopt | awk '$2=="off"{print "shopt -u "$1}'; shopt | awk '$2=="on"{print "shopt -s "$1}')
 mapfile -t BASCHBONE_BAK_TRAPS < <(trap -p)
 mapfile -t BASCHBONE_BAK_SET < <(printf "%s" $- | sed 's/[is]//g' | sed -E 's/(.)/set -\1\n/g')
 mapfile -t BASCHBONE_BAK_ALIASES < <(declare -p BASH_ALIASES | sed 's/^declare/declare -g/') # squeeze in global paramater otherwise bashbone -x function call declares BASH_ALIASES locally
+BASHBONE_BAK_TMPDIR="$TMPDIR"
 
 export BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
 export BASHBONE_TOOLSDIR="${BASHBONE_TOOLSDIR:-$(dirname "$BASHBONE_DIR")}"
 unset OPTIND
-while getopts ':i:c:x:a:hj' arg; do
+# while getopts ':i:p:c:x:a:hj' arg; do
+while getopts 'i:p:c:x:ahj' arg; do
 	case $arg in
 		i)	BASHBONE_TOOLSDIR="$OPTARG";;
 		c)	BASHBONE_CONDA="$OPTARG";;
 		x)	BASHBONE_EXITFUN="$OPTARG";;
 		j)  BASHBONE_JOBCONTROL=true;;
-		a)	shift $((OPTIND-2)); break;;
+		p)	TMPDIR="$OPTARG";;
+		# a)	shift $((OPTIND-2)); break;; # check shift IND-1 or IND-2 via optarg if activate is called with -a "$*"
+		# :)	if [[ "$OPTARG" == "a" ]]; then # use shift IND-1 if no (:optional i.e OPTARG becomes arg) arg given for -a if activate is called with -a "$@"
+		# 		shift $((OPTIND-1))
+		# 		break
+		# 	else
+		# 		echo "argument missing" >&2
+		# 	fi
+		# 	return 1
+		# 	;;
+		a) 	shift $((OPTIND-1)); break;;
 		h)	cat <<- 'EOF'
 				This is bashbone activation script.
 
@@ -46,6 +45,7 @@ while getopts ':i:c:x:a:hj' arg; do
 				-i <path>     | to installation root <path>/latest/<tools>/<bins>
 				                default: inferred from script location
 				                hint: run activation from source code, indeed enables basic functions, but will fail on executing tools
+				-p <path>     | to temporary directory. default: $TMPDIR (fallback: /tmp)
 				-c <activate> | true/false conda from [-i]/conda/bin
 				                default: false
 				-j            | experimental: enable job control when interactive
@@ -61,18 +61,24 @@ while getopts ':i:c:x:a:hj' arg; do
 		;;
 	esac
 done
+export TMPDIR="${TMPDIR:-/tmp}" && mkdir -p "$TMPDIR" || return 1
+export BASHBONE_PGID=$(($(ps -o pgid= -p $$)))
+if ! [[ $- =~ i ]] && ${BASHBONE_SETSID:-true}; then
+	export BASHBONE_SETSID=false
+	exec bash -c 'trap "kill -TERM -- -\$BASHBONE_PGID;" INT TERM; setsid --wait env --default-signal=INT,QUIT bash "$0" "$@" & BASHBONE_PGID=$!; wait $BASHBONE_PGID' "$0" "$@"
+fi
 
 
 # https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html
 set +a +b +f +k +n +t +u +v +x -B +C -H +P +o posix
-# +m turns off job control so that a) custom INT trap is used in interactive shells and b) subshells will not run in own process groups anymore and a setsid ensures all subprocesses and forks to run under same process group id
+# +m turns off job control so that a) SIGINT is ignored in asynchronous commands and b) subshells will not run in own process groups anymore i.e. setsid ensures all subprocesses and forks to run under same process group id
 # thus, killing the process group $$ upon exit a) terminates all subshells and b) waiting for asynchronous subshells does not print "done" or "terminated" messages anymore
 set +m -o pipefail -o errtrace -o functrace # traces enable trap to know local scope of functions and shubshells that inherit ERR trap (-E|-o errtrace) and RETURN and DEBUG trap (-T|-o functrace)
 # https://www.gnu.org/software/bash/manual/html_node/The-Shopt-Builtin.html
 shopt -u nocaseglob nocasematch xpg_echo
 [[ $BASH_VERSINFO -gt 4 ]] && shopt -u localvar_inherit
 # extdebug required by declare -F to get src and line; note that this option implicitly set -E -T and thus shopt -u extdebug nukes those $SHELLOPTS
-shopt -s extdebug extglob extquote promptvars sourcepath
+shopt -s expand_aliases extdebug extglob extquote promptvars sourcepath
 
 ulimit -n $(ulimit -Hn)
 # export MALLOC_ARENA_MAX=4 # limit number of parallel memory pools by malloc() to e.g. reduce jvm memory allocation. use for single-threaded and parallellized java instances only to avoid side effects of drastically lowered performance of other multithreaded applications which make use of malloc() e.g. segemehl
@@ -83,8 +89,9 @@ if [[ $- =~ i ]]; then
 		# do not fire on non-bashbone functions
 		trap '_trap_e=$?; if [[ $_trap_e -eq 254 ]] || [[ ${FUNCNAME[0]} && "$(readlink -e "${BASH_SOURCE[0]}")" =~ "$BASHBONE_DIR" ]]; then _bashbone_errtrap $_trap_e || return 254; else trap - ERR; (exit $_trap_e); fi' ERR
 		# do not exit programmatically but cleanup processes
-		trap 'trap "" INT TERM; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; unset BASHBONE_ERROR BASHBONE_CLEANED; configure::exit -x 0 -p $$ -f "$BASHBONE_EXITFUN"' SIGRTMIN+1
-		trap 'if [[ ${FUNCNAME[0]} && ${FUNCNAME[0]} != "main" ]]; then read -r BASHBONE_CLEANED < "/dev/shm/BASHBONE_CLEANED.$$"; return 254; else kill -SIGRTMIN+1 $$; fi' SIGRTMIN+2
+		# trap 'trap "" INT TERM; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; unset BASHBONE_ERROR BASHBONE_CLEANED; configure::exit -x 0 -p $$ -f "$BASHBONE_EXITFUN"' SIGRTMIN+1
+		trap 'trap "" INT TERM ERR; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; unset BASHBONE_ERROR BASHBONE_CLEANED; "${BASHBONE_EXITFUN:-:}" 0; { env kill -INT -- -$$; sleep 0.2; env kill -TERM -- -$$ & wait $!; } &> /dev/null' SIGRTMIN+1
+		trap 'if [[ ${FUNCNAME[0]} && ${FUNCNAME[0]} != "main" ]]; then read -r BASHBONE_CLEANED < "/dev/shm/BASHBONE_CLEANED.$$"; return 254; else env kill -SIGRTMIN+1 $$; fi' SIGRTMIN+2
 		# in order to gain back job control when interactive, detect functions via DEBUG trap, disable DEBUG to not recurse (re-enable upon return) and set +/-m prior to execution
 		# might be extended by a more general pre-env setup to e.g. spare func src check in err trap above
 		# attention: if code within DEBUG trap throws error, DEBUG returns without executing bash_command
@@ -104,7 +111,9 @@ else
 	# define user signal, that can be received by $$ from any subshell or other process. use 255, in case xargs job failed, to prevent xargs to load and execute further, queued commands
 	trap 'exit 255' SIGRTMIN+1
 	# ignore TERM on exit to prevent ERR/EXIT loop upon kill pgid
-	trap '_trap_e=$?; trap "" INT TERM; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; configure::exit -x $_trap_e -p $$ -f "$BASHBONE_EXITFUN"' EXIT
+	# trap '_trap_e=$?; trap "" INT TERM ERR; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; configure::exit -x $_trap_e -p $$ -f "$BASHBONE_EXITFUN"' EXIT
+	trap '_trap_e=$?; trap "" INT TERM ERR; rm -f "/dev/shm/BASHBONE_CLEANED.$$"; unset BASHBONE_ERROR BASHBONE_CLEANED; "${BASHBONE_EXITFUN:-:}" $_trap_e; { env kill -INT -- -$$; sleep 0.2; env kill -TERM -- -$$ & wait $!; } &> /dev/null' EXIT
+
 	trap 'if [[ ${FUNCNAME[0]} && ${FUNCNAME[0]} != "main" ]]; then read -r BASHBONE_CLEANED < "/dev/shm/BASHBONE_CLEANED.$$"; return 254; else exit 255; fi' SIGRTMIN+2
 	# bubble-up/propagate exit code > 0 via return to continue ERR trap recursion on higher level function.
 	# fire cleanup function from local name space upon any return (success or failure). do not fire cleanup if returning from a source command. cleanup may use TERM
@@ -236,6 +245,9 @@ if [[ ! $BASHBONE_PATH || ! "$PATH" == *"$BASHBONE_PATH"* ]]; then
 	if [[ -e "$BASHBONE_DIR/scripts" ]]; then
 		export BASHBONE_PATH="$(realpath -s "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g')${BASHBONE_PATH:+":$BASHBONE_PATH"}"
 	fi
+	if [[ -e "$BASHBONE_DIR/tools" ]]; then
+		export BASHBONE_PATH="$(realpath -s "$BASHBONE_DIR"/tools/*/bin | xargs -echo | sed 's/ /:/g')${BASHBONE_PATH:+":$BASHBONE_PATH"}"
+	fi
 	PATH="${BASHBONE_PATH:+"$BASHBONE_PATH:"}$PATH"
 	_bashbone_pathdedub
 fi
@@ -299,8 +311,9 @@ bashbone(){
 			source <(printf '%s\n' "${BASCHBONE_BAK_SHOPT[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_SET[@]}")
 			source <(printf '%s\n' "${BASCHBONE_BAK_ALIASES[@]}")
+			[[ $BASHBONE_BAK_TMPDIR ]] && TMPDIR="$BASHBONE_BAK_TMPDIR"
 			[[ $BASHBONE_PATH ]] && PATH="${PATH/$BASHBONE_PATH:/}"
-			PROMPT_COMMAND="${PROMPT_COMMAND/$'\n'_bashbone_traps/}"
+			[[ "$PROMPT_COMMAND" == "_bashbone_traps" ]] && unset PROMPT_COMMAND || PROMPT_COMMAND="${PROMPT_COMMAND/$'\n'_bashbone_traps/}"
 			return 0
 		;;
 		x)	local f l s x
