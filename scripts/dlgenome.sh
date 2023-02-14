@@ -182,7 +182,7 @@ dlgenome::hg38.gtf() {
 	echo ":INFO: sorting annotation"
 	rm -f $genome.fa.gtf
 	for i in M {1..22} X Y; do
-		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k4,4n -k5,5n chr$i.gtf >> $genome.fa.gtf || return 1
+		LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k4,4n -k5,5n chr$i.gtf >> $genome.fa.gtf || return 1
 	done
 
 	ensembl=$(ls -v Homo_sapiens.GRCh38.*.chr.gtf.gz | tail -1 | grep -Eo '\.[0-9]+')
@@ -216,7 +216,7 @@ dlgenome::hg38.dbsnp.ensembl() {
 	echo ":INFO: sorting dbSNP"
 	gzip -dc homo_sapiens-chrMT.vcf.gz | head -1000 | grep '^#' > $genome.fa.vcf
 	for i in M {1..22} X Y; do
-		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
+		LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
 	done
 
 	cat <<- EOF >> $genome.fa.vcf.README || return 1
@@ -245,9 +245,9 @@ dlgenome::hg38.dbsnp.ncbi() {
 
 	echo ":INFO: sorting dbSNP"
 	gzip -dc 00-common_all.vcf.gz | head -1000 | grep '^#' > $genome.fa.vcf
-	[[ -e chrM.vcf ]] && LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chrM.vcf >> $genome.fa.vcf
+	[[ -e chrM.vcf ]] && LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k2,2n chrM.vcf >> $genome.fa.vcf
 	for i in {1..22} X Y; do
-		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
+		LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
 	done
 
 	cat <<- EOF >> $genome.fa.vcf.README || return 1
@@ -334,7 +334,7 @@ dlgenome::hg19.gtf() {
 	echo ":INFO: sorting annotation"
 	rm -f $genome.fa.gtf
 	for i in M {1..22} X Y; do
-		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k4,4n -k5,5n chr$i.gtf >> $genome.fa.gtf || return 1
+		LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k4,4n -k5,5n chr$i.gtf >> $genome.fa.gtf || return 1
 	done
 
 	ensembl=$(ls -v Homo_sapiens.GRCh37.*.chr.gtf.gz | tail -1 | grep -Eo '\.[0-9]+')
@@ -368,7 +368,7 @@ dlgenome::hg19.dbsnp.ensembl() {
 	echo ":INFO: sorting dbSNP"
 	gzip -dc homo_sapiens-chrMT.vcf.gz | head -1000 | grep '^#' > $genome.fa.vcf
 	for i in M {1..22} X Y; do
-		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
+		LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
 	done
 
 	cat <<- EOF >> $genome.fa.vcf.README || return 1
@@ -397,9 +397,9 @@ dlgenome::hg19.dbsnp.ncbi() {
 
 	echo ":INFO: sorting dbSNP"
 	gzip -dc 00-common_all.vcf.gz | head -1000 | grep '^#' > $genome.fa.vcf
-	[[ -e chrM.vcf ]] && LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chrM.vcf >> $genome.fa.vcf
+	[[ -e chrM.vcf ]] && LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k2,2n chrM.vcf >> $genome.fa.vcf
 	for i in {1..22} X Y; do
-		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
+		LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
 	done
 
 	cat <<- EOF >> $genome.fa.vcf.README || return 1
@@ -486,7 +486,7 @@ dlgenome::mm11.gtf() {
 	echo ":INFO: sorting annotation"
 	rm -f $genome.fa.gtf
 	for i in M {1..19} X Y; do
-		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k4,4n -k5,5n chr$i.gtf >> $genome.fa.gtf || return 1
+		LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k4,4n -k5,5n chr$i.gtf >> $genome.fa.gtf || return 1
 	done
 
 	ensembl=$(ls -v Mus_musculus.GRCm39.*.chr.gtf.gz | tail -1 | grep -Eo '\.[0-9]+')
@@ -515,9 +515,9 @@ dlgenome::mm11.dbsnp.ensembl() {
 
 	echo ":INFO: sorting dbSNP"
 	gzip -dc mus_musculus.vcf.gz | head -1000 | grep '^#' > $genome.fa.vcf
-	[[ -e chrM.vcf ]] && LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chrM.vcf >> $genome.fa.vcf
+	[[ -e chrM.vcf ]] && LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k2,2n chrM.vcf >> $genome.fa.vcf
 	for i in {1..19} X Y; do
-		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
+		LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
 	done
 
 	cat <<- EOF >> $genome.fa.vcf.README || return 1
@@ -593,7 +593,7 @@ dlgenome::mm10.gtf() {
 	echo ":INFO: sorting annotation"
 	rm -f $genome.fa.gtf
 	for i in M {1..19} X Y; do
-		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k4,4n -k5,5n chr$i.gtf >> $genome.fa.gtf || return 1
+		LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k4,4n -k5,5n chr$i.gtf >> $genome.fa.gtf || return 1
 	done
 
 	ensembl=$(ls -v Mus_musculus.GRCm38.*.chr.gtf.gz | tail -1 | grep -Eo '\.[0-9]+')
@@ -622,9 +622,9 @@ dlgenome::mm10.dbsnp.ensembl() {
 
 	echo ":INFO: sorting dbSNP"
 	gzip -dc mus_musculus.vcf.gz | head -1000 | grep '^#' > $genome.fa.vcf
-	[[ -e chrM.vcf ]] && LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chrM.vcf >> $genome.fa.vcf
+	[[ -e chrM.vcf ]] && LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k2,2n chrM.vcf >> $genome.fa.vcf
 	for i in {1..19} X Y; do
-		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
+		LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
 	done
 
 	cat <<- EOF >> $genome.fa.vcf.README || return 1
@@ -652,9 +652,9 @@ dlgenome::mm10.dbsnp.ncbi() {
 
 	echo ":INFO: sorting dbSNP"
 	gzip -dc 00-All.vcf.gz | head -1000 | grep '^#' > $genome.fa.vcf
-	[[ -e chrM.vcf ]] && LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chrM.vcf >> $genome.fa.vcf
+	[[ -e chrM.vcf ]] && LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k2,2n chrM.vcf >> $genome.fa.vcf
 	for i in {1..19} X Y; do
-		LC_ALL=C sort -S 1000M -T /dev/shm --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
+		LC_ALL=C sort -S 1000M -T "${TMPDIR:-/tmp}" --parallel=$threads -k2,2n chr$i.vcf >> $genome.fa.vcf || return 1
 	done
 
 	cat <<- EOF >> $genome.fa.vcf.README || return 1

@@ -75,7 +75,7 @@ EOF
 }
 
 &usage if $#ARGV == -1;
-my ($verbose, $fasta, $gtf, $outdir);
+my ($verbose, $fasta, $gtf, $outdir, $tmpdir);
 (Getopt::Long::Parser->new)->getoptions(
 	'h|help' => sub{&usage},
 	'v|verbose' => \$verbose,
@@ -84,12 +84,13 @@ my ($verbose, $fasta, $gtf, $outdir);
 	'o|odir=s' => \$outdir,
 ) or &usage;
 &usage unless $fasta && $gtf && $outdir;
+$tmpdir = defined $ENV{TMPDIR} ? $ENV{TMPDIR} : "/tmp";
 
 try {
 	make_path($outdir);
 
 	say STDERR "reading FASTA" if $verbose;
-	push @tmp,File::Temp->new(DIR => "/dev/shm/", SUFFIX => ".faidx")->filename;
+	push @tmp,File::Temp->new(DIR => $tmpdir, SUFFIX => ".faidx")->filename;
 	my $fa=Bio::Index::Fasta->new(-filename => $tmp[-1], -write_flag => 1 , -verbose => -1);
 	$fa->id_parser(sub{
 		my ($h)=@_;
@@ -100,7 +101,7 @@ try {
 
 	say STDERR "preparing GTF" if $verbose;
 	my @F;
-	push @tmp,File::Temp->new(DIR => "/dev/shm/", SUFFIX => ".ingtf")->filename;
+	push @tmp,File::Temp->new(DIR => $tmpdir, SUFFIX => ".ingtf")->filename;
 	open TMP,">$tmp[-1]" or &mydie($!);
 	open GTF,"<$gtf" or &mydie($!);
 	while(<GTF>){
