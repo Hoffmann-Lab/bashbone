@@ -1,5 +1,25 @@
 #! /usr/bin/env Rscript
 # (c) Konstantin Riege
+
+args = commandArgs(TRUE)
+
+if(length(args)<5){
+	cat("DESeq2 from raw feature counts plus extra effects, interaction terms, locally/globally clustered vst/z-score heatmaps by condition, pca from vst or rlog or estimated library size\n")
+	cat("\n")
+	cat("usage parameter: <i:threads> <f:experiments> <f:outdir> <s:condition1> <s:condition2> [<s:condition1> <s:condition3> ..]\n")
+	cat('example: 16 "/path/to/experiments.csv" "/path/to/outdir" "ctr" "treat"\n')
+	cat("\n")
+	cat("experiments: comma separated with header. 4 or more columns. color by condition (column 2). dot shape by replicate (column 4). design formula and interaction terms by factor columns\n")
+	cat("sample,countfile,condition,replicate[,factor1..]\n")
+	cat("sample1,/path/to/countfile1,condition1,N1[,factorA..]\n")
+	cat("sample2,/path/to/countfile2,condition1,N2[,factorB..]\n")
+	cat("sample3,/path/to/countfile3,condition2,N1[,factorA..]\n")
+	cat("..\n")
+	quit("no",1)
+}
+
+cat("about to run deseq2 and pca\n")
+
 options(warn=-1)
 
 suppressMessages({
@@ -12,7 +32,6 @@ suppressMessages({
 	library("dplyr")
 })
 
-args = commandArgs(TRUE)
 threads = as.numeric(args[1])
 incsv = args[2] # sample,countfile,condition,replicate[,factor1,factor2,..]
 outdir = args[3]
@@ -26,7 +45,6 @@ setEPS(width=8, height=8, onefile=T)
 
 
 ##### deseq
-
 
 experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F, check.names=F, quote="")
 colnames(experiments)[1:4] = c("sample","countfile","condition","replicate")
@@ -67,7 +85,7 @@ get_design = function(experiments,interactionterms=F){
 }
 
 design = get_design(experiments)
-cat(paste("about to run pca and deseq2 with design formula: ",design,"\n",sep=""))
+cat(paste("using design formula: ",design,"\n",sep=""))
 suppressMessages({
 	dds = DESeqDataSetFromHTSeqCount(sampleTable = experiments, directory = "", design = as.formula(design))
 	dds = tryCatch(
@@ -118,9 +136,9 @@ for (method in c("log","vsd","rld")){
 		ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
 			ggtitle("PCA plot - PC1 vs PC2") +
 			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			coord_fixed() +
+			# coord_fixed() +
 			theme_bw() +
-			theme(legend.box = "horizontal") +
+			theme(aspect.ratio=1, legend.box = "horizontal") +
 			geom_point(size = 3) +
 			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
 			ylab(paste0("PC2: ",percentVar[2], "% variance"))
@@ -130,9 +148,9 @@ for (method in c("log","vsd","rld")){
 		ggplot(data, aes(PC1, PC3, color = condition, group = condition, shape = replicate)) +
 			ggtitle("PCA plot - PC1 vs PC3") +
 			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			coord_fixed() +
+			# coord_fixed() +
 			theme_bw() +
-			theme(legend.box = "horizontal") +
+			theme(aspect.ratio=1, legend.box = "horizontal") +
 			geom_point(size = 3) +
 			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
 			ylab(paste0("PC3: ",percentVar[3], "% variance"))
@@ -142,9 +160,9 @@ for (method in c("log","vsd","rld")){
 		ggplot(data, aes(PC2, PC3, color = condition, group = condition, shape = replicate)) +
 			ggtitle("PCA plot - PC2 vs PC3") +
 			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			coord_fixed() +
+			# coord_fixed() +
 			theme_bw() +
-			theme(legend.box = "horizontal") +
+			theme(aspect.ratio=1, legend.box = "horizontal") +
 			geom_point(size = 3) +
 			xlab(paste0("PC2: ",percentVar[2], "% variance")) +
 			ylab(paste0("PC3: ",percentVar[3], "% variance"))
@@ -204,6 +222,7 @@ gplots_heatmap = function(){
 get_heatmap = function(input,path){
 	# perform inner-group column clustering
 
+	cluster=TRUE
 	colclustlist = list()
 	for (condition in c(ctr[i],treat[i])) {
 		m = as.matrix(input[ , experiments$sample[experiments$condition == condition]])
@@ -211,20 +230,31 @@ get_heatmap = function(input,path){
 
 		# dist(df, method = "euclidean")
 		# hclust(df, method = "complete")
-		colclust = hclust(dist(t(m)))
-		m = m[ , colclust$order]
+		if(ncol(m)>1){
+			colclust = hclust(dist(t(m)))
+			m = m[ , colclust$order]
+		} else {
+			cluster=FALSE
+			break
+		}
 
 		if(length(colclustlist)==0){
-			df = data.frame(id=rownames(m),m)
+			df = data.frame(id=rownames(m),m,check.names=F)
 			colclustlist = list(colclust)
 			colsep = ncol(m)
 			colannotation = rep(condition,ncol(m))
 		} else {
-			df = full_join(df, data.frame(id=rownames(m),m), by = 'id')
+			df = full_join(df, data.frame(id=rownames(m),m,check.names=F), by = 'id')
 			colclustlist = c(colclustlist, list(colclust))
 			colsep = c(colsep,tail(colsep,1)+ncol(m))
 			colannotation = c(colannotation,rep(condition,ncol(m)))
 		}
+	}
+
+	if(! cluster){
+		get_heatmap_mean(input,paste0(path,".localclust"),FALSE)
+		get_heatmap_mean(input,paste0(path,".globalclust"),TRUE)
+		return()
 	}
 
 	# remove last separator (for gplots) and id-column
@@ -245,13 +275,6 @@ get_heatmap = function(input,path){
 	# convert to hclust object for pheatmap
 	colclust = as.hclust(coldendro)
 
-
-	###### heatmap.2
-
-	# alternative to play with
-	# gplots_heatmap
-
-	###### pheatmap
 
 	if(min(df)<0) {
 		# use red (+) and blue (-)
@@ -297,7 +320,6 @@ get_heatmap = function(input,path){
 
 
 	# default like column clustered heatmap
-
 	p = pheatmap(df, color = color, cluster_rows = T, cluster_cols = T,
 		annotation_col = colannotations, annotation_colors = annotationcolors, annotation_names_col = F,
 		border_color = NA,  fontsize_row = 7, fontsize_col = 7, angle_col = 45,
@@ -311,7 +333,7 @@ get_heatmap = function(input,path){
 }
 
 
-get_heatmap_mean = function(input,path){
+get_heatmap_mean = function(input,path,cluster=F){
 	# remove id-column
 	df = input[,2:length(input)]
 	rownames(df) = input$id
@@ -336,8 +358,22 @@ get_heatmap_mean = function(input,path){
 		legendlabels[1] = "VSC "
 	}
 
-	p = pheatmap(df, color = color, cluster_rows = T, cluster_cols = F,
+	colannotation = experiments$condition[experiments$sample %in% colnames(df)]
+	if(length(colannotation)==0){
+		colannotation = colnames(df)
+	}
+	# get number conditions colors and name them by conditions
+	# colannotationcolor = colorRampPalette(brewer.pal(3, "Blues"))(length(unique(colannotation)))
+	colannotationcolor = colorRampPalette(brewer.pal(11, "Spectral"))(length(unique(colannotation)))
+	names(colannotationcolor) = unique(colannotation)
+	# create dataframe of column annotations with rownames
+	colannotations = data.frame(row.names = colnames(df), Group = colannotation)
+	# create list of annotation colors according to dataframes of column and or row annotations
+	annotationcolors = list(Group = colannotationcolor)
+
+	p = pheatmap(df, color = color, cluster_rows = T, cluster_cols = cluster,
 			border_color = NA,  fontsize_row = 7, fontsize_col = 7, angle_col = 45,
+			annotation_col = colannotations, annotation_colors = annotationcolors, annotation_names_col = F,
 			breaks = breaks, legend_breaks = legendbreaks, legend_labels = legendlabels,
 			main = paste0("Heatmap of ",nrow(df)," most differentially expressed genes\n")
 	)
@@ -359,7 +395,9 @@ get_table = function(dds){
 
 	# ddsr = results(dds, contrast=c("condition",treat[i],ctr[i]), alpha = 0.05, parallel = TRUE, BPPARAM = BPPARAM) # alpha (default: 0.1) should be set to FDR cutoff
 	# shrinkage can be used for data visualization and ranking of RNA-Seq data (remove high LFCs from lowly expressed genes with high variability among samples and estimate moderate FCs more close to reality) if DESeq() was executed with betaPrior=FALSE, which is the default since v1.16
-	ddsrshrunk <- lfcShrink(dds, contrast=c("condition",treat[i],ctr[i]), res=ddsr, type="ashr", parallel = TRUE, BPPARAM = BPPARAM) # 'apeglm' and 'ashr' outperform the original 'normal' shrinkage estimator. but ‘apeglm’ requires use of ‘coef’ i.e. a name from resultsNames
+	suppressMessages({
+		ddsrshrunk <- lfcShrink(dds, contrast=c("condition",treat[i],ctr[i]), res=ddsr, type="ashr", parallel = TRUE, BPPARAM = BPPARAM) # 'apeglm' and 'ashr' outperform the original 'normal' shrinkage estimator. but ‘apeglm’ requires use of ‘coef’ i.e. a name from resultsNames
+	})
 
 	ddsrshrunk = ddsrshrunk[order(ddsrshrunk$padj) , ]
 	write.table(data.frame(id=rownames(ddsrshrunk),ddsrshrunk), row.names = F,
@@ -409,9 +447,9 @@ get_table = function(dds){
 		ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
 			ggtitle(paste("PC1 vs PC2: ", length(rownames(rldr)), " genes")) +
 			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			coord_fixed() +
+			# coord_fixed() +
 			theme_bw() +
-			theme(legend.box = "horizontal") +
+			theme(aspect.ratio=1, legend.box = "horizontal") +
 			geom_point(size = 3) +
 			xlab(paste("PC1:",percentVar[1],"% variance",sep=" ")) +
 			ylab(paste("PC2:",percentVar[2],"% variance",sep=" "))
@@ -422,14 +460,15 @@ get_table = function(dds){
 	vsdr = vsd[,vsd$condition %in% c(ctr[i],treat[i])]
 
 	vsc = as.data.frame(assay(vsdr))
-	write.table(data.frame(id=rownames(vsc),vsc), row.names = F,
+	write.table(data.frame(id=rownames(vsc),vsc,check.names=F), row.names = F,
 		file=file.path(odir,"experiments.vsc"), quote=F, sep="\t"
 	)
+
 	zscores = log(vsc+1)
 	zscores = zscores-rowMeans(zscores)
 	zscores = zscores/apply(zscores,1,sd)
 	zscores[is.na(zscores)] = 0
-	write.table(data.frame(id=rownames(zscores),zscores), row.names = F,
+	write.table(data.frame(id=rownames(zscores),zscores,check.names=F), row.names = F,
 		file=file.path(odir,"experiments.vsc.zscores"), quote=F, sep="\t"
 	)
 
@@ -438,14 +477,14 @@ get_table = function(dds){
 	meanvsc = t(apply(vsc, 1, function(x) tapply(x, colnames(vsc), mean)))
 	meanvsc = meanvsc[,c(ctr[i],treat[i])]
 	colnames(vsc) = colnamesvsc
-	write.table(data.frame(id=rownames(meanvsc),meanvsc), row.names = F,
+	write.table(data.frame(id=rownames(meanvsc),meanvsc,check.names=F), row.names = F,
 		file = file.path(odir,"experiments.mean.vsc"), quote=F, sep="\t"
 	)
 	meanzscores = log(meanvsc+1)
 	meanzscores = meanzscores-rowMeans(meanzscores)
 	meanzscores = meanzscores/apply(meanzscores,1,sd)
 	meanzscores[is.na(meanzscores)] = 0
-	write.table(data.frame(id=rownames(meanzscores),meanzscores), row.names = F,
+	write.table(data.frame(id=rownames(meanzscores),meanzscores,check.names=F), row.names = F,
 		file=file.path(odir,"experiments.mean.vsc.zscores"), quote=F, sep="\t"
 	)
 
@@ -457,34 +496,39 @@ get_table = function(dds){
 		topids = head(rownames(ddsr)[rev(order(abs(ddsrshrunk[rownames(ddsrshrunk) %in% rownames(ddsr),]$log2FoldChange)))],n=50)
 
 		vsc = vsc[rownames(vsc) %in% topids , ]
-		write.table(data.frame(id=rownames(vsc),vsc), row.names = F,
+		write.table(data.frame(id=rownames(vsc),vsc,check.names=F), row.names = F,
 			file=file.path(odir,"heatmap.vsc"), quote=F, sep="\t"
 		)
-		get_heatmap(data.frame(id=rownames(vsc),vsc),file.path(odir,"heatmap.vsc"))
+		get_heatmap(data.frame(id=rownames(vsc),vsc,check.names=F),file.path(odir,"heatmap.vsc"))
 
 		zscores = zscores[rownames(zscores) %in% topids , ]
-		write.table(data.frame(id=rownames(zscores),zscores), row.names = F,
+		write.table(data.frame(id=rownames(zscores),zscores,check.names=F), row.names = F,
 			file=file.path(odir,"heatmap.vsc.zscores"), quote=F, sep="\t"
 		)
-		get_heatmap(data.frame(id=rownames(zscores),zscores),file.path(odir,"heatmap.vsc.zscores"))
+		get_heatmap(data.frame(id=rownames(zscores),zscores,check.names=F),file.path(odir,"heatmap.vsc.zscores"))
 
 		meanvsc = meanvsc[rownames(meanvsc) %in% topids , ]
-		write.table(data.frame(id=rownames(meanvsc),meanvsc), row.names = F,
+		write.table(data.frame(id=rownames(meanvsc),meanvsc,check.names=F), row.names = F,
 			file = file.path(odir,"heatmap.mean.vsc"), quote=F, sep="\t"
 		)
-		get_heatmap_mean(data.frame(id=rownames(meanvsc),meanvsc),file.path(odir,"heatmap.mean.vsc"))
+		get_heatmap_mean(data.frame(id=rownames(meanvsc),meanvsc,check.names=F),file.path(odir,"heatmap.mean.vsc"))
 
 		meanzscores = meanzscores[rownames(meanzscores) %in% topids , ]
-		write.table(data.frame(id=rownames(meanzscores),meanzscores), row.names = F,
+		write.table(data.frame(id=rownames(meanzscores),meanzscores,check.names=F), row.names = F,
 			file = file.path(odir,"heatmap.mean.vsc.zscores"), quote=F, sep="\t"
 		)
-		get_heatmap_mean(data.frame(id=rownames(meanzscores),meanzscores),file.path(odir,"heatmap.mean.vsc.zscores"))
+		get_heatmap_mean(data.frame(id=rownames(meanzscores),meanzscores,check.names=F),file.path(odir,"heatmap.mean.vsc.zscores"))
 	}
 
 	cat(paste("number of significantly differentially expressed genes for ",ctr[i]," vs ",treat[i],": ",nrow(ddsr),"\n",sep=""))
 }
 
 ######
+
+makename = function(name){
+  name = make.names(paste0("ADAPTER",name)) # replaces \W characters by '.' and prepend X if starting with \W
+  return(sub("ADAPTER","",name))
+}
 
 get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 
@@ -536,7 +580,7 @@ get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 				save(dds, file = file.path(odir,"dds.Rdata"))
 
 				#cat(paste("calculating effect (interaction term) of ",ctr_term," vs ",term," on ",ctr," vs ",treat," with design formula: ",design_interactionterms,"\n",sep=""))
-				ddsr = results(dds, name=paste0(fac,term,".condition",treat), parallel = TRUE, BPPARAM = BPPARAM)
+				ddsr = results(dds, name=paste0(fac,makename(term),".condition",makename(treat)), parallel = TRUE, BPPARAM = BPPARAM)
 
 				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
 					file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
@@ -595,7 +639,9 @@ for (i in 1:length(ctr)){
 for (ctr in names(toplus)){
 	treats=toplus[[ctr]]
 	dds$condition = relevel(dds$condition,ref=ctr)
-	dds = nbinomWaldTest(dds)
+	suppressMessages({
+		dds = nbinomWaldTest(dds)
+	})
 
 	if(length(treats)>1){
 		for (i in 1:(length(treats))){
@@ -607,7 +653,7 @@ for (ctr in names(toplus)){
 				dir.create(odir, recursive = T, showWarnings = F)
 
 				cat(paste("calculating extra effects of ",ctr," vs ",treats[j]," on top of ",ctr," vs ",treats[i],"\n",sep=""))
-				ddsr = results(dds, contrast=list(paste0("condition_",treats[i],"_vs_",ctr),paste0("condition_",treats[j],"_vs_",ctr)), parallel = TRUE, BPPARAM = BPPARAM)
+				ddsr = results(dds, contrast=list(paste0("condition_",makename(treats[i]),"_vs_",makename(ctr)),paste0("condition_",makename(treats[j]),"_vs_",makename(ctr))), parallel = TRUE, BPPARAM = BPPARAM)
 				ddsr$log2FoldChange = -1*ddsr$log2FoldChange
 
 				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
