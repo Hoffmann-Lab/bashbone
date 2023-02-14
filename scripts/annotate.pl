@@ -4,13 +4,14 @@ use strict;
 use warnings;
 use feature ":5.10";
 
-if ($#ARGV < 2){
-	say "usage: annotate.pl [gtf.descr|0] [gtf|0] [bed|deseq.tsv|heatmap.ps| ..]";
+if ($#ARGV < 3){
+	say "usage: annotate.pl [gtf.descr|0] [gtf|0] [feature] [bed|deseq.tsv|heatmap.ps| ..]";
 	say "0 or gtf.descr => 4 tab seperated columns: geneID geneName biotype description";
 	say "0 or gtf => parsed for gene_id gene_name gene_biotype";
+	say "feature => e.g. exon -> gtf parsed for exon_id exon_name exon_biotype";
 	exit 1;
 }
-
+my $ft=$ARGV[2];
 my %m;
 my %mps;
 if ($ARGV[0]){
@@ -33,16 +34,16 @@ if ($ARGV[1]){
 			chomp;
 			next if /^(\s*$|#)/;
 			my @l=split/\t/;
-			next unless $l[2] eq 'gene';
+			next unless $l[2] eq $ft;
 			my ($g,$n,$b) = ('','','');
-			if ($l[-1]=~/gene_id\s+\"([^\"]+)/){
+			if ($l[-1]=~/${ft}_id\s+\"([^\"]+)/){
 				$g = $1;
 				next if exists $mps{$g};
-				if ($l[-1]=~/(gene_n|N)ame\s+\"([^\"]+)/){
+				if ($l[-1]=~/(${ft}_n|N)ame\s+\"([^\"]+)/){
 					$n = $+;
 					$mps{$g} = $n;
 				}
-				if ($l[-1]=~/gene_(bio)?type\s+\"([^\"]+)/){
+				if ($l[-1]=~/${ft}_(bio)?type\s+\"([^\"]+)/){
 					$b = $+;
 				}
 				$m{$g} = join"\t",($n,$b,'NA');
@@ -51,7 +52,7 @@ if ($ARGV[1]){
 	close I;
 }
 
-for (2..$#ARGV){
+for (3..$#ARGV){
 	my $f=$ARGV[$_];
 	my @o=split/\./,$f;
 	my $e=$o[-1];
@@ -72,7 +73,7 @@ for (2..$#ARGV){
 				next;
 			} elsif(/log2FoldChange/){
 				$deseq=1;
-				say O join"\t",(@l,"geneName","biotype","description");
+				say O join"\t",(@l,"name","biotype","description");
 				next;
 			} # else: not next!
 		}
