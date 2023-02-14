@@ -222,7 +222,7 @@ alignment::rmduplicates(){
 			CMD
 				tr '\t' '\n'
 			CMD
-				help::pgzip -t $threads -o "$o"
+				helper::pgzip -t $threads -o "$o"
 			CMD
 			_umi_rmduplicates[$i]="$o"
 		done
@@ -438,11 +438,12 @@ alignment::clipmateoverlaps_alt() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-o <outdir>    | path to
+			-p <tmpdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory outdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory outdir tmpdir
 	declare -n _mapper_clipmateoverlaps _bamslices_clipmateoverlaps
 	declare -A nidx tidx
 	while getopts 'S:s:t:m:M:r:c:p:o:' arg; do
@@ -455,10 +456,11 @@ alignment::clipmateoverlaps_alt() {
 			r)	((++mandatory)); _mapper_clipmateoverlaps=$OPTARG;;
 			c)	((++mandatory)); _bamslices_clipmateoverlaps=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "clipping ends of overlapping mate pairs"
 	local m i o slice odir instances ithreads minstances mthreads jmem jgct jcgct
@@ -1060,11 +1062,12 @@ alignment::soft2hardclip() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-o <outdir>    | path to
+			-p <tmpdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory outdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory outdir tmpdir
 	declare -n _mapper_soft2hardclip _bamslices_soft2hardclip
 	declare -A nidx tidx
 	while getopts 'S:s:t:m:M:r:c:p:o:' arg; do
@@ -1077,10 +1080,11 @@ alignment::soft2hardclip() {
 			r)	((++mandatory)); _mapper_soft2hardclip=$OPTARG;;
 			c)	((++mandatory)); _bamslices_soft2hardclip=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "convertig soft clipped based to hard clipped bases"
 	local m i o slice odir instances ithreads minstances mthreads jmem jgct jcgct
