@@ -128,7 +128,7 @@ bisulfite::segemehl() {
 			g)	((++mandatory)); genome="$OPTARG";;
 			x)	((++mandatory)); ctidx="$OPTARG";;
 			y)	((++mandatory)); gaidx="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG/segemehl"; mkdir -p "$outdir"; outdir=$(realpath -s "$outdir");;
+			o)	((++mandatory)); outdir="$OPTARG/segemehl"; mkdir -p "$outdir";;
 			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			r)	((++mandatory))
 				_mapper_segemehl=$OPTARG
@@ -184,14 +184,14 @@ bisulfite::segemehl() {
 				segemehl
 				$params
 				-F $mode
-				-i "$(realpath -s "$ctidx")"
-				-j "$(realpath -s "$gaidx")"
-				-d "$(realpath -s "$genome")"
-				-q "$(realpath -s "${_fq1_segemehl[$i]}")"
-				-p "$(realpath -s "${_fq2_segemehl[$i]}")"
+				-i "$(realpath -se "$ctidx")"
+				-j "$(realpath -se "$gaidx")"
+				-d "$(realpath -se "$genome")"
+				-q "$(realpath -se "${_fq1_segemehl[$i]}")"
+				-p "$(realpath -se "${_fq2_segemehl[$i]}")"
 				-t $threads
 				-b
-				-o "$o.bam"
+				-o "$(realpath -s "$o.bam")"
 			CMD
 		else
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -200,13 +200,13 @@ bisulfite::segemehl() {
 				segemehl
 				$params
 				-F $mode
-				-i "$(realpath -s "$ctidx")"
-				-j "$(realpath -s "$gaidx")"
-				-d "$(realpath -s "$genome")"
-				-q "$(realpath -s "${_fq1_segemehl[$i]}")"
+				-i "$(realpath -se "$ctidx")"
+				-j "$(realpath -se "$gaidx")"
+				-d "$(realpath -se "$genome")"
+				-q "$(realpath -se "${_fq1_segemehl[$i]}")"
 				-t $threads
 				-b
-				-o "$o.bam"
+				-o "$(realpath -s "$o.bam")"
 			CMD
 		fi
 		segemehl+=("$o.bam")
@@ -465,11 +465,6 @@ bisulfite::mecall(){
 }
 
 bisulfite::methyldackel(){
-	declare -a tfiles
-	_cleanup::bisulfite::methyldackel(){
-		rm -f "${tfiles[@]}"
-	}
-
 	_usage() {
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -480,12 +475,11 @@ bisulfite::methyldackel(){
 			-x <context>  | Cp* base - default: CG
 			-r <mapper>   | array of bams within array of
 			-o <outdir>   | path to
-			-p <tmpdir>   | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads genome outdir tmpdir context=CG
+	local OPTIND arg mandatory skip=false threads genome outdir context=CG
 	declare -n _mapper_methyldackel
 	while getopts 'S:s:t:m:r:g:x:o:p:' arg; do
 		case $arg in
@@ -496,11 +490,10 @@ bisulfite::methyldackel(){
 			x)	context=CG;;
 			r)	((++mandatory)); _mapper_methyldackel=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "methylation calling methyldackel"
 
@@ -515,17 +508,39 @@ bisulfite::methyldackel(){
 			o=$(basename $f)
 			o=${o%.*}
 
-			tmp="$(mktemp -u -p "$tmpdir" cleanup.XXXXXXXXXX.methyldackel)"
-			tfiles+=("${tmp}_CpG.bedGraph")
-
-			commander::makecmd -a cmd1 -s '|' -o "$odir/$o.$context.full.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-				ln -s /dev/stdout "${tfiles[-1]}";
-				MethylDackel extract -q 0 --keepDupes --keepSingleton --keepDiscordant -@ $threads -o "$tmp" "$genome" "$f"
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+				MethylDackel extract
+					-q 0
+					--keepDupes
+					--keepSingleton
+					--keepDiscordant
+					--ignoreNH
+					-F 0
+					-@ $threads
+					--CHH
+					--cytosine_report
+					-o "$odir/$o"
+					"$genome" "$f"
 			CMD
-				awk -F '\t' -v OFS='\t' 'NF==6{print $1,$2,$3,($5/($5+$6)),($5+$6)}'
+
+			commander::makecmd -a cmd2 -s ' ' -o "$odir/$o.$context.full.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
+				cat "$odir/$o.cytosine_report.txt" |
+			CMD
+				perl -slane '
+					next unless $F[-1]=~/^$c/;
+					next if $F[3]+$F[4]==0;
+					$F[1]-- if $F[2] eq "-";
+					print join"\t",($F[0],$F[1]-1,$F[1],$F[3],$F[3]+$F[4])
+				'
+			CMD
+				-- -c=$context |
+			CMD
+				bedtools merge -d -1 -c 4,5 -o sum,sum |
+			CMD
+				perl -lane 'print join"\t",(@F[0..2],$F[3]/$F[4],$F[4])'
 			CMD
 
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				awk '\$NF>=10' "$odir/$o.$context.full.bed"
 			CMD
 				cut -f 1-4 > "$odir/$o.$context.bed"
@@ -536,9 +551,11 @@ bisulfite::methyldackel(){
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	else
 		commander::runcmd -c methyldackel -v -b -i 1 -a cmd1
 		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
 	fi
 
 	return 0
@@ -589,9 +606,9 @@ bisulfite::metilene(){
 
 	commander::printinfo "differential methylation analyses"
 
-	declare -a cmd1 cmd2 cmd3 mapdata
+	declare -a cmd1 cmd2 cmd3 mapdata tojoin
 
-	local m f i c t odir sample condition library replicate factors crep trep
+	local m f i c t odir header sample condition library replicate factors crep trep tool
 	for m in "${_mapper_metilene[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
@@ -607,26 +624,25 @@ bisulfite::metilene(){
 					for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 						odir="$outdir/$m$tool/$c-vs-$t"
 						mkdir -p "$odir"
-						tomerge=()
-						header="chr sta pos"
+						tojoin=()
+						header="chr\tsta\tpos"
 						trep=$(awk -v s=$t -v n=$min '$2==s{i=i+1}END{if(n>1){if(i<n){n=i} print n}else{printf "%0.f", i*n}}' "$f")
 						[[ $trep -gt $cap ]] && trep=$cap
 
 						unset sample condition library replicate factors
 						while read -r sample condition library replicate factors; do
-							# tomerge+=("$(readlink -e "$mecalldir/$m/$sample"*.$context.bed | head -1)")
-							tomerge+=("$(find -L "$mecalldir/$m$tool" -maxdepth 1 -name "$sample*.$context.bed" -print -quit)")
-							header+=" ${condition}_$replicate"
+							tojoin+=("$(find -L "$mecalldir/$m$tool" -maxdepth 1 -name "$sample*.$context.bed" -print -quit | grep .)")
+							header+="\t${condition}_$replicate"
 						done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 
 						commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-							{	sed 's/ /\t/g' <<< "$header";
+							{	echo -e "$header";
 								bedtools unionbedg
 									-filler .
-									-i $(printf '"%s" ' "${tomerge[@]}");
+									-i $(printf '"%s" ' "${tojoin[@]}");
 							}
 						CMD
-							cut -f 1,3- > $odir/merates.bedg
+							cut -f 1,3- > "$odir/merates.bedg"
 						CMD
 
 						bisulfite::_metilene \
@@ -710,13 +726,154 @@ bisulfite::_metilene(){
 				-M $distance
 				-a $c
 				-b $t
-				"$merates";
+				"$merates" | sort -k1,1 -k2,2n -k3,3n;
 		} > "$outdir/dmr.full.tsv"
 	CMD
 
 	commander::makecmd -a _cmds2_metilene -s ';' -c {COMMANDER[0]}<<- CMD
 		awk '\$4=="q-value" || \$4<=0.05' "$outdir/dmr.full.tsv" > "$outdir/dmr.tsv"
 	CMD
+
+	return 0
+}
+
+bisulfite::join(){
+	_usage() {
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip> | true/false return
+			-s <softskip> | true/false only print commands
+			-t <threads>  | number of
+			-r <mapper>   | array of bams within array of
+			-c <cmpfiles> | array of
+			-x <context>  | Cp* base - default: CG
+			-i <methdir>  | path to
+			-o <outdir>   | path to
+			-d <tool>     | use if subdir in methdir. name identical to subdir. parameter can be used multiple times
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads mecalldir outdir context=CG
+	declare -a tools
+    declare -n _mapper_join _cmpfiles_join
+	while getopts 'S:s:t:r:c:x:i:o:f:d:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_join=$OPTARG;;
+			c)	((++mandatory)); _cmpfiles_join=$OPTARG;;
+			x)	context=$OPTARG;;
+			i)	((++mandatory)); mecalldir="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			d)	tools+=("/$OPTARG");;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 5 ]] && _usage
+	[[ $tools ]] || tools=("") # for backwards compatibility
+
+	commander::printinfo "joining methylation rates, zscores"
+
+	declare -a cmd1 cmd2 cmd3 cmd4 mapdata tojoin
+	declare -A visited
+	local m f i c t e header meanheader cf sample condition library replicate factors
+
+	for tool in "${tools[@]}"; do
+		for m in "${_mapper_join[@]}"; do
+			odir="$outdir/$m$tool"
+			mkdir -p "$odir"
+			visited=()
+			header="chr\tsta\tpos"
+			meanheader="chr\tpos"
+			tojoin=()
+			for f in "${_cmpfiles_join[@]}"; do
+				mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
+				i=0
+				for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
+					for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
+
+						unset sample condition library replicate factors
+						while read -r sample condition library replicate factors; do
+							[[ ${visited["$condition.$replicate"]} ]] && continue || visited["$condition.$replicate"]=1
+							header+="\t$condition.$replicate"
+							meanheader+="\t$condition"
+							tojoin+=("$(find -L "$mecalldir/$m$tool" -maxdepth 1 -name "$sample*.$context.bed" -print -quit | grep .)")
+						done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
+					done
+				done
+			done
+
+			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
+				{	echo -e "$header";
+					bedtools unionbedg
+						-filler .
+						-i $(printf '"%s" ' "${tojoin[@]}");
+				} | cut -f 1,3- > "$odir/merates.bedg";
+			CMD
+				echo -e "$meanheader" > "$odir/merates.mean.bedg";
+			CMD
+				tail -n +2 "$odir/merates.bedg" >> "$odir/merates.mean.bedg";
+			CMD
+				Rscript - <<< '
+					args <- commandArgs(TRUE);
+					tsv <- args[1];
+					df <- read.table(tsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+					nfo=df[,1:2];
+					df=df[,3:ncol(df)];
+					means <- t(apply(df, 1, function(x) tapply(x, colnames(df), mean)));
+					write.table(data.frame(nfo,means[,unique(colnames(df))],check.names=F), row.names = F, file = tsv, quote=F, sep="\t");
+				'
+			CMD
+				"$odir/merates.mean.bedg"
+			CMD
+
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				Rscript - <<< '
+					args <- commandArgs(TRUE);
+					intsv <- args[1];
+					outf <- args[2];
+					df <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+					nfo=df[,1:2];
+					df=df[,3:ncol(df)];
+					df <- log(df+1);
+					df <- df-rowMeans(df);
+					df <- df/apply(df,1,sd);
+					df[is.na(df)] <- 0;
+					write.table(data.frame(nfo,df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
+				'
+			CMD
+				"$odir/merates.bedg" "$odir/merates.bedg.zscores"
+			CMD
+
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				Rscript - <<< '
+					args <- commandArgs(TRUE);
+					intsv <- args[1];
+					outf <- args[2];
+					df <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+					nfo=df[,1:2];
+					df=df[,3:ncol(df)];
+					df <- log(df+1);
+					df <- df-rowMeans(df);
+					df <- df/apply(df,1,sd);
+					df[is.na(df)] <- 0;
+					write.table(data.frame(nfo,df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
+				'
+			CMD
+				"$odir/merates.mean.bedg" "$odir/merates.mean.bedg.zscores"
+			CMD
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+	else
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+	fi
 
 	return 0
 }
