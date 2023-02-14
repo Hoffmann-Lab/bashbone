@@ -327,17 +327,17 @@ genome::view(){
 		{
 		  id: "current",
 		  name: "$(basename "$genome")",
-		  fastaURL: "$(realpath -s "$genome")",
-		  indexURL: "$(realpath -s "$genome.fai")"$([[ $gtf ]] && echo ',')
+		  fastaURL: "$(realpath -se "$genome")",
+		  indexURL: "$(realpath -se "$genome.fai")"$([[ $gtf ]] && echo ',')
 	EOF
 	if [[ $gtf ]]; then
 		cat <<- EOF >> "$outdir/igv/genomes/current.json"
 			  tracks: [
 			    {
 			      name: "$(basename "$gtf")",
-			      url: "$(realpath -s "$gtf.gz")",
+			      url: "$(realpath -se "$gtf.gz")",
 		EOF
-		$searchable || echo "      indexURL: \"$(realpath -s "$gtf.gz.igv")\"," >> "$outdir/igv/genomes/current.json"
+		$searchable || echo "      indexURL: \"$(realpath -se "$gtf.gz.igv")\"," >> "$outdir/igv/genomes/current.json"
 		cat <<- EOF >> "$outdir/igv/genomes/current.json"
 			      type: "annotation",
 			      format: "gtf",
@@ -356,7 +356,7 @@ genome::view(){
 		maxPanelHeight $hight
 	EOF
 	for i in "${_files_view[@]}"; do
-		echo "load \"$(realpath -s "$i")\"" >> "$f"
+		echo "load \"$(realpath -se "$i")\"" >> "$f"
 	done
 	echo "sort FIRSTOFPAIRSTRAND" >> "$f"
 
