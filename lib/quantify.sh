@@ -17,14 +17,14 @@ quantify::featurecounts() {
 			-x <strandness> | hash per bam of
 			-g <gtf>      | path to
 			-l <level>    | feature (default: exon)
-			-f <tag>      | feature (default: gene_id)
+			-f <feature>  | feature (default: gene, needs <feature>_id tag)
 			-p <tmpdir>   | path to
 			-o <outdir>   | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir gtf level="exon" featuretag="gene_id"
+	local OPTIND arg mandatory skip=false threads outdir tmpdir gtf level="exon" feature="gene"
 	declare -n _mapper_featurecounts _strandness_featurecounts
 	while getopts 'S:s:t:r:x:g:l:f:p:o:' arg; do
 		case $arg in
@@ -35,7 +35,7 @@ quantify::featurecounts() {
 			x) ((++mandatory)); _strandness_featurecounts=$OPTARG;;
 			g) ((++mandatory)); gtf="$OPTARG";;
 			l) level=$OPTARG;;
-			f) featuretag=$OPTARG;;
+			f) feature=$OPTARG;;
 			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*) _usage;;
@@ -54,20 +54,24 @@ quantify::featurecounts() {
 	instances=$((instances*2))
 	read -r instances ithreads < <(configure::instances_by_threads -i $((instances==0?1:instances)) -t 64 -T $threads)
 
+	declare -a cmdchk=("featureCounts -v |& grep -oE 'v[.0-9]+'")
+	local version=$(commander::runcmd -c subread -a cmdchk)
+	[[ "$(echo -e "v2.0.1\n$version" | sort -Vr | head -1)" == "v2.0.1" ]] && version=" " || version="--countReadPairs "
+
 	declare -a cmd1
 	local mf f o params x
 	for m in "${_mapper_featurecounts[@]}"; do
 		declare -n _bams_featurecounts=$m
 		mkdir -p "$outdir/$m"
 		for f in "${_bams_featurecounts[@]}"; do
-			o="$outdir/$m/$(basename "$f" .bam).${featuretag/_id/}counts"
+			o="$outdir/$m/$(basename "$f" .bam).${feature}counts"
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.featurecounts)")
 
 			# infer SE or PE
 			params=''
 			x=$(samtools view -F 4 "$f" | head -10000 | cat <(samtools view -H "$f") - | samtools view -c -f 1)
-			[[ $x -gt 0 ]] && params+='-p '
-			[[ "$featuretag" != "gene_id" ]] && params+='-f -O '
+			[[ $x -gt 0 ]] && params+="-p $version"
+			[[ "$feature" == "$level" ]] && params+='-f -O '
 
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				featureCounts
@@ -77,7 +81,7 @@ quantify::featurecounts() {
 					-s ${_strandness_featurecounts["$f"]}
 					-T $ithreads
 					-t $level
-					-g $featuretag
+					-g ${feature}_id
 					--tmpDir "${tdirs[-1]}"
 					-a "$gtf"
 					-o "$o"
@@ -109,13 +113,15 @@ quantify::tpm() {
 			-r <mapper>   | array of bams within array of
 			-g <gtf>      | path to
 			-i <countsdir>| path to
+			-l <level>    | feature (default: exon)
+			-f <feature>  | feature (default: gene, needs <feature>_id tag)
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads countsdir gtf
+	local OPTIND arg mandatory skip=false threads countsdir gtf level="exon" feature="gene"
 	declare -n _mapper_tpm
-	while getopts 'S:s:t:r:g:i:' arg; do
+	while getopts 'S:s:t:r:g:i:l:f:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -123,6 +129,8 @@ quantify::tpm() {
 			r) ((++mandatory)); _mapper_tpm=$OPTARG;;
 			g) ((++mandatory)); gtf="$OPTARG";;
 			i) ((++mandatory)); countsdir="$OPTARG";;
+			l) level="$OPTARG";;
+			f) feature="$OPTARG";;
 			*) _usage;;
 		esac
 	done
@@ -130,37 +138,20 @@ quantify::tpm() {
 
 	commander::printinfo "calculating transcripts per million"
 
-	local m f countfile header
-	declare -a cmd1 cmd2 tojoin
+	local m f countfile header sample
+	declare -a cmd1 cmd2
 	for m in "${_mapper_tpm[@]}"; do
 		declare -n _bams_tpm=$m
-		unset -v tojoin1 tojoin2
 		header="id"
 		for f in "${_bams_tpm[@]}"; do
-			header+="\t$(basename "${f%.*}")"
-			countfile="$countsdir/$m/$(basename "$f")"
-			countfile="$(realpath -s "${countfile%.*}"*.+(genecounts|counts).+(reduced|htsc) | head -1)"
+			sample="$(basename "${f%.*}")"
+			header+="\t$sample"
+			countfile="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc" -print -quit | grep .)"
+
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-				tpm.pl "$gtf" "$countfile" > "$countfile.tpm"
+				tpm.pl "$gtf" $level ${feature}_id "$countfile" > "$countfile.tpm"
 			CMD
-			tojoin+=("$countfile")
 		done
-
-		# if [[ ${#tojoin[@]} -gt 1 ]]; then
-		# 	commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD
-		# 		helper::multijoin
-		# 			-h "$(echo -e "$header")"
-		# 			-o "$countsdir/$m/experiments.htsc"
-		# 			-f $(printf '"%s" ' "${tojoin[@]}");
-		# 	CMD
-
-		# 	commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD
-		# 		helper::multijoin
-		# 			-h "$(echo -e "$header")"
-		# 			-o "$countsdir/$m/experiments.tpm"
-		# 			-f $(printf '"%s" ' "${tojoin[@]/%/.tpm}");
-		# 	CMD
-		# fi
 	done
 
 	if $skip; then
