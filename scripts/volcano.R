@@ -1,5 +1,21 @@
 #! /usr/bin/env Rscript
 # (c) Konstantin Riege
+
+args = commandArgs(TRUE)
+
+if(length(args)<2){
+  cat("volcano plot from annotated DESeq2 results table\n")
+  cat("\n")
+  cat("usage parameter: <f:matrix> <f:outfile>\n")
+  cat('example: "/path/to/matrix.tsv" "/path/to/plot.pdf"\n')
+  cat("\n")
+  cat("matrix: tab separated with header. columns id log2FoldChange padj geneName mandatory\n")
+  cat("id baseMean log2FoldChange lfcSE stat pvalue padj geneName\n")
+  cat("feature1 value1 value2 value3  ..\n")
+  cat("..\n")
+  quit("no",1)
+}
+
 options(warn=-1)
 
 suppressMessages({
@@ -7,7 +23,6 @@ suppressMessages({
   library(ggrepel)
 })
 
-args = commandArgs(TRUE)
 ddsr = args[1]
 outfile = args[2]
   
