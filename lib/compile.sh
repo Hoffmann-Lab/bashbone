@@ -1,8 +1,8 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-compile::_parse(){
-	_usage() {
+function compile::_parse(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 		usage:
 			-i <path>      | installation base
@@ -36,7 +36,7 @@ compile::_parse(){
 	return 0
 }
 
-compile::all(){
+function compile::all(){
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 	compile::bashbone -i "$insdir" -t $threads
@@ -61,7 +61,7 @@ compile::all(){
 	return 0
 }
 
-compile::bashbone() {
+function compile::bashbone(){
 	local insdir threads version src="$(dirname "$(readlink -e "$0")")"
 	commander::printinfo "installing bashbone"
 	compile::_parse -r insdir -s threads "$@"
@@ -75,7 +75,7 @@ compile::bashbone() {
 	return 0
 }
 
-compile::tools() {
+function compile::tools(){
 	local insdir threads i src="$(dirname "$(readlink -e "$0")")"
 	declare -a mapdata
 
@@ -91,7 +91,7 @@ compile::tools() {
 	return 0
 }
 
-compile::upgrade(){
+function compile::upgrade(){
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 	compile::bashbone -i "$insdir" -t $threads
@@ -101,7 +101,7 @@ compile::upgrade(){
 	return 0
 }
 
-compile::conda(){
+function compile::conda(){
 	local insdir threads url
 	commander::printinfo "installing conda"
 	compile::_parse -r insdir -s threads "$@"
@@ -113,6 +113,8 @@ compile::conda(){
 
 	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
 	conda update -y conda
+	conda install -y --override-channels -c conda-forge mamba
+	conda env config vars set MAMBA_NO_BANNER=1
 
 	commander::printinfo "conda clean up"
 	conda clean -y -a
@@ -120,9 +122,9 @@ compile::conda(){
 	return 0
 }
 
-compile::conda_tools() {
+function compile::conda_tools(){
 	local tmpdir
-	_cleanup::compile::conda_tools(){
+	function _cleanup::compile::conda_tools(){
 		rm -rf "$tmpdir"
 	}
 
@@ -133,7 +135,7 @@ compile::conda_tools() {
 	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
 	while read -r tool; do
 		envs[$tool]=true
-	done < <(conda info -e | awk -v prefix="^$insdir" '$NF ~ prefix {print $1}')
+	done < <(mamba info -e | awk -v prefix="^$insdir" '$NF ~ prefix {print $1}')
 
 
 	# setup commonly used tools in bashbone source
@@ -144,11 +146,11 @@ compile::conda_tools() {
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			conda env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
 			# "libfuse<3" libarchive for fuse-archive
-			conda create -y -n $n
-			conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+			mamba create -y -n $n
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 				gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
 				glib pkg-config make automake cmake \
 				bzip2 pbzip2 \
@@ -240,11 +242,11 @@ compile::conda_tools() {
 		# commander::runcmd -c bashbone -i $threads -a cmd5
 
 		mkdir -p "$insdir/conda/env_exports"
-		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" | grep -vE -- '-\s+idr=' > "$insdir/conda/env_exports/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" | grep -vE -- '-\s+idr=' > "$insdir/conda/env_exports/$n.yaml"
 	}
 
 	# better do not predefine python version. if tool recipe depends on earlier version, conda installs an older or the oldest version (freebayes)
-	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 peakachu diego gatk4 freebayes varscan igv intervene raxml metilene umitools methyldackel idr; do
+	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 genrich peakachu diego gatk4 freebayes varscan igv intervene raxml metilene umitools methyldackel idr; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
 		[[ $tool == "bwa" ]] && tool+=" bwa-mem2"
@@ -253,24 +255,24 @@ compile::conda_tools() {
 
 			commander::printinfo "setup conda $n env"
 			if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-				conda env create -n $n --force --file "$src/config/$n.yaml"
+				mamba env create -n $n --force --file "$src/config/$n.yaml"
 			else
-				conda create -y -n $n
-				conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+				mamba create -y -n $n
+				mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
 			fi
 
 			mkdir -p "$insdir/conda/env_exports"
-			conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+			mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
 		}
 		# link commonly used base binaries into env
 		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-			conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	done
 	chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl" # necessary fix
 
 
-	star_version=$(conda list -n star -f star | tail -1 | awk '{print $2}')
+	star_version=$(mamba list -n star -f star | tail -1 | awk '{print $2}')
 
 	# manual setup of requirements from bioconda meta.yaml (see compile::starfusion) due to non-latest installation via conda
 	# note: recent star (star indexer 2.7.1a) is not compatible with CTAT plug-n-play genome index for star-fusion v1.9 (star indexer 2.4.1)
@@ -282,20 +284,20 @@ compile::conda_tools() {
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			conda env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
-			conda create -y -n $n #python=3
+			mamba create -y -n $n #python=3
 			# propably enought: perl perl-set-intervaltree perl-carp perl-carp-assert perl-db-file perl-io-gzip perl-json-xs perl-uri \
-			conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
 				perl perl-file-path perl-getopt-long perl-set-intervaltree perl-carp perl-carp-assert perl-data-dumper perl-findbin perl-db-file perl-io-gzip perl-json-xs perl-uri perl-list-moreutils perl-list-util perl-storable \
 				igv-reports "star=$star_version" gmap bowtie bbmap samtools blast
 		fi
 
 		mkdir -p "$insdir/conda/env_exports"
-		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
 	}
 	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 	done
 
 	# prepared for sortmrna >4 , but newer versions have extreme runtime troubles
@@ -307,10 +309,10 @@ compile::conda_tools() {
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			conda env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
-			conda create -y -n $n
-			conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda "$tool"
+			mamba create -y -n $n
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda "$tool"
 		fi
 
 		git clone https://github.com/biocore/sortmerna.git "$insdir/conda/envs/sortmerna/src"
@@ -341,10 +343,10 @@ compile::conda_tools() {
 		done
 		commander::runcmd -c sortmerna -i $threads -a cmdidx
 
-		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
 	}
 	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 	done
 
 	# arriba 2.x , successor of 1.2 (arriba=1.2) has new star parameters incompatible with star < 2.7.6
@@ -356,17 +358,17 @@ compile::conda_tools() {
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			conda env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
-			conda create -y -n $n
-			conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda "$tool$(awk -F '.' '{if ($1>=2 && $2>=7){print ">=2"}else{print "<2"}}' <<< $star_version)'" "star=$star_version"
+			mamba create -y -n $n
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda "$tool$(awk -F '.' '{if ($1>=2 && $2>=7){print ">=2"}else{print "<2"}}' <<< $star_version)'" "star=$star_version"
 		fi
 
 		mkdir -p "$insdir/conda/env_exports"
-		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
 	}
 	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 	done
 
 	tool=bwameth
@@ -377,10 +379,10 @@ compile::conda_tools() {
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			conda env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
-			conda create -y -n $n
-			conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool bwa-mem2
+			mamba create -y -n $n
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool bwa-mem2
 		fi
 		# get latest functions from pull requensts like support for bwa-mem2 and report of supplementary/split alignments
 		curl -s "https://raw.githubusercontent.com/brentp/bwa-meth/master/bwameth.py" | \
@@ -394,10 +396,10 @@ compile::conda_tools() {
 		# squeeze in score parameter to control bwa minoutscore
 
 		mkdir -p "$insdir/conda/env_exports"
-		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
 	}
 	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 	done
 
 	tool=vardict
@@ -408,17 +410,17 @@ compile::conda_tools() {
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			conda env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
-			conda create -y -n $n
-			conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java readline=6
+			mamba create -y -n $n
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java readline=6
 		fi
 
 		mkdir -p "$insdir/conda/env_exports"
-		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
 	}
 	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 	done
 
 	tool=snpeff
@@ -429,17 +431,17 @@ compile::conda_tools() {
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			conda env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
-			conda create -y -n $n #python=3
-			conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
+			mamba create -y -n $n #python=3
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
 		fi
 
 		mkdir -p "$insdir/conda/env_exports"
-		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
 	}
 	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 	done
 
 	tool=platypus-variant
@@ -449,17 +451,17 @@ compile::conda_tools() {
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			conda env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
-			conda create -y -n $n
-			conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+			mamba create -y -n $n
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
 		fi
 
 		mkdir -p "$insdir/conda/env_exports"
-		conda env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
 	}
 	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 	done
 
 	# this is a pipeline itself with own genome and databases and thus will not be part of bashbone
@@ -478,13 +480,13 @@ compile::conda_tools() {
 
 	$doclean && {
 		commander::printinfo "conda clean up"
-		conda clean -y -a
+		mamba clean -y -a
 	}
 
 	return 0
 }
 
-compile::java() {
+function compile::java(){
 	local insdir threads url version
 
 	commander::printinfo "installing java"
@@ -502,7 +504,7 @@ compile::java() {
 	return 0
 }
 
-compile::_javawrapper() {
+function compile::_javawrapper(){
 	local java=java
 	[[ $3 ]] && java="$3"
 	cat <<- EOF > "$1" || return 1
@@ -526,7 +528,7 @@ compile::_javawrapper() {
 	return 0
 }
 
-compile::trimmomatic(){
+function compile::trimmomatic(){
 	# conda trimmomatic wrapper is written in python and thus cannot handle process substitutions
 	local insdir threads url
 
@@ -546,7 +548,7 @@ compile::trimmomatic(){
 	return 0
 }
 
-compile::sortmerna() {
+function compile::sortmerna(){
 	local insdir threads url i
 
 	commander::printinfo "installing sortmerna"
@@ -575,7 +577,7 @@ compile::sortmerna() {
 	return 0
 }
 
-compile::segemehl() {
+function compile::segemehl(){
 	local insdir threads url
 
 	commander::printinfo "installing segemehl"
@@ -602,7 +604,7 @@ compile::segemehl() {
 		l="$(pkg-config --variable=libdir htslib)"
 		[[ $l ]] && export LD_LIBRARY_PATH="$l"
 		unset MALLOC_ARENA_MAX
-		"$(realpath -se "$(dirname "$0")")/segemehl.x" $*
+		exec "$(realpath -se "$(dirname "$0")")/segemehl.x" "$@"
 	EOF
 	cat <<- 'EOF' > "$insdir/latest/segemehl/haarz"
 		#!/usr/bin/env bash
@@ -610,13 +612,13 @@ compile::segemehl() {
 		l="$(pkg-config --variable=libdir htslib)"
 		[[ $l ]] && export LD_LIBRARY_PATH="$l"
 		unset MALLOC_ARENA_MAX
-		"$(realpath -se "$(dirname "$0")")/haarz.x" $*
+		exec "$(realpath -se "$(dirname "$0")")/haarz.x" "$@"
 	EOF
 
 	return 0
 }
 
-compile::starfusion() {
+function compile::starfusion(){
 	local insdir threads url
 
 	# conda recipe has either star > 2.7.0f (v1.6) or star > 2.5 (>=v1.8, plus python compatibility issues)
@@ -634,7 +636,7 @@ compile::starfusion() {
 	return 0
 }
 
-compile::preparedexseq() {
+function compile::preparedexseq(){
 	local insdir threads
 
 	commander::printinfo "installing dexseq"
@@ -652,7 +654,7 @@ compile::preparedexseq() {
 	return 0
 }
 
-compile::revigo() {
+function compile::revigo(){
 	local insdir threads
 
 	commander::printinfo "installing revigo"
@@ -670,7 +672,7 @@ compile::revigo() {
 	return 0
 }
 
-compile::gem() {
+function compile::gem(){
 	local insdir threads url version
 
 	commander::printinfo "installing gem"
@@ -695,7 +697,7 @@ compile::gem() {
 	return 0
 }
 
-compile::m6aviewer() {
+function compile::m6aviewer(){
 	local insdir threads url version
 
 	commander::printinfo "installing m6aviewer"
@@ -714,7 +716,7 @@ compile::m6aviewer() {
 	return 0
 }
 
-compile::idr() {
+function compile::idr(){
 	local insdir threads url
 
 	commander::printinfo "installing idr"
@@ -734,7 +736,7 @@ compile::idr() {
 	return 0
 }
 
-compile::newicktopdf(){
+function compile::newicktopdf(){
 	local insdir threads url
 
 	commander::printinfo "installing newick2pdf"
@@ -748,7 +750,7 @@ compile::newicktopdf(){
 	ln -sfn "$insdir/newicktopdf" "$insdir/latest/newicktopdf"
 }
 
-compile::ssgsea() {
+function compile::ssgsea(){
 	local insdir threads
 
 	commander::printinfo "installing ssgsea"
@@ -775,7 +777,7 @@ compile::ssgsea() {
 	return 0
 }
 
-compile::gztool() {
+function compile::gztool(){
 	local insdir threads url version
 
 	commander::printinfo "installing gztool"
@@ -816,7 +818,7 @@ compile::gztool() {
 	return 0
 }
 
-compile::mdless() {
+function compile::mdless(){
 	local insdir threads url
 
 	commander::printinfo "installing mdless"
@@ -869,7 +871,7 @@ compile::mdless() {
 # 	return 0
 # }
 
-compile::pugz(){
+function compile::pugz(){
 	local insdir threads url
 	commander::printinfo "installing pugz"
 	compile::_parse -r insdir -s threads "$@"
