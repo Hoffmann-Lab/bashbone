@@ -28,15 +28,22 @@ configure::exit(){
 		$exitfun "$@" $ex || true
 	}
 
+	##### solution1: setsid xargs
 	# pstree < 23.0-1 : /proc/<id> no such file bug https://bugs.launchpad.net/ubuntu/+source/psmisc/+bug/1629839
-	{	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | grep -vFw $pid))
-		env kill -TERM "${pids[@]}"; wait "${pids[@]}"
-	} &> /dev/null || true
-	[[ $ex -gt 0 ]] && { pgid=$(($(ps -o pgid= -p $pid))); env kill -INT -- -$pgid; sleep 1; env kill -TERM -- -$pgid; wait $pgid; } &> /dev/null || true
+
+	# {	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | grep -vFw $pid))
+	# 	env kill -TERM "${pids[@]}"; wait "${pids[@]}"
+	# } &> /dev/null || true
+	# [[ $ex -gt 0 ]] && { pgid=$(($(ps -o pgid= -p $pid))); env kill -INT -- -$pgid; sleep 1; env kill -TERM -- -$pgid; } &> /dev/null || true
+
 	#kill -PIPE $p # is captured by bashbone. does not print termination message
 	#kill -INT $p # graceful kill. due to interrupt by user. probably captured by job or simply not delivered. does not print termination message
 	#kill -TERM $p # graceful kill like INT but due to other process. on exit, does not triggers ERR
 	#kill -KILL $p # cannot be captured. no job cleanup traps invoked
+
+	##### solution2: parallel --termseq INT,1000,TERM,0 --halt now,fail1 <- on error parallel sends INT sleep 1 TERM to each processgroup aka job
+	trap '' INT TERM
+	{ env kill -INT -- -$pid; sleep 0.2; env kill -TERM -- -$pid; wait $pid; } &> /dev/null
 
 	return 0
 }
