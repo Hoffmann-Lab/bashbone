@@ -122,7 +122,6 @@ variants::vcfnorm() {
 
 		if $zip; then
 			for e in fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
 				CMD
@@ -481,7 +480,7 @@ variants::tree(){
 		tomerge=()
 		names=()
 		for f in "${_bams_tree[@]}"; do
-			vcffile=$(find -L "$vcfdir/$m/$caller" -name "$(basename "$f" "$e")*.vcf" -or -name "$(basename "$f" "$e")*.vcf.gz" | perl -e 'print "".(sort { length($b) <=> length($a) } <>)[0]')
+			vcffile=$(find -L "$vcfdir/$m/$caller" -name "$(basename "$f" "$e")*.vcf" -or -name "$(basename "$f" "$e")*.vcf.gz" | grep . | perl -e 'print "".(sort { length($b) <=> length($a) } <>)[0]')
 			names+=("$(basename "$f" "$e")")
 			o="$odir/${names[-1]}"
 			tomerge+=("$o")
@@ -512,7 +511,7 @@ variants::tree(){
 			CMD
 
 			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-				samtools bedcov -Q 0 "$odir/SNV.bed" "$f" > "$o.snvcov"
+				samtools bedcov -Q 0 -g 1796 -j "$odir/SNV.bed" "$f" > "$o.snvcov"
 			CMD
 
 			commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
