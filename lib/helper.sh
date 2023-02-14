@@ -107,7 +107,7 @@ helper::pgzip(){
 		return 1
 	}
 
-	local OPTIND arg threads=1 f o tool="pigz -p"
+	local OPTIND arg threads=1 f=/dev/stdin o tool="pigz -p"
 	while getopts 'f:t:o:b' arg; do
 		case $arg in
 			f) f="$OPTARG";;
@@ -120,16 +120,7 @@ helper::pgzip(){
 	[[ ! $f && ! $o ]] && _usage
 	[[ ! $o ]] && o="$f.gz"
 
-	gztool -a 0 -S -x -w -f -v 0 "$o" &
-	pid=$!
-	if [[ $f ]]; then
-		$tool $threads -k -c "$f" > "$o"
-	else
-		$tool $threads -k -c /dev/stdin > "$o"
-		# bgzip handles stdin via pipe or explicit path to file but does not work with -
-	fi
-	{ kill -TERM $pid && wait $pid; } &> /dev/null || true
-	gztool -i -x -v 0 "$o"
+	$tool $threads -k -c "$f" | tee -i "$o" | gztool -v 0 -f -i -x -C -I "${o%.*}.gzi"
 
 	return 0
 }
