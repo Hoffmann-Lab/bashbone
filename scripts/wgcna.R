@@ -1,10 +1,29 @@
 #! /usr/bin/env Rscript
 # (c) Arne Sahm, Konstantin Riege
-suppressMessages(library('WGCNA'))
-suppressMessages(library('DGCA'))
-suppressMessages(library('ggplot2'))
 
 args = commandArgs(TRUE)
+
+if(length(args)<5){
+  cat("WGCNA from TPM/VSC normalized feature counts\n")
+  cat("\n")
+  cat("usage parameter: <i:memory-mb> <[VSC|TPM]:data-type> <b:filter-percentile> <f:matrix> <f:outdir>\n")
+  cat('example: 16000 TPM FALSE "/path/to/matrix.tsv" "/path/to/outdir"\n')
+  cat("\n")
+  cat("matrix: tab separated with header and feature ids/label.\n")
+  cat("id       sample1 sample2 sample3 ..\n")
+  cat("feature1 value1  value2  value3  ..\n")
+  cat("..\n")
+  quit("no",1)
+}
+
+options(warn=-1)
+
+suppressMessages({
+  library(WGCNA)
+  library(DGCA)
+  library(ggplot2)
+})
+
 # threads = as.numeric(args[1])
 # may cause Error in sendMaster(try(lapply(X = S, FUN = FUN, ...), silent = TRUE))
 # The error seems to be from sendMaster which is used by the multicore package to send results from child processes back to the master process. From this StackOverflow thread, it seems that the results of the child processes are too large for mclapply to send back to the master.
