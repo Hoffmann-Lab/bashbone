@@ -1,20 +1,47 @@
 #! /usr/bin/env Rscript
 # (c) Konstantin Riege
 
-suppressMessages(library("pheatmap"))
-suppressMessages(library("gplots"))
-suppressMessages(library("RColorBrewer"))
-suppressMessages(library("dplyr"))
-
 args = commandArgs(TRUE)
-cluster = args[1]
+
+if(length(args)<7){
+  cat("locally/globally clustered heatmap by condition\n")
+  cat("\n")
+  cat("usage parameter: <b:local-clustering> <i:plot-width> <i:plot-height> <f:experiments> <f:matrix> <s:legend-label> <s:title>\n")
+  cat('example: TRUE 8 20 "/path/to/experiments.csv" "/path/to/matrix.tsv" "Z-scores" "Top 50 features"\n')
+  cat("\n")
+  cat("matrix: tab separated with header and feature ids/label. sample order have to match order of experiments rows\n")
+  cat("id       sample1 sample2 sample3 ..\n")
+  cat("feature1 value1  value2  value3  ..\n")
+  cat("..\n")
+  cat("\n")
+  cat("experiments: comma separated with header. 3 or more columns. column 2 ignored.\n")
+  cat("sample,foo,condition[,..]\n")
+  cat("sample1,foo,condition1[,..]\n")
+  cat("sample2,foo,condition1[,..]\n")
+  cat("sample3,foo,condition2[,..]\n")
+  cat("..\n")
+  quit("no",1)
+}
+
+options(warn=-1)
+
+suppressMessages({
+  library("pheatmap")
+  library("gplots")
+  library("RColorBrewer")
+  library("dplyr")
+})
+
+cluster = as.logical(args[1])
 # ggplot default is 7x7
 w = as.integer(args[2])
 h = as.integer(args[3])
 experiments = read.table(args[4], header = T, sep = ',', stringsAsFactors=F, check.names=F, quote="")
+colnames(experiments)[1:4] = c("sample","countfile","condition")
 #experiments = data.frame(condition = df$condition, sample = df$sample)
 io = args[5]
 input = read.table(io, header = T, sep = '\t', stringsAsFactors=F, check.names=F, quote="")
+colnames(input)[1] = c("id")
 keylabel = args[6]
 # appended to "Heatmap of <nrow> "
 title = args[7]
@@ -30,6 +57,7 @@ setEPS(reset=T, width=w, height=h, onefile=T)
 # or ps2pdf $(grep -m 1 -P '(BoundingBox|DocumentMedia)' in.ps | awk '{print "-g"$4*10"x"$5*10}') in.ps out.pdf
 # cat(paste0("ps2pdf -g",round(w*72)*10,"x",round(h*72)*10," ",io,".localclust.ps ",io,".localclust.pdf\n"))
 
+clustered=TRUE
 if(cluster){
   ##### do inner-condition clustering and store annotation and separation infos
   colclustlist = list()
@@ -39,22 +67,29 @@ if(cluster){
 
     # dist(df, method = "euclidean")
     # hclust(df, method = "complete")
-    colclust = hclust(dist(t(m)))
-    m = m[ , colclust$order]
+    if(ncol(m)>1){
+      colclust = hclust(dist(t(m)))
+      m = m[ , colclust$order]
+    } else {
+      clustered=FALSE
+      break
+    }
 
     if(length(colclustlist)==0){
-      df = data.frame(id=rownames(m),m)
+      df = data.frame(id=rownames(m),m,check.names=F)
       colclustlist = list(colclust)
       colsep = ncol(m)
       colannotation = rep(condition,ncol(m))
     } else {
-      df = full_join(df, data.frame(id=rownames(m),m), by = 'id')
+      df = full_join(df, data.frame(id=rownames(m),m,check.names=F), by = 'id')
       colclustlist = c(colclustlist, list(colclust))
       colsep = c(colsep,tail(colsep,1)+ncol(m))
       colannotation = c(colannotation,rep(condition,ncol(m)))
     }
   }
+}
 
+if(cluster && clustered){
   # remove last separator and id-column
   colsep = colsep[1:length(colsep)-1]
   df = df[,2:length(df)]
@@ -114,7 +149,7 @@ if(cluster){
   grid::grid.newpage()
   grid::grid.draw(p$gtable)
   graphics.off()
-  #cat(paste0("ps2pdf -g",round(w*72)*10,"x",round(h*72)*10," ",io,".localclust.ps ",io,".localclust.pdf\n"))
+  # cat(paste0("ps2pdf -g",round(w*72)*10,"x",round(h*72)*10," ",io,".localclust.ps ",io,".localclust.pdf\n"))
 
 
   p = pheatmap(df, color = color, cluster_rows = T, cluster_cols = T,
@@ -156,18 +191,64 @@ if(cluster){
     legendlabels[1] = paste0(keylabel," ")
   }
 
-  p = pheatmap(df, color = color, cluster_rows = T, cluster_cols = F,
-               border_color = NA,  fontsize_row = 7, fontsize_col = 7, angle_col = 45,
-               breaks = breaks, legend_breaks = legendbreaks, legend_labels = legendlabels,
-               main = paste0("Heatmap of ",nrow(df)," ",title,"\n")
-  )
-  # filename = "/../../png|pdf|tiff|bmp"
-  # workaround to store figure as different file type - use ps to later replace row and column names + ps2pdf
-  postscript(paste0(io,".ps"))
-  grid::grid.newpage()
-  grid::grid.draw(p$gtable)
-  graphics.off()
-  #cat(paste0("ps2pdf -g",round(w*72)*10,"x",round(h*72)*10," ",io,".ps ",io,".pdf\n"))
+  colannotation = experiments$condition[experiments$sample %in% colnames(df)]
+  if(length(colannotation)==0){
+    colannotation = colnames(df)
+  }
+  # get number conditions colors and name them by conditions
+  # colannotationcolor = colorRampPalette(brewer.pal(3, "Blues"))(length(unique(colannotation)))
+  colannotationcolor = colorRampPalette(brewer.pal(11, "Spectral"))(length(unique(colannotation)))
+  names(colannotationcolor) = unique(colannotation)
+  # create dataframe of column annotations with rownames
+  colannotations = data.frame(row.names = colnames(df), Group = colannotation)
+  # create list of annotation colors according to dataframes of column and or row annotations
+  annotationcolors = list(Group = colannotationcolor)
+
+  if(cluster){
+    p = pheatmap(df, color = color, cluster_rows = T, cluster_cols = F,
+      border_color = NA,  fontsize_row = 7, fontsize_col = 7, angle_col = 45,
+      annotation_col = colannotations, annotation_colors = annotationcolors, annotation_names_col = F,
+      breaks = breaks, legend_breaks = legendbreaks, legend_labels = legendlabels,
+      main = paste0("Heatmap of ",nrow(df)," ",title,"\n")
+    )
+    # filename = "/../../png|pdf|tiff|bmp"
+    # workaround to store figure as different file type - use ps to later replace row and column names + ps2pdf
+    postscript(paste0(io,".localclust.ps"))
+    grid::grid.newpage()
+    grid::grid.draw(p$gtable)
+    graphics.off()
+    # cat(paste0("ps2pdf -g",round(w*72)*10,"x",round(h*72)*10," ",io,".localclust.ps ",io,".localclust.pdf\n"))
+
+    p = pheatmap(df, color = color, cluster_rows = T, cluster_cols = T,
+      border_color = NA,  fontsize_row = 7, fontsize_col = 7, angle_col = 45,
+      annotation_col = colannotations, annotation_colors = annotationcolors, annotation_names_col = F,
+      breaks = breaks, legend_breaks = legendbreaks, legend_labels = legendlabels,
+      main = paste0("Heatmap of ",nrow(df)," ",title,"\n")
+    )
+    # filename = "/../../png|pdf|tiff|bmp"
+    # workaround to store figure as different file type - use ps to later replace row and column names + ps2pdf
+    postscript(paste0(io,".globalclust.ps"))
+    grid::grid.newpage()
+    grid::grid.draw(p$gtable)
+    graphics.off()
+    # cat(paste0("ps2pdf -g",round(w*72)*10,"x",round(h*72)*10," ",io,".globalclust.ps ",io,".globalclust.pdf\n"))
+
+  } else {
+
+    p = pheatmap(df, color = color, cluster_rows = T, cluster_cols = F,
+      border_color = NA,  fontsize_row = 7, fontsize_col = 7, angle_col = 45,
+      annotation_col = colannotations, annotation_colors = annotationcolors, annotation_names_col = F,
+      breaks = breaks, legend_breaks = legendbreaks, legend_labels = legendlabels,
+      main = paste0("Heatmap of ",nrow(df)," ",title,"\n")
+    )
+    # filename = "/../../png|pdf|tiff|bmp"
+    # workaround to store figure as different file type - use ps to later replace row and column names + ps2pdf
+    postscript(paste0(io,".ps"))
+    grid::grid.newpage()
+    grid::grid.draw(p$gtable)
+    graphics.off()
+    # cat(paste0("ps2pdf -g",round(w*72)*10,"x",round(h*72)*10," ",io,".ps ",io,".pdf\n"))
+  }
 }
 
 quit("no")
