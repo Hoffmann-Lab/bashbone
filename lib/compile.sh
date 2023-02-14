@@ -40,7 +40,7 @@ compile::all(){
 	local insdir threads
 	compile::_parse -r insdir -s threads "$@"
 	compile::bashbone -i "$insdir" -t $threads
-	compile::tools -i "$insdir" -t $threads
+	# compile::tools -i "$insdir" -t $threads
 	compile::conda -i "$insdir" -t $threads
 	compile::conda_tools -i "$insdir" -t $threads
 	compile::java -i "$insdir" -t $threads
@@ -51,7 +51,7 @@ compile::all(){
 	compile::revigo -i "$insdir" -t $threads
 	compile::gem -i "$insdir" -t $threads
 	compile::m6aviewer -i "$insdir" -t $threads
-	compile::idr -i "$insdir" -t $threads
+	# compile::idr -i "$insdir" -t $threads
 	compile::newicktopdf -i "$insdir" -t $threads
 	compile::ssgsea -i "$insdir" -t $threads
 	compile::gztool -i "$insdir" -t $threads
@@ -244,7 +244,7 @@ compile::conda_tools() {
 	}
 
 	# better do not predefine python version. if tool recipe depends on earlier version, conda installs an older or the oldest version (freebayes)
-	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 peakachu diego gatk4 freebayes varscan igv intervene raxml metilene umitools methyldackel; do
+	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 peakachu diego gatk4 freebayes varscan igv intervene raxml metilene umitools methyldackel idr; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
 		[[ $tool == "bwa" ]] && tool+=" bwa-mem2"
@@ -602,7 +602,7 @@ compile::segemehl() {
 		l="$(pkg-config --variable=libdir htslib)"
 		[[ $l ]] && export LD_LIBRARY_PATH="$l"
 		unset MALLOC_ARENA_MAX
-		"$(realpath -s "$(dirname "$0")")/segemehl.x" $*
+		"$(realpath -se "$(dirname "$0")")/segemehl.x" $*
 	EOF
 	cat <<- 'EOF' > "$insdir/latest/segemehl/haarz"
 		#!/usr/bin/env bash
@@ -610,7 +610,7 @@ compile::segemehl() {
 		l="$(pkg-config --variable=libdir htslib)"
 		[[ $l ]] && export LD_LIBRARY_PATH="$l"
 		unset MALLOC_ARENA_MAX
-		"$(realpath -s "$(dirname "$0")")/haarz.x" $*
+		"$(realpath -se "$(dirname "$0")")/haarz.x" $*
 	EOF
 
 	return 0
@@ -805,7 +805,7 @@ compile::gztool() {
 	    n=9
 	    f="$1"
 	fi
-	p="$(realpath -s "$(dirname "$0")")"
+	p="$(realpath -se "$(dirname "$0")")"
 	l=$("$p/gztool" -l "$f" |& sed -nE 's/.*\s+lines\s+:\s+([0-9]+).*/\1/p')
 	"$p/gztool" -v 0 -L $((l-n)) "$f"
 	EOF
