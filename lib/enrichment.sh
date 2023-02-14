@@ -79,9 +79,9 @@ enrichment::_ora(){
 				if(sum(genes %in% tg$gene)>0){
 					ora <- enricher(genes, TERM2GENE=tg, TERM2NAME=tn, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
 					if(!is.null(ora) && nrow(ora)>0){
-						dotplot(ora, showCategory=10, font.size=10)
-							+ theme(strip.background = element_rect(linetype = 0, fill=NA))
-							+ guides(color = guide_colourbar("FDR"));
+						dotplot(ora, showCategory=10, font.size=10) +
+							theme(strip.background = element_rect(linetype = 0, fill=NA)) +
+							guides(color = guide_colourbar("FDR"));
 						suppressMessages(ggsave(file.path(odir,"dotplot.pdf")));
 
 						df <- data.frame(fdr=-log(ora$p.adjust, base=10), description = paste0(ora$Description," (",ora$Count,")"));
@@ -204,15 +204,15 @@ enrichment::_gsea(){
 					gsea <- GSEA(gl, TERM2GENE=tg, TERM2NAME=tn, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500, eps = 0, seed = T);
 
 					if(!is.null(gsea) && nrow(gsea)>0){
-						dotplot(gsea, showCategory=10, split=".sign", font.size=10)
-							+ facet_grid(.~.sign)
-							+ theme(axis.text.y = element_text(size=8), strip.background = element_rect(linetype = 0, fill=NA))
-							+ guides(color = guide_colourbar("FDR"));
+						dotplot(gsea, showCategory=10, split=".sign", font.size=10) +
+							facet_grid(.~.sign) +
+							theme(axis.text.y = element_text(size=8), strip.background = element_rect(linetype = 0, fill=NA)) +
+							guides(color = guide_colourbar("FDR"));
 						suppressMessages(ggsave(file.path(odir,"dotplot.pdf")));
 
-						ridgeplot(gsea) + xlab("log2 FC distribution")
-							+ guides(fill = guide_colourbar("FDR"))
-							+ theme(axis.text.y = element_text(size=8), axis.text.x = element_text(size=10), axis.title.x = element_text(size=10));
+						ridgeplot(gsea) + xlab("log2 FC distribution") +
+							guides(fill = guide_colourbar("FDR")) +
+							theme(axis.text.y = element_text(size=8), axis.text.x = element_text(size=10), axis.title.x = element_text(size=10));
 						suppressMessages(ggsave(file.path(odir,"ridgeplot.pdf")));
 
 						df <- data.frame(fdr=-log(gsea$p.adjust, base=10), description = paste0(gsea$Description," (",gsea$setSize,")"));
@@ -535,7 +535,7 @@ enrichment::go(){
 		for domain in biological_process cellular_component molecular_function; do
 			odir="$(dirname "$f")/$domain"
 			if [[ $countsdir ]]; then
-				enrichment::_ora -1 cmd1 -2 cmd2 -d $domain -g "$gofile" -i "$f" -j "$(find -L "$countsdir" -name "experiments.tpm" -print -quit)" -o "$odir"
+				enrichment::_ora -1 cmd1 -2 cmd2 -d $domain -g "$gofile" -i "$f" -j "$(find -L "$countsdir" -name "experiments.tpm" -print -quit | grep .)" -o "$odir"
 			else
 				enrichment::_ora -1 cmd1 -2 cmd2 -d $domain -g "$gofile" -i "$f" -o "$odir"
 			fi
@@ -551,7 +551,7 @@ enrichment::go(){
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					# deseqtsv="$deseqdir/$m/$c-vs-$t/deseq.tsv"
 					IFS=$'\n'
-					for deseqtsv in $(find -L "$deseqdir/$m/$c-vs-$t/" -type f -name "deseq.tsv"); do
+					for deseqtsv in $(find -L "$deseqdir/$m/$c-vs-$t/" -type f -name "deseq.tsv" | grep .); do
 						unset IFS
 						if [[ $(wc -l < "$deseqtsv") -gt 1 ]]; then
 							for domain in biological_process cellular_component molecular_function; do
