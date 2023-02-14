@@ -45,14 +45,16 @@ alignment::mkreplicates() {
 	done
 	[[ $mandatory -lt 8 ]] && _usage
 
-	local m i odir o tmp nf nrf tf rf pf addindex=true ithreads1 ithreads2 instances1=1 instances2=1
+	local ithreads1 ithreads2 instances1 instances2
+	instances1=$((${#_mapper_mkreplicates[@]} * ${#_nidx_mkreplicates[@]}))
+	instances2=$((${#_mapper_mkreplicates[@]} * ${#_nidx_mkreplicates[@]} * 2 + ${#_mapper_mkreplicates[@]} * ${#_nridx_mkreplicates[@]} * 2))
+	read -r instances1 ithreads1 < <(configure::instances_by_threads -i $instances1 -t 10 -T $threads)
+	read -r instances2 ithreads2 < <(configure::instances_by_threads -i $instances2 -t 10 -T $threads)
+
+	local m i odir o tmp nf nrf tf rf pf addindex=true
 	declare -a cmd1 cmd2 cmd3
 	if [[ $_ridx_mkreplicates ]]; then
 		commander::printinfo "generating pseudo-pools"
-		instances1=$((${#_mapper_mkreplicates[@]} * ${#_nidx_mkreplicates[@]} * 2 + ${#_mapper_mkreplicates[@]} * ${#_nridx_mkreplicates[@]} * 2))
-		instances2=$((${#_mapper_mkreplicates[@]} * ${#_nidx_mkreplicates[@]}))
-		read -r instances1 ithreads1 < <(configure::instances_by_threads -i $instances1 -t 10 -T $threads)
-		read -r instances2 ithreads2 < <(configure::instances_by_threads -i $instances2 -t 10 -T $threads)
 
 		# pool replicates:
 		# m[N1 N2 T1 T2 R1 R2] -> m[N1 N2 T1 T2 R1 R2 PP1 PP2]
@@ -67,20 +69,31 @@ alignment::mkreplicates() {
 			declare -n _bams_mkreplicates=$m
 			odir=$outdir/$m
 			mkdir -p "$odir"
-			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.mkreplicates)")
+			# tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.mkreplicates)")
 			for i in "${!_nidx_mkreplicates[@]}"; do
 				tf=${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}
 				rf=${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}
 				o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(\..+)\t(.+)\1/-\2.pseudopool\1/')
 
+				# commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				# 	samtools view -@ $ithreads -b -s 0.5 $tf > "${tdirs[-1]}/$(basename "$tf")"
+				# CMD
+				# commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				# 	samtools view -@ $ithreads -b -s 0.5 $rf > "${tdirs[-1]}/$(basename "$rf")"
+				# CMD
+				# commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+				# 	samtools merge -f -c -p -@ $ithreads*2 "$o" "${tdirs[-1]}/$(basename "$tf")" "${tdirs[-1]}/$(basename "$rf")"
+				# CMD
+
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-					samtools view -@ $ithreads1 -b -s 0.5 $tf > "${tdirs[-1]}/$(basename "$tf")"
-				CMD
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-					samtools view -@ $ithreads1 -b -s 0.5 $rf > "${tdirs[-1]}/$(basename "$rf")"
-				CMD
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-					samtools merge -f -c -p -@ $ithreads2 "$o" "${tdirs[-1]}/$(basename "$tf")" "${tdirs[-1]}/$(basename "$rf")"
+					samtools merge
+						-f
+						-c
+						-p
+						-@ $ithreads1
+						"$o"
+						<(samtools view -@ $(((ithreads1+1)/2)) -u -s 0.5 $tf)
+						<(samtools view -@ $(((ithreads1+1)/2)) -u -s 0.5 $rf)
 				CMD
 
 				_bams_mkreplicates+=("$o")
@@ -98,9 +111,9 @@ alignment::mkreplicates() {
 			# t   5 6   5 6   5  6
 			# r   7 8   7 8   7  8
 			# p   9 10  9 10  12 14
-			# -> idr: 1 vs 7 + 1 vs 7 + 1 vs 9
+			# -> idr: 1 vs 5 + 1 vs 7 + 1 vs 9
 			#          2 vs 6 + 2 vs 8 + 2 vs 10
-			#         3 vs 5 + 3 vs 6 + 3 vs 9
+			#         3 vs 5 + 3 vs 7 + 3 vs 9
 			#          4 vs 6 + 4 vs 8 + 4 vs 10
 			#         11 vs 5 + 11 vs 7 + 11 vs 12
 			#          13 vs 6 + 13 vs 8 + 13 vs 14
@@ -117,8 +130,8 @@ alignment::mkreplicates() {
 					nrf=${_bams_mkreplicates[${_nridx_mkreplicates[$i]}]}
 					o=$odir/$(echo -e "$(basename $nf)\t$(basename $nrf)" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')
 
-					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-						samtools merge -f -c -p -@ $ithreads1 $o $nf $nrf
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+						samtools merge -f -c -p -@ $ithreads2 $o $nf $nrf
 					CMD
 					_bams_mkreplicates+=("$o")
 					$addindex && _nidx_mkreplicates+=($((${#_bams_mkreplicates[@]}-1)))
@@ -126,8 +139,8 @@ alignment::mkreplicates() {
 					tf=${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}
 					rf=${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}
 					o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')
-					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-						samtools merge -f -c -p -@ $ithreads1 $o $tf $rf
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+						samtools merge -f -c -p -@ $ithreads2 $o $tf $rf
 					CMD
 					_bams_mkreplicates+=("$o")
 					$addindex && _pidx_mkreplicates+=($((${#_bams_mkreplicates[@]}-1)))
@@ -137,11 +150,9 @@ alignment::mkreplicates() {
 		fi
 	else
 		commander::printinfo "generating pseudo-replicates"
-		instances1=$((${#_mapper_mkreplicates[@]} * ${#_nidx_mkreplicates[@]}))
-		read -r instances1 ithreads1 < <(configure::instances_by_threads -i $instances1 -t 10 -T $threads)
+
 		# make pseudo-replicates from pseudo-pool:
 		# m[N1 N2 P1 P2] -> m[N1 N2 P1 P2 T1 R1 T2 R2]
-		# cmp 1 2
 		# n   1 2
 		# nr
 		# t   5 7
@@ -187,16 +198,29 @@ alignment::mkreplicates() {
 				_ridx_mkreplicates+=($((${#_bams_mkreplicates[@]}-1)))
 			done
 		done
+
+		# if [[ $_nridx_mkreplicates ]]; then
+			# nothing to do here
+			#   1  2   3   4  5  6  7  8  9  10
+			# m[N1 N2 NR1 NR2 P1 P2 T1 R1 T2 R2]
+			# n   1 2   3 4
+			# nr  3 4
+			# t   7 9   7 9
+			# r   8 10  8 10
+			# p   5 6   5 6
+			# -> idr: 1 vs 7 + 1 vs 8 + 1 vs 5
+			#          2 vs 9 + 2 vs 10 + 2 vs 6
+			#         3 vs 7 + 3 vs 8 + 3 vs 5
+			#          4 vs 9 + 4 vs 10 + 4 vs 6
+		# fi
 	fi
 
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-		commander::printcmd -a cmd3
 	else
 		commander::runcmd -v -b -i $instances1 -a cmd1
 		commander::runcmd -v -b -i $instances2 -a cmd2
-		commander::runcmd -v -b -i $instances1 -a cmd3
 	fi
 
 	return 0
@@ -277,15 +301,15 @@ alignment::strandsplit(){
 					-p
 					-@ $threads
 					"$o.$s.bam"
-					<(samtools view -u -F 4 -f 98 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R1")
-					<(samtools view -u -F 4 -f 146 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R2")
+					<(samtools view -@ $(((threads+1)/2)) -u -F 4 -f 98 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R1")
+					<(samtools view -@ $(((threads+1)/2)) -u -F 4 -f 146 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R2")
 				CMD
 			else
 				# 16 = reverse
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					rm -f "${tdirs[-1]}/$b"*
 				CMD
-					samtools view -u -F 4 -F 16 "$f" | samtools sort -O BAM -@ $threads -T "${tdirs[-1]}/$b" > "$o.$s.bam"
+					samtools view -@ $threads -u -F 4 -F 16 "$f" | samtools sort -O BAM -@ $threads -T "${tdirs[-1]}/$b" > "$o.$s.bam"
 				CMD
 			fi
 
@@ -293,7 +317,7 @@ alignment::strandsplit(){
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					samtools index -@ $threads "$o.$s.bam" "$o.$s.bai"
 				CMD
-					samtools view -u -M -L <(awk -v OFS="\\t" '\$3=="gene" && \$7=="$s"{print \$1,\$4-1,\$5}' "$gtf") "$o.$s.bam" |	samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" > "$o.$s.filtered.bam"
+					samtools view -@ $threads -u -M -L <(awk -v OFS="\\t" '\$3=="gene" && \$7=="$s"{print \$1,\$4-1,\$5}' "$gtf") "$o.$s.bam" |	samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" > "$o.$s.filtered.bam"
 				CMD
 			fi
 
@@ -310,15 +334,15 @@ alignment::strandsplit(){
 					-p
 					-@ $threads
 					"$o.$r.bam"
-					<(samtools view -u -F 4 -f 82 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R1")
-					<(samtools view -u -F 4 -f 162 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R2")
+					<(samtools view -@ $(((threads+1)/2)) -u -F 4 -f 82 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R1")
+					<(samtools view -@ $(((threads+1)/2)) -u -F 4 -f 162 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R2")
 				CMD
 			else
 				# 16 = reverse
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					rm -f "${tdirs[-1]}/$b"*
 				CMD
-					samtools view -u -F 4 -f 16 "$f" | samtools sort -O BAM -@ $threads -T "${tdirs[-1]}/$b" > "$o.$r.bam"
+					samtools view -@ $threads -u -F 4 -f 16 "$f" | samtools sort -O BAM -@ $threads -T "${tdirs[-1]}/$b" > "$o.$r.bam"
 				CMD
 			fi
 
@@ -326,7 +350,7 @@ alignment::strandsplit(){
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					samtools index -@ $threads "$o.$r.bam" "$o.$r.bai"
 				CMD
-					samtools view -u -M	-L <(awk -v OFS="\\t" '\$3=="gene" && \$7=="$r"{print \$1,\$4-1,\$5}' "$gtf") "$o.$r.bam" | samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" > "$o.$r.filtered.bam"
+					samtools view -@ $threads -u -M	-L <(awk -v OFS="\\t" '\$3=="gene" && \$7=="$r"{print \$1,\$4-1,\$5}' "$gtf") "$o.$r.bam" | samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" > "$o.$r.filtered.bam"
 				CMD
 			fi
 		done
