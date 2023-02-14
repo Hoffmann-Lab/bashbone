@@ -189,7 +189,7 @@ preprocess::fastqc() {
 		commander::runcmd -c fastqc -v -b -i $threads -a cmd1
 	fi
 
-	if [[ "${!_adapter1_fastqc}" != "" ]]; then
+	declare -p _adapter1_fastqc | grep -q '=' && {
 		mapfile -t _adapter1_fastqc < <(commander::runcmd -i $threads -a cmd2 -s 1:${#_fq1_fastqc[@]} | sort -u)
 		if [[ $_fq2_fastqc ]]; then
 			mapfile -t _adapter2_fastqc < <(commander::runcmd -i $threads -a cmd2 -s $((${#_fq1_fastqc[@]}+1)):$((${#_fq1_fastqc[@]}+${#_fq2_fastqc[@]})) | sort -u)
@@ -197,7 +197,7 @@ preprocess::fastqc() {
 			[[ $_adapter1_fastqc ]] || _adapter1_fastqc=("${_adapter2_fastqc[@]}")
 		fi
 		[[ $_adapter1_fastqc ]] && commander::printinfo "Inferred adapter sequences: ${_adapter1_fastqc[*]}" || commander::warn "No adapter sequence inferred"
-	fi
+	}
 
 	return 0
 }
@@ -547,7 +547,7 @@ preprocess::rcorrector(){
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir"; outdir=$(realpath -s "$outdir");;
+			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir"; outdir=$(realpath -se "$outdir");;
 			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_rcorrector=$OPTARG;;
 			2) _fq2_rcorrector=$OPTARG;;
@@ -578,8 +578,8 @@ preprocess::rcorrector(){
 					cd "${tdirs[-1]}"
 				CMD
 					run_rcorrector.pl
-					-1 "$(realpath -s "${_fq1_rcorrector[$i]}")"
-					-2 "$(realpath -s "${_fq2_rcorrector[$i]}")"
+					-1 "$(realpath -se "${_fq1_rcorrector[$i]}")"
+					-2 "$(realpath -se "${_fq2_rcorrector[$i]}")"
 					-od "$outdir"
 					-t $threads
 				CMD
@@ -598,8 +598,8 @@ preprocess::rcorrector(){
 					ln -sfn "/dev/fd/12" "$(basename "$o2").$r2"
 				CMD
 					run_rcorrector.pl
-					-1 "$(realpath -s "${_fq1_rcorrector[$i]}")"
-					-2 "$(realpath -s "${_fq2_rcorrector[$i]}")"
+					-1 "$(realpath -se "${_fq1_rcorrector[$i]}")"
+					-2 "$(realpath -se "${_fq2_rcorrector[$i]}")"
 					-od "${tdirs[-1]}"
 					-t $threads
 					11> >(helper::pgzip -t $(((threads+1)/2)) -o "$o1.$e1.gz")
@@ -618,7 +618,7 @@ preprocess::rcorrector(){
 				cd "${tdirs[-1]}"
 			CMD
 				run_rcorrector.pl
-				-s "$(realpath -s "${_fq1_rcorrector[$i]}")"
+				-s "$(realpath -se "${_fq1_rcorrector[$i]}")"
 				-stdout
 				-t $threads
 				> >(helper::pgzip -t $threads -o "$o1.$e1.gz")
