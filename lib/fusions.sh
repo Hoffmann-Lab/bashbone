@@ -1,8 +1,8 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-fusions::starfusion(){
-	_usage() {
+function fusions::starfusion(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>     | true/false return
@@ -11,16 +11,15 @@ fusions::starfusion(){
 			-t <threads>      | number of
 			-g <genome>       | path to
 			-o <outdir>       | path to
-			-p <tmpdir>       | path to
 			-1 <fastq1>       | array of
 			-2 <fastq2>       | array of
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome outdir tmpdir
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome outdir
 	declare -n _fq1_starfusion _fq2_starfusion
-	while getopts 'S:s:5:t:g:o:p:1:2:' arg; do
+	while getopts 'S:s:5:t:g:o:1:2:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -28,13 +27,12 @@ fusions::starfusion(){
 			t)	((++mandatory)); threads=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG/starfusion"; mkdir -p "$outdir";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1)	((++mandatory)); _fq1_starfusion=$OPTARG;;
 			2)	_fq2_starfusion=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 	commander::printinfo "detecting gene fusions star-fusion"
 
 	# as of v1.8 and still true for v1.9, STAR 2.7.2b is requiered by plug-n-play CTAT_genome_lib, unless index is re-created
@@ -85,12 +83,11 @@ fusions::starfusion(){
 		-2 _fq2_starfusion \
 		-i 100000 \
 		-o "$outdir" \
-		-p "$tmpdir" \
 		-t $threads \
 		-g "$genome" \
 		-x $genome.star.idx \
 		-r mapper \
-		-c "$params"
+		-P "$params"
 
 	local i j odir b e
 	declare -a cmd1=()
@@ -140,8 +137,8 @@ fusions::starfusion(){
 	return 0
 }
 
-fusions::arriba(){
-	_usage() {
+function fusions::arriba(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>      | true/false return
@@ -152,7 +149,6 @@ fusions::arriba(){
 			-v <genomeversion> | hg19/hg38/mm10
 			-a <gtf>           | path to
 			-o <outdir>        | path to
-			-p <tmpdir>        | path to
 			-f <size>          | assumed mean fragment
 			-1 <fastq1>        | array of
 			-2 <fastq2>        | array of
@@ -160,9 +156,9 @@ fusions::arriba(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome genomeversion gtf outdir tmpdir fragmentsize
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome genomeversion gtf outdir tmpdir="${TMPDIR:-/tmp}" fragmentsize
 	declare -n _fq1_arriba _fq2_arriba
-	while getopts 'S:s:5:t:g:v:a:o:p:f:1:2:' arg; do
+	while getopts 'S:s:5:t:g:v:a:o:f:1:2:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -172,14 +168,13 @@ fusions::arriba(){
 			v)	genomeversion="$OPTARG";;
 			a)	((++mandatory)); gtf="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG/arriba"; mkdir -p "$outdir";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			f)	((++mandatory)); fragmentsize=$OPTARG;;
 			1)	((++mandatory)); _fq1_arriba=$OPTARG;;
 			2)	_fq2_arriba=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 	commander::printinfo "detecting gene fusions arriba"
 
 	# Arriba STAR kickoff needs WithinBAM SoftClip or SeparateSAMold instead of Junctions (STAR-Fusion)
@@ -236,19 +231,17 @@ fusions::arriba(){
 		-2 _fq2_arriba \
 		-i 0 \
 		-o "$outdir" \
-		-p "$tmpdir" \
 		-t $threads \
 		-g "$genome" \
 		-x $genome.star.idx \
 		-r mapper \
-		-c "$params"
+		-P "$params"
 
 	alignment::postprocess \
 		-S false \
 		-s $skip \
 		-j sort \
 		-t $threads \
-		-p "$tmpdir" \
 		-o "$outdir" \
 		-r mapper
 
@@ -257,7 +250,6 @@ fusions::arriba(){
 		-s $skip \
 		-j index \
 		-t $threads \
-		-p "$tmpdir" \
 		-o "$outdir" \
 		-r mapper
 
@@ -267,8 +259,7 @@ fusions::arriba(){
 		-t $threads \
 		-r mapper \
 		-x strandness \
-		-g "$gtf" \
-		-p "$tmpdir"
+		-g "$gtf"
 
 	cmdchk=('ls "$CONDA_PREFIX/var/lib/arriba/blacklist_'${genomeversion}'_"*.gz 2> /dev/null || mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.arriba')
 	local params="-b '$(commander::runcmd -c arriba -a cmdchk)'"
@@ -305,40 +296,38 @@ fusions::arriba(){
 	return 0
 }
 
-fusions::join2arriba(){
+function fusions::join2arriba(){
 	local tmp
-	_cleanup::fusions::join2arriba(){
+	function _cleanup::fusions::join2arriba(){
 		rm -f "$tmp"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
 			-w <whitelist>  | path to
-			-p <tmpdir>     | path to
 			-i <fusionsdir> | path to
 			-o <outdir>     | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads countsdir deseqdir outdir tmpdir whitelist
-	while getopts 'S:s:t:w:r:p:i:o:' arg; do
+	local OPTIND arg mandatory skip=false threads countsdir deseqdir outdir tmpdir="${TMPDIR:-/tmp}" whitelist
+	while getopts 'S:s:t:w:r:i:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			w)	whitelist="$OPTARG";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			i)	((++mandatory)); fusionsdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" ;;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 3 ]] && _usage
 
 	if [[ $whitelist ]]; then
 		tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.whitelist)"

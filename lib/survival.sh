@@ -1,12 +1,12 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-survival::gettcga(){
+function survival::gettcga(){
 	local tdir
-	_cleanup::survival::gettcga(){
+	function _cleanup::survival::gettcga(){
 		rm -rf "$tdir"
 	}
-	_usage(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -14,14 +14,13 @@ survival::gettcga(){
 			-t <threads>  | number of (requiered)
 			-i <tcga-ids> | array of (e.g. TCGA-READ or TCGA-UCS)
 			-o <outdir>   | path to (requiered)
-			-p <tmpdir>   | path to (requiered)
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}"
 	declare -a ids;
-	while getopts 'S:s:t:i:o:p:' arg; do
+	while getopts 'S:s:t:i:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -30,11 +29,10 @@ survival::gettcga(){
 				ids=("${_ids_getfpkm[@]}")
 			;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			o)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 3 ]] && _usage
+	[[ $mandatory -lt 2 ]] && _usage
 
 	commander::printinfo "downloading tcga datasets"
 	[[ ! $ids ]] && ids=($(Rscript - <<< 'library(TCGAbiolinks); tcga.cdr=TCGAbiolinks:::getGDCprojects()$id; cat(tcga.cdr[grep("TCGA-",tcga.cdr)])'))
@@ -159,8 +157,8 @@ survival::gettcga(){
 	return 0
 }
 
-survival::ssgsea(){
-	_usage(){
+function survival::ssgsea(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return

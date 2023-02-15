@@ -1,13 +1,13 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-genome::mkdict() {
+function genome::mkdict(){
 	local dict
-	_cleanup::genome::mkdict(){
+	function _cleanup::genome::mkdict(){
 		rm -f "$dict"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -15,26 +15,24 @@ genome::mkdict() {
 			-5 <skip>     | true/false md5sums, indexing respectively
 			-t <threads>  | number of
 			-i <genome>   | path to
-			-p <tmpdir>   | path to
 			-F            | force
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads genome tmpdir skip=false skipmd5=false force=false
-	while getopts 'S:s:5:t:i:p:F' arg; do
+	local OPTIND arg mandatory threads genome tmpdir="${TMPDIR:-/tmp}" skip=false skipmd5=false force=false
+	while getopts 'S:s:5:t:i:F' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			5) $OPTARG && skipmd5=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
 			i) ((++mandatory)); genome="$OPTARG";;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			F) force=true;;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 3 ]] && _usage
+	[[ $mandatory -lt 2 ]] && _usage
 
 	commander::printinfo "creating genome dictionary"
 
@@ -88,8 +86,8 @@ genome::mkdict() {
 	return 0
 }
 
-genome::indexgtf(){
-	_usage() {
+function genome::indexgtf(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -124,14 +122,10 @@ genome::indexgtf(){
 		commander::printinfo "checking md5 sums"
 
 		declare -a cmd1
-
-		dict="$(mktemp -u -p "$tmpdir" cleanup.XXXXXXXXXX.dict)"
-		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 			bgzip -k -c -@ $threads "$gtf" > "$gtf.gz"
 		CMD
 			tabix -f "$gtf.gz"
-		CMD
-			mv "$gtf.gz.tbi" "$gtf.gz.igv"
 		CMD
 
 		if $skip; then
@@ -147,19 +141,18 @@ genome::indexgtf(){
 	return 0
 }
 
-genome::mkgodb(){
-	local tmpdir
-	_cleanup::genome::mkdict(){
+function genome::mkgodb(){
+	local tmpdir="${tmpdir:-/tmp}"
+	function _cleanup::genome::mkdict(){
 		rm -f "$tmpdir/org.My.eg.db"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
-			-p <tmpdir>   | path to
 			-g <gofile>   | path to 4-column tab separated file with BP, MF and CC or see column 3 below
 			                ..
 			                ENSG00000199065 GO:0005615 cellular_component extracellular space
@@ -171,17 +164,16 @@ genome::mkgodb(){
 	}
 
 	local OPTIND arg mandatory threads gofile skip=false
-	while getopts 'S:s:t:p:g:' arg; do
+	while getopts 'S:s:t:g:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
 			g) ((++mandatory)); gofile="$OPTARG";;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 3 ]] && _usage
+	[[ $mandatory -lt 2 ]] && _usage
 
 	commander::printinfo "creating genome go orgdb"
 
@@ -236,8 +228,8 @@ genome::mkgodb(){
 }
 
 
-genome::view(){
-	_usage() {
+function genome::view(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-m <memory>   | amount of
@@ -337,7 +329,7 @@ genome::view(){
 			      name: "$(basename "$gtf")",
 			      url: "$(realpath -se "$gtf.gz")",
 		EOF
-		$searchable || echo "      indexURL: \"$(realpath -se "$gtf.gz.igv")\"," >> "$outdir/igv/genomes/current.json"
+		$searchable || echo "      indexURL: \"$(realpath -se "$gtf.gz.tbi")\"," >> "$outdir/igv/genomes/current.json"
 		cat <<- EOF >> "$outdir/igv/genomes/current.json"
 			      type: "annotation",
 			      format: "gtf",

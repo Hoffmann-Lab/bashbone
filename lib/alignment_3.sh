@@ -1,13 +1,13 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-alignment::mkreplicates() {
+function alignment::mkreplicates(){
 	declare -a tdirs
-	_cleanup::alignment::mkreplicates(){
+	function _cleanup::alignment::mkreplicates(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
@@ -20,14 +20,13 @@ alignment::mkreplicates() {
 			-j <ridx>       | no treat repl ? array to store new pseudorepl bam : array of treat repl bam idices within -r
 			-k <pidx>       | no treat repl ? array of treat aka pseudopool bam : array to store new fullpool bam idices within -r
 			-o <outdir>     | path to
-			-p <tmpdir>     | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir
+	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir="${TMPDIR:-/tmp}"
 	declare -n _mapper_mkreplicates _nidx_mkreplicates _nridx_mkreplicates _tidx_mkreplicates _ridx_mkreplicates _pidx_mkreplicates
-	while getopts 'S:s:q:t:r:n:m:i:j:k:o:p:' arg; do
+	while getopts 'S:s:q:t:r:n:m:i:j:k:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -39,11 +38,10 @@ alignment::mkreplicates() {
 			j)	((++mandatory)); _ridx_mkreplicates=$OPTARG;;
 			k)	((++mandatory)); _pidx_mkreplicates=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 8 ]] && _usage
+	[[ $mandatory -lt 7 ]] && _usage
 
 	local ithreads1 ithreads2 instances1 instances2
 	instances1=$((${#_mapper_mkreplicates[@]} * ${#_nidx_mkreplicates[@]}))
@@ -226,13 +224,13 @@ alignment::mkreplicates() {
 	return 0
 }
 
-alignment::strandsplit(){
+function alignment::strandsplit(){
 	declare -a tdirs
-	_cleanup::alignment::strandsplit(){
+	function _cleanup::alignment::strandsplit(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
@@ -241,14 +239,13 @@ alignment::strandsplit(){
 			-r <mapper>     | array of sorted, indexed bams within array of
 			-x <strandness> | hash per bam of
 			-g <gtf>        | path to
-			-p <tmpdir>     | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir gtf
+	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir="${TMPDIR:-/tmp}" gtf
 	declare -n _mapper_strandsplit _strandness_strandsplit
-	while getopts 'S:s:t:r:x:g:p:' arg; do
+	while getopts 'S:s:t:r:x:g:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -256,11 +253,10 @@ alignment::strandsplit(){
 			t)	((++mandatory)); threads=$OPTARG;;
 			r)	((++mandatory)); _mapper_strandsplit=$OPTARG;;
 			x)	((++mandatory)); _strandness_strandsplit=$OPTARG;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "splitting alignments according to strandness"
 

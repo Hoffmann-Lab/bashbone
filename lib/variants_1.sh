@@ -1,51 +1,13 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-variants::vcfzip() {
-	_usage() {
-		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-S <hardskip>  | true/false return
-			-s <softskip>  | true/false only print commands
-			-t <threads>   | number of
-			-i <vcf>       | path to
-		EOF
-		return 1
-	}
-
-	local OPTIND arg mandatory skip=false threads vcf
-	while getopts 'S:s:t:i:' arg; do
-		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			i) ((++mandatory)); vcf="$OPTARG";;
-			*) _usage;;
-		esac
-	done
-	[[ $mandatory -lt 2 ]] && _usage
-
-	commander::printinfo "compressing vcf file"
-
-	declare -a cmd1
-	helper::makevcfzipcmd -a cmd1 -t $threads -z "$vcf"
-
-	if $skip; then
-		commander::printcmd -a cmd1
-	else
-		commander::runcmd -v -b -i $threads -a cmd1
-	fi
-
-	return 0
-}
-
-variants::vcfnorm() {
+function variants::vcfnorm(){
 	declare -a tdirs
-	_cleanup::variants::vcfnorm(){
+	function _cleanup::variants::vcfnorm(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -54,14 +16,14 @@ variants::vcfnorm() {
 			-g <genome>    | path to
 			-d <dbsnp>     | path to
 			-r <vcfs>      | array of
-			-z <zip>       | true/false compress output
+			-z             | compress output
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads dbsnp genome zip=false
+	local OPTIND arg mandatory skip=false threads dbsnp genome zip=false tmpdir="${TMPDIR:-/tmp}"
 	declare -n _vcfs_vcfnorm
-	while getopts 'S:s:t:g:d:r:z:' arg; do
+	while getopts 'S:s:t:g:d:r:z' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -69,7 +31,7 @@ variants::vcfnorm() {
 			g) ((++mandatory)); genome="$OPTARG";;
 			d) dbsnp="$OPTARG";;
 			r) ((++mandatory)); _vcfs_vcfnorm="$OPTARG";;
-			z) zip="$OPTARG";;
+			z) zip=true;;
 			*) _usage;;
 		esac
 	done
@@ -122,6 +84,7 @@ variants::vcfnorm() {
 
 		if $zip; then
 			for e in fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
 				CMD
@@ -148,16 +111,16 @@ variants::vcfnorm() {
 	return 0
 }
 
-variants::panelofnormals() {
+function variants::panelofnormals(){
 	declare -a tdirs
-	_cleanup::variants::panelofnormals(){
+	function _cleanup::variants::panelofnormals(){
 		rm -rf "${tdirs[@]}"
 	}
 
 	# The panel of normals not only represents common germline variant sites,
 	# it presents commonly noisy sites in sequencing data, e.g. mapping artifacts or
 	# other somewhat random but systematic artifacts of sequencing.
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -168,15 +131,14 @@ variants::panelofnormals() {
 			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory genome tmpdir outdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome tmpdir="${TMPDIR:-/tmp}" outdir
 	declare -n _mapper_panelofnormals _bamslices_panelofnormals
-	while getopts 'S:s:t:g:m:M:r:c:p:o:' arg; do
+	while getopts 'S:s:t:g:m:M:r:c:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -186,12 +148,11 @@ variants::panelofnormals() {
 			g) ((++mandatory)); genome="$OPTARG";;
 			r) ((++mandatory)); _mapper_panelofnormals=$OPTARG;;
 			c) ((++mandatory)); _bamslices_panelofnormals=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "calling panel of normals"
 
@@ -283,14 +244,14 @@ variants::panelofnormals() {
 	return 0
 }
 
-variants::makepondb() {
+function variants::makepondb(){
 	declare -a tdirs
-	_cleanup::variants::makepondb(){
+	function _cleanup::variants::makepondb(){
 		rm -rf "${tdirs[@]}"
 		rm -f "$outdir"/*/blocked
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -299,15 +260,14 @@ variants::makepondb() {
 			-M <maxmemory> | amount of
 			-g <genome>    | path to
 			-r <mapper>    | array of sorted, indexed bams within array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory genome tmpdir outdir
+	local OPTIND arg mandatory skip=false threads maxmemory genome tmpdir="${TMPDIR:-/tmp}" outdir
 	declare -n _mapper_makepondb
-	while getopts 'S:s:t:M:g:r:p:o:' arg; do
+	while getopts 'S:s:t:M:g:r:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -315,12 +275,11 @@ variants::makepondb() {
 			M) maxmemory=$OPTARG;;
 			g) ((++mandatory)); genome="$OPTARG";;
 			r) ((++mandatory)); _mapper_makepondb=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "creating panel of normals database"
 
@@ -433,8 +392,8 @@ variants::makepondb() {
 	return 0
 }
 
-variants::tree(){
-	_usage() {
+function variants::tree(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -449,7 +408,7 @@ variants::tree(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory vcfdir caller outdir
+	local OPTIND arg mandatory skip=false threads memory vcfdir caller outdir tmpdir="${TMPDIR:-/tmp}"
     declare -n _mapper_tree
 	while getopts 'S:s:t:m:r:i:j:o:' arg; do
 		case $arg in
@@ -528,7 +487,7 @@ variants::tree(){
 		done
 
 		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-			sort --parallel=$threads -S ${memory}M -T /dev/shm/ -k1,1 -k2,2n -k3,3n $(printf '"%s" ' "${tomerge[@]/%/.snv}")
+			sort --parallel=$threads -S ${memory}M -T "$tmpdir" -k1,1 -k2,2n -k3,3n $(printf '"%s" ' "${tomerge[@]/%/.snv}")
 		CMD
 			uniq > $odir/SNV.bed
 		CMD
@@ -548,7 +507,7 @@ variants::tree(){
 		commander::makecmd -a cmd7 -s '|' -o "$odir/REF.nt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
 			cut -f 1 $(printf '"%s" ' "${tomerge[@]/%/.snvcov.filtered.nt}")
 		CMD
-			sort --parallel=$threads -S ${memory}M -T /dev/shm/ -u
+			sort --parallel=$threads -S ${memory}M -T "$tmpdir" -u
 		CMD
 			sed -E 's/(.+):(\w)$/\1:\2\t\2/'
 		CMD

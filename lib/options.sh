@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-options::usage(){
+function options::usage(){
 	commander::print {COMMANDER[0]}<<- EOF
 		DESCRIPTION
 		Bashbone setup routine
@@ -29,7 +29,7 @@ options::usage(){
 	exit 1
 }
 
-options::checkopt(){
+function options::checkopt(){
 	local arg=false
 	case $1 in
 		-h | --help) (options::usage); exit 0;;
@@ -63,7 +63,7 @@ options::checkopt(){
 	return 0
 }
 
-options::parse(){
+function options::parse(){
 	[[ $# -eq 0 ]] && options::usage
 	[[ $# -eq 1 ]] && [[ ! $1 =~ ^- ]] && commander::printerr "illegal option $1" && return 1
 	for i in $(seq 1 $#); do
