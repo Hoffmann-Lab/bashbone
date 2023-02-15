@@ -1,8 +1,8 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-bisulfite::mspicut() {
-	_usage() {
+function bisulfite::mspicut(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -84,13 +84,13 @@ bisulfite::mspicut() {
 	return 0
 }
 
-bisulfite::segemehl() {
+function bisulfite::segemehl(){
 	declare -a tdirs
-	_cleanup::bisulfite::segemehl(){
+	function _cleanup::bisulfite::segemehl(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
@@ -105,7 +105,6 @@ bisulfite::segemehl() {
 			-y <gaidx>      | path to
 			-m <mode>       | lister (1), cokus (2) - default: 1
 			-o <outdir>     | path to
-			-p <tmpdir>     | path to
 			-1 <fastq1>     | array of
 			-2 <fastq2>     | array of
 			-F              | force index
@@ -113,10 +112,10 @@ bisulfite::segemehl() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome gaidx ctidx outdir tmpdir mode=1 accuracy insertsize forceidx=false
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gaidx ctidx outdir tmpdir="${TMPDIR:-/tmp}" mode=1 accuracy insertsize forceidx=false
 	declare -n _fq1_segemehl _fq2_segemehl _mapper_segemehl
 	declare -g -a segemehl=()
-	while getopts 'S:s:5:t:a:i:g:x:y:m:r:o:p:1:2:F' arg; do
+	while getopts 'S:s:5:t:a:i:g:x:y:m:r:o:1:2:F' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -129,7 +128,6 @@ bisulfite::segemehl() {
 			x)	((++mandatory)); ctidx="$OPTARG";;
 			y)	((++mandatory)); gaidx="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG/segemehl"; mkdir -p "$outdir";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			r)	((++mandatory))
 				_mapper_segemehl=$OPTARG
 				_mapper_segemehl+=(segemehl)
@@ -140,7 +138,7 @@ bisulfite::segemehl() {
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 8 ]] && _usage
+	[[ $mandatory -lt 7 ]] && _usage
 
 	commander::printinfo "bisufite mapping segemehl"
 
@@ -221,8 +219,8 @@ bisulfite::segemehl() {
 	return 0
 }
 
-bisulfite::bwa() {
-	_usage() {
+function bisulfite::bwa(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
@@ -348,17 +346,17 @@ bisulfite::bwa() {
 
 #todo gem: gem-mapper -p --bisulfite-mode -I c2t+g2a.fa.gem -s 1 -p -M 4 && bs_call -r genome.fa.gz -p -L5
 
-bisulfite::haarz(){
+function bisulfite::haarz(){
 	bisulfite::mecall "$@"
 }
 
-bisulfite::mecall(){
+function bisulfite::mecall(){
 	declare -a tdirs
-	_cleanup::bisulfite::mecall(){
+	function _cleanup::bisulfite::mecall(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -369,14 +367,13 @@ bisulfite::mecall(){
 			-x <context>  | Cp* base - default: CG
 			-r <mapper>   | array of bams within array of
 			-o <outdir>   | path to
-			-p <tmpdir>   | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory genome outdir tmpdir context=CG
+	local OPTIND arg mandatory skip=false threads maxmemory genome outdir tmpdir="${TMPDIR:-/tmp}" context=CG
 	declare -n _mapper_haarz
-	while getopts 'S:s:t:M:r:g:x:o:p:' arg; do
+	while getopts 'S:s:t:M:r:g:x:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -386,11 +383,10 @@ bisulfite::mecall(){
 			x)	context=$OPTARG;;
 			r)	((++mandatory)); _mapper_haarz=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "methylation calling haarz"
 
@@ -464,8 +460,13 @@ bisulfite::mecall(){
 	return 0
 }
 
-bisulfite::methyldackel(){
-	_usage() {
+function bisulfite::methyldackel(){
+	declare -a tdirs
+	function _cleanup::bisulfite::methyldackel(){
+		rm -rf "${tdirs[@]}"
+	}
+
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -479,9 +480,9 @@ bisulfite::methyldackel(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads genome outdir context=CG
+	local OPTIND arg mandatory skip=false threads genome outdir context=CG tmpdir="${TMPDIR:-/tmp}"
 	declare -n _mapper_methyldackel
-	while getopts 'S:s:t:m:r:g:x:o:p:' arg; do
+	while getopts 'S:s:t:m:r:g:x:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -498,7 +499,7 @@ bisulfite::methyldackel(){
 	commander::printinfo "methylation calling methyldackel"
 
 	declare -a cmd1 cmd2
-	local m f o odir tmp
+	local m f o odir
 	for m in "${_mapper_methyldackel[@]}"; do
 		declare -n _bams_methyldackel=$m
 		odir="$outdir/$m/methyldackel"
@@ -508,7 +509,11 @@ bisulfite::methyldackel(){
 			o=$(basename $f)
 			o=${o%.*}
 
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.methyldackel)")
+
+			commander::makecmd -a cmd1 -s ' ' -o "$odir/$o.$context.full.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- 'CMD'
+				ln -sfn "/dev/stdout" "${tdirs[-1]}/$o.cytosine_report.txt";
+			CMD
 				MethylDackel extract
 					-q 0
 					--keepDupes
@@ -519,12 +524,10 @@ bisulfite::methyldackel(){
 					-@ $threads
 					--CHH
 					--cytosine_report
-					-o "$odir/$o"
-					"$genome" "$f"
+					-o "${tdirs[-1]}/$o"
+					"$genome" "$f" |
 			CMD
-
-			commander::makecmd -a cmd2 -s ' ' -o "$odir/$o.$context.full.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
-				cat "$odir/$o.cytosine_report.txt" |
+				tee >(helper::pgzip -t $threads -o "$odir/$o.cytosine_report.tsv.gz") |
 			CMD
 				perl -slane '
 					next unless $F[-1]=~/^$c/;
@@ -540,7 +543,7 @@ bisulfite::methyldackel(){
 				perl -lane 'print join"\t",(@F[0..2],$F[3]/$F[4],$F[4])'
 			CMD
 
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				awk '\$NF>=10' "$odir/$o.$context.full.bed"
 			CMD
 				cut -f 1-4 > "$odir/$o.$context.bed"
@@ -551,18 +554,16 @@ bisulfite::methyldackel(){
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-		commander::printcmd -a cmd3
 	else
 		commander::runcmd -c methyldackel -v -b -i 1 -a cmd1
 		commander::runcmd -v -b -i $threads -a cmd2
-		commander::runcmd -v -b -i $threads -a cmd3
 	fi
 
 	return 0
 }
 
-bisulfite::metilene(){
-	_usage() {
+function bisulfite::metilene(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
@@ -575,16 +576,15 @@ bisulfite::metilene(){
 			-r <mapper>     | array of bams within array of
 			-i <methdir>    | path to
 			-o <outdir>     | path to
-			-p <tmpdir>     | path to
 			-d <tool>       | use if subdir in methdir. name identical to subdir. parameter can be used multiple times
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads genome mecalldir outdir tmpdir min=0.8 cap=999999 context=CG
+	local OPTIND arg mandatory skip=false threads genome mecalldir outdir min=0.8 cap=999999 context=CG
 	declare -a tools
 	declare -n _mapper_metilene _cmpfiles_metilene
-	while getopts 'S:s:t:c:m:u:x:r:i:o:p:d:' arg; do
+	while getopts 'S:s:t:c:m:u:x:r:i:o:d:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -596,12 +596,11 @@ bisulfite::metilene(){
 			r)	((++mandatory)); _mapper_metilene=$OPTARG;;
 			i)	((++mandatory)); mecalldir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			d)	tools+=("/$OPTARG");;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage
+	[[ $mandatory -lt 5 ]] && _usage
 	[[ $tools ]] || tools=("") # for backwards compatibility
 
 	commander::printinfo "differential methylation analyses"
@@ -674,8 +673,8 @@ bisulfite::metilene(){
 	return 0
 }
 
-bisulfite::_metilene(){
-	_usage() {
+function bisulfite::_metilene(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-1 <cmds1>     | array of
@@ -737,8 +736,8 @@ bisulfite::_metilene(){
 	return 0
 }
 
-bisulfite::join(){
-	_usage() {
+function bisulfite::join(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return

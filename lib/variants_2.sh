@@ -1,15 +1,15 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-variants::haplotypecaller() {
+function variants::haplotypecaller(){
 	local tmpfile
 	declare -a tdirs
-	_cleanup::variants::haplotypecaller(){
+	function _cleanup::variants::haplotypecaller(){
 		rm -f $tmpfile
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -22,15 +22,14 @@ variants::haplotypecaller() {
 			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp dbsnpfilter=true tmpdir outdir isdna=true
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp dbsnpfilter=true tmpdir="${TMPDIR:-/tmp}" outdir isdna=true
 	declare -n _mapper_haplotypecaller _bamslices_haplotypecaller
-	while getopts 'S:s:t:g:d:e:m:M:r:c:p:o:' arg; do
+	while getopts 'S:s:t:g:d:e:m:M:r:c:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -42,12 +41,11 @@ variants::haplotypecaller() {
 			e) isdna="$OPTARG";;
 			r) ((++mandatory)); _mapper_haplotypecaller=$OPTARG;;
 			c) ((++mandatory)); _bamslices_haplotypecaller=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 
 	if [[ ! $dbsnp ]]; then
 		dbsnpfilter=false
@@ -254,9 +252,9 @@ variants::haplotypecaller() {
 	return 0
 }
 
-variants::mutect() {
+function variants::mutect(){
 	declare -a tdirs
-	_cleanup::variants::mutect(){
+	function _cleanup::variants::mutect(){
 		rm -rf "${tdirs[@]}"
 	}
 
@@ -275,7 +273,7 @@ variants::mutect() {
 	# from helsinki workshop to create gatk tutotial webpage : https://software.broadinstitute.org/gatk/documentation/article?id=11136
 	# data downloaded to /misc/paras/data/genomes/GRCh38.p12/GATK-resources
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -289,15 +287,14 @@ variants::mutect() {
 			-2 <tumoridx>  | array of
 			-c <sliceinfo> | array of
 			-d <pondb>     | path to
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory genome tmpdir outdir pondb dbsnp
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome tmpdir="${TMPDIR:-/tmp}" outdir pondb dbsnp
 	declare -n _mapper_mutect _bamslices_mutect _nidx_mutect _tidx_mutect
-	while getopts 'S:s:t:g:d:n:m:M:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:g:d:n:m:M:r:1:2:c:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -311,12 +308,11 @@ variants::mutect() {
 			c)	((++mandatory)); _bamslices_mutect=$OPTARG;;
 			1)	((++mandatory)); _nidx_mutect=$OPTARG;;
 			2)	((++mandatory)); _tidx_mutect=$OPTARG;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 9 ]] && _usage
+	[[ $mandatory -lt 8 ]] && _usage
 
 	commander::printinfo "calling variants mutect"
 
@@ -578,13 +574,13 @@ variants::mutect() {
 	return 0
 }
 
-variants::bcftools() {
+function variants::bcftools(){
 	declare -a tdirs
-	_cleanup::variants::bcftools(){
+	function _cleanup::variants::bcftools(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -596,15 +592,14 @@ variants::bcftools() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-1 <normalidx> | array of (for somatic calling. requieres -2)
 			-2 <tumoridx>  | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory genome dbsnp tmpdir outdir
+	local OPTIND arg mandatory skip=false threads maxmemory genome dbsnp tmpdir="${TMPDIR:-/tmp}" outdir
 	declare -n _mapper_bcftools _nidx_bcftools _tidx_bcftools
-	while getopts 'S:s:t:M:g:d:m:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:M:g:d:m:r:1:2:c:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -615,12 +610,11 @@ variants::bcftools() {
 			r) ((++mandatory)); _mapper_bcftools=$OPTARG;;
 			1) _nidx_bcftools=$OPTARG;;
 			2) _tidx_bcftools=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calling variants bcftools"
 
@@ -831,13 +825,13 @@ variants::bcftools() {
 	return 0
 }
 
-variants::freebayes() {
+function variants::freebayes(){
 	declare -a tdirs
-	_cleanup::variants::freebayes(){
+	function _cleanup::variants::freebayes(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -849,15 +843,14 @@ variants::freebayes() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-1 <normalidx> | array of (for somatic calling. requieres -2)
 			-2 <tumoridx>  | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory genome dbsnp tmpdir outdir
+	local OPTIND arg mandatory skip=false threads maxmemory genome dbsnp tmpdir="${TMPDIR:-/tmp}" outdir
 	declare -n _mapper_freebayes _nidx_freebayes _tidx_freebayes
-	while getopts 'S:s:t:M:g:d:m:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:M:g:d:m:r:1:2:c:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -868,12 +861,11 @@ variants::freebayes() {
 			r) ((++mandatory)); _mapper_freebayes=$OPTARG;;
 			1) _nidx_freebayes=$OPTARG;;
 			2) _tidx_freebayes=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calling variants freebayes"
 
@@ -1055,13 +1047,13 @@ variants::freebayes() {
 	return 0
 }
 
-variants::varscan() {
+function variants::varscan(){
 	declare -a tdirs
-	_cleanup::variants::varscan(){
+	function _cleanup::variants::varscan(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -1074,15 +1066,14 @@ variants::varscan() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-1 <normalidx> | array of (for somatic calling. requieres -2)
 			-2 <tumoridx>  | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir outdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir="${TMPDIR:-/tmp}" outdir
 	declare -n _mapper_varscan _nidx_varscan _tidx_varscan
-	while getopts 'S:s:t:M:g:d:m:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:M:g:d:m:r:1:2:c:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -1094,12 +1085,11 @@ variants::varscan() {
 			r) ((++mandatory)); _mapper_varscan=$OPTARG;;
 			1) _nidx_varscan=$OPTARG;;
 			2) _tidx_varscan=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calling variants varscan"
 
@@ -1332,13 +1322,13 @@ variants::varscan() {
 	return 0
 }
 
-variants::vardict() {
+function variants::vardict(){
 	declare -a tdirs
-	_cleanup::variants::vardict(){
+	function _cleanup::variants::vardict(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -1351,15 +1341,14 @@ variants::vardict() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-1 <normalidx> | array of (for somatic calling. requieres -2)
 			-2 <tumoridx>  | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir outdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir="${TMPDIR:-/tmp}" outdir
 	declare -n _mapper_vardict _nidx_vardict _tidx_vardict
-	while getopts 'S:s:t:M:g:d:m:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:M:g:d:m:r:1:2:c:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -1371,12 +1360,11 @@ variants::vardict() {
 			r) ((++mandatory)); _mapper_vardict=$OPTARG;;
 			1) _nidx_vardict=$OPTARG;;
 			2) _tidx_vardict=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calling variants vardict"
 
@@ -1610,17 +1598,17 @@ variants::vardict() {
 	return 0
 }
 
-variants::vardict_threads() {
+function variants::vardict_threads(){
 	# may be used as fallback to reduce disk i/o
 	# use one region file and multiple threads on it
 	# -> something limits parallelization to ~14 threads. chunks may not be the reason: tested with up to 100k
 	# memory footprint raises with multiple threads
 	declare -a tdirs
-	_cleanup::variants::vardict(){
+	function _cleanup::variants::vardict(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -1632,15 +1620,14 @@ variants::vardict_threads() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-1 <normalidx> | array of (for somatic calling. requieres -2)
 			-2 <tumoridx>  | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory genome dbsnp tmpdir outdir
+	local OPTIND arg mandatory skip=false threads maxmemory genome dbsnp tmpdir="${TMPDIR:-/tmp}" outdir
 	declare -n _mapper_vardict _nidx_vardict _tidx_vardict
-	while getopts 'S:s:t:M:g:d:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:M:g:d:r:1:2:c:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -1651,12 +1638,11 @@ variants::vardict_threads() {
 			r) ((++mandatory)); _mapper_vardict=$OPTARG;;
 			1) _nidx_vardict=$OPTARG;;
 			2) _tidx_vardict=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calling variants vardict"
 
@@ -1853,13 +1839,13 @@ variants::vardict_threads() {
 	return 0
 }
 
-variants::platypus() {
+function variants::platypus(){
 	declare -a tdirs
-	_cleanup::variants::platypus(){
+	function _cleanup::variants::platypus(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -1871,15 +1857,14 @@ variants::platypus() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-1 <normalidx> | array of (for somatic calling. requieres -2)
 			-2 <tumoridx>  | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory genome dbsnp tmpdir outdir
+	local OPTIND arg mandatory skip=false threads maxmemory genome dbsnp tmpdir="${TMPDIR:-/tmp}" outdir
 	declare -n _mapper_platypus _nidx_platypus _tidx_platypus
-	while getopts 'S:s:t:M:g:d:m:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:M:g:d:m:r:1:2:c:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -1890,12 +1875,11 @@ variants::platypus() {
 			r) ((++mandatory)); _mapper_platypus=$OPTARG;;
 			1) _nidx_platypus=$OPTARG;;
 			2) _tidx_platypus=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calling variants platypus"
 

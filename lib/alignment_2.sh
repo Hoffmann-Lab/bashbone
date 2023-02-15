@@ -1,8 +1,8 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-alignment::slice(){
-	_usage() {
+function alignment::slice(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -12,14 +12,13 @@ alignment::slice(){
 			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <slicesinfo>| hash per bam of
-			-p <tmpdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir="${TMPDIR:-/tmp}"
 	declare -n _mapper_slice _bamslices_slice
-	while getopts 'S:s:t:m:M:r:c:p:' arg; do
+	while getopts 'S:s:t:m:M:r:c:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -28,11 +27,10 @@ alignment::slice(){
 			M)	maxmemory=$OPTARG;;
 			r)	((++mandatory)); _mapper_slice=$OPTARG;;
 			c)	((++mandatory)); _bamslices_slice=$OPTARG;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "slicing alignments"
 
@@ -49,7 +47,7 @@ alignment::slice(){
 	declare -a mapdata cmd1 cmd2 cmd3 cmd4
 
 	mkdir -p "$tmpdir/genome"
-	samtools view -H "${_bams_slice[0]}" | sed -En '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t0\t\2/p}' > $tmpdir/genome/chr.bed
+	samtools view -H "${_bams_slice[0]}" | sed -En '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t0\t\2/p}' > "$tmpdir/genome/chr.bed"
 	# do not use process substitution as Rscript argument - sometimes R swallows parts
 	# in case of thousands of contigs, sum of lengths in binpacking function causes integer out bounds and function will never terminate
 	# -> divide lengths by 1000
@@ -102,7 +100,7 @@ alignment::slice(){
 			o="$tdir"/$(basename "$f")
 			o="${o%.*}"
 
-			# alignment::_index -1 cmd2 -t $ithreads -i "$f" -o "$o.bai"
+			# alignment::_index -1 cmd2 -t $ithreads -f "$f" -o "$o.bai"
 			# params="-X '$o.bai'"
 
 			mapfile -t mapdata < <(find "$tmpdir/genome" -maxdepth 1 -type f -name "slice.*.bed" | sort -V)
@@ -137,12 +135,12 @@ alignment::slice(){
 	return 0
 }
 
-alignment::rmduplicates(){
+function alignment::rmduplicates(){
 	declare -a tdirs
-	_cleanup::alignment::rmduplicates(){
+	function _cleanup::alignment::rmduplicates(){
 		rm -rf "${tdirs[@]}"
 	}
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -155,15 +153,14 @@ alignment::rmduplicates(){
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-3 <fastqUMI>  | array of
 			-c <sliceinfo> | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir outdir regex remove=true legacy=true
+	local OPTIND arg mandatory skip=false threads memory maxmemory outdir regex remove=true legacy=true tmpdir="${TMPDIR:-/tmp}"
 	declare -n _mapper_rmduplicates _bamslices_rmduplicates _umi_rmduplicates
-	while getopts 'S:s:t:m:M:x:r:3:c:p:o:l:k' arg; do
+	while getopts 'S:s:t:m:M:x:r:3:c:o:l:k' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -176,12 +173,11 @@ alignment::rmduplicates(){
 			r)	((++mandatory)); _mapper_rmduplicates=$OPTARG;;
 			3)	_umi_rmduplicates=$OPTARG;;
 			c)	((++mandatory)); _bamslices_rmduplicates=$OPTARG;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage
+	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "removing duplicates"
 
@@ -420,14 +416,14 @@ alignment::rmduplicates(){
 	return 0
 }
 
-alignment::clipmateoverlaps_alt() {
+function alignment::clipmateoverlaps_alt(){
 	declare -a tdirs
-	_cleanup::alignment::clipmateoverlaps(){
+	function _cleanup::alignment::clipmateoverlaps(){
 		rm -rf "${tdirs[@]}"
 	}
 
 	# does not handle secondary and supplementary alignments
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -438,15 +434,14 @@ alignment::clipmateoverlaps_alt() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-o <outdir>    | path to
-			-p <tmpdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory outdir tmpdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory outdir tmpdir="${TMPDIR:-/tmp}"
 	declare -n _mapper_clipmateoverlaps _bamslices_clipmateoverlaps
 	declare -A nidx tidx
-	while getopts 'S:s:t:m:M:r:c:p:o:' arg; do
+	while getopts 'S:s:t:m:M:r:c:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -456,11 +451,10 @@ alignment::clipmateoverlaps_alt() {
 			r)	((++mandatory)); _mapper_clipmateoverlaps=$OPTARG;;
 			c)	((++mandatory)); _bamslices_clipmateoverlaps=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage
+	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "clipping ends of overlapping mate pairs"
 	local m i o slice odir instances ithreads minstances mthreads jmem jgct jcgct
@@ -541,12 +535,12 @@ alignment::clipmateoverlaps_alt() {
 	return 0
 }
 
-alignment::clipmateoverlaps() {
+function alignment::clipmateoverlaps(){
 	# must not handle supplementary i.e. circular/chimeric transcripts due to potentially uneven lists
 	# if not flagged as supplementary and mate2 is mapped totally before mate1, both will be flagged as unmapped
 	# fully covered by mate will be flagged as unmapped
 	# default poolsize of 1Mio will consume ~1.5gb memory
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -564,7 +558,7 @@ alignment::clipmateoverlaps() {
 	local OPTIND arg mandatory skip=false threads memory maxmemory outdir
 	declare -n _mapper_clipmateoverlaps _bamslices_clipmateoverlaps
 	declare -A nidx tidx
-	while getopts 'S:s:t:m:M:r:c:p:o:' arg; do
+	while getopts 'S:s:t:m:M:r:c:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -656,8 +650,8 @@ alignment::clipmateoverlaps() {
 	return 0
 }
 
-alignment::reorder() {
-	_usage() {
+function alignment::reorder(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -668,16 +662,15 @@ alignment::reorder() {
 			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory genome tmpdir outdir i
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome tmpdir="${TMPDIR:-/tmp}" outdir i
 	declare -n _mapper_reorder _bamslices_reorder
 	declare -A nidx tidx
-	while getopts 'S:s:t:g:m:M:r:c:p:o:' arg; do
+	while getopts 'S:s:t:g:m:M:r:c:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -687,7 +680,6 @@ alignment::reorder() {
 			g)	((++mandatory)); genome="$OPTARG";;
 			r)	((++mandatory)); _mapper_reorder=$OPTARG;;
 			c)	((++mandatory)); _bamslices_reorder=$OPTARG;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
@@ -772,8 +764,8 @@ alignment::reorder() {
 	return 0
 }
 
-alignment::addreadgroup() {
-	_usage() {
+function alignment::addreadgroup(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -786,16 +778,15 @@ alignment::addreadgroup() {
 			-1 <normalidx> | array of (requieres -2)
 			-2 <tumoridx>  | array of
 			-c <sliceinfo> | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir outdir i readgroup
+	local OPTIND arg mandatory skip=false threads memory maxmemory tmpdir="${TMPDIR:-/tmp}" outdir i readgroup
 	declare -n _mapper_addreadgroup _bamslices_addreadgroup _nidx_addreadgroup _tidx_addreadgroup
 	declare -A nidx tidx
-	while getopts 'S:s:t:m:M:n:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:m:M:n:r:1:2:c:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -807,12 +798,11 @@ alignment::addreadgroup() {
 			1)	_nidx_addreadgroup=$OPTARG;;
 			2)	_tidx_addreadgroup=$OPTARG;;
 			c)	((++mandatory)); _bamslices_addreadgroup=$OPTARG;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage
+	[[ $mandatory -lt 5 ]] && _usage
 
 	if [[ ! $_nidx_addreadgroup ]]; then
 		declare -n _bams_addreadgroup="${_mapper_addreadgroup[0]}"
@@ -913,13 +903,13 @@ alignment::addreadgroup() {
 	return 0
 }
 
-alignment::splitncigar() {
+function alignment::splitncigar(){
 	declare -a tdirs
-	_cleanup::alignment::splitncigar(){
+	function _cleanup::alignment::splitncigar(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -930,16 +920,15 @@ alignment::splitncigar() {
 			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory genome tmpdir outdir i
+	local OPTIND arg mandatory skip=false threads memory genome tmpdir="${TMPDIR:-/tmp}" outdir i
 	declare -n _mapper_splitncigar _bamslices_splitncigar
 	declare -A nidx tidx
-	while getopts 'S:s:t:g:m:M:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:g:m:M:r:1:2:c:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -949,12 +938,11 @@ alignment::splitncigar() {
 			g)	((++mandatory)); genome="$OPTARG";;
 			r)	((++mandatory)); _mapper_splitncigar=$OPTARG;;
 			c)	((++mandatory)); _bamslices_splitncigar=$OPTARG;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "splitting N-cigar alignments"
 
@@ -1044,14 +1032,14 @@ alignment::splitncigar() {
 	return 0
 }
 
-alignment::soft2hardclip() {
+function alignment::soft2hardclip(){
 	declare -a tdirs
-	_cleanup::alignment::soft2hardclip(){
+	function _cleanup::alignment::soft2hardclip(){
 		rm -rf "${tdirs[@]}"
 	}
 
 	# does not handle secondary and supplementary alignments
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -1062,15 +1050,14 @@ alignment::soft2hardclip() {
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-o <outdir>    | path to
-			-p <tmpdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory outdir tmpdir
+	local OPTIND arg mandatory skip=false threads memory maxmemory outdir tmpdir="${TMPDIR:-/tmp}"
 	declare -n _mapper_soft2hardclip _bamslices_soft2hardclip
 	declare -A nidx tidx
-	while getopts 'S:s:t:m:M:r:c:p:o:' arg; do
+	while getopts 'S:s:t:m:M:r:c:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -1080,11 +1067,10 @@ alignment::soft2hardclip() {
 			r)	((++mandatory)); _mapper_soft2hardclip=$OPTARG;;
 			c)	((++mandatory)); _bamslices_soft2hardclip=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage
+	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "convertig soft clipped based to hard clipped bases"
 	local m i o slice odir instances ithreads minstances mthreads jmem jgct jcgct
@@ -1165,13 +1151,13 @@ alignment::soft2hardclip() {
 	return 0
 }
 
-alignment::leftalign() {
+function alignment::leftalign(){
 	declare -a tdirs
-	_cleanup::alignment::leftalign(){
+	function _cleanup::alignment::leftalign(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -1182,16 +1168,15 @@ alignment::leftalign() {
 			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory genome tmpdir outdir i
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome tmpdir="${TMPDIR:-/tmp}" outdir i
 	declare -n _mapper_leftalign _bamslices_leftalign
 	declare -A nidx tidx
-	while getopts 'S:s:t:g:m:M:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:g:m:M:r:1:2:c:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -1201,12 +1186,11 @@ alignment::leftalign() {
 			g)	((++mandatory)); genome="$OPTARG";;
 			r)	((++mandatory)); _mapper_leftalign=$OPTARG;;
 			c)	((++mandatory)); _bamslices_leftalign=$OPTARG;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "leftaligning alignments"
 
@@ -1301,15 +1285,15 @@ alignment::leftalign() {
 	return 0
 }
 
-alignment::bqsr() {
+function alignment::bqsr(){
 	local tmpfile
 	declare -a tdirs
-	_cleanup::alignment::bqsr(){
+	function _cleanup::alignment::bqsr(){
 		rm -f "$tmpfile"
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
@@ -1321,16 +1305,15 @@ alignment::bqsr() {
 			-M <maxmemory> | amount of
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir outdir i
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir="${TMPDIR:-/tmp}" outdir i
 	declare -n _mapper_bqsr _bamslices_bqsr
 	declare -A nidx tidx
-	while getopts 'S:s:t:g:d:m:M:r:1:2:c:p:o:' arg; do
+	while getopts 'S:s:t:g:d:m:M:r:1:2:c:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -1341,12 +1324,11 @@ alignment::bqsr() {
 			d)	dbsnp="$OPTARG";;
 			r)	((++mandatory)); _mapper_bqsr=$OPTARG;;
 			c)	((++mandatory)); _bamslices_bqsr=$OPTARG;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 
 	if [[ ! $dbsnp ]]; then
 		local tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf)"

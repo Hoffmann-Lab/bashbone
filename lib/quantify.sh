@@ -1,13 +1,13 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-quantify::featurecounts() {
+function quantify::featurecounts(){
 	declare -a tdirs
-	_cleanup::quantify::featurecounts(){
+	function _cleanup::quantify::featurecounts(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -18,15 +18,14 @@ quantify::featurecounts() {
 			-g <gtf>      | path to
 			-l <level>    | feature (default: exon)
 			-f <feature>  | feature (default: gene, needs <feature>_id tag)
-			-p <tmpdir>   | path to
 			-o <outdir>   | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir gtf level="exon" feature="gene"
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" gtf level="exon" feature="gene"
 	declare -n _mapper_featurecounts _strandness_featurecounts
-	while getopts 'S:s:t:r:x:g:l:f:p:o:' arg; do
+	while getopts 'S:s:t:r:x:g:l:f:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -36,12 +35,11 @@ quantify::featurecounts() {
 			g) ((++mandatory)); gtf="$OPTARG";;
 			l) level=$OPTARG;;
 			f) feature=$OPTARG;;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage
+	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "quantifying reads"
 
@@ -73,15 +71,19 @@ quantify::featurecounts() {
 			[[ $x -gt 0 ]] && params+="-p $version"
 			[[ "$feature" == "$level" ]] && params+='-f -O '
 
+			# use -M and --ignoreDup to count also multi-mappings and dulpicates ie. everythin given from bam
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				featureCounts
 					$params
 					-Q 0
 					--minOverlap 10
+					--maxMOp 999
 					-s ${_strandness_featurecounts["$f"]}
 					-T $ithreads
 					-t $level
 					-g ${feature}_id
+					-M
+					--ignoreDup
 					--tmpDir "${tdirs[-1]}"
 					-a "$gtf"
 					-o "$o"
@@ -103,8 +105,8 @@ quantify::featurecounts() {
 	return 0
 }
 
-quantify::tpm() {
-	_usage() {
+function quantify::tpm(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return

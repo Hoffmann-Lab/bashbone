@@ -1,110 +1,8 @@
 #!/usr/bin/env bash
 # (c) Konstantin Riege
 
-configure::exit(){
-	_usage(){
-		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-x <exit>     | code
-			-p <pid>      | process id
-			-f <function> | to call - ALWAYS LAST OPTION
-		EOF
-		return 1
-	}
-
-	local OPTIND arg mandatory pid pgid exitfun ex
-	while getopts ':p:f:x:' arg; do
-		case $arg in
-			x)	((++mandatory)); ex=$OPTARG;;
-			p)	((++mandatory)); pid=$OPTARG;;
-			f)	exitfun=$OPTARG;;
-			:)	_usage;;
-		esac
-	done
-	[[ $mandatory -lt 2 ]] && _usage
-
-	[[ $exitfun ]] && {
-		shift $((OPTIND-(OPTIND-6))) # -x X -p P -f F
-		$exitfun "$@" $ex || true
-	}
-
-	##### solution1: setsid xargs
-	# pstree < 23.0-1 : /proc/<id> no such file bug https://bugs.launchpad.net/ubuntu/+source/psmisc/+bug/1629839
-
-	# {	declare -a pids=($(pstree -p $pid | grep -Eo "\([0-9]+\)" | grep -Eo "[0-9]+" | grep -vFw $pid))
-	# 	env kill -TERM "${pids[@]}"; wait "${pids[@]}"
-	# } &> /dev/null || true
-	# [[ $ex -gt 0 ]] && { pgid=$(($(ps -o pgid= -p $pid))); env kill -INT -- -$pgid; sleep 1; env kill -TERM -- -$pgid; } &> /dev/null || true
-
-	#kill -PIPE $p # is captured by bashbone. does not print termination message
-	#kill -INT $p # graceful kill. due to interrupt by user. probably captured by job or simply not delivered. does not print termination message
-	#kill -TERM $p # graceful kill like INT but due to other process. on exit, does not triggers ERR
-	#kill -KILL $p # cannot be captured. no job cleanup traps invoked
-
-	##### solution2: parallel --termseq INT,1000,TERM,0 --halt now,fail1 <- on error parallel sends INT sleep 1 TERM to each processgroup aka job
-	trap '' INT TERM
-	{ env kill -INT -- -$pid; sleep 0.2; env kill -TERM -- -$pid; wait $pid; } &> /dev/null
-
-	return 0
-}
-
-configure::err(){
-	_usage(){
-		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-x <exit>     | better use as first option. code to print and return
-			-f <function> | name to print
-			-s <source>   | filename of
-			-l <lineno>   | LINENO
-			-e <error>    | message
-			-w <workdir>  | path to initially used
-		EOF
-		return 1
-	}
-
-	local OPTIND arg mandatory wdir="$PWD" fun src lineno error cmd ex
-	while getopts 'w:f:s:l:e:x:' arg; do
-		case $arg in
-			w)	wdir="$OPTARG";;
-			f)	fun="$OPTARG";;
-			s)	src="$OPTARG";;
-			l)	((++mandatory)); lineno=$OPTARG;;
-			e)	error="$OPTARG";;
-			x)	((++mandatory)); ex=$OPTARG;;
-			*)	_usage;;
-		esac
-	done
-	[[ $mandatory -lt 2 ]] && _usage
-
-	[[ $fun ]] && {
-		local line
-		read -r fun line src < <(declare -F "$fun") # requires shopt -s extdebug
-		[[ $- =~ i ]] && ((lineno+=line)) # do not!! use [[ ${BASH_EXECUTION_STRING} ]] || ((lineno+=line))
-	}
-	# if (cd "$wdir"; [[ -e "$src" ]]); then # self sourcing by commander::runcmd and commander::qsubcmd with cleanup function may causes src to be removed before reaching this point
-	# 	local cmd=$(cd "$wdir"; awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
-	# 	[[ $fun ]] && src="$src ($fun)"
-	# 	commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
-	# else
-	# 	[[ $fun ]] && src="$src ($fun)"
-	# 	commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno"
-	# fi
-
-	# src comes from BASH_SOURCE and should be absolute by activate.sh
-	if [[ -e "$src" ]]; then # self sourcing by commander::runcmd and commander::qsubcmd with cleanup function may causes src to be removed before reaching this point
-		local cmd=$(awk -v l=$lineno '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
-		[[ $fun ]] && src="$src ($fun)"
-		commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno @ $cmd"
-	else
-		[[ $fun ]] && src="$src ($fun)"
-		commander::printerr "${error:-"..an unexpected one"} (exit $ex) @ $src @ line $lineno"
-	fi
-
-	return 0
-}
-
-configure::instances_by_threads(){
-	_usage(){
+function configure::instances_by_threads(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-i <instances> | number of targeted
@@ -139,8 +37,8 @@ configure::instances_by_threads(){
 	return 0
 }
 
-configure::memory_by_instances(){
-	_usage(){
+function configure::memory_by_instances(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-i <instances> | number of targeted
@@ -176,8 +74,8 @@ configure::memory_by_instances(){
 	return 0
 }
 
-configure::instances_by_memory(){
-	_usage(){
+function configure::instances_by_memory(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-T <threads> | available
@@ -215,8 +113,8 @@ configure::instances_by_memory(){
 	return 0
 }
 
-configure::jvm(){
-	_usage(){
+function configure::jvm(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-i <instances> | number of targeted

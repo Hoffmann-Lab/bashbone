@@ -1,13 +1,13 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-cluster::coexpression_deseq(){
+function cluster::coexpression_deseq(){
 	declare -a tfiles
-	_cleanup::cluster::coexpression_deseq(){
+	function _cleanup::cluster::coexpression_deseq(){
 		rm -f "${tfiles[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -17,10 +17,9 @@ cluster::coexpression_deseq(){
 			-c <cmpfiles> | array of
 			-l <idfiles>  | empty array to be filled with returned cluster gene lists
 			-r <mapper>   | array of bams within array of
-			-f <value>    | [01234] filter input for padj < 0.05 (0) log2foldchange > 0.5 (1) basemean > 5 (2) lower 30% percentile (3) tpm > 5 (4)
+			-n <value>    | [01234] filter input for padj < 0.05 (0) log2foldchange > 0.5 (1) basemean > 5 (2) lower 30% percentile (3) tpm > 5 (4)
 			-g <gtf>      | path to (optional)
 			-b <biotype>  | within gtf
-			-p <tmpdir>   | path to
 			-i <countsdir>| path to joined counts dir
 			-j <deseqdir> | path to
 			-o <outdir>   | path to
@@ -28,20 +27,19 @@ cluster::coexpression_deseq(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir deseqdir countsdir clusterfilter=NA biotype gtf feature="gene"
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" deseqdir countsdir clusterfilter=NA biotype gtf feature="gene"
 	declare -n _mapper_coexpression _cmpfiles_coexpression _idfiles_coexpression
-	while getopts 'S:s:f:b:g:t:M:c:r:p:i:j:o:l:f:' arg; do
+	while getopts 'S:s:n:b:g:t:M:c:r:i:j:o:l:f:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
-			f)	clusterfilter=$OPTARG;;
+			n)	clusterfilter=$OPTARG;;
 			b)	biotype="$OPTARG";;
 			g)	gtf="$OPTARG";;
 			t)	((++mandatory)); threads=$OPTARG;;
 			M)	((++mandatory)); maxmemory=$OPTARG;;
 			c)	((++mandatory)); _cmpfiles_coexpression=$OPTARG;;
 			r)	((++mandatory)); _mapper_coexpression=$OPTARG;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			i)	((++mandatory)); countsdir="$OPTARG";;
 			j)	((++mandatory)); deseqdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
@@ -50,7 +48,7 @@ cluster::coexpression_deseq(){
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 8 ]] && _usage
+	[[ $mandatory -lt 7 ]] && _usage
 	[[ $biotype && ! $gtf ]] && _usage
 
 	declare -p ${!_idfiles_coexpression} &> /dev/null || {
@@ -186,10 +184,10 @@ cluster::coexpression_deseq(){
 				echo "$(head -1 $cdir/experiments.mean.$e) type" | tr ' ' '\t' > "$odir/experiments.mean.$e"
 				cp "$odir/experiments.$e" "$odir/experiments.$e.zscores"
 				cp "$odir/experiments.mean.$e" "$odir/experiments.mean.$e.zscores"
-				grep -Fw -f "$odir/genes.list" "$cdir/experiments.$e" | sed "s/$/\t$type/" | tee -a "$wdir/modules.$e" >> "$odir/experiments.$e"
-				grep -Fw -f "$odir/genes.list" "$cdir/experiments.mean.$e" | sed "s/$/\t$type/" | tee -a "$wdir/modules.mean.$e" >> "$odir/experiments.mean.$e"
-				grep -Fw -f "$odir/genes.list" "$cdir/experiments.$e.zscores" | sed "s/$/\t$type/" | tee -a "$wdir/modules.$e.zscores" >> "$odir/experiments.$e.zscores"
-				grep -Fw -f "$odir/genes.list" "$cdir/experiments.mean.$e.zscores" | sed "s/$/\t$type/" | tee -a "$wdir/modules.mean.$e.zscores" >> "$odir/experiments.mean.$e.zscores"
+				grep -Fw -f "$odir/genes.list" "$cdir/experiments.$e" | sed "s/$/\t$type/" | tee -ia "$wdir/modules.$e" >> "$odir/experiments.$e"
+				grep -Fw -f "$odir/genes.list" "$cdir/experiments.mean.$e" | sed "s/$/\t$type/" | tee -ia "$wdir/modules.mean.$e" >> "$odir/experiments.mean.$e"
+				grep -Fw -f "$odir/genes.list" "$cdir/experiments.$e.zscores" | sed "s/$/\t$type/" | tee -ia "$wdir/modules.$e.zscores" >> "$odir/experiments.$e.zscores"
+				grep -Fw -f "$odir/genes.list" "$cdir/experiments.mean.$e.zscores" | sed "s/$/\t$type/" | tee -ia "$wdir/modules.mean.$e.zscores" >> "$odir/experiments.mean.$e.zscores"
 
 				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
 					vizco.R Module ${e^^*} "$odir/experiments.$e" "$odir/experiments.$e"
@@ -292,13 +290,13 @@ cluster::coexpression_deseq(){
 	return 0
 }
 
-cluster::coexpression(){
+function cluster::coexpression(){
 	declare -a tfiles
-	_cleanup::cluster::coexpression(){
+	function _cleanup::cluster::coexpression(){
 		rm -f "${tfiles[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -307,10 +305,9 @@ cluster::coexpression(){
 			-M <maxmemory>| amount of
 			-l <idfiles>  | array of
 			-r <mapper>   | array of bams within array of
-			-f <value>    | [34] filter input for lower 30% percentile (3) tpm > 5 (4)
+			-n <value>    | [34] filter input for lower 30% percentile (3) tpm > 5 (4)
 			-g <gtf>      | path to (optional)
 			-b <biotype>  | within gtf
-			-p <tmpdir>   | path to
 			-i <countsdir>| path to
 			-o <outdir>   | path to
 			-f <feature>  | feature (default: gene)
@@ -318,27 +315,26 @@ cluster::coexpression(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory outdir tmpdir countsdir biotype gtf clusterfilter=NA feature="gene"
+	local OPTIND arg mandatory skip=false threads maxmemory outdir tmpdir="${TMPDIR:-/tmp}" countsdir biotype gtf clusterfilter=NA feature="gene"
 	declare -n _mapper_coexpression _idfiles_coexpression
-	while getopts 'S:s:f:b:g:t:M:c:r:p:i:j:o:l:f:' arg; do
+	while getopts 'S:s:n:b:g:t:M:c:r:i:j:o:l:f:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
-			f)	clusterfilter=$OPTARG;;
+			n)	clusterfilter=$OPTARG;;
 			b)	biotype="$OPTARG";;
 			g)	gtf="$OPTARG";;
 			t)	((++mandatory)); threads=$OPTARG;;
 			M)	((++mandatory)); maxmemory=$OPTARG;;
 			r)	((++mandatory)); _mapper_coexpression=$OPTARG;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir" || return 1;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" || return 1;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			l)	_idfiles_coexpression=$OPTARG;;
 			f)	feature=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage && return 1
+	[[ $mandatory -lt 5 ]] && _usage && return 1
 	[[ $biotype && ! $gtf ]] && _usage && return 1
 
 	declare -p ${!_idfiles_coexpression} &> /dev/null || {
@@ -464,8 +460,8 @@ cluster::coexpression(){
 
 				echo "$(head -1 $wdir/experiments.$e) type" | tr ' ' '\t' > "$odir/experiments.$e"
 				cp "$odir/experiments.$e" "$odir/experiments.$e.zscores"
-				grep -Fw -f "$odir/genes.list" "$wdir/experiments.$e" | sed "s/$/\t$type/" | tee -a "$wdir/modules.$e" >> "$odir/experiments.$e"
-				grep -Fw -f "$odir/genes.list" "$wdir/experiments.$e.zscores" | sed "s/$/\t$type/" | tee -a "$wdir/modules.$e.zscores" >> "$odir/experiments.$e.zscores"
+				grep -Fw -f "$odir/genes.list" "$wdir/experiments.$e" | sed "s/$/\t$type/" | tee -ia "$wdir/modules.$e" >> "$odir/experiments.$e"
+				grep -Fw -f "$odir/genes.list" "$wdir/experiments.$e.zscores" | sed "s/$/\t$type/" | tee -ia "$wdir/modules.$e.zscores" >> "$odir/experiments.$e.zscores"
 
 				commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
 					vizco.R Module ${e^^*} "$odir/experiments.$e" "$odir/experiments.$e"

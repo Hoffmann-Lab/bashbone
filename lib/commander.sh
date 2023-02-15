@@ -3,7 +3,7 @@
 
 declare -a COMMANDER
 
-commander::print(){
+function commander::print(){
 	[[ $* ]] && echo ":INFO: $*"
 	local fd
 	declare -a mapdata
@@ -19,8 +19,8 @@ commander::print(){
 	return 0
 }
 
-commander::printinfo(){
-	[[ $* ]] && echo ":INFO: $*"
+function commander::printinfo(){
+	[[ $1 ]] && echo ":INFO: $*"
 	local fd
 	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
@@ -32,8 +32,8 @@ commander::printinfo(){
 	return 0
 }
 
-commander::warn(){
-	[[ $* ]] && echo ":WARNING: $*"
+function commander::warn(){
+	[[ $1 ]] && echo ":WARNING: $*"
 	local fd
 	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
@@ -46,8 +46,8 @@ commander::warn(){
 	return 0
 }
 
-commander::printerr(){
-	[[ $* ]] && echo ":ERROR: $*" 1>&2
+function commander::printerr(){
+	[[ $1 ]] && echo ":ERROR: $*" 1>&2
 	local fd
 	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
@@ -59,23 +59,43 @@ commander::printerr(){
 	return 0
 }
 
-commander::makecmd2(){
-	_usage(){
+function commander::makecmd(){
+	function _cleanup::commander::makecmd(){
+		COMMANDER=()
+	}
+
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
-			-a <cmds>      | array of
-			-v <variable>  | env variable to pass to command
-			-o <outfile>   | stdout redirection to
-			-c <cmd|fd3..> | ALWAYS LAST OPTION
-			                 command line string(s) and or
-			                 file descriptor(s) starting from 3
+			-a <cmds>          | array of
+			-v <variable>      | env variable to pass to command
+			-s <separator>     | string for (default: |)
+			-o <outfile>       | stdout redirection to
+			-c <cmd|{fd[0]}..> | ALWAYS LAST OPTION
+			                     command line string(s) and or here-doc or
+			                     file descriptor array COMMANDER
+
 			example 1:
 			${FUNCNAME[1]} -a cmds -c perl -le \''print "foo"'\'
 
 			example 2:
 			x=1
+			${FUNCNAME[1]} -a cmds -v x -c echo '\$x'
+
+			example 3:
+			${FUNCNAME[1]} -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+			    perl -sl - -y=\$x <<< '
+			        print "\$x";
+			        print "\\\$y";
+			    '
+			CMD
+			    awk '{print \$0}'
+			CMD
+
+			example 4:
+			x=1
 			${FUNCNAME[1]} -v x -a cmds -c <<-'CMD'
-			    perl -sl - -x=\$x <<< '
+			    perl -sl - -y=\$x <<< '
 			        print "\$x";
 			        print "\$y";
 			    ' | awk '{print \$0}'
@@ -84,87 +104,52 @@ commander::makecmd2(){
 		return 1
 	}
 
-	local OPTIND arg mandatory vars suffix
-	declare -a mapdata
-	declare -n _cmds_makecmd
-	while getopts ':v:a:o:c' arg; do
+	local OPTIND arg mandatory sep='|' suffix vars
+	declare -n _cmds_makecmd # be very careful with circular name reference
+	while getopts 'v:a:o:s:c' arg; do
 		case $arg in
 			v)	declare -n _var_makecmd=$OPTARG
 				vars+="$OPTARG=$(printf '%q;' "$_var_makecmd") " # to use multi-line variable assignemnts for job shell use '%q\n'
 			;;
-			a)	mandatory=1; _cmds_makecmd=$OPTARG;;
+			a)	((++mandatory)); _cmds_makecmd=$OPTARG;;
+			s)	sep=$(echo -e "$OPTARG");; # echo -e here to make e.g. '\t' but not '\n' possible
 			o)	suffix=" > '$OPTARG'";;
-			c)	[[ ! $mandatory ]] && _usage
-				[[ -t 0 ]] || mapfile -t mapdata # to keep multi-line cmds use read -r -d '' cmd || true
-				shift $((OPTIND-1))
-				_cmds_makecmd+=("$vars${mapdata[*]}$*$suffix")
-				return 0
-			;;
-			*) _usage;;
-		esac
-	done
-
-	_usage
-}
-
-commander::makecmd(){
-	_cleanup::commander::makecmd(){
-		COMMANDER=()
-	}
-
-	_usage(){
-		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-a <cmds>      | array of
-			-s <seperator> | string for (default: |)
-			-o <outfile>   | stdout redirection to
-			-c <cmd|fd3..> | ALWAYS LAST OPTION
-			                 command line string(s) and or
-			                 file descriptor(s) starting from 3
-			example 1:
-			${FUNCNAME[1]} -a cmds -c perl -le \''print "foo"'\'
-
-			example 2:
-			${FUNCNAME[1]} -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-			    perl -sl - -y=\$x <<< '
-			        print "\$x";
-			        print "\\\$y";
-			    '
-			CMD
-			    awk '{print $0}'
-			CMD
-		EOF
-		return 1
-	}
-
-	local OPTIND arg mandatory sep='|' suffix='' fd tmp
-	declare -n _cmds_makecmd # be very careful with circular name reference
-	declare -a mapdata cmd_makecmd # be very careful with references name space
-	while getopts ':a:o:s:c' arg; do
-		case $arg in
-			a)	mandatory=1; _cmds_makecmd=$OPTARG;;
-			s)	sep=$(echo -e "$OPTARG");; # echo -e to make e.g. '\t' possible
-			o)	suffix=" > '$OPTARG'";;
-			c)	[[ ! $mandatory ]] && _usage
-				shift $((OPTIND-1)) # remove '-a <cmd>' '-s <char> '-o <file>' '-c' from $@
-				for fd in "${COMMANDER[@]}"; do
-					mapfile -u $fd -t mapdata
-					cmd_makecmd+=("${mapdata[*]}") # * instead of @ to concatenate a non-splitted sentence instead of single non-splitted words
-					exec {fd}>&- # just to be safe
-					# exec {fd}>&- to close fd in principle not necessary since heredoc is read only and handles closure after last EOF
-				done
-				tmp="${cmd_makecmd[*]/#/$sep }" # concatenate CMD* with seperator
-				_cmds_makecmd+=("$* ${tmp/#$sep /}$suffix")
-				return 0;;
+			c)	((++mandatory)); shift $((OPTIND-1)); break;; # do not use getopts c: which requires shift OPTIND-2 and to implement :) case with shift OPTIND-1 if OPTARG=="c" and return 1 if OPTARG!="c"
 			*)	_usage;;
 		esac
 	done
+	[[ $mandatory -lt 2 ]] && _usage
 
-	_usage
+	local fd tmp
+	declare -a mapdata cmd_makecmd # be very careful with references name space
+
+	if [[ $COMMANDER ]]; then # interactive case
+		for fd in "${COMMANDER[@]}"; do
+			mapfile -u $fd -t mapdata
+			cmd_makecmd+=("${mapdata[*]}") # * instead of @ to concatenate a non-splitted sentence instead of single non-splitted words
+			exec {fd}>&- # just to be safe. closing fd not necessary since heredoc is read only and handles closure after last EOF
+		done
+		tmp="${cmd_makecmd[*]/#/$sep }" # concatenate CMD* with separator. do not use $(echo -e ${tmp/#$sep /}) here
+		tmp="${tmp/#$sep /}"
+	else
+		# necessary check for interactive case
+		[[ -t 0 ]] || {
+			mapfile -t mapdata /dev/stdin
+			tmp="${mapdata[*]}"
+		}
+	fi
+	COMMANDER=()
+
+	if [[ $1 ]]; then
+		_cmds_makecmd+=("$vars$* $tmp$suffix")
+	else
+		_cmds_makecmd+=("$vars$tmp$suffix")
+	fi
+	return 0
 }
 
-commander::printcmd(){
-	_usage(){
+function commander::printcmd(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-a <cmds> | array of
@@ -186,16 +171,13 @@ commander::printcmd(){
 	_usage
 }
 
-commander::runcmd(){
-	local tmpdir pgid logdir
-	_cleanup::commander::runcmd(){
-		# solution1: setsid xargs needs kill to pgid on SIG
-		# pgrep -g $pgid  OR  ps -o pid= -g $pgid # | ps -o ppid= -g $pgid column -t | grep -Fxc $pgid  OR  pgrep -P $pgid
-		#[[ $pgid ]] && { env kill -INT -- -$pgid; sleep 1; env kill -TERM -- -$pgid; wait $pgid $(ps -o pid= --ppid $pgid); } &> /dev/null || true
+function commander::runcmd(){
+	local tmpdir logdir
+	function _cleanup::commander::runcmd(){
 		[[ $logdir ]] || rm -rf "$tmpdir"
 	}
 
-	_usage(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-v             | verbose on
@@ -240,17 +222,13 @@ commander::runcmd(){
 	$verbose && commander::printinfo "running commands of array ${!_cmds_runcmd}"
 
 	local i id sh ex log
-	[[ $logdir ]] && tmpdir="$logdir" || tmpdir=$(mktemp -d -p /tmp jobs.XXXXXXXXXX)
+	[[ $logdir ]] && tmpdir="$logdir" || tmpdir=$(mktemp -d -p "${TMPDIR:-/tmp}" jobs.XXXXXXXXXX)
 	[[ $jobname ]] || jobname="$(basename "$(mktemp -u -p "$tmpdir" XXXXXXXXXX)")"
 	echo $instances > "$tmpdir/instances.$jobname"
 	ex="$tmpdir/exitcodes.$jobname"
 	touch "$ex" # for runstat
 	[[ $stopid ]] || stopid=${#_cmds_runcmd[@]}
 
-	# better write to file to avoid xargs argument too long error due to -I {}
-	# old: printf '%s\0' "${_cmds_runcmd[@]}" | xargs -0 -P $instances -I {} bash -c {}
-	# upon error return 255 to prevent xargs to load further jobs
-	# use exit function on PPID to kill all sibling processes executed by xargs
 	declare -a scripts
 	# necessary for runstat
 	cat <<- EOF > "$tmpdir/info.$jobname"
@@ -269,72 +247,50 @@ commander::runcmd(){
 		$override && rm -f "$log" "$ex"
 
 		echo '#!/usr/bin/env bash' > "$sh"
-		# if [[ $logdir ]]; then
-			#solution1: pgid=
-
-			echo "exit::$jobname.$id(){" >> "$sh"
-			echo "    echo \"$jobname.$id (\$((\$(ps -o ppid= -p \$\$ 2> /dev/null)))) exited with exit code \$1\" >> '$ex'" >> "$sh"
-			echo '}' >> "$sh"
-			echo "export BASHBONE_NOSETSID=true" >> "$sh"
-
-			if [[ $cenv ]]; then
-				echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
-				echo "conda activate --no-stack $cenv" >> "$sh"
-			else
-				echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
-			fi
-		# else
-		# 	if [[ $cenv ]]; then
-		# 		echo "source '$BASHBONE_DIR/activate.sh' -c true -i '$BASHBONE_TOOLSDIR'" >> "$sh"
-		# 		echo "conda activate --no-stack $cenv" >> "$sh"
-		# 	else
-		# 		echo "source '$BASHBONE_DIR/activate.sh' -c false -i '$BASHBONE_TOOLSDIR'" >> "$sh"
-		# 	fi
-		# fi
-
-		# $verbose && echo 'tail -3 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
-		# echo '{\n%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
-		# echo "} 2> >(tee -ia '$log' >&2) > >(tee -ia '$log') | cat" >> "$sh"
-
+		echo "exit::$jobname.$id(){" >> "$sh"
+		echo "    echo \"$jobname.$id (\$((\$(ps -o ppid= -p \$\$ 2> /dev/null)))) exited with exit code \$1\" >> '$ex'" >> "$sh"
+		echo '}' >> "$sh"
+		# was true here for xargs
+		echo "export BASHBONE_SETSID=false" >> "$sh"
+		if [[ $cenv ]]; then
+			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+			echo "conda activate --no-stack $cenv" >> "$sh"
+		else
+			echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+		fi
 		$verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
 		echo "exec 1> >(tee -ai '$log')" >> "$sh"
 		echo "exec 2> >(tee -ai '$log' >&2)" >> "$sh"
-		echo "${_cmds_runcmd[$i]}" >> "$sh"
+		printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 		echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
-		# $verbose && echo 'tail -3 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
-		#printf '{\n%s\n} &\nwait $!\nexit 0\n' "${_cmds_runcmd[$i]}" >> "$sh"
-		# run asynchronous and use wait to get rid of terminated messages. but this will print this for loop as terminated job command at wait below
-		# thus, use INT signal, but attention: kill -INT is ignored in asynchronous commands with disabled job control due to a wierd POSIX requirement: set +m; bash -c 'trap "echo INT" INT; trap -p' & wait $!
-		# workaround via env: set +m; env --default-signal=SIGINT,SIGQUIT bash -c 'trap "echo INT" INT; trap -p' & wait $!
+
 		scripts+=("$(realpath -se "$sh")") # necessary for runstat
 	done
 
 	echo -e 'will cite' | parallel --citation &> /dev/null || true
 	if $benchmark; then
-		# solution1: setsid xargs, see also this _cleanup and configure::exit
-		#printf '%q\n' "${scripts[@]}" | setsid --wait env --default-signal=INT time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $instances -I {} bash {} &
-		#pgid=$!
-		#wait $pgid
+		# solution1: setsid xargs, and send termination sequence to its PGID upon receiving INT via ctr+c e.g. by using return trap
+		# needs also termination sequence on PGID in exit function to kill all sibling processes upon error
+		# printf '%q\n' "${scripts[@]}" | setsid --wait env --default-signal=INT time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" xargs -P $instances -I {} bash {} &
+		# pgid=$!
+		# wait $pgid
 
-		# wait: capture e.g. sigint wich kills wait but setid job still running via kill at return trap
+		# solution2: gnu parallel
+		# drawback: in contrast to xargs, where USR signal to increase instace count has an instant effect, parallel reads instances file only after completing one job
+		# -> implement somehow respawning dummy job?
+		printf '%q\n' "${scripts[@]}" | env time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P "$tmpdir/instances.$jobname" -I {} bash {}
 		# time: is also a bash shell keyword which works differently and does not record memory usage
 		# due to set -E based error tracing, command time may leads to *** longjmp causes uninitialized stack frame ***: bash terminated
 		# workaround: use full path, which, env or $(command -v time) <- prefer env to use env bash too
-
-		# solution2:
-		printf '%q\n' "${scripts[@]}" | env time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P "$tmpdir/instances.$jobname" -I {} bash {}
 	else
-		# printf '%q\n' "${scripts[@]}" | setsid --wait env --default-signal=INT xargs -P $instances -I {} bash {} &
-		# pgid=$!
-		# wait $pgid
 		printf '%q\n' "${scripts[@]}" | parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P "$tmpdir/instances.$jobname" -I {} bash {}
 	fi
 
 	return 0
 }
 
-commander::runalter_xargs(){
-	_usage(){
+function commander::runalter_xargs(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-i <instances> | number of parallel
@@ -379,8 +335,8 @@ commander::runalter_xargs(){
 	return 0
 }
 
-commander::runalter(){
-	_usage(){
+function commander::runalter(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-i <instances> | number of parallel
@@ -404,16 +360,16 @@ commander::runalter(){
 	[[ $pid =~ ^[0-9]+$ ]] || pid=$(($(ps -o ppid= -p $(pgrep -o -f "job.$pid.*.sh"))))
 	BASHBONE_ERROR="not a valid job id: $pid"
 	[[ "$(ps -o cmd= -p $pid)" =~ perl[[:space:]]+[^[:space:]]+parallel[[:space:]] ]]
-	echo $instances > "$(ps -o cmd= --ppid $pid | head -1 | sed -E 's/^bash\s+//' | xargs -I {} bash -c 'echo "$(dirname {})/instances.$(basename {} | cut -d "." -f 2)"')"
+	echo $instances > "$(ps -o cmd= --ppid $pid | head -1 | sed -E 's/^bash\s+//' | xargs -I {} bash -c 'echo "$(dirname "$1")/instances.$(basename "$1" | cut -d "." -f 2)"' bash {})"
 
 	return 0
 }
 
-commander::runstat(){
-	_usage(){
+function commander::runstat(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
-			-p <id|name>   | xargs process id or job name
+			-p <id|name>   | gnu parallel process id or job name
 			-u <name>      | user
 		EOF
 		return 1
@@ -448,14 +404,14 @@ commander::runstat(){
 	return 0
 }
 
-commander::qsubcmd(){
+function commander::qsubcmd(){
 	local jobid pid
-	_cleanup::commander::qsubcmd(){
+	function _cleanup::commander::qsubcmd(){
 		[[ $jobid ]] && qdel $jobid &> /dev/null || true
-		[[ $pid ]] && { env kill -PIPE $pid && wait $pid; } &> /dev/null || true
+		[[ $pid ]] && { env kill -TERM $pid; wait $pid; } &> /dev/null || true
 	}
 
-	_usage(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-v             | verbose on
@@ -528,14 +484,18 @@ commander::qsubcmd(){
 			touch "$logdir/job.$jobname.$id.log" # for tail -f
 			logs+=("$logdir/job.$jobname.$id.log")
 		fi
+
 		sh="$logdir/job.$jobname.$id.sh"
+
 		echo '#!/usr/bin/env bash' > "$sh"
 		echo "exit::$jobname.$id(){" >> "$sh"
 		echo "    echo \"$jobname.$id (\$JOB_ID) exited with exit code \$1\" >> '$ex'" >> "$sh"
 		[[ "$dowait" == "y" ]] && echo '    [[ $1 -gt 0 ]] && qdel $JOB_ID &> /dev/null || true' >> "$sh"
 		echo '}' >> "$sh"
+		# attention: -S /bin/bash cannot be -S "/bin/bash --noprofile" and thus sources bash_profile and bashrc which in worst case modifies PATH so that bashbone may not serve its binaries first
+		# solution: store current path and prepend in script
 		echo 'PATH="${BASHBONE_SGEPATH:-$PATH}"' >> "$sh"
-		echo "BASHBONE_SETSID=false" >> "$sh"
+		echo "export BASHBONE_SETSID=false" >> "$sh"
 
 		if [[ $cenv ]]; then
 			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
@@ -549,15 +509,6 @@ commander::qsubcmd(){
 		chmod 755 "$sh"
 	done
 
-	# compared to /usr/bin/time, bash builtin time can handle: time echo "sleep 2" | bash
-	# cons:
-	# - benchmarks only qsub not job itself
-	# - no memory consumption logged
-	# - in case of job exit code > 0, leads to *** longjmp causes uninitialized stack frame ***: bash terminated
-	# TIMEFORMAT=':BENCHMARK: runtime %3lR [hours][minutes]seconds'
-	# time echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | qsub -sync $dowait $params ${complexes[@]} -t 1-$id -tc $instances -S "$(/usr/bin/env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname |& sed -u -E '/exited/!d; s/Job [0-9]+\.(.+)\./job.'$jobname'.\1/;t;s/Job [0-9]+ (.+)\./job.'$jobname'.1 \1/'
-	# attention: -S /bin/bash cannot be -S "/bin/bash --noprofile" and thus sources bash_profile and bashrc which in worst case modifies PATH so that conda may not serve its binaries first
-
 	if [[ "$dowait" == "y" ]]; then
 		local l
 		tail -q -f "${logs[@]}" & pid=$!
@@ -568,7 +519,7 @@ commander::qsubcmd(){
 
 		# use command/env qstat in case someone like me makes use of an alias :)
 		# wait until accounting record is written to epilog after jobs post-processing metrics collection
-		while env qstat -j $jobid &> /dev/null; do
+		while command qstat -j $jobid &> /dev/null; do
 			sleep 1
 		done
 		touch "$ex" #nfs requirend to make file visible in current shell on current node
@@ -585,8 +536,8 @@ commander::qsubcmd(){
 	fi
 }
 
-commander::qalter(){
-	_usage(){
+function commander::qalter(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-i <instances> | number of parallel
@@ -613,8 +564,8 @@ commander::qalter(){
 	return 0
 }
 
-commander::qstat(){
-	_usage(){
+function commander::qstat(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-p <id|name>   | job id or job name
@@ -643,13 +594,13 @@ commander::qstat(){
 	fi
 
 	{	echo "JOBID PRIOR NAME USER STATE STARTED QUEUE SLOTS TASKID"
-		env qstat -xml | tr '\n' ' ' | sed 's/<job_list[^>]*>/\n/g;s/<[^>]*>//g' | tr -s ' ' ' ' | perl -slane 'next unless $F[0]=~/^$p$/ || $F[2]=~/^$n$/ || $F[3]=~/^$u$/; unless($F[8]){$F[8]=$F[7]; $F[7]=$F[6]; $F[6]="*"} print join" ",@F; ' -- -p="$pid" -n="$name" -u="$user"
+		command qstat -xml | tr '\n' ' ' | sed 's/<job_list[^>]*>/\n/g;s/<[^>]*>//g' | tr -s ' ' ' ' | perl -slane 'next unless $F[0]=~/^$p$/ || $F[2]=~/^$n$/ || $F[3]=~/^$u$/; unless($F[8]){$F[8]=$F[7]; $F[7]=$F[6]; $F[6]="*"} print join" ",@F; ' -- -p="$pid" -n="$name" -u="$user"
 	} | column -t
 
 	return 0
 }
 
-commander::_test(){
+function commander::_test(){
 	local x=${1:-'hello world'} threads=${2:-1} i=2 s
 
 	while read -u $((++i)) -r s 2> /dev/null; do

@@ -1,15 +1,15 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-expression::diego(){
+function expression::diego(){
 	local tmp
 	declare -a tdirs
-	_cleanup::expression::diego(){
+	function _cleanup::expression::diego(){
 		rm -rf "$tmp"
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
@@ -20,7 +20,6 @@ expression::diego(){
 			-g <gtf>        | path to
 			-c <cmpfiles>   | array of
 			-f <fcthreshold>| value of (default: 1)
-			-p <tmpdir>     | path to
 			-o <outdir>     | absolute path to
 			-e <exonmode>   | true/false in addition to splice junction mode (true)
 			-x <strandness> | hash per bam of for exonmode
@@ -30,9 +29,9 @@ expression::diego(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads countsdir tmpdir outdir gtf fcth exonmode=true forceidx=false
+	local OPTIND arg mandatory skip=false skipmd5=false threads countsdir tmpdir="${TMPDIR:-/tmp}" outdir gtf fcth exonmode=true forceidx=false
 	declare -n _mapper_diego _cmpfiles_diego _strandness_diego
-	while getopts 'S:s:5:t:r:x:g:c:f:e:i:p:o:F' arg; do
+	while getopts 'S:s:5:t:r:x:g:c:f:e:i:o:F' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -45,13 +44,12 @@ expression::diego(){
 			f)	fcth=$OPTARG;;
 			e)	exonmode=$OPTARG;;
 			i)	countsdir="$OPTARG";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			F)	forceidx=true;;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 6 ]] && _usage
+	[[ $mandatory -lt 5 ]] && _usage
 	$exonmode && [[ ${#_strandness_diego[@]} -eq 0 ]] && _usage
 	$exonmode && [[ ! $countsdir ]] && _usage
 
@@ -91,9 +89,9 @@ expression::diego(){
 	if $exonmode; then
 		quantify::featurecounts \
 			-S false \
-			-s $skip \
+			-s true \
 			-t $threads \
-			-p $tmpdir \
+			-p "$tmpdir" \
 			-g "${gtf%.*}.aggregated.gtf" \
 			-l exon \
 			-f exon \
@@ -229,8 +227,8 @@ expression::diego(){
 	return 0
 }
 
-expression::deseq() {
-	_usage() {
+function expression::deseq(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -278,7 +276,7 @@ expression::deseq() {
 		visited=()
 		cmps=()
 
-		head -1 ${_cmpfiles_deseq[0]} | perl -lane 'push @o,"sample,countfile,condition,replicate"; for (4..$#F){push @o,"factor".($_-3)}END{print join",",@o}' > "$odir/experiments.csv"
+		head -1 ${_cmpfiles_deseq[0]} | perl -F'\t' -lane 'push @o,"sample,countfile,condition,replicate"; for (4..$#F){push @o,"factor".($_-3)}END{print join",",@o}' > "$odir/experiments.csv"
 		for f in "${_cmpfiles_deseq[@]}"; do
 			mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
 			i=0
@@ -495,8 +493,8 @@ expression::deseq() {
 	return 0
 }
 
-expression::_deseq() {
-	_usage() {
+function expression::_deseq(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-1 <cmds1>   | array of
@@ -563,20 +561,19 @@ expression::_deseq() {
 	return 0
 }
 
-expression::join_deseq(){
+function expression::join_deseq(){
 	declare -a tfiles
-	_cleanup::expression::join(){
+	function _cleanup::expression::join(){
 		rm -f "${tfiles[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-g <gtf>      | path to
-			-p <tmpdir>   | path to
 			-r <mapper>   | array of bams within array of
 			-c <cmpfiles> | array of
 			-i <countsdir>| path to
@@ -587,15 +584,14 @@ expression::join_deseq(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads countsdir deseqdir outdir tmpdir gtf gtfinfo joinheatmaps=true feature="gene"
+	local OPTIND arg mandatory skip=false threads countsdir deseqdir outdir tmpdir="${TMPDIR:-/tmp}" gtf gtfinfo joinheatmaps=true feature="gene"
     declare -n _mapper_join _cmpfiles_join
-	while getopts 'S:s:t:g:r:p:c:i:j:o:f:n' arg; do
+	while getopts 'S:s:t:g:r:c:i:j:o:f:n' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			g)	gtf="$OPTARG"; gtfinfo="$([[ -s "$gtf.info" ]] && echo "$gtf.info" || true)";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			r)	((++mandatory)); _mapper_join=$OPTARG;;
 			c)	((++mandatory)); _cmpfiles_join=$OPTARG;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
@@ -606,22 +602,22 @@ expression::join_deseq(){
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "joining tpm, vsc, zscores and heatmaps"
 
-	declare -a cmd1 cmd2 cmd3 cmd4 mapdata header meanheader tojoin
-	declare -A countfiles
-	local m f x i c t h mh vsc sample condition library replicate factors cf e tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
+	declare -a cmd1 cmd2 cmd3 cmd4 mapdata tojoin
+	declare -A visited
+	local m f i c t e header meanheader cf vsc sample condition library replicate factors tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local topids="$tmp.topids" height width
 	tfiles+=("$tmp" "$topids")
 	for m in "${_mapper_join[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
-		countfiles=()
-		header=()
-		meanheader=()
-		x=0
+		visited=()
+		header="id"
+		meanheader="id"
+		tojoin=()
 		for f in "${_cmpfiles_join[@]}"; do
 			mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
 			i=0
@@ -632,14 +628,12 @@ expression::join_deseq(){
 
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
-						[[ ${countfiles["$condition.$replicate"]} ]] && continue
-						header[$x]="$condition.$replicate"
-						meanheader[$x]="$condition"
-						((++x))
+						[[ ${visited["$condition.$replicate"]} ]] && continue || visited["$condition.$replicate"]=1
+						header+="\t$condition.$replicate"
+						meanheader+="\t$condition"
 
 						cf="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc.tpm" -print -quit | grep .)"
-						cf="${cf/%\.htsc\.tpm/}"
-						countfiles["$condition.$replicate"]="$cf"
+						tojoin+=("${cf/%\.htsc\.tpm/}")
 						# get column per sample and write it to counts dir for downstream joins
 						perl -M'List::MoreUtils qw(first_index)' -slane 'if($.==1){$c = first_index {$_ eq $h} @F}else{print "$F[0]\t$F[$c]"}' -- -h="$condition.$replicate" "$vsc" > "$cf.htsc.vsc"
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
@@ -654,23 +648,16 @@ expression::join_deseq(){
 		width=$(cat "$deseqdir/$m/experiments.csv" | wc -l | awk '{printf "%0.f",$1/10+6}')
 
 		for e in htsc htsc.tpm htsc.vsc; do
-			h='id'
-			mh='id'
-			tojoin=()
-			for x in "${!header[@]}"; do
-				h+="\t${header[$x]}"
-				mh+="\t${meanheader[$x]}"
-				tojoin+=("${countfiles[${header[$x]}]}.$e")
-			done
+			f="$(printf '"%s" ' "${tojoin[@]/%/.$e}")"
 			e=${e#*.}
 
 			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
 				helper::multijoin
-					-h "$(echo -e "$h")"
+					-h "$(echo -e "$header")"
 					-o "$odir/experiments.$e"
-					-f $(printf '"%s" ' "${tojoin[@]}");
+					-f $f;
 			CMD
-				echo -e "$mh" > "$odir/experiments.mean.$e";
+				echo -e "$meanheader" > "$odir/experiments.mean.$e";
 			CMD
 				tail -n +2 "$odir/experiments.$e" >> "$odir/experiments.mean.$e";
 			CMD
@@ -780,8 +767,8 @@ expression::join_deseq(){
 	return 0
 }
 
-expression::join(){
-	_usage() {
+function expression::join(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -812,18 +799,19 @@ expression::join(){
 		esac
 	done
 	[[ $mandatory -lt 5 ]] && _usage
+
 	commander::printinfo "joining htsc, zscores"
 
-	declare -a cmd1 cmd2 cmd3 cmd4 mapdata header meanheader tojoin
-	declare -A countfiles
-	local m f x i c t h mh sample condition library replicate factors cf e
+	declare -a cmd1 cmd2 cmd3 cmd4 mapdata tojoin
+	declare -A visited
+	local m f i c t e header meanheader cf sample condition library replicate factors
 	for m in "${_mapper_join[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
-		countfiles=()
-		header=()
-		meanheader=()
-		x=0
+		visited=()
+		header="id"
+		meanheader="id"
+		tojoin=()
 		for f in "${_cmpfiles_join[@]}"; do
 			mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
 			i=0
@@ -832,36 +820,29 @@ expression::join(){
 
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
-						[[ ${countfiles["$condition.$replicate"]} ]] && continue
-						header[$x]="$condition.$replicate"
-						meanheader[$x]="$condition"
-						((++x))
+						[[ ${visited["$condition.$replicate"]} ]] && continue || visited["$condition.$replicate"]=1
+
+						header+="\t$condition.$replicate"
+						meanheader+="\t$condition"
+
 						cf="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc.tpm" -print -quit | grep .)"
-						cf="${cf/%\.htsc\.tpm/}"
-						countfiles["$condition.$replicate"]="$cf"
+						tojoin+=("${cf/%\.htsc\.tpm/}")
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 				done
 			done
 		done
 
 		for e in htsc htsc.tpm; do
-			h='id'
-			mh='id'
-			tojoin=()
-			for x in "${!header[@]}"; do
-				h+="\t${header[$x]}"
-				mh+="\t${meanheader[$x]}"
-				tojoin+=("${countfiles[${header[$x]}]}.$e")
-			done
+			f="$(printf '"%s" ' "${tojoin[@]/%/.$e}")"
 			e=${e#*.}
 
 			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
 				helper::multijoin
-					-h "$(echo -e "$h")"
+					-h "$(echo -e "$header")"
 					-o "$odir/experiments.$e"
-					-f $(printf '"%s" ' "${tojoin[@]}");
+					-f $f;
 			CMD
-				echo -e "$mh" > "$odir/experiments.mean.$e";
+				echo -e "$meanheader" > "$odir/experiments.mean.$e";
 			CMD
 				tail -n +2 "$odir/experiments.$e" >> "$odir/experiments.mean.$e";
 			CMD

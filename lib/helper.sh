@@ -1,102 +1,8 @@
 #!/usr/bin/env bash
 # (c) Konstantin Riege
 
-helper::makevcfzipcmd() {
-	_usage() {
-		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-a <cmds>    | array of
-			-t <threads> | number of
-			-z <var>     | of path to file
-			example:
-			${FUNCNAME[1]} -a cmds -t 4 -z vcf1 -z vcf2
-		EOF
-		return 1
-	}
-
-	local OPTIND arg mandatory threads
-	declare -a tozip_vcfzip
-	declare -n _cmds_vcfzip
-	while getopts 'a:t:z:' arg; do
-		case $arg in
-			a) ((++mandatory)); _cmds_vcfzip=$OPTARG;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			z) ((++mandatory)); tozip_vcfzip+=("$OPTARG");;
-			*) _usage;;
-		esac
-	done
-	[[ $mandatory -lt 3 ]] && _usage
-
-	local f
-	for f in "${tozip_vcfzip[@]}"; do
-		readlink -e "$f" | file -f - | grep -qF 'compressed' || {
-			commander::makecmd -a _cmds_vcfzip -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bgzip -k -c -@ $threads "$f" > "$f.gz"
-			CMD
-				tabix -f -p vcf "$f.gz"
-			CMD
-		}
-	done
-
-	return 0
-}
-
-helper::makezipcmd(){
-	_usage(){
-		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
-			-a <cmds>    | array of
-			-t <threads> | number of
-			-c <file>    | do compress if this is compressed
-			-z <var>     | of path to file
-			-b           | block zip via bgzip
-			example:
-			${FUNCNAME[1]} -a cmds -c f1.txt -c f2.txt -z o1 -z o2
-		EOF
-		return 1
-	}
-
-	local OPTIND arg mandatory threads=1 tool="pigz -p"
-	declare -a check_makezipcmd tozip_makezipcmd
-	declare -n _cmds_makezipcmd
-	while getopts 'a:t:c:z:b' arg; do
-		case $arg in
-			a) ((++mandatory)); _cmds_makezipcmd=$OPTARG;;
-			t) threads=$OPTARG;;
-			c) ((++mandatory)); check_makezipcmd+=("$OPTARG");;
-			z) ((++mandatory)); tozip_makezipcmd+=("$OPTARG");;
-			b) tool="bgzip -@";;
-			*) _usage;;
-		esac
-	done
-	[[ $mandatory -lt 3 || ${#check_makezipcmd[@]} -ne ${#tozip_makezipcmd[@]} ]] && _usage
-
-	local i
-	for i in "${!check_makezipcmd[@]}"; do
-		readlink -e "${check_makezipcmd[$i]}" | file -f - | grep -qE '(gzip|bzip)' || {
-			declare -n _f_makezipcmd=${tozip_makezipcmd[$i]}
-			commander::makecmd -a _cmds_makezipcmd -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- 'CMD'
-				gztool -S -x -w -f -v 0 "$_f_makezipcmd.gz" & pid=\$!
-			CMD
-				$tool $threads -k -c "$_f_makezipcmd" > "$_f_makezipcmd.gz"
-			CMD
-				{ kill -TERM $pid; wait $pid; } &> /dev/null
-			CMD
-				gztool -i -x -v 0 "$_f_makezipcmd.gz"
-			CMD
-		}
-	done
-
-	return 0
-}
-
-helper::pgzip(){
-	local pid
-	_cleanup::helper::pgzip(){
-		[[ $pid ]] && { kill -TERM $pid; wait $pid; } &> /dev/null || true
-	}
-
-	_usage(){
+function helper::pgzip(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-f <infile>  | path to. else stdin
@@ -125,8 +31,88 @@ helper::pgzip(){
 	return 0
 }
 
-helper::makecatcmd(){
-	_usage(){
+function helper::sort(){
+	declare -a tdirs
+	function _cleanup::helper::sort(){
+		rm -rf "${tdirs[@]}"
+	}
+
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-f <infile>    | path to. else stdin
+			-o <outfile>   | path to. else stdout
+			-t <threads>   | number of
+			-M <maxmemory> | amount of
+		EOF
+		return 1
+	}
+
+	local OPTIND threads=1 f=/dev/stdin o=/dev/stdout maxmemory tmpdir="${TMPDIR:-/tmp}"
+	declare -a args=();
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+			-m)	maxmemory=$2; shift 2;;
+			-f)	f=$2; shift 2;;
+			-o)	o=$2; shift 2; mkdir -p "$(dirname "$o")";;
+			-t)	threads=$2; shift 2;;
+			*)	args+=("$1"); shift;;
+		esac
+	done
+
+	local instances maxmemory
+	read -r instances maxmemory < <(configure::memory_by_instances -i 1 -M "$maxmemory")
+	tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sort)")
+	sort --parallel="$threads" -S "$maxmemory" -T "${tdirs[-1]}" "${args[@]}" "$f" > "$o"
+
+	return 0
+}
+
+function helper::vcfsort(){
+	declare -a tdirs
+	function _cleanup::helper::vcfsort(){
+		rm -rf "${tdirs[@]}"
+	}
+
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-f <infile>    | path to. else stdin
+			-o <outfile>   | path to. else stdout
+			-t <threads>   | number of
+			-M <maxmemory> | amount of
+			-z             | compress output
+		EOF
+		return 1
+	}
+
+	local OPTIND threads=1 f=/dev/stdin o=/dev/stdout maxmemory tmpdir="${TMPDIR:-/tmp}" zip=false
+	while getopts 'f:t:o:M:z' arg; do
+		case $arg in
+			f) f="$OPTARG";;
+			o) o="$OPTARG"; mkdir -p "$(dirname "$o")";;
+			t) threads=$OPTARG;;
+			M) maxmemory=$OPTARG;;
+			z) zip=true;;
+			*) _usage;;
+		esac
+	done
+
+	local instances maxmemory
+	read -r instances maxmemory < <(configure::memory_by_instances -i 1 -M "$maxmemory")
+	tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vcfsort)")
+	if $zip; then
+		bcftools view "$f" | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="${tdirs[-1]}" -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[a[1]]=i} /^#/{print; next} {$1=c[$1]; print | "sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[i]=a[1]} /^#/{print; next} {$1=c[$1]; print}' | bgzip -k -c -@ $threads /dev/stdin > "$o"
+		tabix -f -p vcf "$o"
+	else
+		bcftools view "$f" | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="${tdirs[-1]}" -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[a[1]]=i} /^#/{print; next} {$1=c[$1]; print | "sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[i]=a[1]} /^#/{print; next} {$1=c[$1]; print}' > "$o"
+	fi
+
+	return 0
+}
+
+function helper::makecatcmd(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-c <var>  | cmd
@@ -153,8 +139,8 @@ helper::makecatcmd(){
 	return 0
 }
 
-helper::basename(){
-	_usage(){
+function helper::basename(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-f <file> | path to
@@ -190,41 +176,40 @@ helper::basename(){
 	return 0
 }
 
-helper::makepdfcmd(){
-	_usage(){
+function helper::ps2pdf(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
-			-c <var>  | cmd
 			-f <file> | to ps
-			example:
-			${FUNCNAME[1]} -c cmd -f [ps]
 		EOF
 		return 1
 	}
 
 	local OPTIND arg mandatory f
-	declare -n _makepdfcmd
-	while getopts 'f:c:' arg; do
+	while getopts 'f:' arg; do
 		case $arg in
-			c) ((++mandatory)); _makepdfcmd=$OPTARG;;
 			f) ((++mandatory)); f="$OPTARG";;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 2 ]] && _usage
+	[[ $mandatory -lt 1 ]] && _usage
 
-	_makepdfcmd=$("ps2pdf $(grep -m 1 -F BoundingBox "$f" | sed -E 's/.+\s+([0-9]+)\s+([0-9]+)$/-g\10x\20/') '$f' '${f%.*}.pdf'")
+	ps2pdf -g$(grep -m 1 -F BoundingBox "$f" | sed -E 's/.+\s+([0-9]+)\s+([0-9]+)$/\10x\20/') "$f" "${f%.*}.pdf"
 
 	return 0
 }
 
-helper::multijoin(){
+function helper::join(){
+	helper::multijoin "$@"
+}
+
+function helper::multijoin(){
 	local tmp joined
-	_cleanup::helper::multijoin(){
+	function _cleanup::helper::multijoin(){
 		rm -f "$tmp" "$joined"
 	}
 
-	_usage(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-s <separator> | i/o character - default: tab
@@ -232,14 +217,14 @@ helper::multijoin(){
 			-e <empty>     | cell character - default: 0
 			-o <outfile>   | path to
 			-f <files>     | ALWAYS LAST OPTION
-			                 tab-seperated, to join by unique id in first column
+			                 tab-separated, to join by unique id in first column
 			example:
-			${FUNCNAME[1]} -f file1.tsv file2.tsv file3.tsv
+			${FUNCNAME[1]} -f <path> <path> [<path> ..]
 		EOF
 		return 1
 	}
 
-	local OPTIND arg outfile empty=0 sep=$'\t'
+	local OPTIND arg mandatory outfile=/dev/stdout empty=0 sep=$'\t' tmpdir="${TMPDIR:-/tmp}"
 	declare -n _makepdfcmd
 	while getopts 's:h:e:o:f:' arg; do
 		case $arg in
@@ -247,42 +232,35 @@ helper::multijoin(){
 			e)	empty="$OPTARG";;
 			h)	header="$OPTARG";;
 			o)	outfile="$OPTARG"; mkdir -p "$(dirname "$outfile")";;
-			f)	shift $((OPTIND-2))
-				local format i
-				tmp=$(mktemp -p /dev/shm)
-				joined=$(mktemp -p /dev/shm)
-				join -t "$sep" -1 1 -2 1 -a 1 -a 2 -e "$empty" -o '0,1.2,2.2' "$1" "$2" > "$joined"
-				for i in $(seq 3 ${#@}); do
-					format="0"
-					for j in $(seq 2 $i); do format+=",1.$j"; done
-					format+=",2.2"
-					join -t "$sep" -1 1 -2 1 -a 1 -a 2 -e "$empty" -o "$format" "$joined" "${!i}" > "$tmp"
-					mv "$tmp" "$joined"
-				done
-				if [[ $outfile ]]; then
-					if [[ $header ]]; then
-						cat <(echo -e "$header") "$joined" > "$outfile"
-					else
-						cat "$joined" > "$outfile"
-					fi
-				else
-					if [[ $header ]]; then
-						cat <(echo -e "$header") "$joined"
-					else
-						cat "$joined"
-					fi
-				fi
-				return 0
-			;;
+			f)	((++mandatory)); shift $((OPTIND-2)); break;;
 			*) _usage;;
 		esac
 	done
+	[[ $mandatory -lt 1 ]] && _usage
 
-	_usage
+	local format i
+	tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
+	joined="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.joined)"
+	join -t "$sep" -1 1 -2 1 -a 1 -a 2 -e "$empty" -o '0,1.2,2.2' "$1" "$2" > "$joined"
+	for i in $(seq 3 $#); do
+		format="0"
+		for j in $(seq 2 $i); do format+=",1.$j"; done
+		format+=",2.2"
+		join -t "$sep" -1 1 -2 1 -a 1 -a 2 -e "$empty" -o "$format" "$joined" "${!i}" > "$tmp"
+		mv "$tmp" "$joined"
+	done
+
+	if [[ $header ]]; then
+		cat <(echo -e "$header") "$joined" > "$outfile"
+	else
+		cat "$joined" > "$outfile"
+	fi
+
+	return 0
 }
 
-helper::ishash(){
-	_usage(){
+function helper::ishash(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-v <var> | variable
@@ -305,8 +283,8 @@ helper::ishash(){
 	return 0
 }
 
-helper::isarray(){
-	_usage(){
+function helper::isarray(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-v <var> | variable
@@ -330,8 +308,8 @@ helper::isarray(){
 	return 0
 }
 
-helper::addmemberfunctions(){
-	_usage(){
+function helper::addmemberfunctions(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-v <var> | variable
@@ -384,7 +362,7 @@ helper::addmemberfunctions(){
 	return 0
 }
 
-helper::_get(){
+function helper::_get(){
 	declare -n __="$1"
 	[[ $2 ]] && {
 		local j=1
@@ -397,24 +375,24 @@ helper::_get(){
 	} || echo ${__[*]}
 }
 
-helper::_push(){
+function helper::_push(){
 	declare -n __="$1"
 	shift
 	__+=("$@")
 }
 
-helper::_pop(){
+function helper::_pop(){
 	declare -n __="$1"
 	__=("${__[@]:0:$((${#__[@]}-1))}")
 }
 
-helper::_slice(){
+function helper::_slice(){
 	declare -n __="$1"
 	local j=$(($3-$2+1))
 	__=("${__[@]:$2:$3}")
 }
 
-helper::_join(){
+function helper::_join(){
 	declare -n __="$1" ___
 	shift
 	for ___ in "$@"; do
@@ -422,82 +400,82 @@ helper::_join(){
 	done
 }
 
-helper::_shift(){
+function helper::_shift(){
 	declare -n __="$1"
 	__=("${__[@]:1}")
 }
 
-helper::_idxs(){
+function helper::_idxs(){
 	declare -n __="$1"
 	echo "${!__[@]}"
 }
 
-helper::_lastidx(){
+function helper::_lastidx(){
 	declare -n __="$1"
 	echo $((${#__[@]}-1))
 }
 
-helper::_length(){
+function helper::_length(){
 	declare -n __="$1"
 	echo ${#__[@]}
 }
 
-helper::_print(){
+function helper::_print(){
 	declare -n __="$1"
 	echo ${__[*]}
 }
 
-helper::_println(){
+function helper::_println(){
 	declare -n __="$1"
 	printf '%s\n' "${__[@]}"
 }
 
-helper::_uc(){
+function helper::_uc(){
 	declare -n __="$1"
 	__=("${__[@]^^${2:-*}}")
 }
 
-helper::_ucfirst(){
+function helper::_ucfirst(){
 	declare -n __="$1"
 	__=("${__[@]^${2:-*}}")
 }
 
-helper::_lc(){
+function helper::_lc(){
 	declare -n __="$1"
 	__=("${__[@],,${2:-*}}")
 }
 
-helper::_lcfirst(){
+function helper::_lcfirst(){
 	declare -n __="$1"
 	__=("${__[@],${2:-*}}")
 }
 
-helper::_sum(){
+function helper::_sum(){
 	declare -n __="$1"
 	__=$(("${__[@]/%/+}"0))
 }
 
-helper::_trimsuffixfirst(){
+function helper::_trimsuffixfirst(){
 	declare -n __="$1"
 	__=("${__[@]%"$2"*}")
 }
 
-helper::_trimsuffix(){
+function helper::_trimsuffix(){
 	declare -n __="$1"
 	__=("${__[@]%%"$2"*}")
 }
 
-helper::_trimprefixfirst(){
+function helper::_trimprefixfirst(){
 	declare -n __="$1"
 	__=("${__[@]#*"$2"}")
 }
 
-helper::_trimprefix(){
+function helper::_trimprefix(){
 	declare -n __="$1"
 	__=("${__[@]##*"$2"}")
 }
 
-helper::_substring(){
+function helper::_substring(){
 	declare -n __="$1"
 	local i
 	if [[ $3 ]]; then
@@ -511,22 +489,22 @@ helper::_substring(){
 	fi
 }
 
-helper::_replace(){
+function helper::_replace(){
 	declare -n __="$1"
 	__=("${__[@]/${2:-*}/"$3"}")
 }
 
-helper::_replaceprefix(){
+function helper::_replaceprefix(){
 	declare -n __="$1"
 	__=("${__[@]/#${2:-*}/"$3"}")
 }
 
-helper::_replacesuffix(){
+function helper::_replacesuffix(){
 	declare -n __="$1"
 	__=("${__[@]/${2:-*}%/"$3"}")
 }
 
-helper::_uniq(){
+function helper::_uniq(){
 	declare -n __="$1"
 	declare -A ___
 	local e
@@ -536,12 +514,12 @@ helper::_uniq(){
 	__=("${!___[@]}")
 }
 
-helper::_sort(){
+function helper::_sort(){
 	declare -n __="$1"
 	mapfile -t __ < <(printf '%s\n' "${__[@]}" | sort -V)
 }
 
-helper::_basename(){
+function helper::_basename(){
 	declare -n __="$1"
 	local i
 	for i in "${!__[@]}"; do
@@ -549,7 +527,7 @@ helper::_basename(){
 	done
 }
 
-helper::_dirname(){
+function helper::_dirname(){
 	declare -n __="$1"
 	local i
 	for i in "${!__[@]}"; do
@@ -557,7 +535,7 @@ helper::_dirname(){
 	done
 }
 
-helper::_test(){
+function helper::_test(){
 	declare -a arr
 	helper::addmemberfunctions -v arr
 	arr.push "f.o.o f.o.o"

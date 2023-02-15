@@ -1,8 +1,8 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-enrichment::_ora(){
-	_usage() {
+function enrichment::_ora(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-1 <cmds1>    | array of
@@ -90,7 +90,7 @@ enrichment::_ora(){
 						pdf(file.path(odir,"barplot.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
 						par(mar=c(5,max(nchar(df$description))/3+3,5,1));
 						barplot(rev(dfp$fdr), main=paste0(domain," (Top ",bars,")"), horiz=T, names.arg=rev(dfp$description),
-							xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
+							xlab="-log10 q-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
 							cex.names=0.8, las=1);
 						graphics.off();
 
@@ -99,17 +99,18 @@ enrichment::_ora(){
 						pdf(file.path(odir,"barplot.full.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
 						par(mar=c(5,max(nchar(df$description))/3+3,5,1));
 						barplot(rev(dfp$fdr), main=paste0(domain," (",bars,")"), horiz=T, names.arg=rev(dfp$description),
-							xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
+							xlab="-log10 q-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
 							cex.names=0.8, las=1);
 						graphics.off();
 
-						ora <- as.data.frame(ora)[c("ID","Count","pvalue","p.adjust","Description")];
+						ora <- as.data.frame(ora)[c("ID","Count","pvalue","p.adjust","Description","geneID")];
+						ora$geneID <- gsub("/",";",ora$geneID);
 					} else {
-						ora <- data.frame(matrix(ncol = 5, nrow = 0));
+						ora <- data.frame(matrix(ncol = 6, nrow = 0));
 					};
 				};
 			};
-			colnames(ora) = c("id","count","pval","padj","description");
+			colnames(ora) = c("id","count","pval","padj","description","enrichment");
 			write.table(ora, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");
 		'
 	CMD
@@ -119,8 +120,8 @@ enrichment::_ora(){
 	return 0
 }
 
-enrichment::_gsea(){
-	_usage() {
+function enrichment::_gsea(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-1 <cmds1>    | array of
@@ -221,7 +222,7 @@ enrichment::_gsea(){
 						pdf(file.path(odir,"barplot.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
 						par(mar=c(5,max(nchar(df$description))/3+3,5,1));
 						barplot(rev(dfp$fdr), main=paste0(domain," (Top ",bars,")"), horiz=T, names.arg=rev(dfp$description),
-							xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
+							xlab="-log10 q-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
 							cex.names=0.8, las=1);
 						graphics.off();
 
@@ -231,7 +232,7 @@ enrichment::_gsea(){
 						pdf(file.path(odir,"barplot.full.pdf"),width=max(nchar(df$description))/5,height=bars/2+1.8);
 						par(mar=c(5,max(nchar(df$description))/3+3,5,1));
 						barplot(rev(dfp$fdr), main=paste0(domain," (",bars,")"), horiz=T, names.arg=rev(dfp$description),
-							xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
+							xlab="-log10 q-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
 							cex.names=0.8, las=1);
 						graphics.off();
 
@@ -243,13 +244,14 @@ enrichment::_gsea(){
 							};
 						};
 
-						gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust","Description")];
+						gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust","Description","core_enrichment")];
+						gsea$core_enrichment <- gsub("/",";",gsea$core_enrichment);
 					} else {
-						gsea <- data.frame(matrix(ncol = 5, nrow = 0));
+						gsea <- data.frame(matrix(ncol = 6, nrow = 0));
 					};
 				};
 			};
-			colnames(gsea) = c("id","count","pval","padj","description");
+			colnames(gsea) = c("id","count","pval","padj","description","enrichment");
 			write.table(gsea, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");
 		'
 	CMD
@@ -260,8 +262,8 @@ enrichment::_gsea(){
 }
 
 
-enrichment::_reducego(){
-	_usage() {
+function enrichment::_reducego(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-1 <cmds1>    | array of
@@ -336,7 +338,7 @@ enrichment::_reducego(){
 					pdf(file.path(odir,"barplot_reduced.pdf"),width=max(nchar(dfp$term))/5,height=bars/2+1.8);
 					par(mar=c(5,max(nchar(dfp$term))/3+3,5,1));
 					barplot(rev(dfp$score), main=paste0(domain," (Top ",bars,")"), horiz=T, names.arg=rev(dfp$term),
-						xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(dfp$score+5)),
+						xlab="-log10 q-value", col=rainbow(9)[1], xlim=c(0,max(dfp$score+5)),
 						cex.names=0.8, las=1);
 					graphics.off();
 
@@ -345,7 +347,7 @@ enrichment::_reducego(){
 					pdf(file.path(odir,"barplot_reduced.full.pdf"),width=max(nchar(dfp$term))/5,height=bars/2+1.8);
 					par(mar=c(5,max(nchar(dfp$term))/3+3,5,1));
 					barplot(rev(dfp$score), main=domain, horiz=T, names.arg=rev(dfp$term),
-						xlab="-log10 p-value", col=rainbow(9)[1], xlim=c(0,max(dfp$score+5)),
+						xlab="-log10 q-value", col=rainbow(9)[1], xlim=c(0,max(dfp$score+5)),
 						cex.names=0.8, las=1);
 					graphics.off();
 				};
@@ -358,8 +360,8 @@ enrichment::_reducego(){
 	return 0
 }
 
-enrichment::_revigo(){
-	_usage() {
+function enrichment::_revigo(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-1 <cmds1>    | array of
@@ -478,8 +480,8 @@ enrichment::_revigo(){
 	return 0
 }
 
-enrichment::go(){
-	_usage() {
+function enrichment::go(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return

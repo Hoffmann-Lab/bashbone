@@ -83,8 +83,8 @@ POSTPROCESSING
 tr \$'\t' \$'\n' [fastq.tsv] | pigz -c -p [threads] > [fastq.gz]
 
 # for paired-end data:
-sort -k1,1 --parallel=[threads] -S [memory] -T /dev/shm  [fastq.R1.tsv] | tr \$'\t' \$'\n' | pigz -c -p [threads] > [fastq.R1.gz]
-sort -k1,1 --parallel=[threads] -S [memory] -T /dev/shm  [fastq.R2.tsv] | tr \$'\t' \$'\n' | pigz -c -p [threads] > [fastq.R2.gz]
+sort -k1,1 --parallel=[threads] -S [memory] -T /tmp  [fastq.R1.tsv] | tr \$'\t' \$'\n' | pigz -c -p [threads] > [fastq.R1.gz]
+sort -k1,1 --parallel=[threads] -S [memory] -T /tmp  [fastq.R2.tsv] | tr \$'\t' \$'\n' | pigz -c -p [threads] > [fastq.R2.gz]
 
 
 PRALLELIZATION

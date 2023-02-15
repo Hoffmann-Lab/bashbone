@@ -1,13 +1,13 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-visualize::venn() {
+function visualize::venn(){
 	declare -a tdirs
-	_cleanup::visualize::venn(){
+	function _cleanup::visualize::venn(){
 		rm -rf "${tdir[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -15,15 +15,14 @@ visualize::venn() {
 			-t <threads>  | number of
 			-l <idfiles>  | array of bed or id files
 			-n <names>    | array of
-			-p <tmpdir>   | path to
 			-o <outfile>  | path to prefix
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads
+	local OPTIND arg mandatory skip=false threads tmpdir="${TMPDIR:-/tmp}"
 	declare -n _lists_venn _names_venn
-	while getopts 'S:s:t:l:b:n:p:o:' arg; do
+	while getopts 'S:s:t:l:b:n:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -32,11 +31,10 @@ visualize::venn() {
 			b)	_beds_venn=$OPTARG;;
 			n)	_names_venn=$OPTARG;;
 			o)	((++mandatory)); outfile="$OPTARG"; mkdir -p "$(dirname "$outfile")";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 3 ]] && _usage
+	[[ $mandatory -lt 2 ]] && _usage
 
 	commander::printinfo "plotting venn diagrams"
 

@@ -1,14 +1,13 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-preprocess::dedup(){
-	_usage() {
+function preprocess::dedup(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
-			-p <tmpdir>    | path to
 			-o <outdir>    | path to
 			-M <maxmemory> | amount of
 			-1 <fastq1>    | array of
@@ -18,23 +17,22 @@ preprocess::dedup(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory tmpdir outdir
+	local OPTIND arg mandatory skip=false threads maxmemory tmpdir="${TMPDIR:-/tmp}" outdir
 	declare -n _fq1_dedup _fq2_dedup _umi_dedup
-	while getopts 'S:s:t:M:o:p:1:2:3:' arg; do
+	while getopts 'S:s:t:M:o:1:2:3:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			M)	maxmemory=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1)	((++mandatory)); _fq1_dedup=$OPTARG;;
 			2)	_fq2_dedup=$OPTARG;;
 			3)	((++mandatory)); _umi_dedup=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "umi based de-duplication"
 
@@ -64,7 +62,7 @@ preprocess::dedup(){
 			CMD
 				awk '{if($1!=s){print}; s=$1}'
 			CMD
-				tee >(awk -F '\t' -v OFS='\n' '{print \$2,\$3,\$4,\$5}' | helper::pgzip -t $(((threads+1)/2)) -o "$o1") >(awk -F '\t' -v OFS='\n' '{print \$6,\$7,\$8,\$9}' | helper::pgzip -t $(((threads+1)/2)) -o "$o2") > /dev/null
+				tee -i >(awk -F '\t' -v OFS='\n' '{print \$2,\$3,\$4,\$5}' | helper::pgzip -t $(((threads+1)/2)) -o "$o1") >(awk -F '\t' -v OFS='\n' '{print \$6,\$7,\$8,\$9}' | helper::pgzip -t $(((threads+1)/2)) -o "$o2") > /dev/null
 			CMD
 				cat
 			CMD
@@ -96,13 +94,13 @@ preprocess::dedup(){
 	return 0
 }
 
-preprocess::fastqc() {
+function preprocess::fastqc(){
 	declare -a tdirs
-	_cleanup::preprocess::fastqc(){
+	function _cleanup::preprocess::fastqc(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -110,7 +108,6 @@ preprocess::fastqc() {
 			-t <threads>  | number of
 			-M <maxmemory>| amount of
 			-o <outdir>   | path to
-			-p <tmpdir>   | path to
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 			-a <adapter1> | array of
@@ -119,15 +116,14 @@ preprocess::fastqc() {
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir maxmemory
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" maxmemory
 	declare -n _fq1_fastqc _fq2_fastqc _adapter1_fastqc _adapter2_fastqc
-	while getopts 'S:s:t:M:p:o:1:2:a:A:' arg; do
+	while getopts 'S:s:t:M:o:1:2:a:A:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			M)	maxmemory=$OPTARG;;
-			p)	((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			1)	((++mandatory)); _fq1_fastqc=$OPTARG;;
 			2)	_fq2_fastqc=$OPTARG;;
@@ -136,7 +132,7 @@ preprocess::fastqc() {
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "calculating qualities"
 
@@ -202,8 +198,8 @@ preprocess::fastqc() {
 	return 0
 }
 
-preprocess::rmpolynt(){
-	_usage() {
+function preprocess::rmpolynt(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -262,8 +258,8 @@ preprocess::rmpolynt(){
 	return 0
 }
 
-preprocess::cutadapt(){
-	_usage() {
+function preprocess::cutadapt(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -362,8 +358,8 @@ preprocess::cutadapt(){
 	return 0
 }
 
-preprocess::trimmomatic() {
-	_usage() {
+function preprocess::trimmomatic(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -372,16 +368,15 @@ preprocess::trimmomatic() {
 			-t <threads>  | number of
 			-M <maxmemory>| amount of
 			-o <outdir>   | path to
-			-p <tmpdir>   | path to
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads maxmemory outdir tmpdir rrbs=false
+	local OPTIND arg mandatory skip=false threads maxmemory outdir tmpdir="${TMPDIR:-/tmp}" rrbs=false
 	declare -n _fq1_trimmomatic _fq2_trimmomatic
-	while getopts 'S:s:t:M:b:m:o:p:1:2:' arg; do
+	while getopts 'S:s:t:M:b:m:o:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -389,13 +384,12 @@ preprocess::trimmomatic() {
 			M) maxmemory=$OPTARG;;
 			b) rrbs=$OPTARG;;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_trimmomatic=$OPTARG;;
 			2) _fq2_trimmomatic=$OPTARG;;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "trimming"
 
@@ -520,41 +514,39 @@ preprocess::trimmomatic() {
 	return 0
 }
 
-preprocess::rcorrector(){
+function preprocess::rcorrector(){
 	declare -a tdirs
-	_cleanup::preprocess::rcorrector(){
+	function _cleanup::preprocess::rcorrector(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-o <outdir>   | absolute path to
-			-p <tmpdir>   | path to
 			-1 <fastq1>   | array of absolute paths
 			-2 <fastq2>   | array of absolute paths
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}"
 	declare -n _fq1_rcorrector _fq2_rcorrector
-	while getopts 'S:s:t:o:p:1:2:' arg; do
+	while getopts 'S:s:t:o:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir"; outdir=$(realpath -se "$outdir");;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_rcorrector=$OPTARG;;
 			2) _fq2_rcorrector=$OPTARG;;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "correcting read errors"
 
@@ -638,41 +630,39 @@ preprocess::rcorrector(){
 }
 
 
-preprocess::sortmerna_new(){
+function preprocess::sortmerna_new(){
 	declare -a tdirs
-	_cleanup::preprocess::sortmerna(){
+	function _cleanup::preprocess::sortmerna(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-o <outdir>   | path to
-			-p <tmpdir>   | path to
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}"
 	declare -n _fq1_sortmerna _fq2_sortmerna
-	while getopts 'S:s:t:i:o:p:1:2:' arg; do
+	while getopts 'S:s:t:i:o:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_sortmerna=$OPTARG;;
 			2) _fq2_sortmerna=$OPTARG;;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "filtering rRNA fragments"
 
@@ -804,41 +794,39 @@ preprocess::sortmerna_new(){
 	return 0
 }
 
-preprocess::sortmerna(){
+function preprocess::sortmerna(){
 	declare -a tdirs
-	_cleanup::preprocess::sortmerna(){
+	function _cleanup::preprocess::sortmerna(){
 		rm -rf "${tdirs[@]}"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-o <outdir>   | path to
-			-p <tmpdir>   | path to
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}"
 	declare -n _fq1_sortmerna _fq2_sortmerna
-	while getopts 'S:s:t:i:o:p:1:2:' arg; do
+	while getopts 'S:s:t:i:o:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_sortmerna=$OPTARG;;
 			2) _fq2_sortmerna=$OPTARG;;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "filtering rRNA fragments"
 
@@ -881,7 +869,7 @@ preprocess::sortmerna(){
 				ln -sfn /dev/fd/12 "$tmp.rRNA.$e1"
 			CMD
 				sortmerna
-				--ref \$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} bash -c 'printf ":%q,%q" "{}" "\$(dirname "{}")/index/\$(basename "{}" .fasta)-L18"' | sed 's/://')
+				--ref \$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} bash -c 'printf ":%q,%q" "\$1" "\$(dirname "\$1")/index/\$(basename "\$1" .fasta)-L18"' bash {} | sed 's/://')
 				--reads "$tmp.merged.$e1"
 				--num_alignments 1
 				--fastx
@@ -889,8 +877,8 @@ preprocess::sortmerna(){
 				--aligned "$tmp.rRNA"
 				--other "$tmp.ok"
 				-a $threads
-				11> >(sed -E '/^\s*$/d' | paste - - - - | tee >(sed -n '1~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$o1") >(sed -n '2~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$o2") > /dev/null)
-				12> >(sed -E '/^\s*$/d' | paste - - - - | tee >(sed -n '1~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$or1") >(sed -n '2~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$or2") > /dev/null)
+				11> >(sed -E '/^\s*$/d' | paste - - - - | tee -i >(sed -n '1~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$o1") >(sed -n '2~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$o2") > /dev/null)
+				12> >(sed -E '/^\s*$/d' | paste - - - - | tee -i >(sed -n '1~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$or1") >(sed -n '2~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$or2") > /dev/null)
 				| cat
 			CMD
 				rm -f "$tmp.merged.$e1"; exec 11>&-; exec 12>&-
@@ -919,7 +907,7 @@ preprocess::sortmerna(){
 				ln -sfn /dev/fd/12 "$tmp.rRNA.$e1"
 			CMD
 				sortmerna
-				--ref \$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} bash -c 'printf ":%q,%q" "{}" "\$(dirname "{}")/index/\$(basename "{}" .fasta)-L18"' | sed 's/://')
+				--ref \$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} bash -c 'printf ":%q,%q" "\$1" "\$(dirname "\$1")/index/\$(basename "\$1" .fasta)-L18"' bash {} | sed 's/://')
 				--reads "$tmp.$e1"
 				--fastx
 				--aligned "$tmp.rRNA"
@@ -947,8 +935,8 @@ preprocess::sortmerna(){
 	return 0
 }
 
-preprocess::add4stats(){
-	_usage() {
+function preprocess::add4stats(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-r <qualdirs>  | array of
@@ -984,13 +972,13 @@ preprocess::add4stats(){
 	return 0
 }
 
-preprocess::qcstats(){
+function preprocess::qcstats(){
 	local tmp
-	_cleanup::preprocess::qcstats(){
+	function _cleanup::preprocess::qcstats(){
 		rm -f "$tmp"
 	}
 
-	_usage() {
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip> | true/false return
@@ -999,16 +987,15 @@ preprocess::qcstats(){
 			-t <threads>  | number of
 			-i <qualdirs> | array of
 			-o <outdir>   | path to
-			-p <tmpdir>   | path to
 			-1 <fastq1>   | array of
 			-2 <fastq2>   | array of
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads skip=false outdir tmpdir force=false
+	local OPTIND arg mandatory threads skip=false outdir tmpdir="${TMPDIR:-/tmp}" force=false
 	declare -n _qualdirs_qcstats _fq1_qcstats _fq2_qcstats
-	while getopts 'S:s:t:f:i:o:p:1:2:' arg; do
+	while getopts 'S:s:t:f:i:o:1:2:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
@@ -1016,13 +1003,12 @@ preprocess::qcstats(){
 			t) ((++mandatory)); threads=$OPTARG;;
 			i) ((++mandatory)); _qualdirs_qcstats=$OPTARG;;
 			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p) ((++mandatory)); tmpdir="$OPTARG"; mkdir -p "$tmpdir";;
 			1) ((++mandatory)); _fq1_qcstats=$OPTARG;;
 			2) _fq2_qcstats=$OPTARG;;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 
 	declare -a cmdqc
 	local qdir i f b e qczip
