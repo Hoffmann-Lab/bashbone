@@ -85,11 +85,6 @@ function bisulfite::mspicut(){
 }
 
 function bisulfite::segemehl(){
-	declare -a tdirs
-	function _cleanup::bisulfite::segemehl(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -146,7 +141,7 @@ function bisulfite::segemehl(){
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	else
 		commander::printinfo "checking md5 sums"
-		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
+		[[ ! -s "$genome.md5.sh" ]] && cp "$BASHBONE_DIR/lib/md5.sh" "$genome.md5.sh"
 		source "$genome.md5.sh"
 
 		local thismd5genome thismd5segemehlbs
@@ -166,7 +161,7 @@ function bisulfite::segemehl(){
 		fi
 	fi
 
-	declare -a cmd1
+	declare -a tdirs cmd1
 	local o e params
 	for i in "${!_fq1_segemehl[@]}"; do
 		helper::basename -f "${_fq1_segemehl[$i]}" -o o -e e
@@ -267,7 +262,7 @@ function bisulfite::bwa(){
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	else
 		commander::printinfo "checking md5 sums"
-		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
+		[[ ! -s "$genome.md5.sh" ]] && cp "$BASHBONE_DIR/lib/md5.sh" "$genome.md5.sh"
 		source "$genome.md5.sh"
 
 		local thismd5genome thismd5bwameth
@@ -351,11 +346,6 @@ function bisulfite::haarz(){
 }
 
 function bisulfite::mecall(){
-	declare -a tdirs
-	function _cleanup::bisulfite::mecall(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -396,7 +386,7 @@ function bisulfite::mecall(){
 	read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
 
 	local m f o odir
-	declare -a cmd1 cmd2 cmd3 cmd4
+	declare -a tdirs cmd1 cmd2 cmd3 cmd4
 	for m in "${_mapper_haarz[@]}"; do
 		declare -n _bams_haarz=$m
 		odir="$outdir/$m/haarz"
@@ -461,11 +451,6 @@ function bisulfite::mecall(){
 }
 
 function bisulfite::methyldackel(){
-	declare -a tdirs
-	function _cleanup::bisulfite::methyldackel(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -498,7 +483,7 @@ function bisulfite::methyldackel(){
 
 	commander::printinfo "methylation calling methyldackel"
 
-	declare -a cmd1 cmd2
+	declare -a tdirs cmd1 cmd2
 	local m f o odir
 	for m in "${_mapper_methyldackel[@]}"; do
 		declare -n _bams_methyldackel=$m
@@ -686,14 +671,15 @@ function bisulfite::_metilene(){
 			-x <minimum>   | of -a values
 			-y <minimum>   | of -b values
 			-d <distance>  | for CpGs within DMR maximum - default: 300
+			-n <minimum>   | number of CpGs a DMR should consists of - default: 8
 			-o <outdir>    | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads merates gtf outdir gtfinfo c t crep trep distance=300
+	local OPTIND arg mandatory threads merates gtf outdir gtfinfo c t crep trep distance=300 ncpg=8
 	declare -n _cmds1_metilene _cmds2_metilene
-	while getopts '1:2:t:i:a:b:x:y:d:o:' arg; do
+	while getopts '1:2:t:i:a:b:x:y:d:n:o:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_metilene=$OPTARG;;
 			2)	((++mandatory)); _cmds2_metilene=$OPTARG;;
@@ -704,6 +690,7 @@ function bisulfite::_metilene(){
 			x)	crep=$OPTARG;;
 			y)	trep=$OPTARG;;
 			d)	distance=$OPTARG;;
+			n)	ncpg=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG";;
 			*)	_usage;;
 		esac
@@ -721,7 +708,7 @@ function bisulfite::_metilene(){
 			metilene
 				$params
 				-t $threads
-				-m 8
+				-m $ncpg
 				-M $distance
 				-a $c
 				-b $t
@@ -795,7 +782,7 @@ function bisulfite::join(){
 
 						unset sample condition library replicate factors
 						while read -r sample condition library replicate factors; do
-							[[ ${visited["$condition.$replicate"]} ]] && continue || visited["$condition.$replicate"]=1
+							[[ ${visited["$sample"]} ]] && continue || visited["$sample"]=1
 							header+="\t$condition.$replicate"
 							meanheader+="\t$condition"
 							tojoin+=("$(find -L "$mecalldir/$m$tool" -maxdepth 1 -name "$sample*.$context.bed" -print -quit | grep .)")
@@ -804,64 +791,67 @@ function bisulfite::join(){
 				done
 			done
 
-			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 				{	echo -e "$header";
 					bedtools unionbedg
 						-filler .
 						-i $(printf '"%s" ' "${tojoin[@]}");
-				} | cut -f 1,3- > "$odir/merates.bedg";
-			CMD
-				echo -e "$meanheader" > "$odir/merates.mean.bedg";
-			CMD
-				tail -n +2 "$odir/merates.bedg" >> "$odir/merates.mean.bedg";
-			CMD
-				Rscript - <<< '
-					args <- commandArgs(TRUE);
-					tsv <- args[1];
-					df <- read.table(tsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-					nfo=df[,1:2];
-					df=df[,3:ncol(df)];
-					means <- t(apply(df, 1, function(x) tapply(x, colnames(df), mean)));
-					write.table(data.frame(nfo,means[,unique(colnames(df))],check.names=F), row.names = F, file = tsv, quote=F, sep="\t");
-				'
-			CMD
-				"$odir/merates.mean.bedg"
+				} | cut -f 1,3- > "$odir/merates.bedg"
 			CMD
 
-			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-				Rscript - <<< '
-					args <- commandArgs(TRUE);
-					intsv <- args[1];
-					outf <- args[2];
-					df <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-					nfo=df[,1:2];
-					df=df[,3:ncol(df)];
-					df <- log(df+1);
-					df <- df-rowMeans(df);
-					df <- df/apply(df,1,sd);
-					df[is.na(df)] <- 0;
-					write.table(data.frame(nfo,df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
-				'
-			CMD
-				"$odir/merates.bedg" "$odir/merates.bedg.zscores"
-			CMD
+			# allow for Rscript | head without getting SIGPIPE error. redirection to file possible via sink()
+			# println = function(F, sep="\t"){ tryCatch({cat(F,sep=sep); cat("\n");}, error=function(e){quit("no")}); };
 
-			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+				echo -e "$header" > "$odir/merates.bedg.zscores";
+			CMD
 				Rscript - <<< '
-					args <- commandArgs(TRUE);
-					intsv <- args[1];
-					outf <- args[2];
-					df <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-					nfo=df[,1:2];
-					df=df[,3:ncol(df)];
-					df <- log(df+1);
-					df <- df-rowMeans(df);
-					df <- df/apply(df,1,sd);
-					df[is.na(df)] <- 0;
-					write.table(data.frame(nfo,df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
+					options(warn=-1);
+					args = commandArgs(TRUE);
+					conin = file(args[1], open="r", raw=T);
+					conz = file(args[2], open="a");
+					conmean = file(args[3], open="w");
+					conmeanz = file(args[4], open="w");
+
+					readln = function(con, sep="\t"){ unlist(strsplit(readLines(con, n=1), split=sep)); };
+
+					header = readln(conin);
+					l=length(header);
+					nfo=header[1:2];
+					header=header[3:l];
+					meanheader = unique(header);
+
+					writeLines(paste(c(nfo,meanheader), collapse="\t"), conmean);
+					writeLines(paste(c(nfo,meanheader), collapse="\t"), conmeanz);
+
+					while (length(F <- readln(conin))>0){
+						nfo = F[1:2];
+						F = as.numeric(F[3:l]);
+
+						Z = log(F+1);
+						Z = Z-mean(Z, na.rm=T);
+						Z = Z/sd(Z, na.rm=T);
+						Z[is.nan(Z) | is.na(Z)] = ".";
+						writeLines(paste(c(nfo,Z), collapse="\t"), conz);
+
+						means = tapply(F, header, mean, na.rm=T)[meanheader];
+						means[is.nan(means) | is.na(means)] = ".";
+						writeLines(paste(c(nfo,means), collapse="\t"), conmean);
+
+						F = as.numeric(means);
+						Z = log(F+1);
+						Z = Z-mean(Z, na.rm=T);
+						Z = Z/sd(Z, na.rm=T);
+						Z[is.nan(Z) | is.na(Z)] = ".";
+						writeLines(paste(c(nfo,Z), collapse="\t"), conmeanz);
+					};
+					close(conin);
+					close(conz);
+					close(conmean);
+					close(conmeanz);
 				'
 			CMD
-				"$odir/merates.mean.bedg" "$odir/merates.mean.bedg.zscores"
+				<(echo -e "$meanheader"; tail -n +2 "$odir/merates.bedg") "$odir/merates.bedg.zscores" "$odir/merates.mean.bedg" "$odir/merates.mean.bedg.zscores"
 			CMD
 		done
 	done
