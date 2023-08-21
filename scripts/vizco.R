@@ -5,12 +5,18 @@ args = commandArgs(TRUE)
 if(length(args)<4){
 	cat("plot feature heatmap and TPM/VSC trajectories per wgcna cluster\n")
 	cat("\n")
-	cat("usage parameter: <[Cluster|Module]:type> <[VSC|TPM|s]:data-type> <f:matrix> <f:outbase>\n")
-	cat('example: Cluster Z-score "/path/to/matrix.tsv" "/path/to/outbase"\n')
+	cat("usage parameter: <[Cluster|Module]:type> <[VSC|TPM|Z-score|s]:data-type> <f:matrix> <f:outbase> [<f:matrix>]\n")
+	cat('example: Cluster Z-score "/path/to/matrix.tsv" "/path/to/outbase" "/path/to/corr_p_padj_matrix.tsv"\n')
 	cat("\n")
 	cat("matrix: tab separated with header and feature ids/label.\n")
 	cat("id       sample1 sample2 sample3 ..\n")
 	cat("feature1 value1  value2  value3  ..\n")
+	cat("..\n")
+	cat("\n")
+	cat("(optional) corr_p_padj_matrix.tsv: tab separated with header and feature ids/label.\n")
+	cat("id       cluster      Cluster001.cor [..] Cluster002.cor ..\n")
+	cat("feature1 Cluster.001  value1         [..] value2  ..\n")
+	cat("feature2 Cluster.002  value1         [..] value2  ..\n")
 	cat("..\n")
 	quit("no",1)
 }
@@ -20,12 +26,22 @@ options(warn=-1)
 suppressMessages({
 	library(pheatmap)
 	library(RColorBrewer)
+	library(ggplot2)
+	library(scales)
+	library(reshape2)
+	library(data.table)
 })
 
 type <- args[1] #e.g. Cluster or Module/Modules
 datatype <- args[2] # 'TPM' (will be log transformed) or deseq 'VSC' else Z-Score
 intsv <- args[3]
 outbase <- args[4]
+
+MEcor = data.frame()
+if(length(args)==5){
+	MEcor = read.table(args[5], header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="")
+	colnames(MEcor)[2] = "type"
+}
 
 df = read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="")
 colnames(df)[1]="id"
@@ -106,51 +122,77 @@ pheatmap(m, color=color,
 )
 
 
-if(datatype != "TPM" && datatype != "VSC") quit()
-if(ncol(m) < 3) quit()
+################# trajectories
 
-suppressMessages({
-	library(ggplot2)
-	library(scales)
-	library(reshape2)
-	library(data.table)
-})
 
 # get cluster count
 cluster_count <- length(unique(df$type))
 
 # strip gene and cluster ID
 foo <- df[,2:(ncol(df)-1)]
+foo.colnames <- colnames(foo)
 
-# log all data columns
 if (datatype == "TPM") {
-	flog <- log2(foo+1)
-	labeldatatype=paste("log2",datatype,sep=" ")
+	foo <- log2(foo+1)
+	labeldatatype <- paste("log2",datatype,sep=" ")
 } else {
-	flog = foo
-	labeldatatype=datatype
-}
-# get mean_pw_ch_log
-if (nrow(flog)>1){
-	res <- as.data.frame(rowMeans(mapply(function(x,y) abs(x-y), flog[, 2:ncol(flog)], flog[, 1:(ncol(flog)-1)])))
-} else {
-	res <- as.data.frame(mean(mapply(function(x,y) abs(x-y), flog[, 2:ncol(flog)], flog[, 1:(ncol(flog)-1)])))
+	labeldatatype <- datatype
 }
 
-colnames(res)[1] <- "mean_pw_ch_log"
+if (nrow(MEcor)>0 && type == "Cluster"){
+	foo <- cbind(foo, df[,c(1,ncol(df))])
+	res = data.frame()
+	for (i in unique(MEcor$type)){
+		cor = subset(MEcor[MEcor$type==i,],select=c("id",paste0(i,".cor")))
+		cor[2] = abs(cor[2])
+		colnames(cor)[2] = "me_corr"
+		res = rbind(res, cor)
+	}
+	foo = merge(foo,res,by="id")
+	molt <- reshape2::melt(foo, id.vars = c("type", "id", "me_corr"), measure.vars = foo.colnames)
+	ggplot(molt, aes(x = variable, y = value, group = id, color = me_corr)) +
+		theme_bw() +
+		theme(axis.text.x = element_text(angle = 90, hjust = 1, size = rel(min(1,15/ncol(df))))) +
+		labs(x = "", y = labeldatatype, color = "Abs. Correlation", linetype = "") +
+		geom_line(alpha=0.3) +
+		stat_summary(aes(group = 1, linetype = ''), fun.y = 'median', geom = 'line', size = 0.8, show.legend = TRUE, colour = 'green') +
+		scale_color_gradient(low = "blue", high = "red") +
+		scale_linetype_discrete(name = paste("Median",labeldatatype, sep=" ")) +
+		facet_wrap( ~ type , ncol = (as.integer(sqrt(cluster_count)+1)))
+	suppressMessages(ggsave(paste(outbase, "trajectories.pdf", sep=".")))
 
-# append gene name and cluster ID
-flog2 <- cbind(flog,df[,c(1,ncol(df))], res)
-
-molt <- reshape2::melt(flog2, id.vars = c("type", "id", "mean_pw_ch_log"), measure.vars = colnames(foo))
-
-ggplot(molt, aes(x = variable, y = value, group = id, color = mean_pw_ch_log)) +
-	theme_bw() +
-	theme(axis.text.x = element_text(angle = 90, hjust = 1, size = rel(min(1,15/ncol(df))))) +
-	labs(x = "Type", y = labeldatatype, color = "Mean log2 FC", linetype = "") +
-	geom_line(alpha=0.3) +
-	stat_summary(aes(group = 1, linetype = ''), fun.y = 'median', geom = 'line', size = 1, show.legend = TRUE, colour = 'green') +
-	scale_color_gradient(low = "blue", high = "red") +
-	scale_linetype_discrete(name = paste("Median",labeldatatype, sep=" ")) +
-	facet_wrap( ~ type , ncol = (as.integer(sqrt(cluster_count)+1)))
-suppressMessages(ggsave(paste(outbase, "trajectories.pdf", sep=".")))
+} else {
+	if(ncol(m) < 3){
+		foo <- cbind(foo, df[,c(1,ncol(df))])
+		molt <- reshape2::melt(df, id.vars = c("type", "id"), measure.vars = foo.colnames)
+		ggplot(molt, aes(x = variable, y = value, group = id)) +
+			theme_bw() +
+			theme(axis.text.x = element_text(angle = 90, hjust = 1, size = rel(min(1,15/ncol(df))))) +
+			labs(x = "", y = labeldatatype, color = "Mean FC", linetype = "") +
+			geom_line(alpha=0.3) +
+			stat_summary(aes(group = 1, linetype = ''), fun.y = 'median', geom = 'line', size = 0.8, show.legend = TRUE, colour = 'green') +
+			scale_linetype_discrete(name = paste("Median",labeldatatype, sep=" ")) +
+			facet_wrap( ~ type , ncol = (as.integer(sqrt(cluster_count)+1)))
+		suppressMessages(ggsave(paste(outbase, "trajectories.pdf", sep = ".")))
+	} else {
+		# get mean pairwise (fold) changes -> mean_pw_ch
+		if (nrow(foo)>1){
+			res <- as.data.frame(rowMeans(mapply(function(x,y) abs(x-y), foo[, 2:ncol(foo)], foo[, 1:(ncol(foo)-1)])))
+		} else {
+			res <- as.data.frame(mean(mapply(function(x,y) abs(x-y), foo[, 2:ncol(foo)], foo[, 1:(ncol(foo)-1)])))
+		}
+		colnames(res)[1] <- "mean_pw_ch"
+		foo <- cbind(foo, df[,c(1,ncol(df))], res)
+		molt <- reshape2::melt(foo, id.vars = c("type", "id", "mean_pw_ch"), measure.vars = foo.colnames)
+		ggplot(molt, aes(x = variable, y = value, group = id, color = mean_pw_ch)) +
+			theme_bw() +
+			theme(axis.text.x = element_text(angle = 90, hjust = 1, size = rel(min(1,15/ncol(df))))) +
+			labs(x = "", y = labeldatatype, color = "Mean FC", linetype = "") +
+			geom_line(alpha=0.3) +
+			stat_summary(aes(group = 1, linetype = ''), fun.y = 'median', geom = 'line', size = 0.8, show.legend = TRUE, colour = 'green') +
+			scale_color_gradient(low = "blue", high = "red") +
+			scale_linetype_discrete(name = paste("Median",labeldatatype, sep=" ")) +
+			facet_wrap( ~ type , ncol = (as.integer(sqrt(cluster_count)+1)))
+		suppressMessages(ggsave(paste(outbase, "trajectories.pdf", sep=".")))
+	}
+}
