@@ -2,17 +2,12 @@ name: diego
 channels:
   - conda-forge
   - bioconda
-  - main
   - defaults
-  - r
-  - anaconda
 dependencies:
   - _libgcc_mutex=0.1
   - bedtools=2.29.2
   - bzip2=1.0.8
   - c-ares=1.16.1
-  - ca-certificates=2020.6.20
-  - certifi=2020.6.20
   - cycler=0.10.0
   - diego=0.1.2
   - freetype=2.10.4
@@ -40,6 +35,7 @@ dependencies:
   - libstdcxx-ng=9.1.0
   - libtiff=4.1.0
   - libwebp-base=1.1.0
+  - libzlib=1.2.11
   - lz4-c=1.9.2
   - matplotlib-base=3.3.2
   - ncurses=6.2

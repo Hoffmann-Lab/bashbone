@@ -2,16 +2,11 @@ name: igv
 channels:
   - conda-forge
   - bioconda
-  - main
   - defaults
-  - r
-  - anaconda
 dependencies:
   - _libgcc_mutex=0.1
   - alsa-lib=1.2.3
-  - ca-certificates=2021.7.5
   - cairo=1.16.0
-  - certifi=2021.5.30
   - fontconfig=2.13.1
   - freetype=2.10.4
   - giflib=5.2.1
@@ -34,6 +29,7 @@ dependencies:
   - libwebp-base=1.1.0
   - libxcb=1.13
   - libxml2=2.9.10
+  - libzlib=1.2.11
   - lz4-c=1.9.2
   - ncurses=6.2
   - openjdk=11.0.8

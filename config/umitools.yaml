@@ -2,10 +2,7 @@ name: umitools
 channels:
   - conda-forge
   - bioconda
-  - main
   - defaults
-  - r
-  - anaconda
 dependencies:
   - _libgcc_mutex=0.1
   - _openmp_mutex=4.5
@@ -13,8 +10,6 @@ dependencies:
   - brotli-bin=1.0.9
   - bzip2=1.0.8
   - c-ares=1.18.1
-  - ca-certificates=2021.10.8
-  - certifi=2021.10.8
   - cycler=0.11.0
   - editdistance=0.6.0
   - fonttools=4.30.0
