@@ -1,34 +1,36 @@
 #!/usr/bin/env bash
 # (c) Konstantin Riege
 
+source "$(dirname "$0")/../bashbone_lite.sh" -a "$@" || exit 1
+
 usage(){
-cat <<- EOF
-	DESCRIPTION
-	$(basename $0) shuffle and split single or paired fastq(.gz|.bz2) files into two pseudo-replicate fastq(.gz) files
+	cat <<- EOF
+		DESCRIPTION
+		$(basename $0) shuffle and split single or paired fastq(.gz|.bz2) files into two pseudo-replicate fastq(.gz) files
 
-	VERSION
-	0.1.0
+		VERSION
+		0.1.0
 
-	SYNOPSIS
-	$(basename $0) -1 <fastq> [-2 <fastq>] -o <prefix> [-p <tmpdir> -t <threads> -z]
+		SYNOPSIS
+		$(basename $0) -1 <fastq> [-2 <fastq>] -o <prefix> [-p <tmpdir> -t <threads> -z]
 
-	OPTIONS
-	-h          | this help
-	-1 <path>   | input SE or first mate fastq(.gz|.bz2)
-	-2 <path>   | input mate pair fastq(.gz|.bz2)
-	-z          | compress output using pigz with [-t] threads (fallback: gzip)
-	-t <value>  | compression threads (default: $t)
-	-o <path>   | prefix of output fastq, extended by [1|2].(R1.|R2.)fastq(.gz)
-	-p <path>   | temp directory (default: /tmp)
+		OPTIONS
+		-h          | this help
+		-1 <path>   | input SE or first mate fastq(.gz|.bz2)
+		-2 <path>   | input mate pair fastq(.gz|.bz2)
+		-z          | compress output using pigz with [-t] threads (fallback: gzip)
+		-t <value>  | compression threads (default: $t)
+		-o <path>   | prefix of output fastq, extended by [1|2].(R1.|R2.)fastq(.gz)
+		-p <path>   | temp directory (default: /tmp)
 
-	REFERENCES
-	(c) Konstantin Riege
-	konstantin.riege{a}leibniz-fli{.}de
+		REFERENCES
+		(c) Konstantin Riege
+		konstantin.riege{a}leibniz-fli{.}de
 	EOF
-	exit 1
+	return 1
 }
 
-t=$(cat /proc/cpuinfo | grep -cF processor 2> /dev/null || echo 1)
+t=$(grep -cF processor /proc/cpuinfo 2> /dev/null || echo 1)
 while getopts 1:2:o:t:p:n:zh ARG; do
 	case $ARG in
 		1) i="$OPTARG";;
@@ -37,19 +39,19 @@ while getopts 1:2:o:t:p:n:zh ARG; do
 		p) tmpdir="$OPTARG";;
 		t) t=$OPTARG;;
 		z) z=true;;
-		h) (usage); exit 0;;
+		h) { usage || exit 0; };;
 		*) usage;
 	esac
 done
-
-if [[ $# -eq 0 ]] || [[ ! $i ]] || [[ ! $o ]]; then
+[[ $# -eq 0 ]] && { usage || exit 0; }
+if [[ ! $i || ! $o ]]; then
 	usage
 fi
 
-mkdir -p "$(dirname "$o")" || { echo "cannot create $(dirname "$o")" >&2 && exit 1; }
+mkdir -p "$(dirname "$o")"
 
 [[ $tmpdir ]] && {
-	mkdir -p "$tmpdir" || { echo "cannot create $tmpdir" >&2 && exit 1; }
+	mkdir -p "$tmpdir"
 	params="-p $tmpdir"
 } || params=""
 tmp="$(mktemp $params shufnsplit.XXXXXXXXXX)"
@@ -71,14 +73,8 @@ open=$(readlink -e "$i" | file -f - | grep -Eo '(gzip|bzip)' && echo -cd || echo
 
 if [[ $j ]]; then
 	paste <($open "$i" | sed -E '/^\s*$/d' | paste - - - -) <($open "$j" | sed -E '/^\s*$/d' | paste - - - -) | shuf > "$tmp"
-	[[ $((${PIPESTATUS[@]/%/+}0)) -gt 0 ]] && echo "cannot read $i or $j" >&2 && exit 1
 	split -a 1 --numeric-suffixes=1 --additional-suffix="$e" -n l/2 --filter="bash -c \" awk -F '\\\t' -v OFS='\\\n' '{print \\\$1,\\\$2,\\\$3,\\\$4; print \\\$5,\\\$6,\\\$7,\\\$8 > \\\"/dev/fd/2\\\"}' > >($z > \$FILE.R1) 2> >($z > \$FILE.R2) \"" "$tmp" "$o"
-	[[ $((${PIPESTATUS[@]/%/+}0)) -gt 0 ]] && echo "cannot split $tmp" >&2 && exit 1
 else
 	$open "$i" | sed -E '/^\s*$/d' | paste - - - - | shuf > "$tmp"
-	[[ $((${PIPESTATUS[@]/%/+}0)) -gt 0 ]] && echo "cannot read $i" >&2 && exit 1
 	split -a 1 --numeric-suffixes=1 --additional-suffix="$e" -n l/2 --filter="tr '\t' '\n' | $z > \$FILE" "$tmp" "$o"
-	[[ $((${PIPESTATUS[@]/%/+}0)) -gt 0 ]] && echo "cannot split $tmp" >&2 && exit 1
 fi
-
-exit 0
