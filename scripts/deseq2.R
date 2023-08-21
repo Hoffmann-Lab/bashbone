@@ -125,6 +125,16 @@ for (method in c("log","vsd","rld")){
 	n = min(10000,length(vars))
 	topidx = order(vars, decreasing = TRUE)[1:n]
 	pca = prcomp(t(normed[topidx, ]), scale = F)
+
+	loadings = pca$rotation
+	for (i in 1:3){
+		ids = rownames(loadings[order(abs(loadings[,i]), decreasing = TRUE),])
+		ids = head(ids,n=max(1,length(ids)*0.05)) # variables that drive variation in PC1
+		sink(file.path(outdir,paste("pca_pc",i,"_",method,".variables",sep="")))
+		lapply(ids, cat, "\n")
+		sink()
+	}
+
 	percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
 	data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = experiments$replicate, condition = experiments$condition)
 	write.table(data.frame(id=rownames(data),data), row.names = F,
