@@ -1,12 +1,11 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-function cluster::coexpression_deseq(){
-	declare -a tfiles
-	function _cleanup::cluster::coexpression_deseq(){
-		rm -f "${tfiles[@]}"
-	}
+function cluster::wgcna_deseq(){
+	cluster::coexpression_deseq "$@"
+}
 
+function cluster::coexpression_deseq(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -20,9 +19,10 @@ function cluster::coexpression_deseq(){
 			-n <value>    | [01234] filter input for padj < 0.05 (0) log2foldchange > 0.5 (1) basemean > 5 (2) lower 30% percentile (3) tpm > 5 (4)
 			-g <gtf>      | path to (optional)
 			-b <biotype>  | within gtf
-			-i <countsdir>| path to joined counts dir
+			-i <countsdir>| path to joined counts directory
 			-j <deseqdir> | path to
 			-o <outdir>   | path to
+			-f <feature>  | feature (default: gene)
 		EOF
 		return 1
 	}
@@ -62,7 +62,8 @@ function cluster::coexpression_deseq(){
 	declare -A visited
 	local m f i c t e odir cdir ddir params tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local tojoin="$tmp.tojoin" joined="$tmp.joined"
-	tfiles+=("$tmp" "$tojoin" "$joined")
+	echo "rm -rf '$tmp'*" >> "$BASHBONE_CLEANUP"
+
 	for m in "${_mapper_coexpression[@]}"; do
 		odir="$outdir/$m"
 		cdir="$countsdir/$m"
@@ -116,7 +117,6 @@ function cluster::coexpression_deseq(){
 		if [[ $clusterfilter =~ 4 ]]; then
 			awk '{i=2; ok=0; while(i<NF){if($i>=5){ok=1} i=i+1} if(ok){print $1}}' "$cdir/experiments.tpm" | grep -Fw -f "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
-			tfiles+=("$tmp.filtered.genes")
 		fi
 
 		[[ $biotype && "$biotype" != "." ]] && {
@@ -134,7 +134,6 @@ function cluster::coexpression_deseq(){
 			' -- -cb="$biotype" -ft="$feature" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
 			grep -Fw -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
-			tfiles+=("$tmp.genes" "$tmp.filtered.genes")
 		}
 
 		for e in tpm vsc; do
@@ -142,10 +141,12 @@ function cluster::coexpression_deseq(){
 			grep -Fw -f "$odir/experiments.filtered.genes" "$cdir/experiments.$e" >> "$odir/experiments.filtered.$e"
 
 			mkdir -p "$odir/$e"
-			params=FALSE
-			[[ $clusterfilter =~ 3 ]] && params=TRUE
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-				wgcna.R $((maxmemory/1024/2)) ${e^^*} $params "$odir/experiments.filtered.$e" "$odir/$e"
+			[[ "$e" == "tpm" ]] && params=TRUE || params=FALSE
+			[[ $clusterfilter =~ 3 ]] && params+=" TRUE" || params+=" FALSE"
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				ulimit -s $(ulimit -Hs)
+			CMD
+				wgcna.R $((maxmemory/1024/2)) $params "$odir/experiments.filtered.$e" "$odir/$e" "$ddir/experiments.csv"
 			CMD
 		done
 	done
@@ -157,125 +158,69 @@ function cluster::coexpression_deseq(){
 	fi
 
 	declare -a cmd2
-	local m e i type wdir cdir wdir odir
+	local type wdir cdir wdir odir
 	for m in "${_mapper_coexpression[@]}"; do
 		cdir="$countsdir/$m"
 		for e in tpm vsc; do
 			wdir="$outdir/$m/$e"
 
-			# work on modules
-			echo "$(head -1 $cdir/experiments.$e) type" | tr ' ' '\t' > "$wdir/modules.$e"
-			echo "$(head -1 $cdir/experiments.mean.$e) type" | tr ' ' '\t' > "$wdir/modules.mean.$e"
-			cp "$wdir/modules.$e" "$wdir/modules.$e.zscores"
-			cp "$wdir/modules.mean.$e" "$wdir/modules.mean.$e.zscores"
-
-			for i in $(seq 0 $(cut -d ' ' -f 2- "$wdir/wgcna.cluster2modules" | sed 's/ /\n/g' | sort -n | tail -1)); do
-				type="Module.$(printf '%03d' $i)"
-				odir="$wdir/$type"
-				mkdir -p "$odir"
-
-				awk -v i=$i '$NF==i{print $1}' "$wdir/wgcna.modules.tsv" > "$odir/genes.list"
-				[[ -s "$odir/genes.list" ]] || continue
-
-				# add to array for later go enrichment
-				_idfiles_coexpression+=("$odir/genes.list")
-
-				echo "$(head -1 $cdir/experiments.$e) type" | tr ' ' '\t' > "$odir/experiments.$e"
-				echo "$(head -1 $cdir/experiments.mean.$e) type" | tr ' ' '\t' > "$odir/experiments.mean.$e"
-				cp "$odir/experiments.$e" "$odir/experiments.$e.zscores"
-				cp "$odir/experiments.mean.$e" "$odir/experiments.mean.$e.zscores"
-				grep -Fw -f "$odir/genes.list" "$cdir/experiments.$e" | sed "s/$/\t$type/" | tee -ia "$wdir/modules.$e" >> "$odir/experiments.$e"
-				grep -Fw -f "$odir/genes.list" "$cdir/experiments.mean.$e" | sed "s/$/\t$type/" | tee -ia "$wdir/modules.mean.$e" >> "$odir/experiments.mean.$e"
-				grep -Fw -f "$odir/genes.list" "$cdir/experiments.$e.zscores" | sed "s/$/\t$type/" | tee -ia "$wdir/modules.$e.zscores" >> "$odir/experiments.$e.zscores"
-				grep -Fw -f "$odir/genes.list" "$cdir/experiments.mean.$e.zscores" | sed "s/$/\t$type/" | tee -ia "$wdir/modules.mean.$e.zscores" >> "$odir/experiments.mean.$e.zscores"
-
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-					vizco.R Module ${e^^*} "$odir/experiments.$e" "$odir/experiments.$e"
-				CMD
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-					vizco.R Module ${e^^*} "$odir/experiments.mean.$e" "$odir/experiments.mean.$e"
-				CMD
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-					vizco.R Module Z-Score "$odir/experiments.$e.zscores" "$odir/experiments.$e.zscores"
-				CMD
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-					vizco.R Module Z-Score "$odir/experiments.mean.$e.zscores" "$odir/experiments.mean.$e.zscores"
-				CMD
-			done
-
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-				vizco.R Modules ${e^^*} "$wdir/modules.$e" "$wdir/modules.$e"
-			CMD
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-				vizco.R Modules ${e^^*} "$wdir/modules.mean.$e" "$wdir/modules.mean.$e"
-			CMD
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-				vizco.R Modules Z-Score "$wdir/modules.$e.zscores" "$wdir/modules.$e.zscores"
-			CMD
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-				vizco.R Modules Z-Score "$wdir/modules.mean.$e.zscores" "$wdir/modules.mean.$e.zscores"
-			CMD
-
-			# work on cluster
-			echo "$(head -1 $cdir/experiments.$e) type" | tr ' ' '\t' > "$wdir/cluster.$e"
-			echo "$(head -1 $cdir/experiments.mean.$e) type" | tr ' ' '\t' > "$wdir/cluster.mean.$e"
+			echo "$(head -1 "$cdir/experiments.$e") type" | tr ' ' '\t' > "$wdir/cluster.$e"
+			echo "$(head -1 "$cdir/experiments.mean.$e") type" | tr ' ' '\t' > "$wdir/cluster.mean.$e"
 			cp "$wdir/cluster.$e" "$wdir/cluster.$e.zscores"
 			cp "$wdir/cluster.mean.$e" "$wdir/cluster.mean.$e.zscores"
+
+			cp "$wdir/cluster.$e" "$wdir/cluster.top.$e"
+			cp "$wdir/cluster.$e" "$wdir/cluster.top.$e.zscores"
+			cp "$wdir/cluster.mean.$e" "$wdir/cluster.top.mean.$e"
+			cp "$wdir/cluster.mean.$e" "$wdir/cluster.top.mean.$e.zscores"
+
 			for i in $(seq 0 $(cut -d ' ' -f 1 "$wdir/wgcna.cluster2modules" | sort -n | tail -1)); do
 				type="Cluster.$(printf '%03d' $i)"
 				odir="$wdir/$type"
 				mkdir -p "$odir"
 
-				awk -v i=$i '$NF==i{print $1}' "$wdir/wgcna.cluster.tsv" > "$odir/genes.list"
+				awk -F '\t' -v i=$i '$2==i{print $1}' "$wdir/wgcna.cluster.tsv" > "$odir/genes.list"
+				awk -F '\t' -v i=$i '$2==i{print $1}' "$wdir/wgcna.cluster.top.tsv" > "$odir/genes.top.list"
 				[[ -s "$odir/genes.list" ]] || continue
 
 				# add to array for later go enrichment
 				_idfiles_coexpression+=("$odir/genes.list")
-
-				echo "$(head -1 $cdir/experiments.$e) type" | tr ' ' '\t' > "$odir/experiments.$e"
-				echo "$(head -1 $cdir/experiments.mean.$e) type" | tr ' ' '\t' > "$odir/experiments.mean.$e"
-				cp "$odir/experiments.$e" "$odir/experiments.$e.zscores"
-				cp "$odir/experiments.mean.$e" "$odir/experiments.mean.$e.zscores"
 
 				grep -Fw -f "$odir/genes.list" "$cdir/experiments.$e" | sed "s/$/\t$type/" >> "$wdir/cluster.$e"
 				grep -Fw -f "$odir/genes.list" "$cdir/experiments.mean.$e" | sed "s/$/\t$type/" >> "$wdir/cluster.mean.$e"
 				grep -Fw -f "$odir/genes.list" "$cdir/experiments.$e.zscores" | sed "s/$/\t$type/" >> "$wdir/cluster.$e.zscores"
 				grep -Fw -f "$odir/genes.list" "$cdir/experiments.mean.$e.zscores" | sed "s/$/\t$type/" >> "$wdir/cluster.mean.$e.zscores"
 
-				for j in $(awk -v i=$i '$1==i{$1=""; print}' "$wdir/wgcna.cluster2modules"); do
-					type="Module.$(printf '%03d' $j)"
-					awk 'NR>1' "$wdir/$type/experiments.$e" >> "$odir/experiments.$e"
-					awk 'NR>1' "$wdir/$type/experiments.mean.$e" >> "$odir/experiments.mean.$e"
-					awk 'NR>1' "$wdir/$type/experiments.$e.zscores" >> "$odir/experiments.$e.zscores"
-					awk 'NR>1' "$wdir/$type/experiments.mean.$e.zscores" >> "$odir/experiments.mean.$e.zscores"
-				done
-
-				# Modules as legend title is correct here
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-					vizco.R Modules ${e^^*} "$odir/experiments.$e" "$odir/experiments.$e"
-				CMD
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-					vizco.R Modules ${e^^*} "$odir/experiments.mean.$e" "$odir/experiments.mean.$e"
-				CMD
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-					vizco.R Modules Z-Score "$odir/experiments.$e.zscores" "$odir/experiments.$e.zscores"
-				CMD
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-					vizco.R Modules Z-Score "$odir/experiments.mean.$e.zscores" "$odir/experiments.mean.$e.zscores"
-				CMD
+				grep -Fw -f "$odir/genes.top.list" "$cdir/experiments.$e" | sed "s/$/\t$type/" >> "$wdir/cluster.top.$e"
+				grep -Fw -f "$odir/genes.top.list" "$cdir/experiments.mean.$e" | sed "s/$/\t$type/" >> "$wdir/cluster.top.mean.$e"
+				grep -Fw -f "$odir/genes.top.list" "$cdir/experiments.$e.zscores" | sed "s/$/\t$type/" >> "$wdir/cluster.top.$e.zscores"
+				grep -Fw -f "$odir/genes.top.list" "$cdir/experiments.mean.$e.zscores" | sed "s/$/\t$type/" >> "$wdir/cluster.top.mean.$e.zscores"
 			done
 
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-				vizco.R Cluster ${e^^*} "$wdir/cluster.$e" "$wdir/cluster.$e"
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+				vizco.R Cluster ${e^^*} "$wdir/cluster.$e" "$wdir/cluster.$e" "$wdir/wgcna.cluster.tsv"
 			CMD
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-				vizco.R Cluster ${e^^*} "$wdir/cluster.mean.$e" "$wdir/cluster.mean.$e"
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+				vizco.R Cluster ${e^^*} "$wdir/cluster.mean.$e" "$wdir/cluster.mean.$e" "$wdir/wgcna.cluster.tsv"
 			CMD
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-				vizco.R Cluster Z-Score "$wdir/cluster.$e.zscores" "$wdir/cluster.$e.zscores"
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+				vizco.R Cluster Z-Score "$wdir/cluster.$e.zscores" "$wdir/cluster.$e.zscores" "$wdir/wgcna.cluster.tsv"
 			CMD
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-				vizco.R Cluster Z-Score "$wdir/cluster.mean.$e.zscores" "$wdir/cluster.mean.$e.zscores"
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+				vizco.R Cluster Z-Score "$wdir/cluster.mean.$e.zscores" "$wdir/cluster.mean.$e.zscores" "$wdir/wgcna.cluster.tsv"
+			CMD
+
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+				vizco.R Cluster ${e^^*} "$wdir/cluster.top.$e" "$wdir/cluster.top.$e" "$wdir/wgcna.cluster.tsv"
+			CMD
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+				vizco.R Cluster ${e^^*} "$wdir/cluster.top.mean.$e" "$wdir/cluster.top.mean.$e" "$wdir/wgcna.cluster.tsv"
+			CMD
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+				vizco.R Cluster Z-Score "$wdir/cluster.top.$e.zscores" "$wdir/cluster.top.$e.zscores" "$wdir/wgcna.cluster.tsv"
+			CMD
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+				vizco.R Cluster Z-Score "$wdir/cluster.top.mean.$e.zscores" "$wdir/cluster.top.mean.$e.zscores" "$wdir/wgcna.cluster.tsv"
 			CMD
 
 		done
@@ -290,12 +235,11 @@ function cluster::coexpression_deseq(){
 	return 0
 }
 
-function cluster::coexpression(){
-	declare -a tfiles
-	function _cleanup::cluster::coexpression(){
-		rm -f "${tfiles[@]}"
-	}
+function cluster::wgcna(){
+	cluster::coexpression "$@"
+}
 
+function cluster::coexpression(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -303,7 +247,7 @@ function cluster::coexpression(){
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-M <maxmemory>| amount of
-			-l <idfiles>  | array of
+			-l <idfiles>  | empty array to be filled with returned cluster gene lists
 			-r <mapper>   | array of bams within array of
 			-n <value>    | [34] filter input for lower 30% percentile (3) tpm > 5 (4)
 			-g <gtf>      | path to (optional)
@@ -345,43 +289,68 @@ function cluster::coexpression(){
 	commander::printinfo "inferring coexpression"
 
 	declare -a cmd1 cmd2 tojoin
-	local m f odir suff header sample countfile
+	local m f e odir suff header sample countfile csv
 	for m in "${_mapper_coexpression[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
 
 		declare -n _bams_coexpression=$m
 		suff=$(cat <(echo -e "${_bams_coexpression[0]}\n${_bams_coexpression[1]}") | rev | paste - - | sed -E 's/(.+\.).+\t\1.+/\1/' | rev)
-		header="id"
-		tojoin=()
-		for f in "${_bams_coexpression[@]}"; do
-			sample=$(basename $f $suff)
-			tojoin+=("$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc.tpm" -print -quit | grep .)")
-			header+="\t$sample"
+
+		# tpm needs to be first for csv!
+		for e in tpm vsc; do
+			if [[ "$e" == "tpm" ]]; then
+				csv="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.csv)"
+				header="id"
+				tojoin=()
+				for f in "${_bams_coexpression[@]}"; do
+					sample=$(basename $f $suff)
+					tojoin+=("$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc.$e" -print -quit | grep .)")
+					header+="\t$sample"
+					echo "$sample,${tojoin[-1]}" >> "$csv"
+				done
+
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					helper::multijoin
+						-h "$(echo -e "$header")"
+						-o "$odir/experiments.$e"
+						-f $(printf '"%s" ' "${tojoin[@]}")
+				CMD
+			else
+				commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+					Rscript - <<< '
+						options(warn=-1);
+						suppressMessages(library("DESeq2"));
+						suppressMessages(library("argparser"));
+						args = arg_parser("Calculate variance stabilized counts", hide.opts=T);
+						args = add_argument(args, "--csv", short="-c", help="path to input csv", flag=F);
+						args = add_argument(args, "--out", short="-o", help="path to output tsv", flag=F);
+						args = parse_args(args);
+						dds = DESeqDataSetFromHTSeqCount(sampleTable=read.table(args$csv, header=F, sep=",", stringsAsFactors=F, check.names=F, quote=""), directory="", design=~1);
+						vsd = as.data.frame(assay(varianceStabilizingTransformation(dds, blind=FALSE)));
+						write.table(data.frame(id=rownames(vsd), vsd, check.names=F), file=args$out, col.names=T, row.names=F, quote=F, sep = '\t');
+					'
+				CMD
+					-c "$csv" -o "$odir/experiments.$e"
+				CMD
+			fi
+
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				Rscript - <<< '
+					args <- commandArgs(TRUE);
+					intsv <- args[1];
+					outf <- args[2];
+					df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+					df <- log(df+1);
+					df <- df-rowMeans(df);
+					df <- df/apply(df,1,sd);
+					df[is.na(df)] <- 0;
+					write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
+				'
+			CMD
+				"$odir/experiments.$e" "$odir/experiments.$e.zscores"
+			CMD
 		done
-
-		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-			helper::multijoin
-				-h "$(echo -e "$header")"
-				-o "$odir/experiments.tpm"
-				-f $(printf '"%s" ' "${tojoin[@]}")
-		CMD
-
-		commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-			Rscript - <<< '
-				args <- commandArgs(TRUE);
-				intsv <- args[1];
-				outf <- args[2];
-				df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-				df <- log(df+1);
-				df <- df-rowMeans(df);
-				df <- df/apply(df,1,sd);
-				df[is.na(df)] <- 0;
-				write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
-			'
-		CMD
-			"$odir/experiments.tpm" "$odir/experiments.tpm.zscores"
-		CMD
 	done
 
 	if $skip; then
@@ -393,7 +362,9 @@ function cluster::coexpression(){
 	fi
 
 	declare -a cmd3
-	local m odir params tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.filter)"
+	local params tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.filter)"
+	echo "rm -rf '$tmp'*" >> "$BASHBONE_CLEANUP"
+
 	for m in "${_mapper_coexpression[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
@@ -419,17 +390,21 @@ function cluster::coexpression(){
 			' -- -cb="$biotype" -ft="$feature" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
 			grep -Fw -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
-			tfiles+=("$tmp.genes" "$tmp.filtered.genes")
 		}
 
-		head -1 "$odir/experiments.tpm" > "$odir/experiments.filtered.tpm"
-		grep -Fw -f "$odir/experiments.filtered.genes" "$odir/experiments.tpm" >> "$odir/experiments.filtered.tpm"
+		for e in tpm vsc; do
+			head -1 "$odir/experiments.e" > "$odir/experiments.filtered.e"
+			grep -Fw -f "$odir/experiments.filtered.genes" "$odir/experiments.e" >> "$odir/experiments.filtered.e"
 
-		params=FALSE
-		[[ $clusterfilter =~ 3 ]] && params=TRUE
-		commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
-			wgcna.R $((maxmemory/1024/2)) TPM $params "$odir/experiments.filtered.tpm" "$odir"
-		CMD
+			mkdir -p "$odir/$e"
+			[[ "$e" == "tpm" ]] && params=TRUE || params=FALSE
+			[[ $clusterfilter =~ 3 ]] && params+=" TRUE" || params+=" FALSE"
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				ulimit -s $(ulimit -Hs)
+			CMD
+				wgcna.R $((maxmemory/1024/2)) $params "$odir/experiments.filtered.$e" "$odir/$e"
+			CMD
+		done
 	done
 
 	if $skip; then
@@ -439,86 +414,47 @@ function cluster::coexpression(){
 	fi
 
 	declare -a cmd4
-	local m e i j wdir odir type
+	local i j wdir odir type
 	for m in "${_mapper_coexpression[@]}"; do
 		wdir="$outdir/$m"
-		for e in tpm; do
-			# work on modules
-			echo "$(head -1 $wdir/experiments.$e) type" | tr ' ' '\t' > "$wdir/modules.$e"
-			cp "$wdir/modules.$e" "$wdir/modules.$e.zscores"
+		for e in tpm vsc; do
 
-			for i in $(seq 0 $(cut -d ' ' -f 2- "$wdir/wgcna.cluster2modules" | sed 's/ /\n/g' | sort -n | tail -1)); do
-				type="Module.$(printf '%03d' $i)"
-				odir="$wdir/$type"
-				mkdir -p "$odir"
-
-				awk -v i=$i '$NF==i{print $1}' "$wdir/wgcna.modules.tsv" > "$odir/genes.list"
-				[[ -s "$odir/genes.list" ]] || continue
-
-				# add to array for later go enrichment
-				_idfiles_coexpression+=("$odir/genes.list")
-
-				echo "$(head -1 $wdir/experiments.$e) type" | tr ' ' '\t' > "$odir/experiments.$e"
-				cp "$odir/experiments.$e" "$odir/experiments.$e.zscores"
-				grep -Fw -f "$odir/genes.list" "$wdir/experiments.$e" | sed "s/$/\t$type/" | tee -ia "$wdir/modules.$e" >> "$odir/experiments.$e"
-				grep -Fw -f "$odir/genes.list" "$wdir/experiments.$e.zscores" | sed "s/$/\t$type/" | tee -ia "$wdir/modules.$e.zscores" >> "$odir/experiments.$e.zscores"
-
-				commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
-					vizco.R Module ${e^^*} "$odir/experiments.$e" "$odir/experiments.$e"
-				CMD
-				commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
-					vizco.R Module Z-Score "$odir/experiments.$e.zscores" "$odir/experiments.$e.zscores"
-				CMD
-			done
-
-			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
-				vizco.R Modules ${e^^*} "$wdir/modules.$e" "$wdir/modules.$e"
-			CMD
-			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
-				vizco.R Modules Z-Score "$wdir/modules.$e.zscores" "$wdir/modules.$e.zscores"
-			CMD
-
-			# work on cluster
-			echo "$(head -1 $wdir/experiments.$e) type" | tr ' ' '\t' > "$wdir/cluster.$e"
+			echo "$(head -1 "$wdir/experiments.$e") type" | tr ' ' '\t' > "$wdir/cluster.$e"
 			cp "$wdir/cluster.$e" "$wdir/cluster.$e.zscores"
+
+			cp "$wdir/cluster.$e" "$wdir/cluster.top.$e"
+			cp "$wdir/cluster.$e" "$wdir/cluster.top.$e.zscores"
 
 			for i in $(seq 0 $(cut -d ' ' -f 1 "$wdir/wgcna.cluster2modules" | sort -n | tail -1)); do
 				type="Cluster.$(printf '%03d' $i)"
 				odir="$wdir/$type"
 				mkdir -p "$odir"
 
-				awk -v i=$i '$NF==i{print $1}' "$wdir/wgcna.cluster.tsv" > "$odir/genes.list"
+				awk -F '\t' -v i=$i '$2==i{print $1}' "$wdir/wgcna.cluster.tsv" > "$odir/genes.list"
+				awk -F '\t' -v i=$i '$2==i{print $1}' "$wdir/wgcna.cluster.top.tsv" > "$odir/genes.top.list"
 				[[ -s "$odir/genes.list" ]] || continue
 
 				# add to array for later go enrichment
 				_idfiles_coexpression+=("$odir/genes.list")
 
-				echo "$(head -1 $wdir/experiments.$e) type" | tr ' ' '\t' > "$odir/experiments.$e"
-				cp "$odir/experiments.$e" "$odir/experiments.$e.zscores"
-
 				grep -Fw -f "$odir/genes.list" "$wdir/experiments.$e" | sed "s/$/\t$type/" >> "$wdir/cluster.$e"
 				grep -Fw -f "$odir/genes.list" "$wdir/experiments.$e.zscores" | sed "s/$/\t$type/" >> "$wdir/cluster.$e.zscores"
 
-				for j in $(awk -v i=$i '$1==i{$1=""; print}' "$wdir/wgcna.cluster2modules"); do
-					local type="Module.$(printf '%03d' $j)"
-					awk 'NR>1' "$wdir/$type/experiments.$e" >> "$odir/experiments.$e"
-					awk 'NR>1' "$wdir/$type/experiments.$e.zscores" >> "$odir/experiments.$e.zscores"
-				done
-
-				# Modules as legend title is correct here
-				commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
-					vizco.R Modules ${e^^*} "$odir/experiments.$e" "$odir/experiments.$e"
-				CMD
-				commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
-					vizco.R Modules Z-Score "$odir/experiments.$e.zscores" "$odir/experiments.$e.zscores"
-				CMD
+				grep -Fw -f "$odir/genes.top.list" "$wdir/experiments.$e" | sed "s/$/\t$type/" >> "$wdir/cluster.top.$e"
+				grep -Fw -f "$odir/genes.top.list" "$wdir/experiments.$e.zscores" | sed "s/$/\t$type/" >> "$wdir/cluster.top.$e.zscores"
 			done
 
-			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
-				vizco.R Cluster ${e^^*} "$wdir/cluster.$e" "$wdir/cluster.$e"
+			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+				vizco.R Cluster ${e^^*} "$wdir/cluster.$e" "$wdir/cluster.$e" "$wdir/wgcna.cluster.tsv"
 			CMD
-			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
-				vizco.R Cluster Z-Score "$wdir/cluster.$e.zscores" "$wdir/cluster.$e.zscores"
+			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+				vizco.R Cluster Z-Score "$wdir/cluster.$e.zscores" "$wdir/cluster.$e.zscores" "$wdir/wgcna.cluster.tsv"
+			CMD
+			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+				vizco.R Cluster ${e^^*} "$wdir/cluster.top.$e" "$wdir/cluster.top.$e" "$wdir/wgcna.cluster.tsv"
+			CMD
+			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+				vizco.R Cluster Z-Score "$wdir/cluster.top.$e.zscores" "$wdir/cluster.top.$e.zscores" "$wdir/wgcna.cluster.tsv"
 			CMD
 
 		done
