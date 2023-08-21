@@ -59,6 +59,11 @@ for (method in c("log","vsd","rld")){
 	# data = plotPCA(get(normed), intgroup = c("condition", "replicate"), returnData = T)
 	# percentVar = round(100 * attr(data, "percentVar"))
 
+	data = as.data.frame(assay(get(method)))
+	write.table(data.frame(id=rownames(data),data,check.names=F), row.names = F,
+		file=file.path(outdir,paste("experiments.",method,sep="")), quote=F, sep="\t"
+	)
+
 	normed = assay(get(method))
 	vars = rowVars(normed)
 	topidx = head(order(vars, decreasing = TRUE), n=10000)
@@ -87,7 +92,7 @@ for (method in c("log","vsd","rld")){
 			theme_bw() +
 			theme(aspect.ratio=1, legend.box = "horizontal") +
 			geom_point(size = 3) +
-			geom_text_repel() +
+			# geom_text_repel() +
 			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
 			ylab(paste0("PC2: ",percentVar[2], "% variance"))
 		suppressMessages(ggsave(file.path(outdir,paste("pca_12_",method,".pdf",sep=""))))
@@ -100,7 +105,7 @@ for (method in c("log","vsd","rld")){
 			theme_bw() +
 			theme(aspect.ratio=1, legend.box = "horizontal") +
 			geom_point(size = 3) +
-			geom_text_repel() +
+			# geom_text_repel() +
 			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
 			ylab(paste0("PC3: ",percentVar[3], "% variance"))
 		suppressMessages(ggsave(file.path(outdir,paste("pca_13_",method,".pdf",sep=""))))
@@ -113,7 +118,7 @@ for (method in c("log","vsd","rld")){
 			theme_bw() +
 			theme(aspect.ratio=1, legend.box = "horizontal") +
 			geom_point(size = 3) +
-			geom_text_repel() +
+			# geom_text_repel() +
 			xlab(paste0("PC2: ",percentVar[2], "% variance")) +
 			ylab(paste0("PC3: ",percentVar[3], "% variance"))
 		suppressMessages(ggsave(file.path(outdir,paste("pca_23_",method,".pdf",sep=""))))
