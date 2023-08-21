@@ -2,13 +2,6 @@
 # (c) Konstantin Riege
 
 function expression::diego(){
-	local tmp
-	declare -a tdirs
-	function _cleanup::expression::diego(){
-		rm -rf "$tmp"
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -100,7 +93,7 @@ function expression::diego(){
 			-x _strandness_diego
 	fi
 
-	declare -a cmd1 cmd2 mapdata mappeddirs
+	declare -a cmd1 cmd2 tdirs mapdata mappeddirs
 	local m f i c t odir sjfile countfile min sample condition library replicate factors
 	for m in "${_mapper_diego[@]}"; do
 		declare -n _bams_diego=$m
@@ -264,8 +257,10 @@ function expression::deseq(){
 
 	commander::printinfo "principal component and differential expression analyses"
 
-	local instances=${#_mapper_deseq[@]} ithreads
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 64 -T $threads)
+	local instances ithreads i=${#_mapper_deseq[@]}
+	read -r instances ithreads < <(configure::instances_by_threads -i $i -t 64 -T $threads)
+	[[ $instances -lt $i && $ithreads -gt 64 ]] && ((++instances)) && ithreads=$((threads/instances))
+	[[ $ithreads -gt 64 ]] && ithreads=64
 
 	declare -a cmd1 cmd2 cmd3 cmdanno cmd4 cmd5 cmd6 cmps mapdata tojoin
 	declare -A visited
@@ -562,11 +557,6 @@ function expression::_deseq(){
 }
 
 function expression::join_deseq(){
-	declare -a tfiles
-	function _cleanup::expression::join(){
-		rm -f "${tfiles[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -610,7 +600,8 @@ function expression::join_deseq(){
 	declare -A visited
 	local m f i c t e header meanheader cf vsc sample condition library replicate factors tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local topids="$tmp.topids" height width
-	tfiles+=("$tmp" "$topids")
+	echo "rm -f '$tmp'*" >> "$BASHBONE_CLEANUP"
+
 	for m in "${_mapper_join[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
@@ -628,12 +619,13 @@ function expression::join_deseq(){
 
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
-						[[ ${visited["$condition.$replicate"]} ]] && continue || visited["$condition.$replicate"]=1
+						[[ ${visited["$sample"]} ]] && continue || visited["$sample"]=1
 						header+="\t$condition.$replicate"
 						meanheader+="\t$condition"
 
 						cf="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc.tpm" -print -quit | grep .)"
-						tojoin+=("${cf/%\.htsc\.tpm/}")
+						cf="${cf/%\.htsc\.tpm/}"
+						tojoin+=("$cf")
 						# get column per sample and write it to counts dir for downstream joins
 						perl -M'List::MoreUtils qw(first_index)' -slane 'if($.==1){$c = first_index {$_ eq $h} @F}else{print "$F[0]\t$F[$c]"}' -- -h="$condition.$replicate" "$vsc" > "$cf.htsc.vsc"
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
@@ -820,8 +812,7 @@ function expression::join(){
 
 					unset sample condition library replicate factors
 					while read -r sample condition library replicate factors; do
-						[[ ${visited["$condition.$replicate"]} ]] && continue || visited["$condition.$replicate"]=1
-
+						[[ ${visited["$sample"]} ]] && continue || visited["$sample"]=1
 						header+="\t$condition.$replicate"
 						meanheader+="\t$condition"
 
