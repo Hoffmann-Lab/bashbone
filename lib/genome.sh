@@ -2,11 +2,6 @@
 # (c) Konstantin Riege
 
 function genome::mkdict(){
-	local dict
-	function _cleanup::genome::mkdict(){
-		rm -f "$dict"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -41,11 +36,10 @@ function genome::mkdict(){
 	else
 		commander::printinfo "checking md5 sums"
 
-		local instances ithreads jmem jgct jcgct
+		local instances ithreads jmem jgct jcgct dict="$(mktemp -u -p "$tmpdir" cleanup.XXXXXXXXXX.dict)"
 		read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads)
 		declare -a cmd1 cmd2
 
-		dict="$(mktemp -u -p "$tmpdir" cleanup.XXXXXXXXXX.dict)"
 		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 			MALLOC_ARENA_MAX=4 picard
 				-Xmx${jmem}m
@@ -142,11 +136,6 @@ function genome::indexgtf(){
 }
 
 function genome::mkgodb(){
-	local tmpdir="${tmpdir:-/tmp}"
-	function _cleanup::genome::mkdict(){
-		rm -f "$tmpdir/org.My.eg.db"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -163,7 +152,7 @@ function genome::mkgodb(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads gofile skip=false
+	local OPTIND arg mandatory threads gofile skip=false tmpdir="${tmpdir:-/tmp}"
 	while getopts 'S:s:t:g:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
@@ -178,6 +167,8 @@ function genome::mkgodb(){
 	commander::printinfo "creating genome go orgdb"
 
 	declare -a cmd1
+	echo "rm -f '$tmpdir/org.My.eg.db'" >> "$BASHBONE_CLEANUP"
+
 	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
 			args <- commandArgs(TRUE);
@@ -251,7 +242,7 @@ function genome::view(){
 		return 1
 	}
 
-	local OPTIND arg mandatory genome gtf delay=0 outdir autoexit=false snapshots=false memory range hight=1000 searchable=false
+	local OPTIND arg mandatory genome gtf delay=0 outdir autoexit=false snapshots=false memory range hight=1000 searchable=false tmpdir="${TMPDIR:-/tmp}"
 	declare -n _ids_view _pos_view _ids_label_view _pos_label_view _files_view
 	while getopts 'm:i:g:o:f:x:y:p:q:d:r:v:esn' arg; do
 		case $arg in
@@ -281,11 +272,11 @@ function genome::view(){
 		read -r instances memory < <(configure::memory_by_instances -i 1 -T 1)
 	}
 
-	rm -rf "$outdir/igv"
-	mkdir -p "$outdir/igv/genomes"
-	echo -e "$(basename "$genome")\t$outdir/igv/genomes/current.json\tcurrent" > "$outdir/igv/genomes/user-defined-genomes.txt"
+	local igvdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.igv)"
+	mkdir -p "$igvdir/genomes"
+	echo -e "$(basename "$genome")\t$igvdir/genomes/current.json\tcurrent" > "$igvdir/genomes/user-defined-genomes.txt"
 
-	cat <<- EOF > "$outdir/igv/prefs.properties"
+	cat <<- EOF > "$igvdir/prefs.properties"
 		SAM.SHOW_MISMATCHES=true
 		SAM.MAX_VISIBLE_RANGE=${range:-1000}
 		SAM.SHOW_SOFT_CLIPPED=false
@@ -313,9 +304,7 @@ function genome::view(){
 		SAM.MAX_VISIBLE_RANGE=${range:-1000}
 	EOF
 
-	local i x l f="$outdir/igv/igv.batch"
-
-	cat <<- EOF > "$outdir/igv/genomes/current.json"
+	cat <<- EOF > "$igvdir/genomes/current.json"
 		{
 		  id: "current",
 		  name: "$(basename "$genome")",
@@ -323,23 +312,42 @@ function genome::view(){
 		  indexURL: "$(realpath -se "$genome.fai")"$([[ $gtf ]] && echo ',')
 	EOF
 	if [[ $gtf ]]; then
-		cat <<- EOF >> "$outdir/igv/genomes/current.json"
+		cat <<- EOF >> "$igvdir/genomes/current.json"
 			  tracks: [
 			    {
 			      name: "$(basename "$gtf")",
 			      url: "$(realpath -se "$gtf.gz")",
-		EOF
-		$searchable || echo "      indexURL: \"$(realpath -se "$gtf.gz.tbi")\"," >> "$outdir/igv/genomes/current.json"
-		cat <<- EOF >> "$outdir/igv/genomes/current.json"
+			      indexURL: "$(realpath -se "$gtf.gz.tbi")",
 			      type: "annotation",
 			      format: "gtf",
 			      order: Number.MAX_VALUE
+		EOF
+		if ${searchable:-false}; then
+			awk '$3=="gene"' "$gtf" > "$igvdir/gene_names.gtf"
+			[[ -s "$igvdir/current.gtf" ]] && gtf="$(realpath -se "$gtf")" || gtf="$igvdir/gene_names.gtf"
+			cat <<- EOF >> "$igvdir/genomes/current.json"
+				    },
+				    {
+				      name: "gene_names",
+				      url: "$gtf",
+				      type: "annotation",
+				      format: "gtf",
+				      indexed: false,
+				      hidden: true
+				    }
+				  ]
+				}
+			EOF
+		else
+			cat <<- EOF >> "$igvdir/genomes/current.json"
 			    }
 			  ]
-		EOF
+			}
+			EOF
+		fi
 	fi
-	echo '}' >> "$outdir/igv/genomes/current.json"
 
+	local i x l f="$outdir/igv.batch"
 	# do not use "new"
 	# no requirement for "genome current", because this is default
 	cat <<- EOF > "$f"
@@ -400,8 +408,8 @@ function genome::view(){
 			-Dapple.laf.useScreenMenuBar=true
 			-Djava.net.preferIPv4Stack=true
 			--module=org.igv/org.broad.igv.ui.Main
-			--igvDirectory "$outdir/igv"
-			--batch "$outdir/igv/igv.batch"
+			--igvDirectory "$igvdir"
+			--batch "$outdir/igv.batch"
 	CMD
 
 	commander::runcmd -c igv -v -a cmd1
