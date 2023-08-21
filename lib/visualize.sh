@@ -2,11 +2,6 @@
 # (c) Konstantin Riege
 
 function visualize::venn(){
-	declare -a tdirs
-	function _cleanup::visualize::venn(){
-		rm -rf "${tdir[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -38,7 +33,7 @@ function visualize::venn(){
 
 	commander::printinfo "plotting venn diagrams"
 
-	declare -a cmd1
+	declare -a tdirs cmd1
 	local params
 	[[ $_names_venn ]] && params="--names $(printf '%s,' "${_names_venn[@]}" | sed 's/,$//')"
 	[[ $(head -1 ${_lists_venn[0]} | awk '{print NF}') -eq 1 ]] && params+=" --type list"
