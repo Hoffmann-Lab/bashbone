@@ -60,10 +60,6 @@ function commander::printerr(){
 }
 
 function commander::makecmd(){
-	function _cleanup::commander::makecmd(){
-		COMMANDER=()
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -172,11 +168,6 @@ function commander::printcmd(){
 }
 
 function commander::runcmd(){
-	local tmpdir logdir
-	function _cleanup::commander::runcmd(){
-		[[ $logdir ]] || rm -rf "$tmpdir"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -198,7 +189,7 @@ function commander::runcmd(){
 		return 1
 	}
 
-	local OPTIND arg mandatory instances=1 verbose=false benchmark=false cenv startid=1 stopid override=false jobname="current"
+	local OPTIND arg mandatory instances=1 verbose=false benchmark=false cenv startid=1 stopid override=false jobname="current" logdir
 	declare -n _cmds_runcmd # be very careful with circular name reference
 	while getopts 'vbt:i:c:a:s:o:n:r' arg; do
 		case $arg in
@@ -210,20 +201,20 @@ function commander::runcmd(){
 			a)	mandatory=1; _cmds_runcmd=$OPTARG;;
 			s)	IFS=":" read -r startid stopid <<< "$OPTARG";;
 			r)	override=true;;
-			o)	logdir="$OPTARG"; mkdir -p "$logdir";;
+			o)	logdir="$OPTARG"; mkdir -p "$logdir"; logdir="$(realpath -s "$logdir")";;
 			n)	jobname="$OPTARG";;
 			*)	_usage;;
 		esac
 	done
 	[[ ! $mandatory ]] && _usage
 	[[ $_cmds_runcmd ]] || return 0
-	declare -f "$BASHBONE_HOOKCMD" &> /dev/null && $BASHBONE_HOOKCMD _cmds_runcmd
+	"${BASHBONE_HOOKCMD:-:}" _cmds_runcmd
 
 	$verbose && commander::printinfo "running commands of array ${!_cmds_runcmd}"
 
-	local i id sh ex log
+	local i id sh ex log tmpdir
 	[[ $logdir ]] && tmpdir="$logdir" || tmpdir=$(mktemp -d -p "${TMPDIR:-/tmp}" jobs.XXXXXXXXXX)
-	[[ $jobname ]] || jobname="$(basename "$(mktemp -u -p "$tmpdir" XXXXXXXXXX)")"
+	[[ $jobname ]] || jobname="$(command mktemp -u XXXXXXXXXX)"
 	echo $instances > "$tmpdir/instances.$jobname"
 	ex="$tmpdir/exitcodes.$jobname"
 	touch "$ex" # for runstat
@@ -250,17 +241,15 @@ function commander::runcmd(){
 		echo "exit::$jobname.$id(){" >> "$sh"
 		echo "    echo \"$jobname.$id (\$((\$(ps -o ppid= -p \$\$ 2> /dev/null)))) exited with exit code \$1\" >> '$ex'" >> "$sh"
 		echo '}' >> "$sh"
-		# was true here for xargs
-		echo "export BASHBONE_SETSID=false" >> "$sh"
 		if [[ $cenv ]]; then
-			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+			echo "source '$BASHBONE_DIR/activate.sh' -s '$BASHBONE_EXTENSIONDIR' -c true -r false -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 			echo "conda activate --no-stack $cenv" >> "$sh"
 		else
-			echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+			echo "source '$BASHBONE_DIR/activate.sh' -s '$BASHBONE_EXTENSIONDIR' -c false -r false -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 		fi
 		$verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
-		echo "exec 1> >(tee -ai '$log')" >> "$sh"
-		echo "exec 2> >(tee -ai '$log' >&2)" >> "$sh"
+		echo "exec 1> >(trap '' INT TERM; exec tee -a '$log')" >> "$sh"
+		echo "exec 2> >(trap '' INT TERM; exec tee -a '$log' >&2)" >> "$sh"
 		printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 		echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 
@@ -405,12 +394,6 @@ function commander::runstat(){
 }
 
 function commander::qsubcmd(){
-	local jobid pid
-	function _cleanup::commander::qsubcmd(){
-		[[ $jobid ]] && qdel $jobid &> /dev/null || true
-		[[ $pid ]] && { env kill -TERM $pid; wait $pid; } &> /dev/null || true
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -435,7 +418,7 @@ function commander::qsubcmd(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv queue logdir complex params startid=1 stopid depends
+	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv q queue logdir complex params startid=1 stopid depends
 	declare -n _cmds_qsubcmd # be very careful with circular name reference
 	declare -a mapdata complexes logs
 	while getopts 'vbwrt:i:o:l:p:q:c:n:a:s:d:' arg; do
@@ -447,10 +430,10 @@ function commander::qsubcmd(){
 			c)	cenv=$OPTARG;;
 			t)	threads=$OPTARG;;
 			i)	instances=$OPTARG;;
-			o)	((++mandatory)); logdir="$OPTARG"; mkdir -p "$logdir";;
+			o)	((++mandatory)); logdir="$OPTARG"; mkdir -p "$logdir"; logdir="$(realpath -s "$logdir")";;
 			l)	complexes+=("-l $OPTARG");;
-			p)	((++mandatory)); penv="-pe $OPTARG";;
-			q)	((++mandatory)); queue="-q $OPTARG";;
+			p)	((++mandatory)); q=$OPTARG; penv="-pe $q";;
+			q)	((++mandatory)); q=$OPTARG; queue="-q $q";;
 			n)	jobname="$OPTARG";;
 			a)	((++mandatory)); _cmds_qsubcmd=$OPTARG;;
 			s)	IFS=":" read -r startid stopid <<< "$OPTARG";;
@@ -458,10 +441,18 @@ function commander::qsubcmd(){
 			*)	_usage;;
 		esac
 	done
-
 	[[ $mandatory -lt 3 ]] && _usage
 	[[ $_cmds_qsubcmd ]] || return 0
-	declare -f "$BASHBONE_HOOKCMD" &> /dev/null && $BASHBONE_HOOKCMD _cmds_runcmd
+	"${BASHBONE_HOOKCMD:-:}" _cmds_runcmd
+
+	local conf=$(mktemp -p "${TMPDIR:-/tmp}" $q.XXXXXXXXXX.conf)
+	qconf -sq $q > "$conf" 2> /dev/null && {
+		if [[ $(awk '/^terminate_method/{print $NF}' "$conf") != SIGINT ]]; then
+			commander::warn "SGE termination method cannot be set to SIGINT. Cleanup upon error or job deletion not possible!"
+			#sed -Ei 's/(terminate_method\s+).*/\1SIGINT/' "$conf"
+			#qconf -Mq "$conf"
+		fi
+	} || commander::warn "SGE configuration cannot be read from current server $HOSTNAME. Is SGE termination method set to SIGINT?"
 
 	$verbose && commander::printinfo "running commands of array ${!_cmds_qsubcmd}"
 
@@ -471,11 +462,10 @@ function commander::qsubcmd(){
 	[[ $penv ]] && params="$penv $threads" || params="$queue"
 	[[ $depends ]] && params+=" $depends"
 
-	[[ $jobname ]] || jobname="$(basename "$(mktemp -u -p "$logdir" XXXXXXXXXX)")"
+	[[ $jobname ]] || jobname="$(command mktemp -u XXXXXXXXXX)"
 	local ex="$logdir/exitcodes.$jobname"
 	local log="$logdir/job.$jobname.\$TASK_ID.log" # not SGE_TASK_ID
 
-	export BASHBONE_SGEPATH="$PATH"
 	local i id sh
 	for i in "${!_cmds_qsubcmd[@]}"; do
 		id=$((i+1))
@@ -493,15 +483,14 @@ function commander::qsubcmd(){
 		[[ "$dowait" == "y" ]] && echo '    [[ $1 -gt 0 ]] && qdel $JOB_ID &> /dev/null || true' >> "$sh"
 		echo '}' >> "$sh"
 		# attention: -S /bin/bash cannot be -S "/bin/bash --noprofile" and thus sources bash_profile and bashrc which in worst case modifies PATH so that bashbone may not serve its binaries first
-		# solution: store current path and prepend in script
-		echo 'PATH="${BASHBONE_SGEPATH:-$PATH}"' >> "$sh"
-		echo "export BASHBONE_SETSID=false" >> "$sh"
-
+		# re-execution via setsid required!
+		# 1 so that any SGE version that sends kill to PID or PGID lets bashbone kill its BASHBONE_PGID and thereby performs cleanup via exit trap before getting cut from terminal/pty
+		# 2 sournal can be executed explicitly, so that no fork runs in backround that will be killed otherwise and thus leaves unlogged write events
 		if [[ $cenv ]]; then
-			echo "source '$BASHBONE_DIR/activate.sh' -c true -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+			echo "source '$BASHBONE_DIR/activate.sh' -s '$BASHBONE_EXTENSIONDIR' -c true -r true -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 			echo "conda activate --no-stack $cenv" >> "$sh"
 		else
-			echo "source '$BASHBONE_DIR/activate.sh' -c false -x exit::$jobname.$id -i '$BASHBONE_TOOLSDIR'" >> "$sh"
+			echo "source '$BASHBONE_DIR/activate.sh' -s '$BASHBONE_EXTENSIONDIR' -c false -r true -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 		fi
 		$verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
 		printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
@@ -510,12 +499,16 @@ function commander::qsubcmd(){
 	done
 
 	if [[ "$dowait" == "y" ]]; then
-		local l
-		tail -q -f "${logs[@]}" & pid=$!
+		local l jobid
+		tail -q -f "${logs[@]}" &
+		echo "{ env kill -TERM $!; wait $!; } &> /dev/null" >> "$BASHBONE_CLEANUP"
 		while read -r l; do
-			[[ $jobid ]] || jobid=$(cut -d '.' -f 1 <<< $l)
+			if [[ ! $jobid ]]; then
+				jobid=$(cut -d '.' -f 1 <<< $l)
+				echo "qdel $jobid &> /dev/null" >> "$BASHBONE_CLEANUP"
+			fi
 			# requires 1>&2 : echo "$l" | sed -E '/exited/!d; s/Job ([0-9]+)\.(.+)\./\1 job.'$jobname'.\2/;t;s/Job ([0-9]+) (.+)\./\1 job.'$jobname'.1 \2/'
-		done < <(echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | BASH_EXECUTION_STRING="shournal" qsub -terse -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
+		done < <(echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -terse -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
 
 		# use command/env qstat in case someone like me makes use of an alias :)
 		# wait until accounting record is written to epilog after jobs post-processing metrics collection
@@ -531,7 +524,7 @@ function commander::qsubcmd(){
 		fi
 		return $ex
 	else
-		echo "$logdir/job.$jobname.\$SGE_TASK_ID.sh" | BASH_EXECUTION_STRING="shournal" qsub -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname
+		echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname
 		return 0
 	fi
 }
@@ -594,7 +587,7 @@ function commander::qstat(){
 	fi
 
 	{	echo "JOBID PRIOR NAME USER STATE STARTED QUEUE SLOTS TASKID"
-		command qstat -xml | tr '\n' ' ' | sed 's/<job_list[^>]*>/\n/g;s/<[^>]*>//g' | tr -s ' ' ' ' | perl -slane 'next unless $F[0]=~/^$p$/ || $F[2]=~/^$n$/ || $F[3]=~/^$u$/; unless($F[8]){$F[8]=$F[7]; $F[7]=$F[6]; $F[6]="*"} print join" ",@F; ' -- -p="$pid" -n="$name" -u="$user"
+		command qstat -u "*" -xml | tr '\n' ' ' | sed 's/<job_list[^>]*>/\n/g;s/<[^>]*>//g' | tr -s ' ' ' ' | perl -slane 'next unless $F[0]=~/^$p$/ && $F[2]=~/^$n$/ && $F[3]=~/^$u$/; unless($F[8]){$F[8]=$F[7]; $F[7]=$F[6]; $F[6]="*"} print join" ",@F; ' -- -p="$pid" -n="$name" -u="$user"
 	} | column -t
 
 	return 0
