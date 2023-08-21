@@ -34,9 +34,9 @@ function enrichment::_ora(){
 
 	if [[ $tpmtsv ]]; then
 		commander::makecmd -a _cmds1_ora -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
-			grep -F $domain "$gofile" | tee -i >(cut -f 2,4 | grep '^GO:' | sort -u > "$outdir/reference.terms")
+			grep -Fw $domain "$gofile" | tee -i >(cut -f 2,4 | grep '^GO:' | sort -u > "$outdir/reference.terms")
 		CMD
-			grep -F -f <(perl -M'List::Util qw(max)' -lanE 'say \$F[0] if max(@F)>=1 && \$.>1' "$tpmtsv")
+			grep -Fw -f <(perl -M'List::Util qw(max)' -lanE 'say \$F[0] if max(@F)>=1 && \$.>1' "$tpmtsv")
 		CMD
 			perl -F'\t' -lane '
 				push @{$m{$F[1]}},$F[0];
@@ -47,7 +47,7 @@ function enrichment::_ora(){
 		CMD
 	else
 		commander::makecmd -a _cmds1_ora -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-			grep -F $domain "$gofile" | tee -i >(cut -f 2,4 | grep '^GO:' | sort -u > "$outdir/reference.terms")
+			grep -Fw $domain "$gofile" | tee -i >(cut -f 2,4 | grep '^GO:' | sort -u > "$outdir/reference.terms")
 		CMD
 			perl -F'\t' -lane '
 				push @{$m{$F[1]}},$F[0];
@@ -72,7 +72,7 @@ function enrichment::_ora(){
 			domain <- args[5];
 
 			genes <- scan(idsfile, character(), quote="", quiet=T);
-			ora <- data.frame(matrix(ncol = 5, nrow = 0));
+			ora <- data.frame(matrix(ncol = 6, nrow = 0));
 			if(length(genes)>0){
 				tg <- suppressMessages(read.gmt(gmt));
 				tn <- read.table(g2n, sep="\t", stringsAsFactors=F, check.names=F, quote="");
@@ -153,9 +153,9 @@ function enrichment::_gsea(){
 
 	if [[ $tpmtsv ]]; then
 		commander::makecmd -a _cmds1_gsea -s '|' -o "$outdir/reference.gmt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
-			grep -F $domain "$gofile" | tee -i >(cut -f 2,4 | grep '^GO:' | sort -u > "$outdir/reference.terms")
+			grep -Fw $domain "$gofile" | tee -i >(cut -f 2,4 | grep '^GO:' | sort -u > "$outdir/reference.terms")
 		CMD
-			grep -F -f <(perl -M'List::Util qw(max)' -lanE 'say \$F[0] if max(@F)>=1 && \$.>1' "$tpmtsv")
+			grep -Fw -f <(perl -M'List::Util qw(max)' -lanE 'say \$F[0] if max(@F)>=1 && \$.>1' "$tpmtsv")
 		CMD
 			perl -F'\t' -lane '
 				push @{$m{$F[1]}},$F[0];
@@ -194,7 +194,7 @@ function enrichment::_gsea(){
 			df <- df[!is.na(df$padj) , ];
 			df <- df[df$padj<=0.05 , ];
 
-			gsea <- data.frame(matrix(ncol = 5, nrow = 0));
+			gsea <- data.frame(matrix(ncol = 6, nrow = 0));
 			if(nrow(df)>0){
 				tg <- suppressMessages(read.gmt(gmt));
 				tn <- read.table(g2n, sep="\t", stringsAsFactors=F, check.names=F, quote="");
@@ -267,12 +267,7 @@ function enrichment::_reducego(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-1 <cmds1>    | array of
-			-g <gofile>   | path to 4-column tab separated file with BP, MF and CC or see column 3 below
-			                ..
-			                ENSG00000199065 GO:0005615 cellular_component extracellular space
-			                ENSG00000199065 GO:1903231 molecular_function mRNA binding involved in posttranscriptional gene silencing
-			                ENSG00000199065 GO:0035195 biological_process gene silencing by miRNA
-			                ..
+			-g <oRgdb>    | path to R library directory containing custom/"my" oRgdb (org.My.eg.db) - see genome::mkgodb
 			-d <domain>   | biological_process or cellular_component or molecular_function
 			-i <orafile>  | path to
 			-o <outdir>   | path to
@@ -280,14 +275,14 @@ function enrichment::_reducego(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads domain gofile orafile outdir
+	local OPTIND arg mandatory threads domain orgdb orafile outdir
 	declare -n _cmds1_reduce
 	while getopts '1:2:d:i:g:o:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_reduce=$OPTARG;;
 			d)	((++mandatory)); domain=$OPTARG;;
 			i)	((++mandatory)); orafile="$OPTARG";;
-			g)	((++mandatory)); gofile="$OPTARG";;
+			g)	((++mandatory)); orgdb="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG";;
 			*)	_usage;;
 		esac
@@ -354,7 +349,7 @@ function enrichment::_reducego(){
 			};
 		'
 	CMD
-		"$(dirname "$gofile")/oRgdb" "$orafile" "$outdir" $(echo $domain | sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/') $(echo $domain | sed -E 's/([^_]{1,1})[^_]*_(\S{1,1}).+/\u\1\u\2/')
+		"$orgdb" "$orafile" "$outdir" $(echo $domain | sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1.\u\2/') $(echo $domain | sed -E 's/([^_]{1,1})[^_]*_(\S{1,1}).+/\u\1\u\2/')
 	CMD
 
 	return 0
@@ -581,26 +576,28 @@ function enrichment::go(){
 		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
-	declare -a cmd3 cmd4
-	local x
-	for f in "${enrichmentfiles[@]}"; do
-		x=$(head "$f" | wc -l)
-		[[ $x -lt 2 ]] && commander::warn "no enriched go terms in $f"
-		odir="$(dirname "$f")"
-		domain="$(basename "$odir")"
-		#enrichment::_revigo -1 cmd3 -2 cmd4 -d $domain -i "$f" -o "$odir"
-		enrichment::_reducego -1 cmd3 -d $domain -i "$f" -g "$gofile" -o "$odir"
-	done
+	if [[ -e "$(dirname "$gofile")/oRgdb" ]]; then
+		declare -a cmd3 cmd4
+		local x
+		for f in "${enrichmentfiles[@]}"; do
+			x=$(head "$f" | wc -l)
+			[[ $x -lt 2 ]] && commander::warn "no enriched go terms in $f"
+			odir="$(dirname "$f")"
+			domain="$(basename "$odir")"
+			#enrichment::_revigo -1 cmd3 -2 cmd4 -d $domain -i "$f" -o "$odir"
+			enrichment::_reducego -1 cmd3 -d $domain -i "$f" -g "$(dirname "$gofile")/oRgdb" -o "$odir"
+		done
 
-	if $skip; then
-		commander::printcmd -a cmd3
-		# commander::printcmd -a cmd4
-	else
-		# local instances ithreads
-		# read -r instances ithreads < <(configure::instances_by_memory -m 1024 -T $threads)
-		# commander::runcmd -v -b -i $instances -a cmd3
-		# commander::runcmd -v -b -i $threads -a cmd4
-		commander::runcmd -v -b -i $threads -a cmd3
+		if $skip; then
+			commander::printcmd -a cmd3
+			# commander::printcmd -a cmd4
+		else
+			# local instances ithreads
+			# read -r instances ithreads < <(configure::instances_by_memory -m 1024 -T $threads)
+			# commander::runcmd -v -b -i $instances -a cmd3
+			# commander::runcmd -v -b -i $threads -a cmd4
+			commander::runcmd -v -b -i $threads -a cmd3
+		fi
 	fi
 
 	return 0
