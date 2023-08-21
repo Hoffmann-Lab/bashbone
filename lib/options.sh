@@ -11,7 +11,7 @@ function options::usage(){
 
 		OPTIONS
 		-i | --install [all|upgrade] : install into given directory
-		-g | --use-config            : use supplied yaml files instead of cutting edge conda tools
+		-g | --use-config            : use supplied yaml files and URLs instead of cutting edge tools
 		-d | --directory [path]      : installation path
 		-t | --threads [value]       : threads - predicted default: $THREADS
 		-l | --log [path]            : log file - default: [-d]/install.log
@@ -26,13 +26,13 @@ function options::usage(){
 		(c) Konstantin Riege
 		konstantin.riege{a}leibniz-fli{.}de
 	EOF
-	exit 1
+	return 1
 }
 
 function options::checkopt(){
 	local arg=false
 	case $1 in
-		-h | --help) (options::usage); exit 0;;
+		-h | --help) options::usage || exit 0;;
 		-v | --verbose) VERBOSITY=2;;
 		-d | --directory) arg=true; INSDIR="$2";;
 		-t | --threads) arg=true; THREADS=$2;;
@@ -64,7 +64,7 @@ function options::checkopt(){
 }
 
 function options::parse(){
-	[[ $# -eq 0 ]] && options::usage
+	[[ $# -eq 0 ]] && { options::usage || exit 0; }
 	[[ $# -eq 1 ]] && [[ ! $1 =~ ^- ]] && commander::printerr "illegal option $1" && return 1
 	for i in $(seq 1 $#); do
 		if [[ ${!i} =~ ^- ]]; then
