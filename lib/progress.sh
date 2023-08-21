@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # (c) Konstantin Riege
 
-function progress::_bar(){
-	trap 'return 0' INT
+function progress::_wheel(){
+	trap 'return 0' TERM
 
 	local mod=0
 	while true; do
@@ -20,52 +20,97 @@ function progress::_bar(){
 	return 0
 }
 
-function progress::log(){
-	declare -a pids
-	local tmpdir
-	function _cleanup::progress::log(){
-		rm -rf "$tmpdir"
-	}
+function progress::_log(){
+	trap - RETURN
 
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
-			-v [0|1|2]    | verbosity level
+			-v [0..2]     | verbosity level
 			-o <logfile>  | path to
-			-f <function> | and parameters - needs to be last!
+			-f <fifo>     | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory log verbosity fun
+	local OPTIND arg mandatory log verbosity fifo
 	while getopts 'v:o:f:' arg; do
 		case $arg in
 			v)	((++mandatory)); verbosity=$OPTARG;;
-			o)	((++mandatory)); log="$OPTARG"; mkdir -p "$(dirname "$log")";;
-			f)	((++mandatory)); fun=$OPTARG; shift $((OPTIND-1)); break;;
+			o)	((++mandatory)); log="$OPTARG";;
+			f)	((++mandatory)); fifo=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 3 ]] && _usage
 
-	tmpdir="$(mktemp -d -p "${TMPDIR:-/tmp}" fifo.XXXXXXXXXX)"
-	mkfifo "$tmpdir/stderr" "$tmpdir/stdout"
 	case $verbosity in
-		0)	{ progress::_bar & } 2>/dev/null
-			{ tee -ia "$log" < "$tmpdir/stdout" | { trap '(exit 130)' INT; grep --color=never -E --line-buffered '^\s*(:INFO:|:BENCHMARK:|:WARNING:)' || true; } & } 2> /dev/null
-			{ tee -ia "$log" < "$tmpdir/stderr" | { trap '(exit 130)' INT; grep --color=never -E --line-buffered '^\s*:ERROR:' || true; } & } >&2 2> /dev/null
+		0)	tee -ia "$log" < "$fifo" || true;;
+		1)	tee -ia "$log" < "$fifo" | grep --color=never -E --line-buffered '^\s*(:INFO:|:CMD:|:BENCHMARK:|:WARNING:)' || true;;
+		2)	tee -ia "$log" < "$fifo" | grep --color=never -E --line-buffered '^\s*:ERROR:' || true;;
+		*)	_usage;;
+	esac
+
+	return 0
+}
+
+function progress::log(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-v [0..2]     | verbosity level
+			                0 : bashbone :CMD:|:INFO:|:BENCHMARK:|:WARNING:|:ERROR:
+			                1 : stderr + bashbone :CMD:|:INFO:|:BENCHMARK:|:WARNING:|:ERROR:
+			                2 : full, i.e. stderr + stdout + bashbone :CMD:|:INFO:|:BENCHMARK:|:WARNING:|:ERROR:
+			-o <logfile>  | path to
+			-r            | override existing logs
+			-f <function> | and parameters - needs to be last!
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory log verbosity=2 fun override=false
+	while getopts 'v:o:f:r' arg; do
+		case $arg in
+			v)	verbosity=$OPTARG;;
+			o)	((++mandatory)); log="$OPTARG"; mkdir -p "$(dirname "$log")";;
+			r)	override=true;;
+			f)	((++mandatory)); fun=$OPTARG; shift $((OPTIND-1)); break;;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 2 ]] && _usage
+
+	local tmpdir="$(mktemp -d -p "${TMPDIR:-/tmp}" fifo.XXXXXXXXXX)"
+	mkfifo "$tmpdir/stderr" "$tmpdir/stdout"
+	$override && rm -f "$log"
+
+	case $verbosity in
+		0)
+			{ progress::_wheel & } 2>/dev/null
+			echo "kill -TERM $! &> /dev/null" >> "$BASHBONE_CLEANUP"
+			set -m
+			{ progress::_log -v 1 -o "$log" -f "$tmpdir/stdout" & } 2>/dev/null
+			{ progress::_log -v 2 -o "$log" -f "$tmpdir/stderr" & } >&2 2>/dev/null
+			set +m
 		;;
-		1)	{ { trap '(exit 130)' INT; progress::_bar; } & } 2>/dev/null
-			{ tee -ia "$log" < "$tmpdir/stdout" | { trap '(exit 130)' INT; grep --color=never -E --line-buffered '^\s*(:INFO:|:CMD:|:BENCHMARK:|:WARNING:)' || true; } & } 2> /dev/null
-			{ tee -ia "$log" < "$tmpdir/stderr" | { trap '(exit 130)' INT; grep --color=never -E --line-buffered '^\s*:ERROR:' || true; } & } >&2 2> /dev/null
+		1)	{ progress::_wheel & } 2>/dev/null
+			echo "kill -TERM $! &> /dev/null" >> "$BASHBONE_CLEANUP"
+			set -m
+			{ progress::_log -v 1 -o "$log" -f "$tmpdir/stdout" & } 2>/dev/null
+			{ progress::_log -v 0 -o "$log" -f "$tmpdir/stderr" & } >&2 2>/dev/null
+			set +m
 		;;
-		2)	{ tee -ia "$log" < "$tmpdir/stdout" & } 2> /dev/null
-			{ tee -ia "$log" < "$tmpdir/stderr" & } >&2 2> /dev/null
+		*)	set -m
+			{ progress::_log -v 0 -o "$log" -f "$tmpdir/stdout" & } 2>/dev/null
+			{ progress::_log -v 0 -o "$log" -f "$tmpdir/stderr" & } >&2 2>/dev/null
+			set +m
 		;;
 		*)	_usage;;
 	esac
 
-	$fun "$@" 2> "$tmpdir/stderr" > "$tmpdir/stdout"
+	# manually wrap. aliases are not expanded on runtime
+	_bashbone_wrapper $fun "$@" 2> "$tmpdir/stderr" > "$tmpdir/stdout"
 
 	return 0
 }
