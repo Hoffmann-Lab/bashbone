@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # (c) Konstantin Riege
 
+source "$(dirname "$0")/../bashbone_lite.sh" -a "$@" || exit 1
+
 # Taq1
 # CGA...........A
 #   T...........TCG
@@ -16,55 +18,55 @@
 # R2 starts with CGA or CAA
 
 usage(){
-cat <<- EOF
-	DESCRIPTION
-	$(basename $0) select single or pairs of reads with proper MspI cutting site (single-digest) from fastq(.gz|.bz2) files
-	Due to end-repair incorporation of meth. or unmeth. Cs, selected R2 reads will be 5' clipped by two nucleotides.
-	This script is also able to detect and remove diversity adapter sequences as introduced by some sample prep protocols like Methyl-Seq from NuGEN Technologies.
+	cat <<- EOF
+		DESCRIPTION
+		$(basename $0) select single or pairs of reads with proper MspI cutting site (single-digest) from fastq(.gz|.bz2) files
+		Due to end-repair incorporation of meth. or unmeth. Cs, selected R2 reads will be 5' clipped by two nucleotides.
+		This script is also able to detect and remove diversity adapter sequences as introduced by some sample prep protocols like Methyl-Seq from NuGEN Technologies.
 
-	Required post-processing:
-	To remove SE or R1 3' end-repaired cutting site, clip off YG or NN prefixed adapter afterwards.
-	R2 clipping could also be done afterwards by e.g. utilizing Cutadapt with parameter -U 2.
-	-> both tasks, as well as adapter sequence inference, can be solved by e.g. utilizing TrimGalore! with --rrbs option.
+		Required post-processing:
+		To remove SE or R1 3' end-repaired cutting site, clip off YG or NN prefixed adapter afterwards.
+		R2 clipping could also be done afterwards by e.g. utilizing Cutadapt with parameter -U 2.
+		-> both tasks, as well as adapter sequence inference, can be solved by e.g. utilizing TrimGalore! with --rrbs option.
 
-	MspI
-	CGG...........C
-	  C...........CCG
+		MspI
+		CGG...........C
+		  C...........CCG
 
-	End-repair and BS
-	RETPADA-CGG...........TCG-ADAPTER
-	RETPADA-CGG...........TTG-ADAPTER
-	RETPADA-TGG...........TCG-ADAPTER
-	RETPADA-TGG...........TTG-ADAPTER
-	--->R1                     R2<---
+		End-repair and BS
+		RETPADA-CGG...........TCG-ADAPTER
+		RETPADA-CGG...........TTG-ADAPTER
+		RETPADA-TGG...........TCG-ADAPTER
+		RETPADA-TGG...........TTG-ADAPTER
+		--->R1                     R2<---
 
-	R1 starts with CGG or TGG
-	R2 starts with CGA or CAA
+		R1 starts with CGG or TGG
+		R2 starts with CGA or CAA
 
-	VERSION
-	0.1.2
+		VERSION
+		0.1.2
 
-	SYNOPSIS MERGE
-	$(basename $0) -i <fastq1> -j <fastq2> -o <fastq1> -p <fastq2>
+		SYNOPSIS MERGE
+		$(basename $0) -i <fastq1> -j <fastq2> -o <fastq1> -p <fastq2>
 
 
-	OPTIONS
-	-t [value]  | threads ($t) used for output compression using pigz (fallback: gzip)
-	-d [value]  | optional. maximum length of diversity adapter (implies strict motif selection)
-	-i [path]   | input SE or first mate fastq(.gz|bz2)
-	-j [path]   | input mate pair fastq(.gz|bz2) or without -i to process R2 in SE manner
-	-o [path]   | output path for gzip compressed SE or first mate fastq.gz file
-	-p [path]   | output path for gzip compressed second mate fastq.gz file
-	-c [value]  | number bases to be clipped at R2 5' (default: 2)
-	-s          | strict motif selection for PE data i.e. (C|T)GG and C(G|A)A instead of wildcard (C|T)G* and C(G|A)A or (C|T)GG and C(G|A)*
-	-v          | invert selection
-	-h          | this help
+		OPTIONS
+		-t [value]  | threads ($t) used for output compression using pigz (fallback: gzip)
+		-d [value]  | optional. maximum length of diversity adapter (implies strict motif selection)
+		-i [path]   | input SE or first mate fastq(.gz|bz2)
+		-j [path]   | input mate pair fastq(.gz|bz2) or without -i to process R2 in SE manner
+		-o [path]   | output path for gzip compressed SE or first mate fastq.gz file
+		-p [path]   | output path for gzip compressed second mate fastq.gz file
+		-c [value]  | number bases to be clipped at R2 5' (default: 2)
+		-s          | strict motif selection for PE data i.e. (C|T)GG and C(G|A)A instead of wildcard (C|T)G* and C(G|A)A or (C|T)GG and C(G|A)*
+		-v          | invert selection
+		-h          | this help
 
-	REFERENCES
-	(c) Konstantin Riege
-	konstantin.riege{a}leibniz-fli{.}de
+		REFERENCES
+		(c) Konstantin Riege
+		konstantin.riege{a}leibniz-fli{.}de
 	EOF
-	exit 1
+	return 1
 }
 
 i=''
@@ -75,24 +77,24 @@ h=''
 d=0
 v=false
 s=false
-t=$(cat /proc/cpuinfo | grep -cF processor 2> /dev/null || echo 1)
+t=$(grep -cF processor /proc/cpuinfo)
 c=2
 while getopts i:j:o:p:d:t:c:hvs ARG; do
 	case $ARG in
-		i) i="$OPTARG"; readlink -e "$i" &> /dev/null || { echo "error. can not find $i" >&2; exit 1; };;
-		j) j="$OPTARG"; readlink -e "$j" &> /dev/null || { echo "error. can not find $j" >&2; exit 1; };;
-		o) o="$OPTARG"; mkdir -p "$(dirname "$o")" || { echo "error. can not write to $o" >&2; exit 1; };;
-		p) p="$OPTARG"; mkdir -p "$(dirname "$p")" || { echo "error. can not write to $p" >&2; exit 1; };;
+		i) i="$OPTARG";;
+		j) j="$OPTARG";;
+		o) o="$OPTARG"; mkdir -p "$(dirname "$o")";;
+		p) p="$OPTARG"; mkdir -p "$(dirname "$p")";;
 		d) d=$OPTARG;;
 		t) t=$OPTARG;;
 		c) c=$OPTARG;;
-		h) (usage); exit 0;;
+		h) { usage || exit 0; };;
 		v) v=true;;
 		s) s=true;;
 		*) usage;
 	esac
 done
-[[ $# -eq 0 ]] && usage
+[[ $# -eq 0 ]] && { usage || exit 0; }
 [[ $i && ! $o ]] && usage
 [[ $j && ! $p ]] && usage
 
@@ -144,5 +146,3 @@ else
 		fi
 	fi
 fi
-
-exit $((${PIPESTATUS[@]/%/+}0))
