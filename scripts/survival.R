@@ -8,16 +8,19 @@ suppressMessages({
 })
 args = commandArgs(TRUE);
 
-odir = args[4];
+odir = args[4]
 cat(paste0("about to generate survival curves in ",odir,"\n"))
 
 clinical = read.table(args[1], header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="")
 max_time = as.double(args[2])
 scores = read.table(args[3], header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="")
 clinical = merge(clinical, scores, by="barcode")
+if (is.null(clinical$TP53_status)){
+  clinical$TP53_status = NA
+}
 
 covariates = c()
-if(length(args)>4){
+if (length(args)>4){
   covariates = args[5:length(args)]
 }
 
@@ -35,7 +38,7 @@ clinical = cbind(clinical,t(apply(clinical,1,function(l) {
   return(c(time_orig=time_orig, event_orig=event_orig, time_revised=time_revised, event_revised=event_revised))
 })))
 
-survplot = function(path){
+mysurvplot = function(clinical,surv,path){
   groups = levels(clinical$group)
 
   # check factors - important for single tumor plots
@@ -46,52 +49,50 @@ survplot = function(path){
       coeffs = c(coeffs,c)
     }
   }
-  f = as.formula(paste("surv~",paste(c("group",coeffs),collapse=" + ")))
+  f = as.formula(paste( "surv~", paste(c("group",coeffs), collapse=" + ") ))
 
   # cox fit
-  cox = coxph(f,clinical)
+  cox = coxph(f,data=clinical)
       # new = data.frame(group = groups)
       # fitx = survfit(cox,newdata=new,data=clinical)
       # tsvx=summary(fitx)
       # tsvx=data.frame(cbind(tsvx$surv,tsvx$time))
       # colnames(tsvx)=c(groups,"time")
-  cox=summary(cox)
+  cox = summary(cox)
   # OR KM fit
-  fit = survfit(surv~group,clinical)
-  tsv=summary(fit)
-  tsv=data.frame(surv=tsv$surv,time=tsv$time,group=unlist(str_split(tsv$strata, "="))[c(F,T)])
+  fit = survfit(surv~group, data=clinical)
+  tsv = summary(fit)
+  tsv = data.frame(surv=tsv$surv, time=tsv$time, group=unlist(str_split(tsv$strata, "="))[c(F,T)])
 
-  f = as.formula(paste("surv~",paste(c("score",coeffs),collapse=" + ")))
-  coxv=summary(coxph(f,clinical))
+  f = as.formula(paste("surv~", paste(c("score",coeffs), collapse=" + ")))
+  coxv = summary(coxph(f,data=clinical))
   #print(coxv)
 
-  #p1=paste("Cox Likelihood ratio test (variable)\n   global p-value = ", round(coxv$logtest[[3]],5) ,sep="")
-  p1=paste("Cox Likelihood ratio test (variable)\n   global p-value = ", coxv$logtest[[3]] ,sep="")
+  #p1 = paste("Cox Likelihood ratio test (variable)\n   global p-value = ", round(coxv$logtest[[3]],5) ,sep="")
+  p1 = paste("Cox Likelihood ratio test (variable)\n   global p-value = ", coxv$logtest[[3]] ,sep="")
 
   sdf=survdiff(surv~group,data=clinical,rho = 0)
   #print(sdf)
-  #p2=paste("Log-rank test (groups)\n   global p-value = ", round(1-pchisq(sdf$chisq, length(sdf$n) - 1),5) ,sep="")
-  p2=paste("Log-rank test (groups)\n   global p-value = ", 1-pchisq(sdf$chisq, length(sdf$n) - 1) ,sep="")
+  #p2 = paste("Log-rank test (groups)\n   global p-value = ", round(1-pchisq(sdf$chisq, length(sdf$n) - 1),5) ,sep="")
+  p2 = paste("Log-rank test (groups)\n   global p-value = ", 1-pchisq(sdf$chisq, length(sdf$n) - 1) ,sep="")
 
   #print(cox)
-  #p3=paste("Cox Likelihood ratio test (groups)\n   global p-value = ", round(cox$logtest[[3]],5) ,sep="")
-  p3=paste("Cox Likelihood ratio test (groups)\n   global p-value = ", cox$logtest[[3]] ,sep="")
+  #p3 = paste("Cox Likelihood ratio test (groups)\n   global p-value = ", round(cox$logtest[[3]],5) ,sep="")
+  p3 = paste("Cox Likelihood ratio test (groups)\n   global p-value = ", cox$logtest[[3]] ,sep="")
 
   coxdf = as.data.frame(cox$coefficients)
   pv = coxdf[grep("^group",rownames(coxdf)),ncol(coxdf)]
-  #p4=paste("   ",groups[1] , " vs. " , groups[2:length(groups)] , " p-value = " , round(pv,5) , sep="", collapse="\n")
-  p4=paste("   ",groups[1] , " vs. " , groups[2:length(groups)] , " p-value = " , pv , sep="", collapse="\n")
+  #p4 = paste("   ",groups[1] , " vs. " , groups[2:length(groups)] , " p-value = " , round(pv,5) , sep="", collapse="\n")
+  p4 = paste("   ",groups[1] , " vs. " , groups[2:length(groups)] , " p-value = " , pv , sep="", collapse="\n")
 
-  labels <- paste(groups, " (", unname(xtabs(~group, data=clinical)) , ")", sep="")
-
-  g = ggsurvplot(fit=fit, risk.table = F, pval = paste(p1,p2,p3,p4,sep="\n"), conf.int = F, xlim = NULL,
+  labels = paste(groups, " (", unname(xtabs(~group, data=clinical)) , ")", sep="")
+  g = ggsurvplot(fit=fit, data=clinical, risk.table = F, pval = paste(p1,p2,p3,p4,sep="\n"), conf.int = F, xlim = NULL,
                  title = "Kaplan-Meier plot", xlab = "Time since diagnosis (days)",
                  legend.title = "", legend.labs = labels, legend="top", palette = "jco", pval.size=4)
   #g$plot
   suppressMessages(ggsave(g$plot, filename = paste(path,"KM.pdf",sep="."), width=16, height=10))
   write.table(tsv, row.names=F, file=paste(path,"KM.tsv",sep="."), quote=F, sep="\t")
-
-      # g = ggsurvplot(fit=fitx, risk.table = F, pval = paste(p1,p2,p3,p4,sep="\n"), conf.int = F, xlim = NULL,
+      # g = ggmysurvplot(fit=fitx, data=clinical, risk.table = F, pval = paste(p1,p2,p3,p4,sep="\n"), conf.int = F, xlim = NULL,
       #                title = "Cox PH regression plot", xlab = "Time since diagnosis (days)",
       #                legend.title = "", legend.labs = labels, legend="top", palette = "jco", pval.size=4)
       # #g$plot
@@ -102,93 +103,98 @@ survplot = function(path){
 for (set in colnames(scores)[2:ncol(scores)]){
   clinical$score = clinical[,colnames(clinical) == set]
   clinical = clinical[order(clinical$score),]
+  clinicalTP53 = clinical[! is.na(clinical$TP53_status),]
 
   clinical$group = cut(seq(1,nrow(clinical)), breaks=2, label=c("low","high"), include.lowest=T)
-  surv <- Surv(clinical$time_revised, clinical$event_revised)
-  survplot(file.path(odir,paste0(set,".2.censored")))
-  surv <- Surv(clinical$time_orig, clinical$event_orig)
-  survplot(file.path(odir,paste0(set,".2.full")))
+  surv = Surv(clinical$time_revised, clinical$event_revised)
+  mysurvplot(clinical,surv,file.path(odir,paste0(set,".2.censored")))
+  surv = Surv(clinical$time_orig, clinical$event_orig)
+  mysurvplot(clinical,surv,file.path(odir,paste0(set,".2.full")))
 
-  if(! is.null(clinical$TP53_status) &&
-    length(unique( clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="wildtype",]$group )) == 2 &&
-    length(unique( clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="mutated",]$group )) == 2 ){
+  if(nrow(clinicalTP53)>0){
+    clinicalTP53$group = cut(seq(1,nrow(clinicalTP53)), breaks=2, label=c("low","high"), include.lowest=T)
+    if(length(unique( clinicalTP53[clinicalTP53$TP53_status=="wildtype",]$group )) == 2 && length(unique( clinicalTP53[clinicalTP53$TP53_status=="mutated",]$group )) == 2 ){
+      df = clinicalTP53[clinicalTP53$TP53_status=="wildtype",]
+      surv = Surv(df$time_orig, df$event_revised)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".2.censored.p53_wildtype")))
+      surv = Surv(df$time_orig, df$event_orig)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".2.full.p53_wildtype")))
 
-    tmp = clinical
-    clinical=clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="wildtype",]
-    surv <- Surv(clinical$time_orig, clinical$event_orig)
-    survplot(file.path(odir,paste0(set,".2.full.p53_wt")))
-
-    clinical = tmp
-    clinical=clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="mutated",]
-    surv <- Surv(clinical$time_orig, clinical$event_orig)
-    survplot(file.path(odir,paste0(set,".2.full.p53_nv")))
-    clinical = tmp
+      df = clinicalTP53[clinicalTP53$TP53_status=="mutated",]
+      surv = Surv(df$time_orig, df$event_revised)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".2.censored.p53_mutated")))
+      surv = Surv(df$time_orig, df$event_orig)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".2.full.p53_mutated")))
+    }
   }
 
   clinical$group = cut(seq(1,nrow(clinical)), breaks=3, label=c("low","medium","high"), include.lowest=T)
-  surv <- Surv(clinical$time_revised, clinical$event_revised)
-  survplot(file.path(odir,paste0(set,".3.censored")))
-  surv <- Surv(clinical$time_orig, clinical$event_orig)
-  survplot(file.path(odir,paste0(set,".3.full")))
+  surv = Surv(clinical$time_revised, clinical$event_revised)
+  mysurvplot(clinical,surv,file.path(odir,paste0(set,".3.censored")))
+  surv = Surv(clinical$time_orig, clinical$event_orig)
+  mysurvplot(clinical,surv,file.path(odir,paste0(set,".3.full")))
 
-  if(! is.null(clinical$TP53_status) &&
-    length(unique( clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="wildtype",]$group )) == 3 &&
-    length(unique( clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="mutated",]$group )) == 3 ){
+  if(nrow(clinicalTP53)>0){
+    clinicalTP53$group = cut(seq(1,nrow(clinicalTP53)), breaks=3, label=c("low","medium","high"), include.lowest=T)
+    if(length(unique( clinicalTP53[clinicalTP53$TP53_status=="wildtype",]$group )) == 3 && length(unique( clinicalTP53[clinicalTP53$TP53_status=="mutated",]$group )) == 3 ){
+      df = clinicalTP53[clinicalTP53$TP53_status=="wildtype",]
+      surv = Surv(df$time_orig, df$event_revised)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".3.censored.p53_wildtype")))
+      surv = Surv(df$time_orig, df$event_orig)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".3.full.p53_wildtype")))
 
-    tmp = clinical
-    clinical=clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="wildtype",]
-    surv <- Surv(clinical$time_orig, clinical$event_orig)
-    survplot(file.path(odir,paste0(set,".3.full.p53_wt")))
-
-    clinical = tmp
-    clinical=clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="mutated",]
-    surv <- Surv(clinical$time_orig, clinical$event_orig)
-    survplot(file.path(odir,paste0(set,".3.full.p53_nv")))
-    clinical = tmp
+      df = clinicalTP53[clinicalTP53$TP53_status=="mutated",]
+      surv = Surv(df$time_orig, df$event_revised)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".3.censored.p53_mutated")))
+      surv = Surv(df$time_orig, df$event_orig)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".3.full.p53_mutated")))
+    }
   }
 
   clinical$group = cut(seq(1,nrow(clinical)), breaks=4, label=c("low","low-med","med-high","high"), include.lowest=T)
-  surv <- Surv(clinical$time_revised, clinical$event_revised)
-  survplot(file.path(odir,paste0(set,".4.censored")))
-  surv <- Surv(clinical$time_orig, clinical$event_orig)
-  survplot(file.path(odir,paste0(set,".4.full")))
+  surv = Surv(clinical$time_revised, clinical$event_revised)
+  mysurvplot(clinical,surv,file.path(odir,paste0(set,".4.censored")))
+  surv = Surv(clinical$time_orig, clinical$event_orig)
+  mysurvplot(clinical,surv,file.path(odir,paste0(set,".4.full")))
 
-  if(! is.null(clinical$TP53_status) &&
-    length(unique( clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="wildtype",]$group )) == 4 &&
-    length(unique( clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="mutated",]$group )) == 4 ){
+  if(nrow(clinicalTP53)>0){
+    clinicalTP53$group = cut(seq(1,nrow(clinicalTP53)), breaks=4, label=c("low","low-med","med-high","high"), include.lowest=T)
+    if(length(unique( clinicalTP53[clinicalTP53$TP53_status=="wildtype",]$group )) == 4 && length(unique( clinicalTP53[clinicalTP53$TP53_status=="mutated",]$group )) == 4 ){
+      df = clinicalTP53[clinicalTP53$TP53_status=="wildtype",]
+      surv = Surv(df$time_orig, df$event_revised)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".4.censored.p53_wildtype")))
+      surv = Surv(df$time_orig, df$event_orig)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".4.full.p53_wildtype")))
 
-    tmp = clinical
-    clinical=clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="wildtype",]
-    surv <- Surv(clinical$time_orig, clinical$event_orig)
-    survplot(file.path(odir,paste0(set,".4.full.p53_wt")))
-
-    clinical = tmp
-    clinical=clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="mutated",]
-    surv <- Surv(clinical$time_orig, clinical$event_orig)
-    survplot(file.path(odir,paste0(set,".4.full.p53_nv")))
-    clinical = tmp
+      df = clinicalTP53[clinicalTP53$TP53_status=="mutated",]
+      surv = Surv(df$time_orig, df$event_revised)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".4.censored.p53_mutated")))
+      surv = Surv(df$time_orig, df$event_orig)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".4.full.p53_mutated")))
+    }
   }
 
   clinical$group = cut(seq(1,nrow(clinical)), breaks=5, label=c("low","low-med","medium","med-high","high"), include.lowest=T)
-  surv <- Surv(clinical$time_revised, clinical$event_revised)
-  survplot(file.path(odir,paste0(set,".5.censored")))
-  surv <- Surv(clinical$time_orig, clinical$event_orig)
-  survplot(file.path(odir,paste0(set,".5.full")))
+  surv = Surv(clinical$time_revised, clinical$event_revised)
+  mysurvplot(clinical,surv,file.path(odir,paste0(set,".5.censored")))
+  surv = Surv(clinical$time_orig, clinical$event_orig)
+  mysurvplot(clinical,surv,file.path(odir,paste0(set,".5.full")))
 
-  if(! is.null(clinical$TP53_status) &&
-    length(unique( clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="wildtype",]$group )) == 5 &&
-    length(unique( clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="mutated",]$group )) == 5 ){
+  if(nrow(clinicalTP53)>0){
+    clinicalTP53$group = cut(seq(1,nrow(clinicalTP53)), breaks=5, label=c("low","low-med","medium","med-high","high"), include.lowest=T)
+    if(length(unique( clinicalTP53[clinicalTP53$TP53_status=="wildtype",]$group )) == 5 && length(unique( clinicalTP53[clinicalTP53$TP53_status=="mutated",]$group )) == 5 ){
+      df = clinicalTP53[clinicalTP53$TP53_status=="wildtype",]
+      surv = Surv(df$time_orig, df$event_revised)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".5.censored.p53_wildtype")))
+      surv = Surv(df$time_orig, df$event_orig)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".5.full.p53_wildtype")))
 
-    tmp = clinical
-    clinical=clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="wildtype",]
-    surv <- Surv(clinical$time_orig, clinical$event_orig)
-    survplot(file.path(odir,paste0(set,".5.full.p53_wt")))
-
-    clinical = tmp
-    clinical=clinical[! is.na(clinical$TP53_status) & clinical$TP53_status=="mutated",]
-    surv <- Surv(clinical$time_orig, clinical$event_orig)
-    survplot(file.path(odir,paste0(set,".5.full.p53_nv")))
-    clinical = tmp
+      df = clinicalTP53[clinicalTP53$TP53_status=="mutated",]
+      surv = Surv(df$time_orig, df$event_revised)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".5.censored.p53_mutated")))
+      surv = Surv(df$time_orig, df$event_orig)
+      mysurvplot(df,surv,file.path(odir,paste0(set,".5.full.p53_mutated")))
+    }
   }
 }
 
