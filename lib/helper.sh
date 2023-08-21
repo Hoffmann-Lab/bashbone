@@ -32,11 +32,6 @@ function helper::pgzip(){
 }
 
 function helper::sort(){
-	declare -a tdirs
-	function _cleanup::helper::sort(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -52,7 +47,7 @@ function helper::sort(){
 	declare -a args=();
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
-			-m)	maxmemory=$2; shift 2;;
+			-M)	maxmemory=$2; shift 2;;
 			-f)	f=$2; shift 2;;
 			-o)	o=$2; shift 2; mkdir -p "$(dirname "$o")";;
 			-t)	threads=$2; shift 2;;
@@ -60,20 +55,14 @@ function helper::sort(){
 		esac
 	done
 
-	local instances maxmemory
+	local instances tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sort)"
 	read -r instances maxmemory < <(configure::memory_by_instances -i 1 -M "$maxmemory")
-	tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sort)")
-	sort --parallel="$threads" -S "$maxmemory" -T "${tdirs[-1]}" "${args[@]}" "$f" > "$o"
+	LC_ALL=C sort --parallel="$threads" -S "${maxmemory}M" -T "$tdir" "${args[@]}" "$f" > "$o"
 
 	return 0
 }
 
 function helper::vcfsort(){
-	declare -a tdirs
-	function _cleanup::helper::vcfsort(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -98,14 +87,13 @@ function helper::vcfsort(){
 		esac
 	done
 
-	local instances maxmemory
+	local instances maxmemory tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vcfsort)"
 	read -r instances maxmemory < <(configure::memory_by_instances -i 1 -M "$maxmemory")
-	tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vcfsort)")
 	if $zip; then
-		bcftools view "$f" | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="${tdirs[-1]}" -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[a[1]]=i} /^#/{print; next} {$1=c[$1]; print | "sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[i]=a[1]} /^#/{print; next} {$1=c[$1]; print}' | bgzip -k -c -@ $threads /dev/stdin > "$o"
+		bcftools view "$f" | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[a[1]]=i} /^#/{print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[i]=a[1]} /^#/{print; next} {$1=c[$1]; print}' | bgzip -k -c -@ $threads /dev/stdin > "$o"
 		tabix -f -p vcf "$o"
 	else
-		bcftools view "$f" | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="${tdirs[-1]}" -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[a[1]]=i} /^#/{print; next} {$1=c[$1]; print | "sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[i]=a[1]} /^#/{print; next} {$1=c[$1]; print}' > "$o"
+		bcftools view "$f" | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[a[1]]=i} /^#/{print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[i]=a[1]} /^#/{print; next} {$1=c[$1]; print}' > "$o"
 	fi
 
 	return 0
@@ -204,11 +192,6 @@ function helper::join(){
 }
 
 function helper::multijoin(){
-	local tmp joined
-	function _cleanup::helper::multijoin(){
-		rm -f "$tmp" "$joined"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -239,8 +222,9 @@ function helper::multijoin(){
 	[[ $mandatory -lt 1 ]] && _usage
 
 	local format i
-	tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
-	joined="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.joined)"
+	local tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
+	local joined="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.joined)"
+
 	join -t "$sep" -1 1 -2 1 -a 1 -a 2 -e "$empty" -o '0,1.2,2.2' "$1" "$2" > "$joined"
 	for i in $(seq 3 $#); do
 		format="0"

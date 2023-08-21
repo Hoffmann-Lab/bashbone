@@ -2,10 +2,7 @@ name: bwameth
 channels:
   - conda-forge
   - bioconda
-  - main
   - defaults
-  - r
-  - anaconda
 dependencies:
   - _libgcc_mutex=0.1
   - _openmp_mutex=4.5
@@ -14,8 +11,8 @@ dependencies:
   - bwameth=0.2.2
   - bzip2=1.0.8
   - c-ares=1.17.2
-  - ca-certificates=2021.10.8
   - htslib=1.13
+  - keyutils=1.6.1
   - krb5=1.19.2
   - ld_impl_linux-64=2.36.1
   - libcurl=7.79.1
@@ -26,13 +23,14 @@ dependencies:
   - libgcc-ng=11.2.0
   - libgomp=11.2.0
   - libnghttp2=1.43.0
+  - libnsl=2.0.0
   - libssh2=1.10.0
   - libstdcxx-ng=11.2.0
   - libzlib=1.2.11
   - ncurses=6.2
   - openssl=1.1.1l
   - perl=5.32.1
-  - pip=21.3
+  - pip=21.3.1
   - python=3.9.7
   - python_abi=3.9
   - readline=8.1

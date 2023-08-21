@@ -2,13 +2,6 @@
 # (c) Konstantin Riege
 
 function variants::haplotypecaller(){
-	local tmpfile
-	declare -a tdirs
-	function _cleanup::variants::haplotypecaller(){
-		rm -f $tmpfile
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -50,7 +43,7 @@ function variants::haplotypecaller(){
 	if [[ ! $dbsnp ]]; then
 		dbsnpfilter=false
 
-		tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf.gz)"
+		local tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf.gz)"
 		dbsnp="$tmpfile"
 		echo -e "##fileformat=VCFv4.0\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" | bgzip -k -c -@ $threads > "$tmpfile"
 		tabix -f -p vcf "$tmpfile"
@@ -61,16 +54,13 @@ function variants::haplotypecaller(){
 
 	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
-
-	local m i o t e slice instances ithreads odir tdir
-	for m in "${_mapper_haplotypecaller[@]}"; do
-		declare -n _bams_haplotypecaller=$m
-		((instances+=${#_bams_haplotypecaller[@]}))
-	done
+	eclare -n _bams_haplotypecaller="${_mapper_haplotypecaller[0]}"
+	local i memory ithreads instances=$((${#_mapper_haplotypecaller[@]}*${#_bams_haplotypecaller[@]}))
 	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6
+	local m i o t e slice odir tdir
+	declare -a tdirs tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6
 	for m in "${_mapper_haplotypecaller[@]}"; do
 		declare -n _bams_haplotypecaller=$m
 		tdir="$tmpdir/$m"
@@ -253,11 +243,6 @@ function variants::haplotypecaller(){
 }
 
 function variants::mutect(){
-	declare -a tdirs
-	function _cleanup::variants::mutect(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	# You do not need to make you own panel of normals (unless you have a huge number of samples,
 	# it may even be counterproductive than our generic public panel).
 	# Instead you may use gs://gatk-best-practices/somatic-b37/Mutect2-exome-panel.vcf.
@@ -326,7 +311,7 @@ function variants::mutect(){
 	[[ $pondb ]] && params="-pon '$pondb'"
 	[[ -s "$genome.af_only_gnomad.vcf.gz" ]] && params+=" --germline-resource '$genome.af_only_gnomad.vcf.gz'"
 
-	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6 cmd7 cmd8 cmd9 cmd10
+	declare -a tdirs tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6 cmd7 cmd8 cmd9 cmd10
 	for m in "${_mapper_mutect[@]}"; do
 		declare -n _bams_mutect=$m
 		odir="$outdir/$m/gatk"
@@ -575,11 +560,6 @@ function variants::mutect(){
 }
 
 function variants::bcftools(){
-	declare -a tdirs
-	function _cleanup::variants::bcftools(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -626,8 +606,7 @@ function variants::bcftools(){
 	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
 
-	tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
-	declare -a cmd1slice cmd2slice
+	declare -a cmd1slice cmd2slice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
 	commander::makecmd -a cmd1slice -s ' ' -o "${tdirs[0]}/tmp" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		perl -lane '
 			$i=0;
@@ -826,11 +805,6 @@ function variants::bcftools(){
 }
 
 function variants::freebayes(){
-	declare -a tdirs
-	function _cleanup::variants::freebayes(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -877,8 +851,8 @@ function variants::freebayes(){
 	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
 
-	tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
-	declare -a cmd1slice cmd2slice
+	declare -a cmd1slice cmd2slice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
+
 	commander::makecmd -a cmd1slice -s ' ' -o "${tdirs[0]}/tmp" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		perl -lane '
 			$i=0;
@@ -1048,11 +1022,6 @@ function variants::freebayes(){
 }
 
 function variants::varscan(){
-	declare -a tdirs
-	function _cleanup::variants::varscan(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -1103,8 +1072,8 @@ function variants::varscan(){
 	read -r i memory2 < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
 
-	tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
-	declare -a cmd1slice cmd2slice
+	declare -a cmd1slice cmd2slice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
+
 	commander::makecmd -a cmd1slice -s ' ' -o "${tdirs[0]}/tmp" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		perl -lane '
 			$i=0;
@@ -1323,11 +1292,6 @@ function variants::varscan(){
 }
 
 function variants::vardict(){
-	declare -a tdirs
-	function _cleanup::variants::vardict(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -1382,8 +1346,8 @@ function variants::vardict(){
 	read -r i memory2 < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
 
-	tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
-	declare -a cmd1slice cmd2slice
+	declare -a cmd1slice cmd2slice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
+
 	commander::makecmd -a cmd1slice -s ' ' -o "${tdirs[0]}/tmp" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		perl -M'List::Util qw(max)' -slane '
 			$l = $m-2048 >= 9500 ? 10000 : int(($m-1024)/1000)*1000;
@@ -1603,11 +1567,6 @@ function variants::vardict_threads(){
 	# use one region file and multiple threads on it
 	# -> something limits parallelization to ~14 threads. chunks may not be the reason: tested with up to 100k
 	# memory footprint raises with multiple threads
-	declare -a tdirs
-	function _cleanup::variants::vardict(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -1655,8 +1614,8 @@ function variants::vardict_threads(){
 	read -r i memory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
 
-	tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
-	declare -a cmd1slice
+	declare -a cmd1slice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
+
 	commander::makecmd -a cmd1slice -s ' ' -o "${tdirs[0]}/regions.bed" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		perl -M'List::Util qw(max)' -lane '
 			$i=0;
@@ -1840,11 +1799,6 @@ function variants::vardict_threads(){
 }
 
 function variants::platypus(){
-	declare -a tdirs
-	function _cleanup::variants::platypus(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -1887,12 +1841,12 @@ function variants::platypus(){
 	declare -n _bams_platypus=$m
 	[[ ! $_tidx_platypus ]] && unset _tidx_platypus && declare -a _tidx_platypus=(${!_bams_platypus[@]}) # use all indices for germline calling
 
-	local ithreads i memory instances=$((${#_mapper_platypus[@]}*${#_tidx_platypus[@]}))
-	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
+	local ithreads memory i instances=$((${#_mapper_platypus[@]}*${#_tidx_platypus[@]}))
+	read -r i memory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
 
 	local m i f nf o t e odir tdir
-	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6
+	declare -a tdirs tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6
 	for m in "${_mapper_platypus[@]}"; do
 		declare -n _bams_platypus=$m
 		tdir="$tmpdir/$m"
@@ -1904,6 +1858,8 @@ function variants::platypus(){
 			o="$(basename "$f")"
 			t="$tdir/${o%.*}"
 			o="$odir/${o%.*}"
+			echo "rm -f '$t'*" >> "$BASHBONE_CLEANUP"
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 
 			# can make use of --regions=$(awk '{print $1":"$2"-"$3}' $bed | xargs -echo | sed 's/ /,/g')
 			if [[ $_nidx_platypus ]]; then # somatic
@@ -1931,13 +1887,14 @@ function variants::platypus(){
 
 				# use to filter for germline risk
 				# do not use --strict, which requires that no observation in the germline support the somatic alternate i.e. no 0/1 0/1
-				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools reheader -f "$genome.fai" "$t.toreheader"
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bcftools reheader -f "$genome.fai" "$t.toreheader" | vcfsamplediff VCFSAMPLEDIFF NORMAL TUMOR - > "$t.vcf"
 				CMD
-					vcfsamplediff VCFSAMPLEDIFF NORMAL TUMOR - > "$o.vcf"
+					bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.vcf" "$t.vcf"
 				CMD
 				#	grep -E '(^#|VCFSAMPLEDIFF=somatic)' > "$o.vcf"
 				#CMD # do not hard filter here. vcfix.pl adds vcfix_somatic FILTER tag if somatic or loh and GQ MAF thresholds passed
+				# sorting necessary to ensure chromosoaml order as given !
 			else
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					platypus callVariants
@@ -1958,8 +1915,10 @@ function variants::platypus(){
 						--filterDuplicates 0
 				CMD
 
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-					bcftools reheader -f "$genome.fai" -o "$o.vcf" "$t.toreheader"
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bcftools reheader -f "$genome.fai" -o "$t.vcf" "$t.toreheader"
+				CMD
+					bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.vcf" "$t.vcf"
 				CMD
 			fi
 

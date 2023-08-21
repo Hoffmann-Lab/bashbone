@@ -15,60 +15,59 @@ function compile::_parse(){
 
 	local OPTIND arg mandatory
 	declare -n _insdir_parse _threads_parse _upgrade_parse _useconfig_parse
-	while getopts 'r:s:c:i:t:u:g:f:' arg; do
+	while getopts 'r:s:c:f:i:t:u:g:' arg; do
 		case $arg in
 			# declare references
 			r) ((++mandatory)); _insdir_parse="$OPTARG";;
 			s) ((++mandatory)); _threads_parse=$OPTARG;;
 			c) _upgrade_parse=$OPTARG;;
-			f) _useconfig_parse=$OPTARG;;
+			f) ((++mandatory)); _useconfig_parse=$OPTARG;;
 
 			# from outside, set variables
 			i) ((++mandatory)); _insdir_parse="$OPTARG";;
 			t) ((++mandatory)); _threads_parse=$OPTARG;;
 			u) _upgrade_parse=$OPTARG;;
-			g) _useconfig_parse=$OPTARG;;
+			g) ((++mandatory)); _useconfig_parse=$OPTARG;;
 			*) _usage;;
 		esac
 	done
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 
 	return 0
 }
 
 function compile::all(){
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
-	compile::bashbone -i "$insdir" -t $threads
-	# compile::tools -i "$insdir" -t $threads
-	compile::conda -i "$insdir" -t $threads
-	compile::conda_tools -i "$insdir" -t $threads
-	compile::java -i "$insdir" -t $threads
-	compile::trimmomatic -i "$insdir" -t $threads
-	compile::segemehl -i "$insdir" -t $threads
-	compile::starfusion -i "$insdir" -t $threads
-	compile::preparedexseq -i "$insdir" -t $threads
-	compile::revigo -i "$insdir" -t $threads
-	compile::gem -i "$insdir" -t $threads
-	compile::m6aviewer -i "$insdir" -t $threads
-	# compile::idr -i "$insdir" -t $threads
-	compile::newicktopdf -i "$insdir" -t $threads
-	compile::ssgsea -i "$insdir" -t $threads
-	compile::gztool -i "$insdir" -t $threads
-	compile::mdless -i "$insdir" -t $threads
-	compile::pugz -i "$insdir" -t $threads
+	compile::bashbone "$@"
+	compile::tools "$@"
+	compile::conda "$@"
+	compile::conda_tools "$@"
+	compile::java "$@"
+	compile::trimmomatic "$@"
+	compile::segemehl "$@"
+	compile::starfusion "$@"
+	compile::preparedexseq "$@"
+	compile::revigo "$@"
+	compile::gem "$@"
+	compile::m6aviewer "$@"
+	compile::matk "$@"
+	compile::newicktopdf "$@"
+	compile::ssgsea "$@"
+	compile::gztool "$@"
+	compile::mdless "$@"
+	# compile::moose "$@"
 
 	return 0
 }
 
 function compile::bashbone(){
-	local insdir threads version src="$(dirname "$(readlink -e "$0")")"
+	local insdir threads cfg version src="$(dirname "$(dirname "$(readlink -e "$0")")")"
 	commander::printinfo "installing bashbone"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$src/lib/version.sh"
 	rm -rf "$insdir/bashbone-$version"
 	mkdir -p "$insdir/bashbone-$version"
 	cp -r "$src"/* "$insdir/bashbone-$version"
+	rm -f "$insdir/bashbone-$version/scripts/"+(setup|test).sh
 	mkdir -p "$insdir/latest"
 	ln -sfn "$insdir/bashbone-$version" "$insdir/latest/bashbone"
 
@@ -76,11 +75,11 @@ function compile::bashbone(){
 }
 
 function compile::tools(){
-	local insdir threads i src="$(dirname "$(readlink -e "$0")")"
+	local insdir threads cfg i src="$(dirname "$(dirname "$(readlink -e "$0")")")"
 	declare -a mapdata
 
 	commander::printinfo "installing statically pre-compiled tools"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	mkdir -p "$insdir/latest"
 	mapfile -t mapdata < <(find -L "$src/tools" -mindepth 1 -maxdepth 1 -type d)
 	for i in "${mapdata[@]}"; do
@@ -92,83 +91,107 @@ function compile::tools(){
 }
 
 function compile::upgrade(){
-	local insdir threads
-	compile::_parse -r insdir -s threads "$@"
-	compile::bashbone -i "$insdir" -t $threads
-	compile::tools -i "$insdir" -t $threads
-	compile::conda_tools -i "$insdir" -t $threads -u true
+	compile::bashbone "$@"
+	compile::tools "$@"
+	compile::conda_tools -u true "$@"
 
 	return 0
 }
 
-function compile::conda(){
-	local insdir threads url
+function compile::conda_old(){
+	local insdir threads cfg url
 	commander::printinfo "installing conda"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	url="https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh"
-	wget -q -O "$insdir/miniconda.sh" "$url"
+	url="https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"
+	wget -q --show-progress --progress=bar:force -O "$insdir/miniconda.sh" "$url"
 	mkdir -p "$insdir/conda"
 	bash "$insdir/miniconda.sh" -b -u -f -p "$insdir/conda"
 	rm -f "$insdir/miniconda.sh"
 
 	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
 	conda update -y conda
-	conda install -y --override-channels -c conda-forge mamba
-	conda env config vars set MAMBA_NO_BANNER=1
+
+	# as of 2023 fails with latest conda
+	# conda install -y --override-channels -c conda-forge mamba 'python_abi=*=*cp*'
+	# conda env config vars set MAMBA_NO_BANNER=1
+	# alternative use conda with mamba solver
+	conda install -y --override-channels -c conda-forge conda-libmamba-solver
+	conda config --set solver libmamba
 
 	commander::printinfo "conda clean up"
+	# mamba clean -y -a
 	conda clean -y -a
 
 	return 0
 }
 
-function compile::conda_tools(){
-	local tmpdir
-	function _cleanup::compile::conda_tools(){
-		rm -rf "$tmpdir"
-	}
+function compile::conda(){
+	local insdir threads cfg url
+	commander::printinfo "installing conda"
+	compile::_parse -r insdir -s threads -f cfg "$@"
+	url="https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh"
+	wget -q --show-progress --progress=bar:force -O "$insdir/miniconda.sh" "$url"
+	mkdir -p "$insdir/conda"
+	bash "$insdir/miniconda.sh" -b -u -f -p "$insdir/conda"
+	rm -f "$insdir/miniconda.sh"
 
-	local insdir threads upgrade=false tool n star_version bin doclean=false cfg=false src="$(dirname "$(readlink -e "$0")")" f
+	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
+	conda env config vars set MAMBA_NO_BANNER=1
+	mamba update -y mamba # do not update conda!
+
+	commander::printinfo "conda clean up"
+	mamba clean -y -a
+
+	return 0
+}
+
+function compile::conda_tools(){
+	local insdir threads upgrade=false cfg tool n star_version bin doclean=false src="$(dirname "$(dirname "$(readlink -e "$0")")")" f
 	declare -A envs
-	commander::printinfo "installing conda tools"
 	compile::_parse -r insdir -s threads -c upgrade -f cfg "$@"
+	$upgrade && commander::printinfo "validating conda environments" || commander::printinfo "installing conda environments"
 	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
 	while read -r tool; do
 		envs[$tool]=true
 	done < <(mamba info -e | awk -v prefix="^$insdir" '$NF ~ prefix {print $1}')
-
 
 	# setup commonly used tools in bashbone source
 	# new: use own bashbone environment to be able to (re)create it from yaml because conda env update -n base --file base.yaml has conflicts
 	n=bashbone
 	$upgrade && ${envs[$n]:=false} || {
 		doclean=true
-
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
 			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
-			# "libfuse<3" libarchive for fuse-archive
 			mamba create -y -n $n
-			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+			# r and main channel is included in conda’s “defaults” channel built by Anaconda Inc.
+			# mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults -r -c anaconda \
+			# -> too many channels and too many tools slow down and/or break the solver
+			# -> may add --strict-channel-priority ,but there is no strict option available for creating env from config file
+			# => just keep r channel (bashbone only)
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c r \
 				gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
 				glib pkg-config make automake cmake \
 				bzip2 pbzip2 \
-				wget curl ghostscript dos2unix \
-				sra-tools entrez-direct \
+				git wget curl ghostscript dos2unix \
+				sra-tools entrez-direct ucsc-bedgraphtobigwig \
 				datamash samtools bedtools ucsc-facount khmer \
 				htslib htseq bcftools vcflib vt vcftools \
-				perl perl-app-cpanminus perl-list-moreutils perl-try-tiny perl-dbi perl-db-file perl-xml-parser perl-bioperl perl-bio-eutilities \
+				perl perl-app-cpanminus perl-list-moreutils perl-try-tiny perl-xml-parser perl-dbi perl-db-file "perl-bioperl>=1.7" perl-bio-eutilities \
 				java-jdk \
 				nlopt "r-base>=4" \
-				r-biocmanager r-devtools r-codetools \
+				r-biocmanager r-devtools r-codetools r-argparser \
 				bioconductor-biomart bioconductor-biocparallel bioconductor-genefilter bioconductor-deseq2 bioconductor-dexseq bioconductor-clusterprofiler bioconductor-tcgautils r-r.utils \
 				r-survminer bioconductor-impute bioconductor-preprocesscore bioconductor-go.db bioconductor-annotationdbi bioconductor-annotationforge bioconductor-enrichplot bioconductor-rrvgo \
-				r-reshape2 r-wgcna r-dplyr r-tidyverse r-ggpubr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-treemap r-data.table r-ggridges r-ashr
+				r-reshape2 r-wgcna r-dplyr r-tidyverse r-ggpubr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-treemap r-data.table r-ggridges r-ashr r-dendextend
+			# "libfuse<3" libarchive for fuse-archive
 		fi
 
-		tmpdir="$insdir/tmp"
-		mkdir -p "$tmpdir"
+		local tmpdir="$insdir/tmp"
+		mkdir -p "$tmpdir" "$insdir/config"
+		echo "rm -rf '$tmpdir'" >> "$BASHBONE_CLEANUP"
 
 		# perl stuff
 		declare -a cmd1
@@ -187,39 +210,39 @@ function compile::conda_tools(){
 			'
 		CMD
 
-		# bioconductor
-		declare -a cmd3
-		commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
-			Rscript - <<< '
-				options(unzip="$(which unzip)");
-				Sys.setenv(TAR="$(which tar)");
-				BiocManager::install(c("biomaRt","BiocParallel","genefilter","DESeq2","DEXSeq","clusterProfiler","TCGAutils","TCGAbiolinks","survminer","impute","preprocessCore","GO.db","AnnotationDbi"),
-					ask=F, Ncpus=$threads, clean=T, destdir="$tmpdir");
-			'
-		CMD
+		# # bioconductor
+		# declare -a cmd3
+		# commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
+		# 	Rscript - <<< '
+		# 		options(unzip="$(which unzip)");
+		# 		Sys.setenv(TAR="$(which tar)");
+		# 		BiocManager::install(c("biomaRt","BiocParallel","genefilter","DESeq2","DEXSeq","clusterProfiler","TCGAutils","TCGAbiolinks","survminer","impute","preprocessCore","GO.db","AnnotationDbi"),
+		# 			ask=F, Ncpus=$threads, clean=T, destdir="$tmpdir");
+		# 	'
+		# CMD
 
-		# cran - needs to be last since WGCNA depends on bioconductor packages impute,...
-		# R-Forge.r does not complaine about knapsack not being compatible with R>=4
-		declare -a cmd4
-		commander::makecmd -a cmd4 -s '&&' -c {COMMANDER[0]}<<- CMD
-			Rscript - <<< '
-				options(unzip="$(which unzip)");
-				Sys.setenv(TAR="$(which tar)");
-				install.packages(c("reshape2","WGCNA","dplyr","tidyverse","ggpubr","ggplot2","gplots","RColorBrewer","svglite","pheatmap","treemap","data.table"),
-					repos="http://cloud.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
-				install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
-			'
-		CMD
+		# # cran - needs to be last since WGCNA depends on bioconductor packages impute,...
+		# # R-Forge.r does not complaine about knapsack not being compatible with R>=4
+		# declare -a cmd4
+		# commander::makecmd -a cmd4 -s '&&' -c {COMMANDER[0]}<<- CMD
+		# 	Rscript - <<< '
+		# 		options(unzip="$(which unzip)");
+		# 		Sys.setenv(TAR="$(which tar)");
+		# 		install.packages(c("reshape2","WGCNA","dplyr","tidyverse","ggpubr","ggplot2","gplots","RColorBrewer","svglite","pheatmap","treemap","data.table"),
+		# 			repos="http://cloud.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
+		# 		install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
+		# 	'
+		# CMD
 
-		# github
-		declare -a cmd5
-		commander::makecmd -a cmd5 -s '&&' -c {COMMANDER[0]}<<- CMD
-			Rscript - <<< '
-				options(unzip="$(which unzip)");
-				Sys.setenv(TAR="$(which tar)");
-				devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
-			'
-		CMD
+		# # github
+		# declare -a cmd5
+		# commander::makecmd -a cmd5 -s '&&' -c {COMMANDER[0]}<<- CMD
+		# 	Rscript - <<< '
+		# 		options(unzip="$(which unzip)");
+		# 		Sys.setenv(TAR="$(which tar)");
+		# 		devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
+		# 	'
+		# CMD
 
 		# as of 2022, conda can install all r-packages without conflicts. instead manual compilation causes troubles
 		# bioconductor-tcgabiolinks conda package is outdated and errornous. Apr 2022 tcga db changed way to access, thus latest tcgabiolinks from git required
@@ -237,16 +260,13 @@ function compile::conda_tools(){
 
 		commander::runcmd -c bashbone -i 1 -a cmd1
 		commander::runcmd -c bashbone -i 1 -a cmd2
-		# commander::runcmd -c bashbone -i 1 -a cmd3
-		# commander::runcmd -c bashbone -i 1 -a cmd4
-		# commander::runcmd -c bashbone -i $threads -a cmd5
 
-		mkdir -p "$insdir/conda/env_exports"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" | grep -vE -- '-\s+idr=' > "$insdir/conda/env_exports/$n.yaml"
+		mkdir -p "$insdir/config"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c r | grep -vi -e "^prefix:" -e certifi | grep -vE -- '-\s+idr=' | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
 	}
 
 	# better do not predefine python version. if tool recipe depends on earlier version, conda installs an older or the oldest version (freebayes)
-	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 genrich peakachu diego gatk4 freebayes varscan igv intervene raxml metilene umitools methyldackel idr; do
+	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 genrich peakachu diego gatk4 freebayes varscan igv intervene raxml metilene umitools methyldackel idr clust; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
 		[[ $tool == "bwa" ]] && tool+=" bwa-mem2"
@@ -258,19 +278,18 @@ function compile::conda_tools(){
 				mamba env create -n $n --force --file "$src/config/$n.yaml"
 			else
 				mamba create -y -n $n
-				mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+				mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults $tool
 			fi
 
-			mkdir -p "$insdir/conda/env_exports"
-			mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+			mkdir -p "$insdir/config"
+			mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+
+			for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+				mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+			done
 		}
-		# link commonly used base binaries into env
-		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-		done
 	done
 	chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl" # necessary fix
-
 
 	star_version=$(mamba list -n star -f star | tail -1 | awk '{print $2}')
 
@@ -288,17 +307,18 @@ function compile::conda_tools(){
 		else
 			mamba create -y -n $n #python=3
 			# propably enought: perl perl-set-intervaltree perl-carp perl-carp-assert perl-db-file perl-io-gzip perl-json-xs perl-uri \
-			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda \
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults \
 				perl perl-file-path perl-getopt-long perl-set-intervaltree perl-carp perl-carp-assert perl-data-dumper perl-findbin perl-db-file perl-io-gzip perl-json-xs perl-uri perl-list-moreutils perl-list-util perl-storable \
 				igv-reports "star=$star_version" gmap bowtie bbmap samtools blast
 		fi
 
-		mkdir -p "$insdir/conda/env_exports"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mkdir -p "$insdir/config"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
 	}
-	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-	done
 
 	# prepared for sortmrna >4 , but newer versions have extreme runtime troubles
 	tool="sortmerna<3"
@@ -312,7 +332,7 @@ function compile::conda_tools(){
 			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
-			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda "$tool"
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults "$tool"
 		fi
 
 		git clone https://github.com/biocore/sortmerna.git "$insdir/conda/envs/sortmerna/src"
@@ -343,11 +363,13 @@ function compile::conda_tools(){
 		done
 		commander::runcmd -c sortmerna -i $threads -a cmdidx
 
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mkdir -p "$insdir/config"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
 	}
-	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-	done
 
 	# arriba 2.x , successor of 1.2 (arriba=1.2) has new star parameters incompatible with star < 2.7.6
 	tool=arriba
@@ -361,15 +383,16 @@ function compile::conda_tools(){
 			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
-			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda "$tool$(awk -F '.' '{if ($1>=2 && $2>=7){print ">=2"}else{print "<2"}}' <<< $star_version)'" "star=$star_version"
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults "$tool$(awk -F '.' '{if ($1>=2 && $2>=7){print ">=2"}else{print "<2"}}' <<< $star_version)'" "star=$star_version"
 		fi
 
-		mkdir -p "$insdir/conda/env_exports"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mkdir -p "$insdir/config"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
 	}
-	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-	done
 
 	tool=bwameth
 	n=${tool/=*/}
@@ -382,7 +405,7 @@ function compile::conda_tools(){
 			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
-			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool bwa-mem2
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults $tool bwa-mem2
 		fi
 		# get latest functions from pull requensts like support for bwa-mem2 and report of supplementary/split alignments
 		curl -s "https://raw.githubusercontent.com/brentp/bwa-meth/master/bwameth.py" | \
@@ -395,12 +418,13 @@ function compile::conda_tools(){
 		# -Y: apply soft-clipping instead of hard clipping to keep sequence info in bam (can be changed via)
 		# squeeze in score parameter to control bwa minoutscore
 
-		mkdir -p "$insdir/conda/env_exports"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mkdir -p "$insdir/config"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
 	}
-	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-	done
 
 	tool=vardict
 	n=${tool/=*/}
@@ -413,15 +437,16 @@ function compile::conda_tools(){
 			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
-			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool vardict-java readline=6
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults $tool vardict-java readline=6
 		fi
 
-		mkdir -p "$insdir/conda/env_exports"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mkdir -p "$insdir/config"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
 	}
-	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-	done
 
 	tool=snpeff
 	n=${tool/=*/}
@@ -434,15 +459,16 @@ function compile::conda_tools(){
 			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n #python=3
-			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool snpsift
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults $tool snpsift
 		fi
 
-		mkdir -p "$insdir/conda/env_exports"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mkdir -p "$insdir/config"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
 	}
-	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-	done
 
 	tool=platypus-variant
 	n=platypus
@@ -454,22 +480,23 @@ function compile::conda_tools(){
 			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
-			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults $tool
 		fi
 
-		mkdir -p "$insdir/conda/env_exports"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda | grep -vi "^prefix:" > "$insdir/conda/env_exports/$n.yaml"
+		mkdir -p "$insdir/config"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
 	}
-	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
-		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
-	done
 
 	# this is a pipeline itself with own genome and databases and thus will not be part of bashbone
 	# commander::printinfo "setup conda fusion-catcher env"
 	# tool=fusioncatcher
 	# n=${tool//[^[:alpha:]]/}
 	# conda create -y -n $n
-	# conda install -n $n -y --override-channels -c conda-forge -c bioconda -c main -c defaults -c r -c anaconda $tool
+	# conda install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults $tool
 	# for bin in perl samtools bedtools; do
 	# 	conda list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 	# done
@@ -487,14 +514,20 @@ function compile::conda_tools(){
 }
 
 function compile::java(){
-	local insdir threads url version
-
+	local insdir threads cfg url src="$(dirname "$(dirname "$(readlink -e "$0")")")/config/java.url"
 	commander::printinfo "installing java"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	url='https://download.oracle.com/otn-pub/java/jdk/15.0.1%2B9/51f4f36ad4ef43e39d0dfdbaf6549e32/jdk-15.0.1_linux-x64_bin.tar.gz'
-	url='https://download.oracle.com/java/17/latest/jdk-17_linux-x64_bin.tar.gz'
-	wget -q --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O "$insdir/java.tar.gz" "$url"
+	if [[ -e "$src" ]] && $cfg; then
+		url=$(cat "$src")
+	else
+		url='https://download.oracle.com/otn-pub/java/jdk/15.0.1%2B9/51f4f36ad4ef43e39d0dfdbaf6549e32/jdk-15.0.1_linux-x64_bin.tar.gz'
+		url='https://download.oracle.com/java/17/latest/jdk-17_linux-x64_bin.tar.gz'
+	fi
+	mkdir -p "$insdir/config"
+	echo "$url" > "$insdir/config/java.url"
+
+	wget -q --show-progress --progress=bar:force --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O "$insdir/java.tar.gz" "$url"
 	version=$(echo "$url" | perl -lane '$_=~/jdk-([^-_]+)/; print $1')
 	tar -xzf "$insdir/java.tar.gz" -C "$insdir"
 	rm "$insdir/java.tar.gz"
@@ -530,74 +563,63 @@ function compile::_javawrapper(){
 
 function compile::trimmomatic(){
 	# conda trimmomatic wrapper is written in python and thus cannot handle process substitutions
-	local insdir threads url
-
+	local insdir threads cfg url src="$(dirname "$(dirname "$(readlink -e "$0")")")/config/trimmomatic.url"
 	commander::printinfo "installing trimmomatic"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	url='http://www.usadellab.org/cms/?page=trimmomatic'
-	url='http://www.usadellab.org/cms/'$(curl -s "$url" | grep Version | grep -oE '[^"]+Trimmomatic-[0-9]+\.[0-9]+\.zip' | head -1)
-	wget -q "$url" -O "$insdir/trimmomatic.zip"
+	if [[ -e "$src" ]] && $cfg; then
+		url=$(cat "$src")
+	else
+		url='http://www.usadellab.org/cms/?page=trimmomatic'
+		url='http://www.usadellab.org/cms/'$(curl -s "$url" | grep Version | grep -oE '[^"]+Trimmomatic-[0-9]+\.[0-9]+\.zip' | head -1)
+	fi
+	mkdir -p "$insdir/config"
+	echo "$url" > "$insdir/config/trimmomatic.url"
+
+	wget -q --show-progress --progress=bar:force "$url" -O "$insdir/trimmomatic.zip"
 	unzip -o -d "$insdir" "$insdir/trimmomatic.zip"
 	rm "$insdir/trimmomatic.zip"
 	cd "$(ls -dv "$insdir/Trimmomatic-"*/ | tail -1)"
 	mkdir -p "$insdir/latest" bin
 	compile::_javawrapper bin/trimmomatic "$(readlink -e trimmomatic-*.jar)" "$insdir/latest/java/java"
 	ln -sfn "$PWD/bin" "$insdir/latest/trimmomatic"
-
-	return 0
-}
-
-function compile::sortmerna(){
-	local insdir threads url i
-
-	commander::printinfo "installing sortmerna"
-	compile::_parse -r insdir -s threads "$@"
-	source "$insdir/conda/bin/activate" bashbone
-	url='https://github.com/biocore/sortmerna/archive/2.1.tar.gz'
-	wget -q "$url" -O "$insdir/sortmerna.tar.gz"
-	tar -xzf "$insdir/sortmerna.tar.gz" -C "$insdir"
-	rm "$insdir/sortmerna.tar.gz"
-	cd "$(ls -dv "$insdir/sortmerna-"*/ | tail -1)"
-	make clean || true
-	./configure --prefix="$PWD"
-	make -j $threads
-	make install -i # ignore errors caused by --prefix=$PWD
-
-	commander::printinfo "indexing databases"
-	cp -r rRNA_databases index bin
-	for i in bin/rRNA_databases/*.fasta; do
-		o="bin/index/$(basename "$i" .fasta)-L18"
-		echo -ne "bin/indexdb_rna --ref '$i','$o' -m 4096 -L 18\0"
-	done | xargs -0 -P $threads -I {} bash -c {}
-
-	mkdir -p "$insdir/latest"
-	ln -sfn "$PWD/bin" "$insdir/latest/sortmerna"
+	cd - > /dev/null
 
 	return 0
 }
 
 function compile::segemehl(){
-	local insdir threads url
-
+	local insdir threads cfg url src="$(dirname "$(dirname "$(readlink -e "$0")")")/config/segemehl.url"
 	commander::printinfo "installing segemehl"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
+
 	source "$insdir/conda/bin/activate" bashbone
-	url='http://www.bioinf.uni-leipzig.de/Software/segemehl/downloads/'
-	url="$url"$(curl -s "$url" | grep -oE 'segemehl-[0-9\.]+\.tar\.gz' | tail -1)
-	wget -q "$url" -O "$insdir/segemehl.tar.gz"
+	if [[ -e "$src" ]] && $cfg; then
+		url=$(cat "$src")
+	else
+		url='http://www.bioinf.uni-leipzig.de/Software/segemehl/downloads/'
+		url='http://legacy.bioinf.uni-leipzig.de/Software/segemehl/'
+		url="$url"$(curl -s "$url" | grep -oE 'downloads/segemehl-[0-9\.]+\.tar\.gz' | head -1)
+	fi
+	mkdir -p "$insdir/config"
+	echo "$url" > "$insdir/config/segemehl.url"
+
+	wget -q --show-progress --progress=bar:force "$url" -O "$insdir/segemehl.tar.gz"
 	tar -xzf "$insdir/segemehl.tar.gz" -C "$insdir"
 	rm "$insdir/segemehl.tar.gz"
 	cd "$(ls -dv "$insdir/segemehl-"*/ | tail -1)"
 	export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
 	make clean || true
 	make -j $threads all
+
 	mkdir -p bin
 	mv *.x bin
 	touch bin/segemehl bin/haarz
 	chmod 755 bin/*
 	mkdir -p "$insdir/latest"
 	ln -sfn "$PWD/bin" "$insdir/latest/segemehl"
+	cd - > /dev/null
+
 	cat <<- 'EOF' > "$insdir/latest/segemehl/segemehl"
 		#!/usr/bin/env bash
 		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
@@ -619,179 +641,228 @@ function compile::segemehl(){
 }
 
 function compile::starfusion(){
-	local insdir threads url
-
 	# conda recipe has either star > 2.7.0f (v1.6) or star > 2.5 (>=v1.8, plus python compatibility issues)
+	local insdir threads cfg url src="$(dirname "$(dirname "$(readlink -e "$0")")")/config/starfusion.url"
 	commander::printinfo "installing starfusion"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	url='https://github.com/'$(curl -s https://github.com/STAR-Fusion/STAR-Fusion/releases | grep -oE 'STAR-Fusion/\S+STAR-Fusion-v[0-9\.]+\.FULL\.tar\.gz' | head -1)
-	wget -q "$url" -O "$insdir/starfusion.tar.gz"
+	if [[ -e "$src" ]] && $cfg; then
+		url=$(cat "$src")
+	else
+		url=$(curl -s https://api.github.com/repos/STAR-Fusion/STAR-Fusion/releases | grep -E 'browser_download_url.*\.FULL\.tar\.gz"$' | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
+	fi
+	mkdir -p "$insdir/config"
+	echo "$url" > "$insdir/config/starfusion.url"
+
+	wget -q --show-progress --progress=bar:force "$url" -O "$insdir/starfusion.tar.gz"
 	tar -xzf "$insdir/starfusion.tar.gz" -C "$insdir"
 	rm "$insdir/starfusion.tar.gz"
 	cd "$(ls -dv "$insdir/STAR-Fusion"-*/ | tail -1)"
 	mkdir -p "$insdir/latest"
 	ln -sfn "$PWD" "$insdir/latest/starfusion"
+	cd - > /dev/null
 
 	return 0
 }
 
 function compile::preparedexseq(){
-	local insdir threads
-
+	local insdir threads cfg
 	commander::printinfo "installing dexseq"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	cd "$insdir"
-	rm -rf Subread_to_DEXSeq
-	git clone https://github.com/vivekbhr/Subread_to_DEXSeq.git
-	cd Subread_to_DEXSeq
+	rm -rf "$insdir/Subread_to_DEXSeq"
+	git clone https://github.com/vivekbhr/Subread_to_DEXSeq.git "$insdir/Subread_to_DEXSeq"
+	cd "$insdir/Subread_to_DEXSeq"
 	mkdir -p bin
 	mv *.py bin
 	mkdir -p "$insdir/latest"
 	ln -sfn "$PWD/bin" "$insdir/latest/subreadtodexseq"
+	cd - > /dev/null
 
 	return 0
 }
 
 function compile::revigo(){
-	local insdir threads
-
+	local insdir threads cfg
 	commander::printinfo "installing revigo"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	cd "$insdir"
-	rm -rf revigo
-	git clone https://gitlab.leibniz-fli.de/kriege/revigo.git
-	cd revigo
-	mkdir bin
+	rm -rf "$insdir/revigo"
+	git clone https://gitlab.leibniz-fli.de/kriege/revigo.git "$insdir/revigo"
+	cd "$insdir/revigo"
+	mkdir -p bin
 	compile::_javawrapper bin/revigo "$(readlink -e RevigoStandalone.jar)" "$insdir/latest/java/java"
 	mkdir -p "$insdir/latest"
 	ln -sfn "$PWD/bin" "$insdir/latest/revigo"
+	cd - > /dev/null
 
 	return 0
 }
 
 function compile::gem(){
-	local insdir threads url version
-
+	local insdir threads cfg url version src="$(dirname "$(dirname "$(readlink -e "$0")")")/config/gem.url"
 	commander::printinfo "installing gem"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	url='https://groups.csail.mit.edu/cgs/gem/download/'
-	url="$url"$(curl -s "$url" | grep -oE "gem.v[0-9\.]+\.tar\.gz" | tail -1)
+	if [[ -e "$src" ]] && $cfg; then
+		url=$(cat "$src")
+	else
+		url='https://groups.csail.mit.edu/cgs/gem/download/'
+		url="$url"$(curl -s "$url" | grep -oE "gem.v[0-9\.]+\.tar\.gz" | tail -1)
+	fi
+	mkdir -p "$insdir/config"
+	echo "$url" > "$insdir/config/gem.url"
+
 	version=$(basename "$url" | sed -E 's/gem.v([0-9\.]+)\.tar\.gz/\1/')
-	wget -q "$url" -O "$insdir/gem.tar.gz"
+	wget -q --show-progress --progress=bar:force "$url" -O "$insdir/gem.tar.gz"
 	tar -xzf "$insdir/gem.tar.gz" -C "$insdir"
 	mv "$insdir/gem" "$insdir/gem-$version"
 	rm "$insdir/gem.tar."gz
 	cd "$insdir/gem-$version"
 	mkdir -p bin
-	wget -q -O bin/Read_Distribution_default.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_default.txt
-	wget -q -O bin/Read_Distribution_CLIP.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_CLIP.txt
-	wget -q -O bin/Read_Distribution_ChIP-exo.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_ChIP-exo.txt
+	wget -q --show-progress --progress=bar:force -O bin/Read_Distribution_default.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_default.txt
+	wget -q --show-progress --progress=bar:force -O bin/Read_Distribution_CLIP.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_CLIP.txt
+	wget -q --show-progress --progress=bar:force -O bin/Read_Distribution_ChIP-exo.txt https://groups.csail.mit.edu/cgs/gem/download/Read_Distribution_ChIP-exo.txt
 	compile::_javawrapper bin/gem "$(readlink -e gem.jar)" "$insdir/latest/java/java"
 	mkdir -p "$insdir/latest"
 	ln -sfn "$PWD/bin" "$insdir/latest/gem"
+	cd - > /dev/null
 
 	return 0
 }
 
 function compile::m6aviewer(){
-	local insdir threads url version
-
+	local insdir threads cfg url version fallback=false src="$(dirname "$(dirname "$(readlink -e "$0")")")/config/m6aviewer.url"
 	commander::printinfo "installing m6aviewer"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	url='http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar'
+	if [[ -e "$src" ]] && $cfg; then
+		url=$(cat "$src")
+	else
+		url='http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar'
+	fi
+	mkdir -p "$insdir/config"
+	echo "$url" > "$insdir/config/m6aviewer.url"
+
 	version="1.6.1"
-	rm -rf "$insdir/m6aviewer-$version"
-	mkdir -p "$insdir/m6aviewer-$version/bin"
+	mkdir -p "$insdir/m6aviewer-$version"
+	wget -q --show-progress --progress=bar:force --timeout=2 --waitretry=2 --tries=2 "$url" -O "$insdir/m6aviewer-$version/m6aviewer.jar" || fallback=true
+	if $fallback; then
+		rm -rf "$insdir/m6aviewer-$version"
+		git clone https://gitlab.leibniz-fli.de/kriege/m6aviewer.git "$insdir/m6aviewer-$version"
+	fi
 	cd "$insdir/m6aviewer-$version"
-	wget -q "$url" -O m6aviewer.jar
+	mkdir -p bin
 	compile::_javawrapper bin/m6aviewer "$(readlink -e m6aviewer.jar)"
 	mkdir -p "$insdir/latest"
 	ln -sfn "$PWD/bin" "$insdir/latest/m6aviewer"
+	cd - > /dev/null
 
 	return 0
 }
 
-function compile::idr(){
-	local insdir threads url
-
-	commander::printinfo "installing idr"
-	compile::_parse -r insdir -s threads "$@"
+function compile::matk(){
+	local insdir threads cfg url version src="$(dirname "$(dirname "$(readlink -e "$0")")")/config/matk.url"
+	commander::printinfo "installing matk" # deeprip
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	url='https://github.com/kundajelab/idr'
-	url="$url/"$(curl -s "$url/tags" | grep -oE "archive\S+\/[0-9\.]+\.tar\.gz" | head -1)
-	wget -q $url -O $insdir/idr.tar.gz
-	tar -xzf "$insdir/idr.tar.gz" -C "$insdir"
-	rm "$insdir/idr.tar.gz"
-	cd "$(ls -vd "$insdir/idr"-*/ | tail -1)"
-	pip install numpy matplotlib scipy
-	python setup.py install
+	if [[ -e "$src" ]] && $cfg; then
+		url=$(cat "$src")
+	else
+		url='https://github.com/lazyky/MATK_backup/releases/download/v0.1dev/MATK-1.0.jar'
+		url='http://matk.renlab.org/download/MATK-1.0.jar'
+	fi
+	mkdir -p "$insdir/config"
+	echo "$url" > "$insdir/config/matk.url"
+
+	version="1.0"
+	mkdir -p "$insdir/matk-$version"
+	wget -q --show-progress --progress=bar:force "$url" -O "$insdir/matk-$version/matk.jar"
+	cd "$insdir/matk-$version"
+	mkdir -p bin
+	compile::_javawrapper bin/matk "$(readlink -e matk.jar)"
 	mkdir -p "$insdir/latest"
-	ln -sfn "$PWD/bin" "$insdir/latest/idr"
+	ln -sfn "$PWD/bin" "$insdir/latest/m6aviewer"
+	cd - > /dev/null
 
 	return 0
 }
 
 function compile::newicktopdf(){
-	local insdir threads url
-
-	commander::printinfo "installing newick2pdf"
-	compile::_parse -r insdir -s threads "$@"
+	local insdir threads cfg url src="$(dirname "$(dirname "$(readlink -e "$0")")")/config/newicktopdf.url"
+	commander::printinfo "installing newicktopdf"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	url='ftp://pbil.univ-lyon1.fr/pub/mol_phylogeny/njplot/newicktopdf'
+	if [[ -e "$src" ]] && $cfg; then
+		url=$(cat "$src")
+	else
+		url='ftp://pbil.univ-lyon1.fr/pub/mol_phylogeny/njplot/newicktopdf'
+	fi
+	mkdir -p "$insdir/config"
+	echo "$url" > "$insdir/config/newicktopdf.url"
+
 	mkdir -p "$insdir/newicktopdf"
-	wget -q "$url" -O "$insdir/newicktopdf/newicktopdf"
+	wget -q --show-progress --progress=bar:force "$url" -O "$insdir/newicktopdf/newicktopdf"
 	chmod 755 "$insdir/newicktopdf/newicktopdf"
 	mkdir -p "$insdir/latest"
 	ln -sfn "$insdir/newicktopdf" "$insdir/latest/newicktopdf"
 }
 
 function compile::ssgsea(){
-	local insdir threads
-
+	local insdir threads cfg url dir src="$(dirname "$(dirname "$(readlink -e "$0")")")/config/ssgsea.url"
 	commander::printinfo "installing ssgsea"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	cd "$insdir"
-	rm -rf ssGSEA-gpmodule
-	git clone https://github.com/GSEA-MSigDB/ssGSEA-gpmodule.git
-	cd ssGSEA-gpmodule
-	mv src bin
-	chmod 755 bin/*
-	mkdir -p "$insdir/latest"
-	ln -sfn "$PWD/bin" "$insdir/latest/ssgseagpmodule"
+	if [[ -e "$src" ]] && $cfg; then
+		url=$(cat "$src")
+	else
+		url=$(curl -s https://api.github.com/repos/GSEA-MSigDB/ssGSEA-gpmodule/releases | grep -E 'browser_download_url.*\.zip' | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
+	fi
+	mkdir -p "$insdir/config"
+	echo "$url" > "$insdir/config/ssgsea.url"
 
-	git clone https://github.com/broadinstitute/ssGSEA2.0.git
-	rm -rf ssGSEA-broad
-	mv ssGSEA2.0 ssGSEA-broad
-	cd ssGSEA-broad
-	find . -type f -exec dos2unix "{}" \;
-	find . -type f -name "*.R" -exec chmod 755 "{}" \;
+	dir="$insdir/$(basename "$url" .zip)"
+	mkdir -p "$dir/bin"
+	cd "$dir"
+	wget -q --show-progress --progress=bar:force "$url" -O ssgsea.zip
+	unzip -o ssgsea.zip
+	rm ssgsea.zip
+	chmod 755 *.R
+	mv *.R bin
 	mkdir -p "$insdir/latest"
-	ln -sfn "$PWD" "$insdir/latest/ssgseabroad"
+	ln -sfn "$PWD/bin" "$insdir/latest/ssgsea"
+	cd - > /dev/null
+
+	# git clone https://github.com/broadinstitute/ssGSEA2.0.git
+	# rm -rf ssGSEA-broad
+	# mv ssGSEA2.0 ssGSEA-broad
+	# cd ssGSEA-broad
+	# find . -type f -exec dos2unix "{}" \;
+	# find . -type f -name "*.R" -exec chmod 755 "{}" \;
+	# mkdir -p "$insdir/latest"
+	# ln -sfn "$PWD" "$insdir/latest/ssgseabroad"
 
 	return 0
 }
 
 function compile::gztool(){
-	local insdir threads url version
-
+	local insdir threads cfg url version src="$(dirname "$(dirname "$(readlink -e "$0")")")/config/gztool.url"
 	commander::printinfo "installing gztool"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	url='https://github.com/circulosmeos/gztool'
-	url="$(curl -s "$url/releases" | grep -oE 'https[^"]+linux.x86_64' | head -1)"
+	if [[ -e "$src" ]] && $cfg; then
+		url=$(cat "$src")
+	else
+		url=$(curl -s https://api.github.com/repos/circulosmeos/gztool/releases | grep -E 'browser_download_url.*linux\.x86_64"$' | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
+	fi
+	mkdir -p "$insdir/config"
+	echo "$url" > "$insdir/config/gztool.url"
 
 	version="$(basename "$(dirname "$url")")"
 	version=${version/v/}
-	cd "$insdir"
 	mkdir -p "$insdir/gztool-$version/bin"
 	cd "$insdir/gztool-$version"
-	wget -q "$url" -O bin/gztool
+	wget -q --show-progress --progress=bar:force "$url" -O bin/gztool
 	chmod 755 bin/gztool
 	cat <<-'EOF' > bin/gztail
 	#! /usr/bin/env bash
@@ -814,75 +885,54 @@ function compile::gztool(){
 	chmod 755 bin/gztail
 	mkdir -p "$insdir/latest"
 	ln -sfn "$PWD/bin" "$insdir/latest/gztool"
+	cd - > /dev/null
 
 	return 0
 }
 
 function compile::mdless(){
-	local insdir threads url
-
+	local insdir threads cfg url src="$(dirname "$(dirname "$(readlink -e "$0")")")/config/mdless.url"
 	commander::printinfo "installing mdless"
-	compile::_parse -r insdir -s threads "$@"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	url='https://github.com/ttscoff/mdless'
-	url="https://github.com$(curl -s "$url/releases" | grep -E '[^"]+[0-9\.]+\.tar\.gz' | head -1)"
-	wget -q "$url" -O "$insdir/mdless.tar.gz"
+	if [[ -e "$src" ]] && $cfg; then
+		url=$(cat "$src")
+	else
+		url='https://github.com/ttscoff/mdless'
+		url="$url/"$(curl -s "$url/tags" | grep -oE "archive\S+\/[0-9\.]+\.tar\.gz" | head -1)
+	fi
+	mkdir -p "$insdir/config"
+	echo "$url" > "$insdir/config/mdless.url"
+
+	wget -q --show-progress --progress=bar:force "$url" -O "$insdir/mdless.tar.gz"
 	tar -xzf "$insdir/mdless.tar.gz" -C "$insdir"
 	rm "$insdir/mdless.tar.gz"
 	cd "$(ls -dv "$insdir/mdless"-*/bin | tail -1)"
 	sed -i 's@require@$LOAD_PATH.unshift(File.expand_path("../../lib", __FILE__))\nrequire@' mdless
 	mkdir -p "$insdir/latest"
 	ln -sfn "$PWD" "$insdir/latest/mdless"
+	cd - > /dev/null
 
 	return 0
 }
 
-# compile::ratarmount() {
-# 	local insdir threads url version
-
-# 	commander::printinfo "installing ratarmount"
-# 	compile::_parse -r insdir -s threads "$@"
-# 	source "$insdir/conda/bin/activate" bashbone
-# 	url='https://github.com/mxmlnkn/ratarmount'
-# 	url="https://github.com/"$(curl -s "$url/releases" | grep -oE "\/mxmlnkn\/\S+AppImage" | head -1)
-# 	version="$(basename "$(dirname "$url")")"
-# 	version=${version/#v/}
-# 	mkdir -p "$insdir/ratarmount-$version/bin"
-# 	wget -q "$url" -O "$insdir/ratarmount-$version/bin/ratarmount"
-# 	chmod 755 "$insdir/ratarmount-$version/bin/ratarmount"
-# 	mkdir -p "$insdir/latest"
-# 	ln -sfn "$insdir/ratarmount-$version/bin" "$insdir/latest/ratarmount"
-
-# 	return 0
-# }
-
-# compile::fusearchive(){
-# 	local insdir threads url
-# 	commander::printinfo "installing fuse-archive"
-# 	compile::_parse -r insdir -s threads "$@"
-# 	source "$insdir/conda/bin/activate" bashbone
-# 	cd "$insdir"
-# 	git clone https://github.com/google/fuse-archive.git
-# 	cd fuse-archive
-# 	make -j $threads
-# 	mv out bin
-# 	ln -sfn "$PWD/bin" "$insdir/latest/fusearchive"
-
-# 	return 0
-# }
-
-function compile::pugz(){
-	local insdir threads url
-	commander::printinfo "installing pugz"
-	compile::_parse -r insdir -s threads "$@"
+function compile::moose(){
+	local insdir threads cfg
+	commander::printinfo "installing moose2"
+	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
-	cd "$insdir"
-	git clone https://github.com/Piezoid/pugz.git
-	cd pugz
+	rm -rf "$insdir/moose2"
+	git clone https://github.com/grabherr/moose2.git "$insdir/moose2"
+	cd "$insdir/moose2"
+	# git checkout a14ba3ef463c479c8037d1bb986f3cb6b5525da5
+	sed -iE 's/\s*-static//' Makefile
+	export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
+	make clean || true
 	make -j $threads
 	mkdir -p bin
-	mv gunzip bin/pugz
-	ln -sfn "$PWD/bin" "$insdir/latest/pugz"
+	find . -maxdepth 1 -type f -executable -exec mv {} bin \;
+	ln -sfn "$PWD/bin" "$insdir/latest/moose"
+	cd - > /dev/null
 
 	return 0
 }

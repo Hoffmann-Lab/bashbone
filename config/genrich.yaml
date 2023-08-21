@@ -2,10 +2,7 @@ name: genrich
 channels:
   - conda-forge
   - bioconda
-  - main
   - defaults
-  - r
-  - anaconda
 dependencies:
   - _libgcc_mutex=0.1
   - _openmp_mutex=4.5

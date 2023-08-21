@@ -95,11 +95,6 @@ function preprocess::dedup(){
 }
 
 function preprocess::fastqc(){
-	declare -a tdirs
-	function _cleanup::preprocess::fastqc(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -139,7 +134,7 @@ function preprocess::fastqc(){
 	local instances=$((${#_fq1_fastqc[@]}+${#_fq2_fastqc[@]})) ithreads jmem jgct jcgct
 	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i $instances -T $threads -m 250 -M "$maxmemory")
 
-	declare -a cmd1 cmd2 cmd3
+	declare -a tdirs cmd1 cmd2 cmd3
 	local f b e i=0
 	for f in {"${_fq1_fastqc[@]}","${_fq2_fastqc[@]}"}; do
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fastqc)")
@@ -229,7 +224,7 @@ function preprocess::rmpolynt(){
 	done
 	[[ $mandatory -lt 3 ]] && _usage
 
-	commander::printinfo "clipping poly N-, mono- and di-nucleotide ends"
+	commander::printinfo "clipping poly mono- and di-nucleotide ends"
 
 	# -a ADAPTERX : allows partial matches, but disallow internal matches
 	# -a ADAPTER$ : adapter will only be found if it is a true suffix of the read
@@ -463,7 +458,7 @@ function preprocess::trimmomatic(){
 			os2="$outdir/singletons.$o2.$e2.gz"
 			o2="$outdir/$o2.$e2.gz"
 
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 				trimmomatic
 				-Xmx${jmem}m
 				-XX:ParallelGCThreads=$jgct
@@ -479,12 +474,13 @@ function preprocess::trimmomatic(){
 				SLIDINGWINDOW:5:20
 				MINLEN:18
 				TOPHRED33
-				| cat
+			CMD
+				sed -u '/Exception/{q 1};${/Completed successfully/!{q 1}}'
 			CMD
 			_fq1_trimmomatic[$i]="$o1"
 			_fq2_trimmomatic[$i]="$o2"
 		else
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 				trimmomatic
 				-Xmx${jmem}m
 				-XX:ParallelGCThreads=$jgct
@@ -499,7 +495,8 @@ function preprocess::trimmomatic(){
 				SLIDINGWINDOW:5:20
 				MINLEN:18
 				TOPHRED33
-				| cat
+			CMD
+				sed -u '/Exception/{q 1};${/Completed successfully/!{q 1}}'
 			CMD
 			_fq1_trimmomatic[$i]="$o1"
 		fi
@@ -515,11 +512,6 @@ function preprocess::trimmomatic(){
 }
 
 function preprocess::rcorrector(){
-	declare -a tdirs
-	function _cleanup::preprocess::rcorrector(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -550,7 +542,7 @@ function preprocess::rcorrector(){
 
 	commander::printinfo "correcting read errors"
 
-	declare -a cmd1 cmd2
+	declare -a tdirs cmd1 cmd2
 	local i o1 e1 o2 e2 r1 r2
 	for i in "${!_fq1_rcorrector[@]}"; do
 		helper::basename -f "${_fq1_rcorrector[$i]}" -o o1 -e e1
@@ -631,11 +623,6 @@ function preprocess::rcorrector(){
 
 
 function preprocess::sortmerna_new(){
-	declare -a tdirs
-	function _cleanup::preprocess::sortmerna(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -666,7 +653,7 @@ function preprocess::sortmerna_new(){
 
 	commander::printinfo "filtering rRNA fragments"
 
-	declare -a cmd1 cmd2
+	declare -a tdirs cmd1 cmd2
 	local i f catcmd o1 o2 e1 e2
 	for i in "${!_fq1_sortmerna[@]}"; do
 		helper::basename -f "${_fq1_sortmerna[$i]}" -o o1 -e e1
@@ -795,11 +782,6 @@ function preprocess::sortmerna_new(){
 }
 
 function preprocess::sortmerna(){
-	declare -a tdirs
-	function _cleanup::preprocess::sortmerna(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -830,7 +812,7 @@ function preprocess::sortmerna(){
 
 	commander::printinfo "filtering rRNA fragments"
 
-	declare -a cmd1 cmd2 cmd3
+	declare -a tdirs cmd1 cmd2 cmd3
 	local i catcmd tmp o1 o2 or1 or2 e1 e2
 	for i in "${!_fq1_sortmerna[@]}"; do
 		helper::basename -f "${_fq1_sortmerna[$i]}" -o o1 -e e1
@@ -973,11 +955,6 @@ function preprocess::add4stats(){
 }
 
 function preprocess::qcstats(){
-	local tmp
-	function _cleanup::preprocess::qcstats(){
-		rm -f "$tmp"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -1022,7 +999,7 @@ function preprocess::qcstats(){
 			if $force || [[ ! -s "$qdir/$qczip" ]]; then
 				commander::makecmd -a cmdqc -s ' ' -c {COMMANDER[0]}<<- CMD
 					fq=("$f");
-					preprocess::fastqc -S false -s $skip -t 1 -p "$tmpdir" -o "$qdir" -1 fq
+					preprocess::fastqc -S false -s $skip -t 1 -o "$qdir" -1 fq
 				CMD
 				# rescue enables to store quality directories without running fastqc after each fastq processing step - instead run fastqc on all files in parallel
 			fi
@@ -1034,8 +1011,7 @@ function preprocess::qcstats(){
 
 	commander::printinfo "plotting preprocessing stats"
 
-	tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.tsv)"
-	local o c multiplier tool
+	local o c multiplier tool tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.tsv)"
 	declare -a counts
 	echo -e "sample\ttype\tcount" > "$outdir/preprocessing.barplot.tsv"
 	for i in "${!_fq1_qcstats[@]}"; do

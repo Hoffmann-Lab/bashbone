@@ -2,11 +2,6 @@
 # (c) Konstantin Riege
 
 function alignment::mkreplicates(){
-	declare -a tdirs
-	function _cleanup::alignment::mkreplicates(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -50,7 +45,7 @@ function alignment::mkreplicates(){
 	read -r instances2 ithreads2 < <(configure::instances_by_threads -i $instances2 -t 10 -T $threads)
 
 	local m i odir o tmp nf nrf tf rf pf addindex=true
-	declare -a cmd1 cmd2 cmd3
+	declare -a tdirs cmd1 cmd2 cmd3
 	if [[ $_ridx_mkreplicates ]]; then
 		commander::printinfo "generating pseudo-pools"
 
@@ -67,21 +62,10 @@ function alignment::mkreplicates(){
 			declare -n _bams_mkreplicates=$m
 			odir=$outdir/$m
 			mkdir -p "$odir"
-			# tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.mkreplicates)")
 			for i in "${!_nidx_mkreplicates[@]}"; do
 				tf=${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}
 				rf=${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}
 				o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(\..+)\t(.+)\1/-\2.pseudopool\1/')
-
-				# commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-				# 	samtools view -@ $ithreads -b -s 0.5 $tf > "${tdirs[-1]}/$(basename "$tf")"
-				# CMD
-				# commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-				# 	samtools view -@ $ithreads -b -s 0.5 $rf > "${tdirs[-1]}/$(basename "$rf")"
-				# CMD
-				# commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
-				# 	samtools merge -f -c -p -@ $ithreads*2 "$o" "${tdirs[-1]}/$(basename "$tf")" "${tdirs[-1]}/$(basename "$rf")"
-				# CMD
 
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 					samtools merge
@@ -225,11 +209,6 @@ function alignment::mkreplicates(){
 }
 
 function alignment::strandsplit(){
-	declare -a tdirs
-	function _cleanup::alignment::strandsplit(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -260,7 +239,7 @@ function alignment::strandsplit(){
 
 	commander::printinfo "splitting alignments according to strandness"
 
-	declare -a cmd1
+	declare -a tdirs cmd1
 	local m f odir b x
 	for m in "${_mapper_strandsplit[@]}"; do
 		declare -n _bams_strandsplit=$m

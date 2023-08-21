@@ -1,23 +1,17 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-set -o pipefail -o errtrace
-shopt -s extglob
+source "$(dirname "$0")/../bashbone_lite.sh" -x cleanup -a "$@" || exit 1
+
+############################################
 
 cleanup(){
-	[[ $tmp && -e "$tmp" ]] && rm -rf "$tmp"
+	rm -rf "$tmp"
 	[[ $mkfg ]] && printf '%s' "${mkfg[@]}" > "$HOME/.ncbi/user-settings.mkfg"
 	return 0
 }
 
-trap '
-	cleanup
-	trap "" INT TERM; { env kill -INT -- -$$ & wait $!; sleep 0.1; env kill -TERM -- -$$ & wait $!; } &> /dev/null
-	printf "\r"
-' EXIT
-
-trap 'exit 1' USR1
-trap 'e=$?; echo ":ERROR: ${ERROR:-an unexpected one}" 1>&2; if [[ $e -ne 141 ]]; then [[ $BASHPID -eq $$ ]] && exit $e || kill -USR1 $$; wait -f /dev/null fi' ERR
+############################################
 
 usage(){
 	cat <<- EOF
@@ -28,7 +22,7 @@ usage(){
 		  - ebi uk mirror can be defined as fallback upon fastq-dump errors
 
 		VERSION
-		0.3.1
+		0.3.2
 
 		REQUIREMENTS
 		Depends on chosen options
@@ -66,10 +60,9 @@ usage(){
 		(c) Konstantin Riege
 		konstantin.riege{a}leibniz-fli{.}de
 	EOF
-	exit 1
+	return 1
 }
 
-unset OPTIND
 while getopts o:p:m:t:d:a:srwcfhl ARG; do
 	case $ARG in
 		o) outfile="$OPTARG";;
@@ -84,12 +77,12 @@ while getopts o:p:m:t:d:a:srwcfhl ARG; do
 		s) nodownload=true;;
 		r) outfile=/dev/null; nofetch=true;;
 		f) fallback=true;;
-		h) (usage); exit 0;;
+		h) { usage || exit 0; };;
 		*) usage;;
 	esac
 done
 shift $((OPTIND-1))
-[[ $# -eq 0 ]] && usage
+[[ $# -eq 0 ]] && { usage || exit 0; }
 
 declare -a srr title
 instances=${instances:-2}
@@ -103,16 +96,16 @@ ebi=${ebi:-false}
 nodownload=${nodownload:-false}
 nofetch=${nofetch:-false}
 fallback=${fallback:-false}
-ERROR="requires -w or -c"
+BASHBONE_ERROR="requires -w or -c"
 $fallback && $ebi
 outfile="${outfile:-/dev/null}"
 outdir="${outdir:-$PWD}"
-ERROR="cannot create output directory"
+BASHBONE_ERROR="cannot create output directory"
 mkdir -p "$outdir"
-ERROR="cannot create directory for output file"
+BASHBONE_ERROR="cannot create directory for output file"
 mkdir -p "$(dirname "$outfile")"
 [[ "$outfile" != "/dev/null" ]] && rm -f "$outfile"
-ERROR="cannot create output file"
+BASHBONE_ERROR="cannot create output file"
 touch "$outfile"
 resume=true
 unset ERROR
@@ -129,15 +122,12 @@ else
 			srr+=("$id")
 		} || {
 			i="${#srr[@]}"
-			#srr+=($(esearch -db sra -query "$id" | efetch -format docsum | grep -oE '(S|E|D)RR[^"]+'))
-			#n=$({ esearch -db sra -query "$id" | efetch -format info | grep -oE 'sample_(title|name)="[^"]+' || echo "NA"; } | sort -Vur | head -1 | cut -d '"' -f 2)
-			#printf "$id\t%s\t$n\n" "${srr[@]:$i}" | tee -a "$outfile" >&2
-
-			mapfile -t mapdata < <(esearch -db sra -query "$id" | efetch -format xml)
-			srr+=("$(printf '%s\n' "${mapdata[@]}" | sed -nE 's/.*accession="([SED]RR[^"]+)".*/\1/p' | sort -Vur | head -1)")
+			#esearch -db sra -query "$id" | efetch -format docsum
+			mapfile -t mapdata < <(esearch -db sra -query "$id" | efetch -format xml | grep .)
+			srr+=($(printf '%s\n' "${mapdata[@]}" | sed -nE 's/^\s*<RUN\s.*accession="([SED]RR[^"]+)".*/\1/p' | sort -Vu))
 			n="$({ printf '%s\n' "${mapdata[@]}" | grep -oE 'sample_(title|name)="[^"]+' || echo "NA"; } | sort -Vr | head -1 | cut -d '"' -f 2)"
 			meta="$(printf '%s\n' "${mapdata[@]}" | grep '<SAMPLE_ATTRIBUTE>' -A 2 | grep '<TAG>' -A 1 | grep -vx -- '--' | sed -nE 's/^\s*<([^>]+>)(.+)<\/\1/\2/p' | paste - - | awk -F '\t' '{gsub(/\s+/,"_",$1); print $1"=\""$2"\";"}' | sed ':a;N;$!ba; s/\n/ /g')"
-			printf "$id\t%s\t$n\tsample_name=\"$n;\" $meta\n" "${srr[@]:$i}" | tee -a "$outfile" >&2
+			printf "$id\t%s\t$n\tsample_name=\"$n;\" $meta\n" "${srr[@]:$i}"  | tee -a "$outfile" >&2
 		}
 	done
 	$nodownload && exit 0
@@ -151,7 +141,8 @@ fi
 
 	#vdb-config -i & sleep 2; kill $! # does not work when piped
 	vdb-config --restore-defaults &> /dev/null
-	vdb-config -s /LIBS/GUID=$(uuid) # from conda ossuuid (dependency of sra-toolkit) or use systems uuidgen if installed
+	# from conda ossuuid (dependency of sra-toolkit) or use systems uuidgen if installed
+	vdb-config -s /LIBS/GUID=$(uuid)
 	vdb-config -s /http/timeout/read=20000
 	vdb-config -s /repository/user/main/public/root="$tmp" # change cache temp directory
 	vdb-config -s /repository/user/cache-disabled=true # comment to enable caching
@@ -207,6 +198,16 @@ fasterqdump(){
 	return 0
 }
 
+awsdump(){
+	local id
+	for id in "${srr[@]}"; do
+		# -3|--split-3  or  -S|--split-files
+		echo "aws s3 sync 's3://sra-pub-run-odp/sra/$id' '$id' --no-sign-request && fasterq-dump '$id' --progres -e 56" >&2
+		echo -ne "aws s3 sync 's3://sra-pub-run-odp/sra/$id' '$id' --no-sign-request && fasterq-dump -t '$tmp' -p -f -P -O '$outdir' '$id'\0"
+	done | xargs -0 -P $instances -I {} bash -c {}
+	return 0
+}
+
 ftpdump_wget(){
 	local params id url i=-1
 	$resume && params="-c" || params=""
@@ -245,18 +246,18 @@ if $fallback; then
 	# finally, srr array holds SRR numbers to be re-downloaded via ftpdump
 	srr=("$({ fastqdump_$compression || true; } 2> >(tee /dev/fd/2 | awk -v x="$(basename "$0")" '/failed (S|E|D)RR[0-9]+$/{print "\nDONT WORRY! "x" WILL RETRY TO DOWNLOAD "$NF" FROM A DIFFERNT SOURCE" > "/dev/fd/2"; print $NF}') | awk '{if(/^(S|E|D)RR[0-9]+$/){print}else{print > "/dev/fd/2"}}')")
 	resume=false
-	ERROR="@ ftpdump_$method during rescuing of fastqdump_$compression"
+	BASHBONE_ERROR="@ ftpdump_$method during rescuing of fastqdump_$compression"
 	ftpdump_$method
 	exit 0
 else
 	if [[ $mateid ]]; then
-		ERROR="@ fastqdump_all"
+		BASHBONE_ERROR="@ fastqdump_all"
 		fastqdump_all
 	elif $ebi; then
-		ERROR="@ ftpdump_$method"
+		BASHBONE_ERROR="@ ftpdump_$method"
 		ftpdump_$method
 	else
-		ERROR="@ fastqdump_$compression"
+		BASHBONE_ERROR="@ fastqdump_$compression"
 		fastqdump_$compression
 	fi
 

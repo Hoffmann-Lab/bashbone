@@ -89,7 +89,7 @@ function alignment::segemehl(){
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	else
 		commander::printinfo "checking md5 sums"
-		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
+		[[ ! -s "$genome.md5.sh" ]] && cp "$BASHBONE_DIR/lib/md5.sh" "$genome.md5.sh"
 		source "$genome.md5.sh"
 
 		local thismd5genome thismd5segemehl
@@ -169,11 +169,6 @@ function alignment::segemehl(){
 }
 
 function alignment::star(){
-	declare -a tdirs
-	function _cleanup::alignment::star(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} alignes pre-processed read data in fastq(.gz) format utilizing the mapping software STAR
@@ -265,7 +260,7 @@ function alignment::star(){
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	else
 		commander::printinfo "checking md5 sums"
-		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
+		[[ ! -s "$genome.md5.sh" ]] && cp "$BASHBONE_DIR/lib/md5.sh" "$genome.md5.sh" "$genome.md5.sh"
 		source "$genome.md5.sh"
 
 		declare -a cmdidx=("STAR --help | grep -m 1 -F versionGenome | sed -E 's/.+\s+(.+)/\1/'")
@@ -287,7 +282,9 @@ function alignment::star(){
 			commander::printinfo "indexing genome for star"
 			#100 = assumend usual read length. tools like arriba use 250 in case of longer reads
 			[[ -s "$gtf" ]] && idxparams+=" --sjdbGTFfile '$gtf' --sjdbOverhang 250"
-			local genomesize=$(du -sb "$genome" | cut -f 1)
+			# local genomesize=$(du -sb "$(readlink -e "$genome")" | cut -f 1)
+			local genomesize=$(( $(wc -c "$genome" | cut -d " " -f 1) - $(wc -l "$genome" | cut -d " " -f 1) ))
+
 			idxparams+=' --genomeSAindexNbases '$(echo $genomesize | perl -M'List::Util qw(min)' -lane 'printf("%d",min(14, log($_)/log(2)/2 - 1))')
 			local genomeseqs=$(grep -c '^>' "$genome")
 			[[ $genomeseqs -gt 5000 ]] && idxparams+=' --genomeChrBinNbits '$(echo "$genomesize $genomeseqs" | perl -M'List::Util qw(min)' -lane 'printf("%d",min(18, log($F[0]/$F[1])/log(2)))')
@@ -311,7 +308,7 @@ function alignment::star(){
 		fi
 	fi
 
-	declare -a cmd1
+	declare -a tdirs cmd1
 	local params a o e extractcmd
 	for i in "${!_fq1_star[@]}"; do
 		helper::basename -f "${_fq1_star[$i]}" -o o -e e
@@ -481,7 +478,7 @@ function alignment::bwa(){
 		commander::warn "skip checking md5 sums and genome indexing respectively"
 	else
 		commander::printinfo "checking md5 sums"
-		[[ ! -s "$genome.md5.sh" ]] && cp "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/md5.sh" "$genome.md5.sh"
+		[[ ! -s "$genome.md5.sh" ]] && cp "$BASHBONE_DIR/lib/md5.sh" "$genome.md5.sh"
 		source "$genome.md5.sh"
 
 		local thismd5genome thismd5bwa
@@ -624,7 +621,8 @@ function alignment::postprocess(){
 			-s <softskip>  | optional. default: false
 			               | [true|false] do nothing but check for files and print commands
 			-j <job>       | mandatory
-			               | [uniqify|sort|index] to be applied on alignments (see -r). index requires coordinate sorted alignment files
+			               | [uniqify|exclude|sizeselect|sort|index] to be applied on alignments (see -r). index requires coordinate sorted alignment files
+			-f <string>    | of a path to a blacklist file for exclusion job or a size range filter fragments for. default: 0:1000
 			-t <threads>   | mandatory
 			               | number of threads
 			-r <mapper>    | mandatory
@@ -653,14 +651,15 @@ function alignment::postprocess(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir job tmpdir="${TMPDIR:-/tmp}" inparams
+	local OPTIND arg mandatory skip=false threads outdir job tmpdir="${TMPDIR:-/tmp}" inparams misc
 	declare -n _mapper_process
-	while getopts 'S:s:t:j:r:o:P:h' arg; do
+	while getopts 'S:s:t:j:f:r:o:P:h' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			j)	((++mandatory)); job=${OPTARG,,*};;
+			f)	misc="$OPTARG";;
 			r)	((++mandatory)); _mapper_process=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			P)	inparams="$OPTARG";;
@@ -670,16 +669,15 @@ function alignment::postprocess(){
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
+	[[ "$job" == "exclude" && ! $misc ]] && BASHBONE_ERROR="blacklist file missing" && _usage
 
-	local instances ithreads m i outbase newbam
-	for m in "${_mapper_process[@]}"; do
-		declare -n _bams_process=$m
-		((instances+=${#_bams_process[@]}))
-	done
+	declare -n _bams_process="${_mapper_process[0]}"
+	local ithreads instances=$((${#_mapper_process[@]}*${#_bams_process[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	commander::printinfo "$job alignments"
 
+	local m i outbase newbam params
 	declare -a cmd1 cmd2
 	for m in "${_mapper_process[@]}"; do
 		declare -n _bams_process=$m
@@ -699,6 +697,35 @@ function alignment::postprocess(){
 						-P "$inparams"
 					_bams_process[$i]="$newbam"
 				;;
+				blacklist)
+					instances=1
+					alignment::_blacklist \
+						-1 cmd1 \
+						-2 cmd2 \
+						-t $threads \
+						-f "${_bams_process[$i]}" \
+						-b "$misc" \
+						-o "$outbase" \
+						-p "$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)" \
+						-r newbam \
+						-P "$inparams"
+					_bams_process[$i]="$newbam"
+				;;
+				sizeselect)
+					params="-c picard"
+					alignment::_sizeselect \
+						-1 cmd1 \
+						-2 cmd2 \
+						-t $ithreads \
+						-f "${_bams_process[$i]}" \
+						-m $(cut -d ':' -f 1 <<< ${misc:-"0:1000"}) \
+						-x $(cut -d ':' -f 2 <<< ${misc:-"0:1000"}) \
+						-o "$outbase" \
+						-p "$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.picard)" \
+						-r newbam \
+						-P "$inparams"
+					_bams_process[$i]="$newbam"
+				;;
 				sort)
 					instances=1
 					alignment::_sort \
@@ -706,6 +733,7 @@ function alignment::postprocess(){
 						-t $threads \
 						-f "${_bams_process[$i]}" \
 						-o "$outbase" \
+						-p "$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)" \
 						-r newbam \
 						-P "$inparams"
 					_bams_process[$i]="$newbam"
@@ -726,7 +754,7 @@ function alignment::postprocess(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -i $instances -a cmd1
+		commander::runcmd $params -v -b -i $instances -a cmd1
 		commander::runcmd -v -b -i $instances -a cmd2
 	fi
 	return 0
@@ -809,7 +837,7 @@ function alignment::_uniqify(){
 				-h
 				-q 1
 				$params
-				-@ $ithreads
+				-@ $threads
 				-F 4
 				-F 256
 				-F 2048
@@ -818,20 +846,20 @@ function alignment::_uniqify(){
 			sed '/^@\S\S\s/!{s/$/\tNH:i:1/}'
 		CMD
 			samtools view
-				-@ $ithreads
+				-@ $threads
 				-b
 				> "$_returnfile_uniqify"
 		CMD
 	else
 		declare -a cmdchk=("samtools --version | head -1 | cut -d '.' -f 2")
 		local version=$(commander::runcmd -a cmdchk)
-		if [[ $version -lt 12 ]]; then
+		if [[ $version -lt 10 ]]; then
 			# sed is faster than grep here
 			commander::makecmd -a _cmds2_uniqify -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 				samtools view
 					$params
 					-h
-					-@ $ithreads
+					-@ $threads
 					-F 4
 					-F 256
 					-F 2048
@@ -840,7 +868,7 @@ function alignment::_uniqify(){
 				sed -n '/^@\S\S\s/p; /\tNH:i:1\t/p'
 			CMD
 				samtools view
-					-@ $ithreads
+					-@ $threads
 					-b
 					> "$_returnfile_uniqify"
 			CMD
@@ -849,7 +877,7 @@ function alignment::_uniqify(){
 				samtools view
 					$params
 					-b
-					-@ $ithreads
+					-@ $threads
 					-F 4
 					-F 256
 					-F 2048
@@ -863,12 +891,259 @@ function alignment::_uniqify(){
 	return 0
 }
 
-function alignment::_sort(){
-	declare -a tdirs
-	function _cleanup::alignment::_sort(){
-		rm -rf "${tdirs[@]}"
+function alignment::_blacklist(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} crafts command to filter out alignments in blacklisted regions
+
+			-1 <cmds1>     | mandatory
+			               | first array to store commands
+			-2 <cmds2>     | mandatory
+			               | second array to store commands
+			-t <threads>   | mandatory
+			               | number of threads
+			-b <blacklist> | mandatory
+			               | bed file
+			-f <sam|bam>   | mandatory
+			               | path to alignment in SAM or BAM format
+			-o <outbase>   | mandatory
+			               | path to output directory plus alignment file prefix
+			-p <tmpdir>    | mandatory
+			               | path to temporary directory
+			-r <var>       | optional
+			               | variable to store resulting alignment file path
+			-P <parameter> | optional
+			               | additional samtools view parameter
+
+			example:
+			    declare -a cmds1 cmds2
+			    declare outfile=""
+			    ${FUNCNAME[1]} -1 cmds1 -2 cmds2 -t 16 -b /path/to/blacklist.bed -f /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -p /path/to/tmpdir -r outfile
+
+			create blacklisted bam:
+			    commander::printcmd -a cmds1 # samtools [..] /path/to/alignment.[sam|bam] > /path/to/alignment.blacklisted.bam
+			    commander::runcmd [..] -a cmds1
+			    commander::runcmd [..] -a cmds2
+
+			access blacklisted bam:
+			    ls "\$outfile" # /path/to/outdir/alignment.blacklisted.bam
+		EOF
+		return 1
 	}
 
+	local OPTIND arg mandatory threads bam outbase _returnfile_blacklist blacklist inparams tmpdir
+	declare -n _cmds1_blacklist _cmds2_blacklist
+	while getopts '1:2:t:b:f:o:p:r:P:h' arg; do
+		case $arg in
+			1)	((++mandatory)); _cmds1_blacklist=$OPTARG;;
+			2)	((++mandatory)); _cmds2_blacklist=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			b)	((++mandatory)); blacklist="$OPTARG";;
+			f)	((++mandatory)); bam="$OPTARG";;
+			o)	((++mandatory)); outbase="$OPTARG";;
+			p)	((++mandatory)); tmpdir="$OPTARG";; # needs to be given here, otherwise a mktemp dir will be deleted upon returning of this function
+			r)	declare -n _returnfile_blacklist=$OPTARG;;
+			P)	inparams="$OPTARG";;
+			h)	{ _usage || return 0; };;
+			*)	_usage;;
+		esac
+	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
+	[[ $mandatory -lt 7 ]] && _usage
+
+	_returnfile_blacklist="$outbase.blacklisted.bam"
+
+	# or bedtools complement
+	commander::makecmd -a _cmds1_blacklist -s ';' -c {COMMANDER[0]}<<- CMD
+		bedtools subtract
+			-a <(samtools view -H "$bam" | awk '/^@SQ/{\$1=""; print}' | cut -d ':' -f 2,3 | sed -r 's/(\S+)\s+LN:(.+)/\1\t0\t\2/' | helper::sort -k1,1 -k2,2n -k3,3n -t $threads)
+			-b <(helper::sort -k1,1 -k2,2n -k3,3n -t $threads -f "$blacklist")
+		> "$tmpdir/blacklist.bed"
+	CMD
+
+	# infer SE or PE
+	local params="$inparams"
+	local x=$(samtools view -F 4 "$bam" | head -10000 | cat <(samtools view -H "$bam") - | samtools view -c -f 1)
+
+	if [[ $x -gt 0 ]]; then
+		# needs workaraound
+		# filter for a region allows to keep second mate and set second mate either to
+		# 	- unmapped (cigar to * from version 1.16) -> proper paired flag kept in first read
+		# 	- or keep it (from v1.15) iterator initialization bug still existing in v1.17
+		commander::makecmd -a _cmds2_blacklist -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
+			samtools view
+				$params
+				-@ $threads
+				-u
+				-p
+				-L "$tmpdir/blacklist.bed"
+				"$bam"
+		CMD
+			samtools sort
+				-@ $threads
+				-u
+				-n
+				-T "$tmpdir/nsrt.$(basename "$outbase")"
+		CMD
+			samtools fixmate
+				-@ $threads
+				-u
+				-r
+				- -
+		CMD
+			samtools view
+				-@ $threads
+				-u
+				-F 4
+				-f 2
+		CMD
+			samtools sort
+				-@ $threads
+				-O BAM
+				-T "$tmpdir/psrt.$(basename "$outbase")"
+			> "$_returnfile_blacklist"
+		CMD
+	else
+		commander::makecmd -a _cmds2_blacklist -s ';' -c {COMMANDER[0]}<<- CMD
+			samtools view
+				$params
+				-@ $threads
+				-b
+				-L "$tmpdir/blacklist.bed"
+				"$bam"
+			> "$_returnfile_blacklist"
+		CMD
+	fi
+
+	return 0
+}
+
+function alignment::_sizeselect(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} crafts command to filter properly aligned mate pairs by fragment size
+
+			-1 <cmds1>     | mandatory
+			               | first array to store commands
+			-2 <cmds2>     | mandatory
+			               | second array to store commands
+			-t <threads>   | mandatory
+			               | number of threads
+			-m <minsize>   | mandatory
+			               | minimum fragment size
+			-x <maxsize>   | mandatory
+			               | maximum fragment size
+			-f <sam|bam>   | mandatory
+			               | path to alignment in SAM or BAM format
+			-o <outbase>   | mandatory
+			               | path to output directory plus alignment file prefix
+			-p <tmpdir>    | mandatory
+			               | path to temporary directory
+			-r <var>       | optional
+			               | variable to store resulting alignment file path
+			-P <parameter> | optional
+			               | additional samtools view parameter
+
+			example:
+			    declare -a cmds1 cmds2
+			    declare outfile=""
+			    ${FUNCNAME[1]} -1 cmds1 -2 cmds2 -t 16 -m 50 -x 1000 -f /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -p /path/to/tmpdir -r outfile
+
+			create sizeselected bam:
+			    commander::printcmd -a cmds1 # samtools [..] /path/to/alignment.[sam|bam] > /path/to/alignment.sizeselected.bam
+			    commander::runcmd [..] -a cmds1
+			    commander::runcmd [..] -a cmds2
+
+			access sizeselected bam:
+			    ls "\$outfile" # /path/to/outdir/alignment.sizeselected.bam
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory threads bam outbase _returnfile_sizeselect minsize maxsize inparams tmpdir
+	declare -n _cmds1_sizeselect _cmds2_sizeselect
+	while getopts '1:2:t:m:x:f:o:p:r:P:h' arg; do
+		case $arg in
+			1)	((++mandatory)); _cmds1_sizeselect=$OPTARG;;
+			2)	((++mandatory)); _cmds2_sizeselect=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); minsize=$OPTARG;;
+			x)	((++mandatory)); maxsize=$OPTARG;;
+			f)	((++mandatory)); bam="$OPTARG";;
+			o)	((++mandatory)); outbase="$OPTARG";;
+			p)	((++mandatory)); tmpdir="$OPTARG";; # needs to be given here, otherwise a mktemp dir will be deleted upon returning of this function
+			r)	declare -n _returnfile_sizeselect=$OPTARG;;
+			P)	inparams="$OPTARG";;
+			h)	{ _usage || return 0; };;
+			*)	_usage;;
+		esac
+	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
+	[[ $mandatory -lt 8 ]] && _usage
+
+	_returnfile_sizeselect="$outbase.sizeselected.bam"
+
+	# infer SE or PE
+	local params="$inparams"
+	local x=$(samtools view -F 4 "$bam" | head -10000 | cat <(samtools view -H "$bam") - | samtools view -c -f 1)
+	BASHBONE_ERROR="no paird-end data given"
+	[[ $x -gt 0 ]]
+	BASHBONE_ERROR="fragment size range $minsize > $maxsize"
+	[[ $minsize -lt $maxsize ]]
+	unset BASHBONE_ERROR
+
+	commander::makecmd -a _cmds1_sizeselect -s ';' -c {COMMANDER[0]}<<- CMD
+		MALLOC_ARENA_MAX=4 picard
+			-Xmx250m
+			-XX:ParallelGCThreads=1
+			-XX:ConcGCThreads=1
+			-Djava.io.tmpdir="$tmpdir"
+			CollectInsertSizeMetrics
+			I="$bam"
+			O="$outbase.sizemetrics.txt"
+			H="$outbase.sizemetrics.pdf"
+			MW=800
+			INCLUDE_DUPLICATES=true
+			TMP_DIR="$tmpdir"
+			ASSUME_SORTED=true
+			VALIDATION_STRINGENCY=SILENT
+			VERBOSITY=WARNING
+	CMD
+
+	declare -a cmdchk=("samtools --version | head -1 | cut -d '.' -f 2")
+	local version=$(commander::runcmd -a cmdchk)
+	if [[ $version -lt 12 ]]; then
+		commander::makecmd -a _cmds2_sizeselect -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			samtools view
+				$params
+				-h
+				-f 2
+				-@ $threads
+				"$bam"
+		CMD
+			awk -F '\t' -v m=$minsize -v x=$maxsize '/^@\S\S\s/ || (\$9 >= 0 && \$9 >= m && \$9 <= x) || (\$9 < 0 && \$9 <= -m && \$9 >= -x)'
+		CMD
+			samtools view
+				-@ $threads
+				-b
+				> "$_returnfile_sizeselect"
+		CMD
+	else
+		commander::makecmd -a _cmds2_sizeselect -s ';' -c {COMMANDER[0]}<<- CMD
+			samtools view
+				$params
+				-b
+				-@ $threads
+				-e "(tlen >= 0 && tlen >= $minsize && tlen <= $maxsize) || (tlen < 0 && tlen <= -$minsize && tlen >= -$maxsize)"
+				"$bam"
+			> "$_returnfile_sizeselect"
+		CMD
+	fi
+
+	return 0
+}
+
+function alignment::_sort(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} crafts command to sort an alignment file by coordinate
@@ -881,6 +1156,8 @@ function alignment::_sort(){
 			               | path to alignment in SAM or BAM format
 			-o <outbase>   | mandatory
 			               | path to output directory plus alignment file prefix
+			-p <tmpdir>    | mandatory
+			               | path to temporary directory
 			-r <var>       | optional
 			               | variable to store resulting alignment file path
 			-P <parameter> | optional
@@ -889,7 +1166,7 @@ function alignment::_sort(){
 			example:
 			    declare -a cmds
 			    declare outfile=""
-			    ${FUNCNAME[1]} -1 cmds -t 16 -i /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -r outfile
+			    ${FUNCNAME[1]} -1 cmds -t 16 -i /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -p /path/to/tmpdir -r outfile
 
 			create sorted bam:
 			    commander::printcmd -a cmds # samtools [..] /path/to/alignment.[sam|bam] > /path/to/alignment.sorted.bam
@@ -901,34 +1178,33 @@ function alignment::_sort(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads bam outbase _returnfile_sort tmpdir="${TMPDIR:-/tmp}" inparams
+	local OPTIND arg mandatory threads bam outbase _returnfile_sort inparams tmpdir
 	declare -n _cmds1_sort
-	while getopts '1:t:f:o:r:P:h' arg; do
+	while getopts '1:t:f:o:p:r:P:h' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_sort=$OPTARG;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			f)	((++mandatory)); bam="$OPTARG";;
 			o)	((++mandatory)); outbase="$OPTARG";;
 			r)	declare -n _returnfile_sort=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG";; # needs to be given here, otherwise a mktemp dir will be deleted upon returning of this function
 			P)	inparams="$OPTARG";;
 			h)	{ _usage || return 0; };;
 			*)	_usage;;
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 4 ]] && _usage
+	[[ $mandatory -lt 5 ]] && _usage
 
 	_returnfile_sort="$outbase.sorted.bam"
-
 	local params="$inparams"
-	tdirs+=("$(mktemp -u -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)")
 
 	commander::makecmd -a _cmds1_sort -s ';' -c {COMMANDER[0]}<<- CMD
 		samtools sort
 			$params
 			-@ $threads
 			-O BAM
-			-T "${tdirs[-1]}/$(basename "$outbase")"
+			-T "$tmpdir/$(basename "$outbase")"
 			"$bam"
 			> "$_returnfile_sort"
 	CMD
@@ -1001,7 +1277,6 @@ function alignment::_index(){
 	return 0
 }
 
-
 function alignment::tobed(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
@@ -1052,16 +1327,13 @@ function alignment::tobed(){
 	done
 	[[ $mandatory -lt 2 ]] && _usage
 
-	local instances ithreads m f
-	for m in "${_mapper_tobam[@]}"; do
-		declare -n _bams_tobam=$m
-		((instances+=${#_bams_tobam[@]}))
-	done
+	declare -n _bams_tobed="${_mapper_tobed[0]}"
+	local ithreads instances=$((${#_mapper_tobed[@]}*${#_bams_tobed[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	commander::printinfo "converting alignments to bed.gz"
 
-	local params="$inparams"
+	local m f params="$inparams"
 	declare -a cmd1
 	for m in "${_mapper_tobed[@]}"; do
 		declare -n _bams_tobed=$m
@@ -1084,11 +1356,6 @@ function alignment::tobed(){
 }
 
 function alignment::inferstrandness(){
-	local tmpfile
-	function _cleanup::alignment::inferstrandness(){
-		rm -f "$tmpfile"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} infers library strandness from alignment files in BAM format given a reference annotation
@@ -1171,7 +1438,7 @@ function alignment::inferstrandness(){
 		commander::printinfo "inferring library preparation method"
 	fi
 
-	tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)"
+	local tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)"
 	declare -a cmd1
 	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		perl -slane '
@@ -1368,7 +1635,7 @@ function alignment::bamqc(){
 
 	commander::printinfo "counting primary and supplementary alignments"
 
-	declare -n _bams_bamqc=${_mapper_bamqc[0]}
+	declare -n _bams_bamqc="${_mapper_bamqc[0]}"
 	local ithreads instances=$((${#_mapper_bamqc[@]}*${#_bams_bamqc[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
@@ -1397,11 +1664,6 @@ function alignment::bamqc(){
 }
 
 function alignment::bulkindex(){
-	declare -a tdirs
-	function _cleanup::alignment::bulkindex(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} index alignment files from collections generated via alignment::add4stats
@@ -1455,13 +1717,13 @@ function alignment::bulkindex(){
 		done
 	done
 
-	tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)")
+	local tdir+="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)"
 	alignment::postprocess \
 		-S false \
 		-s $skip \
 		-j index \
 		-t $threads \
-		-o "${tdirs[-1]}" \
+		-o "$tdir" \
 		-r mapper_index \
 		-P "$inparams"
 }

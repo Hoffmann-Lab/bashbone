@@ -2,14 +2,12 @@ name: bashbone
 channels:
   - conda-forge
   - bioconda
-  - main
-  - defaults
   - r
-  - anaconda
 dependencies:
   - _libgcc_mutex=0.1
   - _openmp_mutex=4.5
   - _r-mutex=1.0.1
+  - argtable2=2.13
   - autoconf=2.69
   - automake=1.16.5
   - bc=1.07.1
@@ -64,15 +62,16 @@ dependencies:
   - bioconductor-treeio=1.18.0
   - bioconductor-xvector=0.34.0
   - bioconductor-zlibbioc=1.40.0
+  - blast=2.12.0
+  - blast-legacy=2.2.26
   - brotli=1.0.9
   - brotli-bin=1.0.9
   - bwidget=1.9.14
   - bz2file=0.98
   - bzip2=1.0.8
   - c-ares=1.18.1
-  - ca-certificates=2022.5.18.1
   - cairo=1.16.0
-  - certifi=2022.5.18.1
+  - clustalo=1.2.4
   - clustalw=2.1
   - cmake=3.21.3
   - curl=7.81.0
@@ -101,6 +100,7 @@ dependencies:
   - glib=2.70.2
   - glib-tools=2.70.2
   - gmp=6.2.1
+  - grabix=0.1.8
   - graphite2=1.3.13
   - gsl=2.7
   - gxx_impl_linux-64=9.4.0
@@ -134,6 +134,7 @@ dependencies:
   - libffi=3.4.2
   - libgcc-devel_linux-64=9.4.0
   - libgcc-ng=11.2.0
+  - libgfortran=3.0.0
   - libgfortran-ng=11.2.0
   - libgfortran5=11.2.0
   - libgit2=1.3.0
@@ -162,11 +163,12 @@ dependencies:
   - libxslt=1.1.33
   - libzlib=1.2.11
   - lz4-c=1.9.3
-  - lzo=2.10
   - m4=1.4.18
+  - mafft=7.505
   - make=4.3
   - matplotlib-base=3.5.1
   - munkres=1.1.4
+  - muscle=5.1
   - mysql-connector-c=6.1.11
   - ncbi-ngs-sdk=2.11.2
   - ncurses=6.2
@@ -174,7 +176,7 @@ dependencies:
   - numpy=1.21.5
   - openjdk=8.0.112
   - openjpeg=2.4.0
-  - openssl=1.1.1o
+  - openssl=1.1.1l
   - ossuuid=1.6.2
   - packaging=21.3
   - paml=4.9
@@ -186,6 +188,7 @@ dependencies:
   - perl=5.32.1
   - perl-algorithm-diff=1.201
   - perl-app-cpanminus=1.7045
+  - perl-archive-tar=2.40
   - perl-base=2.23
   - perl-bio-asn1-entrezgene=1.73
   - perl-bio-coordinate=1.007001
@@ -205,6 +208,7 @@ dependencies:
   - perl-carp=1.50
   - perl-class-data-inheritable=0.08
   - perl-common-sense=3.74
+  - perl-compress-raw-bzip2=2.103
   - perl-compress-raw-zlib=2.101
   - perl-constant=1.33
   - perl-data-dumper=2.173
@@ -236,9 +240,11 @@ dependencies:
   - perl-http-date=6.02
   - perl-http-message=6.18
   - perl-http-negotiate=6.01
+  - perl-io-compress=2.102
   - perl-io-html=1.001
   - perl-io-socket-ssl=2.066
   - perl-io-string=1.08
+  - perl-io-zlib=1.14
   - perl-json=4.02
   - perl-json-xs=2.34
   - perl-libwww-perl=6.39
@@ -252,6 +258,8 @@ dependencies:
   - perl-net-ssleay=1.88
   - perl-ntlm=1.09
   - perl-parent=0.238
+  - perl-pathtools=3.75
+  - perl-scalar-list-utils=1.62
   - perl-storable=3.15
   - perl-sub-uplevel=0.2800
   - perl-test-deep=1.128
@@ -287,6 +295,7 @@ dependencies:
   - pip=22.0.3
   - pixman=0.40.0
   - pkg-config=0.29.2
+  - poa=2.0
   - pthread-stubs=0.4
   - pyparsing=3.0.7
   - pysam=0.17.0
@@ -297,11 +306,12 @@ dependencies:
   - r-acepack=1.4.1
   - r-ape=5.6_1
   - r-aplot=0.1.2
+  - r-argparser=0.7.1
   - r-ashr=2.2_47
   - r-askpass=1.1
   - r-assertthat=0.2.1
   - r-backports=1.4.1
-  - r-base=4.1.2
+  - r-base>=4
   - r-base64enc=0.1_3
   - r-bh=1.78.0_0
   - r-biocmanager=1.30.16
@@ -309,7 +319,7 @@ dependencies:
   - r-bit64=4.0.5
   - r-bitops=1.0_7
   - r-blob=1.2.2
-  - r-boot=1.3_28
+  - r-boot=1.3_28.1
   - r-brew=1.0_7
   - r-brio=1.1.3
   - r-broom=0.7.12
@@ -341,6 +351,7 @@ dependencies:
   - r-data.table=1.14.2
   - r-dbi=1.1.2
   - r-dbplyr=2.1.1
+  - r-dendextend=1.16.0
   - r-deoptimr=1.0_10
   - r-desc=1.4.0
   - r-devtools=2.4.3
@@ -575,7 +586,7 @@ dependencies:
   - r-vroom=1.5.7
   - r-waldo=0.3.1
   - r-wgcna=1.69
-  - r-whisker=0.4
+  - r-whisker=0.4.1
   - r-withr=2.4.3
   - r-wordcloud=2.6
   - r-xfun=0.29
@@ -597,14 +608,17 @@ dependencies:
   - sqlite=3.37.0
   - sra-tools=2.11.0
   - sysroot_linux-64=2.12
+  - t-coffee=12.00.7fb08c2
   - t_coffee=11.0.8
   - tabixpp=1.1.0
   - tk=8.6.11
   - tktable=2.10
+  - ucsc-bedgraphtobigwig=357
   - ucsc-facount=377
   - unicodedata2=14.0.0
   - vcflib=1.0.2
   - vcftools=0.1.16
+  - viennarna=2.5.0
   - vt=2015.11.10
   - wget=1.20.3
   - wheel=0.37.1
@@ -623,3 +637,7 @@ dependencies:
   - xz=5.2.5
   - zlib=1.2.11
   - zstd=1.5.2
+  - pip:
+      - scipy==1.7.3
+variables:
+  MAMBA_NO_BANNER: '1'

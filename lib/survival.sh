@@ -2,10 +2,6 @@
 # (c) Konstantin Riege
 
 function survival::gettcga(){
-	local tdir
-	function _cleanup::survival::gettcga(){
-		rm -rf "$tdir"
-	}
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -64,7 +60,7 @@ function survival::gettcga(){
 
 	declare -a cmd1
 	local i
-	tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.tcga)"
+	local tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.tcga)"
 	for i in "${ids[@]}"; do
 		commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 			Rscript - <<< '

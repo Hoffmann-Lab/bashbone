@@ -76,11 +76,6 @@ function peaks::_idr(){
 }
 
 function peaks::macs(){
-	declare -a tdirs
-	function _cleanup::peaks::macs(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -172,7 +167,7 @@ function peaks::macs(){
 	# in both cases only R1 is used to call peaks. one may circumvent this by splitNcigar strings (i.e change PNEXT in BAMs) or use custom tagAlign/BED format solutions in conjunction with bedtools -split
 
 	local m i f o odir nf
-	declare -a cmd1 cmd2 cmd3
+	declare -a tdirs cmd1 cmd2 cmd3
 	for m in "${_mapper_macs[@]}"; do
 		declare -n _bams_macs=$m
 		odir="$outdir/$m/macs"
@@ -190,8 +185,10 @@ function peaks::macs(){
 				# SE: bedtools bamtobed -i $nf | awk -v OFS='\t' '{$4="N"; $5="1000"; print}' | gzip -nc > $nf.tagAlign.gz # bed3+3
 				# PE: bedtools bamtobed -bedpe -mate1 -i <(samtools view -F 2028 -F 256 -F 4 -f 2 $nf -u | samtools sort -n -O BAM $nf) | awk -v OFS='\t' '{print $1,$2,$3,"N",1000,$9; print $4,$5,$6,"N",1000,$10}' | gzip -nc > $nf.tagAlign.gz
 
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					bedtools bamtobed -split -i "$nf"
+				CMD
+					grep -v -e '^chrM' -e '^MT'
 				CMD
 					pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$nf").bed.gz"
 				CMD
@@ -202,8 +199,10 @@ function peaks::macs(){
 				o="${o%.*}"
 			fi
 
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				bedtools bamtobed -split -i "$f"
+			CMD
+				grep -v -e '^chrM' -e '^MT'
 			CMD
 				pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$f").bed.gz"
 			CMD
@@ -314,11 +313,6 @@ function peaks::macs(){
 }
 
 function peaks::macs_idr(){
-	declare -a tdirs
-	function _cleanup::peaks::macs_idr(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -403,7 +397,7 @@ function peaks::macs_idr(){
 	fi
 
 	local m i f o odir nf tf rf pf nrf pff nff x
-	declare -a cmd1 cmd2 cmd3 cmd4 cmd5 toidr
+	declare -a tdirs cmd1 cmd2 cmd3 cmd4 cmd5 toidr
 	for m in "${_mapper_macs[@]}"; do
 		declare -n _bams_macs=$m
 		odir="$outdir/$m/macs"
@@ -416,8 +410,10 @@ function peaks::macs_idr(){
 
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				bedtools bamtobed -split -i "$nf"
+			CMD
+				grep -v '^chrM' -e '^MT'
 			CMD
 				pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$nf").bed.gz"
 			CMD
@@ -426,8 +422,10 @@ function peaks::macs_idr(){
 			toidr=()
 			for f in "$tf" "$rf" "$pf"; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					bedtools bamtobed -split -i "$f"
+				CMD
+					grep -v '^chrM' -e '^MT'
 				CMD
 					pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$f").bed.gz"
 				CMD
@@ -579,11 +577,6 @@ function peaks::macs_idr(){
 }
 
 function peaks::gem(){
-	local tdir
-	function _cleanup::peaks::gem(){
-		rm -rf "$tdir"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -651,7 +644,7 @@ function peaks::gem(){
 	else
 		genomesize=$(unique-kmers.py -k 100 $genome |& tail -1 | awk '{print $NF}')
 	fi
-	tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.genome)"
+	local tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.genome)"
 	samtools view -H "${_bams_gem[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}' > "$tdir/chr.info"
 	declare -a cmdg
 	commander::makecmd -a cmdg -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
@@ -797,11 +790,6 @@ function peaks::gem(){
 }
 
 function peaks::gem_idr(){
-	local tdir
-	function _cleanup::peaks::gem_idr(){
-		rm -rf "$tdir"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -870,7 +858,7 @@ function peaks::gem_idr(){
 	else
 		genomesize=$(unique-kmers.py -k 100 $genome |& tail -1 | awk '{print $NF}')
 	fi
-	tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.genome)"
+	local tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.genome)"
 	samtools view -H $nf | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}' > "$tdir/chr.info"
 	declare -a cmdg
 	commander::makecmd -a cmdg -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
@@ -1549,11 +1537,6 @@ function peaks::peakachu_idr(){
 }
 
 function peaks::genrich(){
-	declare -a tdirs
-	function _cleanup::peaks::genrich(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -1600,7 +1583,7 @@ function peaks::genrich(){
 	commander::printinfo "peak calling genrich"
 
 	local m f b i nf o odir
-	declare -a cmd1 cmd2 cmd3
+	declare -a tdirs cmd1 cmd2 cmd3
 	for m in "${_mapper_genrich[@]}"; do
 		declare -n _bams_genrich=$m
 		odir="$outdir/$m/genrich"
@@ -1649,6 +1632,7 @@ function peaks::genrich(){
 		# for single sample, -a 0 does not filter for AUC and results are pretty much comparable with macs peaks when -d f/2 -g f/4 (atac)
 		# for relicates, -a set to -d (f/2) outcome is close to intersection of single runs with auc filter turned off (-a 0)
 		# todo filter out peak with length >> 2000 ? in some cases there were chip peaks of lenght >>10.000
+		# -> due to properly paired mates with large insert size?
 		# todo in case of RIP-seq prevent downsampling if #secondaries exceed 10 by manipulating sam? test it!
 		commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 			Genrich
@@ -1685,11 +1669,6 @@ function peaks::genrich(){
 }
 
 function peaks::genrich_idr(){
-	declare -a tdirs
-	function _cleanup::peaks::genrich(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -1741,7 +1720,7 @@ function peaks::genrich_idr(){
 	[[ $x -gt 0 ]] && params='--paired_end'
 
 	local m i f b o odir nf tf rf pf nrf pff nff x
-	declare -a cmd1 cmd2 cmd3 cmd4 cmd5 toidr
+	declare -a tdirs cmd1 cmd2 cmd3 cmd4 cmd5 toidr
 	for m in "${_mapper_genrich[@]}"; do
 		declare -n _bams_genrich=$m
 		odir="$outdir/$m/genrich"

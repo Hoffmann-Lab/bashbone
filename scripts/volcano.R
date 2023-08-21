@@ -9,8 +9,8 @@ if(length(args)<2){
   cat("usage parameter: <f:matrix> <f:outfile>\n")
   cat('example: "/path/to/matrix.tsv" "/path/to/plot.pdf"\n')
   cat("\n")
-  cat("matrix: tab separated with header. columns id log2FoldChange padj geneName mandatory\n")
-  cat("id baseMean log2FoldChange lfcSE stat pvalue padj geneName\n")
+  cat("matrix: tab separated with header containing at least the columns: id log2FoldChange padj name\n")
+  cat("id baseMean log2FoldChange lfcSE stat pvalue padj name\n")
   cat("feature1 value1 value2 value3  ..\n")
   cat("..\n")
   quit("no",1)
@@ -25,7 +25,7 @@ suppressMessages({
 
 ddsr = args[1]
 outfile = args[2]
-  
+
 df = read.table(ddsr, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="")
 
 df$Regulation = rep("NA",nrow(df))
@@ -46,16 +46,16 @@ if (sum(df$Regulation=="Up")>0){
 
 df = df[rev(order(abs(df$log2FoldChange),na.last = F)),]
 topidx = head(which(! is.na(df$padj) & df$padj<0.05),n=10)
-if (sum(colnames(df)=="geneName") == 1) {
-  df[topidx,]$label = df[topidx,]$geneName
+if (sum(colnames(df)=="name") == 1) {
+  df[topidx,]$label = df[topidx,]$name
 } else {
   df[topidx,]$label = df[topidx,]$id
 }
 
 df = df[order(abs(df$padj),na.last = T),]
 topidx = head(which(! is.na(df$padj) & df$padj<0.05),n=10)
-if (sum(colnames(df)=="geneName") == 1) {
-  df[topidx,]$label = df[topidx,]$geneName
+if (sum(colnames(df)=="name") == 1) {
+  df[topidx,]$label = df[topidx,]$name
 } else {
   df[topidx,]$label = df[topidx,]$id
 }

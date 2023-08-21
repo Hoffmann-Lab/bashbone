@@ -2,14 +2,9 @@ name: cutadapt
 channels:
   - conda-forge
   - bioconda
-  - main
   - defaults
-  - r
-  - anaconda
 dependencies:
   - _libgcc_mutex=0.1
-  - ca-certificates=2020.6.20
-  - certifi=2020.6.20
   - cutadapt=2.10
   - dnaio=0.4.2
   - ld_impl_linux-64=2.33.1
@@ -17,6 +12,7 @@ dependencies:
   - libffi=3.3
   - libgcc-ng=9.1.0
   - libstdcxx-ng=9.1.0
+  - libzlib=1.2.11
   - ncurses=6.2
   - openssl=1.1.1h
   - pigz=2.3.4

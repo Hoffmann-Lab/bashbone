@@ -2,16 +2,11 @@ name: platypus
 channels:
   - conda-forge
   - bioconda
-  - main
   - defaults
-  - r
-  - anaconda
 dependencies:
   - _libgcc_mutex=0.1
   - bzip2=1.0.8
   - c-ares=1.17.1
-  - ca-certificates=2020.12.5
-  - certifi=2016.9.26
   - curl=7.71.1
   - htslib=1.9
   - krb5=1.17.2
@@ -24,11 +19,13 @@ dependencies:
   - libnghttp2=1.41.0
   - libssh2=1.9.0
   - libstdcxx-ng=9.1.0
+  - libzlib=1.2.11
   - ncurses=6.2
   - openssl=1.1.1h
   - pip=19.3.1
   - platypus-variant=0.8.1.2
   - python=2.7.18
+  - python_abi=2.7
   - readline=8.0
   - setuptools=44.0.0
   - sqlite=3.33.0

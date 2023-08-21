@@ -2,11 +2,6 @@
 # (c) Konstantin Riege
 
 function variants::vcfnorm(){
-	declare -a tdirs
-	function _cleanup::variants::vcfnorm(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -84,7 +79,6 @@ function variants::vcfnorm(){
 
 		if $zip; then
 			for e in fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
 				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
 				CMD
@@ -112,11 +106,6 @@ function variants::vcfnorm(){
 }
 
 function variants::panelofnormals(){
-	declare -a tdirs
-	function _cleanup::variants::panelofnormals(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	# The panel of normals not only represents common germline variant sites,
 	# it presents commonly noisy sites in sequencing data, e.g. mapping artifacts or
 	# other somewhat random but systematic artifacts of sequencing.
@@ -158,16 +147,13 @@ function variants::panelofnormals(){
 
 	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
-
-	local m i o t e slice odir instances ithreads odir tdir
-	for m in "${_mapper_panelofnormals[@]}"; do
-		declare -n _bams_panelofnormals=$m
-		((instances+=${#_bams_panelofnormals[@]}))
-	done
+	declare -n _bams_panelofnormals="${_mapper_panelofnormals[0]}"
+	local i memory ithreads instances=$((${#_mapper_panelofnormals[@]}*${#_bams_panelofnormals[@]}))
 	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3
+	local m i o t e slice odir tdir
+	declare -a tdirs tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_panelofnormals[@]}"; do
 		declare -n _bams_panelofnormals=$m
 		odir="$outdir/$m"
@@ -245,12 +231,6 @@ function variants::panelofnormals(){
 }
 
 function variants::makepondb(){
-	declare -a tdirs
-	function _cleanup::variants::makepondb(){
-		rm -rf "${tdirs[@]}"
-		rm -f "$outdir"/*/blocked
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -287,7 +267,7 @@ function variants::makepondb(){
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i ${#_mapper_makepondb[@]} -T $threads -M "$maxmemory")
 
 	local m i o t odir params
-	declare -a cmd1 cmd2 cmd3
+	declare -a tdirs cmd1 cmd2 cmd3
 	for m in "${_mapper_makepondb[@]}"; do
 		declare -n _bams_makepondb=$m
 		odir="$outdir/$m"
@@ -302,7 +282,8 @@ function variants::makepondb(){
 		while [[ -e "$odir/blocked" ]]; do sleep 2; done # do not update unless initialized
 
 		if [[ ! -e "$odir/pondb" && ! -e "$odir/blocked" ]]; then
-			touch $odir/blocked # claimed by first parallel instance reaching this line
+			touch "$odir/blocked" # claimed by first parallel instance reaching this line
+			echo "rm -f '$odir/blocked'" >> "$BASHBONE_CLEANUP"
 
 			bcftools view -h "$odir/${o%.*}.vcf.gz" | head -n -1 > "${tdirs[-1]}/vcf"
 			echo -e "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tINITIALIZE" >> "${tdirs[-1]}/vcf"
@@ -486,8 +467,11 @@ function variants::tree(){
 			CMD
 		done
 
-		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-			sort --parallel=$threads -S ${memory}M -T "$tmpdir" -k1,1 -k2,2n -k3,3n $(printf '"%s" ' "${tomerge[@]/%/.snv}")
+		# sort --parallel=$threads -S ${memory}M -T "$tmpdir" -k1,1 -k2,2n -k3,3n $(printf '"%s" ' "${tomerge[@]/%/.snv}")
+		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			cat $(printf '"%s" ' "${tomerge[@]/%/.snv}")
+		CMD
+			helper::sort -t $threads -M $memory -k1,1 -k2,2n -k3,3n
 		CMD
 			uniq > $odir/SNV.bed
 		CMD
@@ -504,10 +488,11 @@ function variants::tree(){
 			"$odir/SNVCOV.full.bed" > "$odir/SNVCOV.filtered.bed"
 		CMD
 
+		# sort --parallel=$threads -S ${memory}M -T "$tmpdir" -u
 		commander::makecmd -a cmd7 -s '|' -o "$odir/REF.nt" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
 			cut -f 1 $(printf '"%s" ' "${tomerge[@]/%/.snvcov.filtered.nt}")
 		CMD
-			sort --parallel=$threads -S ${memory}M -T "$tmpdir" -u
+			helper::sort -t $threads -M $memory -u
 		CMD
 			sed -E 's/(.+):(\w)$/\1:\2\t\2/'
 		CMD

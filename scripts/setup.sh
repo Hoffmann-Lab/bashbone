@@ -1,9 +1,17 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-source "$(dirname "$(readlink -e "$0")")/activate.sh" -c false -a "$@" || exit 1
+source "$(dirname "$(dirname "$(readlink -e "$0")")")/activate.sh" -c false -r true -x cleanup -a "$@" || exit 1
 
-THREADS=$(cat /proc/cpuinfo | grep -cF processor)
+cleanup() {
+	[[ -e "$LOG" ]] && {
+		echo "date: $(date)" | tee -ia "$LOG"
+		[[ $1 -eq 0 ]] && echo "success" | tee -ia "$LOG" || echo "failed" | tee -ia "$LOG"
+	}
+}
+
+CMD="$(basename "$0") $*"
+THREADS=$(grep -cF processor /proc/cpuinfo)
 VERBOSITY=0
 BASHBONE_ERROR="parameterization issue"
 
@@ -21,13 +29,13 @@ BASHBONE_TOOLSDIR="$(readlink -e "$INSDIR")"
 [[ $LOG ]] || LOG="$BASHBONE_TOOLSDIR/install.log"
 BASHBONE_ERROR="cannot access $LOG"
 
-commander::printinfo "installation started. please be patient." | tee -i "$LOG"
+commander::printinfo "bashbone $BASHBONE_VERSION installation started with command: $CMD" | tee -i "$LOG"
+commander::printinfo "date: $(date)" | tee -ia "$LOG"
+
 for i in "${INSTALL[@]}"; do
 	BASHBONE_ERROR="compilation of $i failed"
 	progress::log -v $VERBOSITY -o "$LOG" -f compile::$i -i "$BASHBONE_TOOLSDIR" -t $THREADS -g ${USECONFIG:-false}
 done
-
 unset BASHBONE_ERROR
-commander::printinfo "success" | tee -ia "$LOG"
 
 exit 0

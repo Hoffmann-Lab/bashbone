@@ -53,12 +53,20 @@ df = df[rowSums(is.na(df))==0,]
 
 vars = apply(df, 1, var)
 df = head(df[rev(order(vars)),],n=10000)
-
 pca = prcomp(t(df), scale = F)
-percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
 
+loadings = pca$rotation
+for (i in 1:3){
+  ids = rownames(loadings[order(abs(loadings[,i]), decreasing = TRUE),])
+  ids = head(ids,n=max(1,length(ids)*0.05)) # variables that drive variation in PC1
+  sink(file.path(outdir,paste("pca_pc",i,".variables",sep="")))
+  lapply(ids, cat, "\n")
+  sink()
+}
+
+percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
 data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], sample = rownames(pca$x))
-# experiments$sample = paste(experiments$condition, experiments$replicate, sep='.')
+experiments$sample = paste(experiments$condition, experiments$replicate, sep='.')
 data = merge(data,experiments,by = "sample")
 
 ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = factor, label=sample)) +
@@ -68,7 +76,7 @@ ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = factor,
   theme_bw() +
   theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank()) +
   geom_point(size = 3) +
-  geom_text_repel() +
+  # geom_text_repel() +
   xlab(paste0("PC1: ",percentVar[1], "% variance")) +
   ylab(paste0("PC2: ",percentVar[2], "% variance"))
 suppressMessages(ggsave(file.path(outdir,"pca_12.pdf")))
@@ -80,7 +88,7 @@ ggplot(data, aes(PC1, PC3, color = condition, group = condition, shape = factor,
   theme_bw() +
   theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank()) +
   geom_point(size = 3) +
-  geom_text_repel() +
+  # geom_text_repel() +
   xlab(paste0("PC1: ",percentVar[1], "% variance")) +
   ylab(paste0("PC3: ",percentVar[3], "% variance"))
 suppressMessages(ggsave(file.path(outdir,"pca_13.pdf")))
@@ -92,7 +100,7 @@ ggplot(data, aes(PC2, PC3, color = condition, group = condition, shape = factor,
   theme_bw() +
   theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank()) +
   geom_point(size = 3) +
-  geom_text_repel() +
+  # geom_text_repel() +
   xlab(paste0("PC2: ",percentVar[2], "% variance")) +
   ylab(paste0("PC3: ",percentVar[3], "% variance"))
 suppressMessages(ggsave(file.path(outdir,"pca_23.pdf")))

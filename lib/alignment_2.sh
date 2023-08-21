@@ -34,16 +34,13 @@ function alignment::slice(){
 
 	commander::printinfo "slicing alignments"
 
-	local minstances instances mthreads ithreads m
+	declare -n _bams_slice="${_mapper_slice[0]}"
+	local instances=$((${#_mapper_slice[@]}*${#_bams_slice[@]}))
+	local minstances mthreads ithreads
 	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
-	for m in "${_mapper_slice[@]}"; do
-		declare -n _bams_slice=$m
-		((instances+=${#_bams_slice[@]}))
-	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -n _bams_slice=${_mapper_slice[0]}
-	local tdir f i bed o
+	local tdir m f i bed o
 	declare -a mapdata cmd1 cmd2 cmd3 cmd4
 
 	mkdir -p "$tmpdir/genome"
@@ -136,10 +133,6 @@ function alignment::slice(){
 }
 
 function alignment::rmduplicates(){
-	declare -a tdirs
-	function _cleanup::alignment::rmduplicates(){
-		rm -rf "${tdirs[@]}"
-	}
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -181,12 +174,13 @@ function alignment::rmduplicates(){
 
 	commander::printinfo "removing duplicates"
 
-	local minstances mthreads jmem jgct jcgct
+	local sinstances sthreads smemory minstances mthreads jmem jgct jcgct
+	read -r sinstances sthreads smemory jgct jcgct < <(configure::jvm -i ${#_umi_rmduplicates[@]} -T $threads -m $memory -M "$maxmemory")
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 	local nfh=$(($(ulimit -n)/minstances))
 	[[ ! $nfh ]] || [[ $nfh -le 1 ]] && nfh=$((1024/minstances))
 
-	local m i o e slice instances ithreads odir params x catcmd oinstances othreads
+	local m i o e slice instances ithreads odir params x catcmd oinstances othreads sinstances
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
 		i=$(wc -l < "${_bamslices_rmduplicates[${_bams_rmduplicates[0]}]}")
@@ -201,7 +195,6 @@ function alignment::rmduplicates(){
 	# picard FixMateInformation
 	declare -a cmdsort
 	if [[ $_umi_rmduplicates ]]; then
-
 		for i in "${!_umi_rmduplicates[@]}"; do
 			helper::basename -f "${_umi_rmduplicates[$i]}" -o o -e e
 			e=$(echo $e | cut -d '.' -f 1)
@@ -214,11 +207,11 @@ function alignment::rmduplicates(){
 			CMD
 				awk -v OFS='\t' '{print $1,$(NF-2),$(NF-1),$NF}'
 			CMD
-				LC_ALL=C sort --parallel=$mthreads -S ${memory}M -T "$tmpdir" -k1,1V
+				LC_ALL=C sort --parallel=$sthreads -S ${smemory}M -T "$tmpdir" -k1,1V
 			CMD
 				tr '\t' '\n'
 			CMD
-				helper::pgzip -t $threads -o "$o"
+				helper::pgzip -t $sthreads -o "$o"
 			CMD
 			_umi_rmduplicates[$i]="$o"
 		done
@@ -242,7 +235,7 @@ function alignment::rmduplicates(){
 		legacy=false # for runcmd conda env selection
 	fi
 
-	declare -a tomerge cmd1 cmd2 cmd3 cmd4
+	declare -a tdirs tomerge cmd1 cmd2 cmd3 cmd4
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
 		odir="$outdir/$m"
@@ -253,9 +246,7 @@ function alignment::rmduplicates(){
 				if [[ $_umi_rmduplicates ]]; then
 					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rmduplicates)")
 
-					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
-						rm -f "${tdirs[-1]}/$(basename "$slice")"*;
-					CMD
+					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 						samtools sort
 							-n
 							-@ $ithreads
@@ -317,6 +308,7 @@ function alignment::rmduplicates(){
 							--umi-tag RX
 							--method directional
 							--edit-distance-threshold 1
+							--random-seed 12345
 							$params
 						CMD
 					else
@@ -402,7 +394,7 @@ function alignment::rmduplicates(){
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
 	else
-		commander::runcmd -v -b -i $minstances -a cmdsort
+		commander::runcmd -v -b -i $sinstances -a cmdsort
 		commander::runcmd -v -b -i $instances -a cmd1
 		if $legacy; then
 			commander::runcmd -c umitools -v -b -i $minstances -a cmd2
@@ -417,11 +409,6 @@ function alignment::rmduplicates(){
 }
 
 function alignment::clipmateoverlaps_alt(){
-	declare -a tdirs
-	function _cleanup::alignment::clipmateoverlaps(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	# does not handle secondary and supplementary alignments
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
@@ -457,16 +444,15 @@ function alignment::clipmateoverlaps_alt(){
 	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "clipping ends of overlapping mate pairs"
-	local m i o slice odir instances ithreads minstances mthreads jmem jgct jcgct
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
-	for m in "${_mapper_clipmateoverlaps[@]}"; do
-		declare -n _bams_clipmateoverlaps=$m
-		((instances+=${#_bams_clipmateoverlaps[@]}))
-	done
+	declare -n _bams_clipmateoverlaps="${_mapper_clipmateoverlaps[0]}"
+	local instances=$((${#_mapper_clipmateoverlaps[@]}*${#_bams_clipmateoverlaps[@]}))
+	local ithreads minstances mthreads jmem jgct jcgct
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3
+	local m i o slice odir
+	declare -a tdirs tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_clipmateoverlaps[@]}"; do
 		declare -n _bams_clipmateoverlaps=$m
 		odir="$outdir/$m"
@@ -575,16 +561,15 @@ function alignment::clipmateoverlaps(){
 
 	commander::printinfo "clipping ends of overlapping mate pairs"
 
-	local m i o slice odir instances ithreads minstances mthreads poolsize=$((memory*1000000/1500))
+	local minstances mthreads poolsize=$((memory*1000000/1500))
 	[[ $poolsize -eq 0 ]] && poolsize=1000000
 	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
 
-	for m in "${_mapper_clipmateoverlaps[@]}"; do
-		declare -n _bams_clipmateoverlaps=$m
-		((instances+=${#_bams_clipmateoverlaps[@]}))
-	done
+	declare -n _bams_clipmateoverlaps="${_mapper_clipmateoverlaps[0]}"
+	local ithreads instances=$((${#_mapper_clipmateoverlaps[@]}*${#_bams_clipmateoverlaps[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
+	local m i o slice odir
 	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_clipmateoverlaps[@]}"; do
 		declare -n _bams_clipmateoverlaps=$m
@@ -690,14 +675,11 @@ function alignment::reorder(){
 
 	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
-
-	local m i o slice odir instances ithreads
-	for m in "${_mapper_reorder[@]}"; do
-		declare -n _bams_reorder=$m
-		((instances+=${#_bams_reorder[@]}))
-	done
+	declare -n _bams_reorder="${_mapper_reorder[0]}"
+	local ithreads instances=$((${#_mapper_reorder[@]}*${#_bams_reorder[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
+	local m i o slice odir
 	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_reorder[@]}"; do
 		declare -n _bams_reorder=$m
@@ -823,14 +805,11 @@ function alignment::addreadgroup(){
 
 	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
-
-	local m i o rgprefix slice instances ithreads odir
-	for m in "${_mapper_addreadgroup[@]}"; do
-		declare -n _bams_addreadgroup=$m
-		((instances+=${#_bams_addreadgroup[@]}))
-	done
+	declare -n _bams_addreadgroup="${_mapper_addreadgroup[0]}"
+	local ithreads instances=$((${#_mapper_addreadgroup[@]}*${#_bams_addreadgroup[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
+	local m i o rgprefix slice odir
 	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_addreadgroup[@]}"; do
 		declare -n _bams_addreadgroup=$m
@@ -904,11 +883,6 @@ function alignment::addreadgroup(){
 }
 
 function alignment::splitncigar(){
-	declare -a tdirs
-	function _cleanup::alignment::splitncigar(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -949,14 +923,12 @@ function alignment::splitncigar(){
 	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
-	local m i o slice instances ithreads odir
-	for m in "${_mapper_splitncigar[@]}"; do
-		declare -n _bams_splitncigar=$m
-		((instances+=${#_bams_splitncigar[@]}))
-	done
+	declare -n _bams_splitncigar="${_mapper_splitncigar[0]}"
+	local ithreads instances=$((${#_mapper_splitncigar[@]}*${#_bams_splitncigar[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3
+	local m i o slice odir
+	declare -a tdirs tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_splitncigar[@]}"; do
 		declare -n _bams_splitncigar=$m
 		odir="$outdir/$m"
@@ -1033,11 +1005,6 @@ function alignment::splitncigar(){
 }
 
 function alignment::soft2hardclip(){
-	declare -a tdirs
-	function _cleanup::alignment::soft2hardclip(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	# does not handle secondary and supplementary alignments
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
@@ -1073,16 +1040,16 @@ function alignment::soft2hardclip(){
 	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "convertig soft clipped based to hard clipped bases"
-	local m i o slice odir instances ithreads minstances mthreads jmem jgct jcgct
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
-	for m in "${_mapper_soft2hardclip[@]}"; do
-		declare -n _bams_soft2hardclip=$m
-		((instances+=${#_bams_soft2hardclip[@]}))
-	done
+
+	local minstances mthreads jmem jgct jcgct
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
+	declare -n _bams_soft2hardclip="${_mapper_soft2hardclip[0]}"
+	local ithreads instances=$((${#_mapper_soft2hardclip[@]}*${#_bams_soft2hardclip[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3
+	local m i o slice odir
+	declare -a tdirs tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_soft2hardclip[@]}"; do
 		declare -n _bams_soft2hardclip=$m
 		odir="$outdir/$m"
@@ -1152,11 +1119,6 @@ function alignment::soft2hardclip(){
 }
 
 function alignment::leftalign(){
-	declare -a tdirs
-	function _cleanup::alignment::leftalign(){
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -1197,14 +1159,12 @@ function alignment::leftalign(){
 	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
-	local m i o slice odir instances ithreads
-	for m in "${_mapper_leftalign[@]}"; do
-		declare -n _bams_leftalign=$m
-		((instances+=${#_bams_leftalign[@]}))
-	done
+	declare -n _bams_leftalign="${_mapper_leftalign[0]}"
+	local ithreads instances=$((${#_mapper_leftalign[@]}*${#_bams_leftalign[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3
+	local m i o slice odir
+	declare -a tdirs tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_leftalign[@]}"; do
 		declare -n _bams_leftalign=$m
 		odir="$outdir/$m"
@@ -1286,13 +1246,6 @@ function alignment::leftalign(){
 }
 
 function alignment::bqsr(){
-	local tmpfile
-	declare -a tdirs
-	function _cleanup::alignment::bqsr(){
-		rm -f "$tmpfile"
-		rm -rf "${tdirs[@]}"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -1344,14 +1297,12 @@ function alignment::bqsr(){
 	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
-	local m i o slice odir instances ithreads
-	for m in "${_mapper_bqsr[@]}"; do
-		declare -n _bams_bqsr=$m
-		((instances+=${#_bams_bqsr[@]}))
-	done
+	declare -n _bams_bqsr="${_mapper_bqsr[0]}"
+	local ithreads instances=$((${#_mapper_bqsr[@]}*${#_bams_bqsr[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a tomerge cmd1 cmd2 cmd3 cmd4
+	local m i o slice odir
+	declare -a tdirs tomerge cmd1 cmd2 cmd3 cmd4
 	for m in "${_mapper_bqsr[@]}"; do
 		declare -n _bams_bqsr=$m
 		odir="$outdir/$m"

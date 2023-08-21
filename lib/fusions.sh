@@ -261,7 +261,7 @@ function fusions::arriba(){
 		-x strandness \
 		-g "$gtf"
 
-	cmdchk=('ls "$CONDA_PREFIX/var/lib/arriba/blacklist_'${genomeversion}'_"*.gz 2> /dev/null || mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.arriba')
+	cmdchk=('ls "$CONDA_PREFIX/var/lib/arriba/blacklist_"*'${genomeversion}'_*.gz 2> /dev/null || mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.arriba')
 	local params="-b '$(commander::runcmd -c arriba -a cmdchk)'"
  	# for arriba 2.x -T/-P/-I are now default and -T -T/-P -P/-I -I is now -X (ie report sequences and read ides in the discarded fusions file too)
 	[[ $version -lt 2 ]] && params+=" -T -P -I"
@@ -297,11 +297,6 @@ function fusions::arriba(){
 }
 
 function fusions::join2arriba(){
-	local tmp
-	function _cleanup::fusions::join2arriba(){
-		rm -f "$tmp"
-	}
-
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
@@ -330,7 +325,7 @@ function fusions::join2arriba(){
 	[[ $mandatory -lt 3 ]] && _usage
 
 	if [[ $whitelist ]]; then
-		tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.whitelist)"
+		local tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.whitelist)"
 		sed -E 's/^\s*(\S+).*/\1\t/' "$whitelist" > "$tmp"
 		whitelist="$tmp"
 	fi
