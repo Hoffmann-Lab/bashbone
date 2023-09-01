@@ -576,7 +576,9 @@ function enrichment::go(){
 		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
-	if [[ -e "$(dirname "$gofile")/oRgdb" ]]; then
+	local orgdb="$gofile.oRgdb"
+	[[ -e "$orgdb" ]] || orgdb="$(dirname "$gofile")/oRgdb"
+	if [[ -e "$orgdb" ]]; then
 		declare -a cmd3 cmd4
 		local x
 		for f in "${enrichmentfiles[@]}"; do
@@ -585,7 +587,7 @@ function enrichment::go(){
 			odir="$(dirname "$f")"
 			domain="$(basename "$odir")"
 			#enrichment::_revigo -1 cmd3 -2 cmd4 -d $domain -i "$f" -o "$odir"
-			enrichment::_reducego -1 cmd3 -d $domain -i "$f" -g "$(dirname "$gofile")/oRgdb" -o "$odir"
+			enrichment::_reducego -1 cmd3 -d $domain -i "$f" -g "$orgdb" -o "$odir"
 		done
 
 		if $skip; then
