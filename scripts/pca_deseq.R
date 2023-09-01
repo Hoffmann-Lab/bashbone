@@ -48,11 +48,11 @@ dds = DESeqDataSetFromHTSeqCount(sampleTable = experiments, directory = "", desi
 dds = estimateSizeFactors(dds)
 
 log = DESeqTransform(SummarizedExperiment(log2(counts(dds, normalized=T) + 1), colData=colData(dds))) # normalized=T devides by library size factors
-save(log, file = file.path(outdir,"log.Rdata"))
+save(log, file = file.path(outdir,"log.RData"))
 vsd = varianceStabilizingTransformation(dds, blind=FALSE)
-save(vsd, file = file.path(outdir,"vsd.Rdata"))
+save(vsd, file = file.path(outdir,"vsd.RData"))
 rld = rlog(dds, blind=FALSE)
-save(rld, file = file.path(outdir,"rld.Rdata"))
+save(rld, file = file.path(outdir,"rld.RData"))
 
 for (method in c("log","vsd","rld")){
 	# deseq method
@@ -65,63 +65,67 @@ for (method in c("log","vsd","rld")){
 	)
 
 	normed = assay(get(method))
-	vars = rowVars(normed)
-	topidx = head(order(vars, decreasing = TRUE), n=10000)
-	pca = prcomp(t(normed[topidx, ]), scale = F)
+	vars = order(rowVars(normed), decreasing = TRUE)
 
-	loadings = pca$rotation
-	for (i in 1:3){
-		ids = rownames(loadings[order(abs(loadings[,i]), decreasing = TRUE),])
-		ids = head(ids,n=max(1,length(ids)*0.05)) # variables that drive variation in PC1
-		sink(file.path(outdir,paste("pca_pc",i,"_",method,".variables",sep="")))
-		lapply(ids, cat, "\n")
-		sink()
+	for (n in c(500,2000,5000,10000)){
+		n = min(n,length(vars))
+		topidx = vars[1:n]
+		pca = prcomp(t(normed[topidx, ]), scale = F)
+
+		loadings = pca$rotation
+		for (i in 1:3){
+			ids = rownames(loadings[order(abs(loadings[,i]), decreasing = TRUE),])
+			ids = head(ids,n=max(1,length(ids)*0.05)) # variables that drive variation in PC1
+			sink(file.path(outdir,paste("pca_pc",i,"_",method,"_top",n,,".variables",sep="")))
+			lapply(ids, cat, "\n")
+			sink()
+		}
+
+		percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
+		data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = experiments$replicate, condition = experiments$condition, sample = experiments$sample)
+		write.table(data.frame(id=rownames(data),data), row.names = F,
+			file=file.path(outdir,paste("pca_12_",method,"_top",n,,".tsv",sep="")), quote=F, sep="\t"
+		)
+
+		suppressMessages({
+			ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate, label=sample)) +
+				ggtitle("PCA plot - PC1 vs PC2") +
+				scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
+				# coord_fixed() +
+				theme_bw() +
+				theme(aspect.ratio=1, legend.box = "horizontal") +
+				geom_point(size = 3) +
+				# geom_text_repel() +
+				xlab(paste0("PC1: ",percentVar[1], "% variance")) +
+				ylab(paste0("PC2: ",percentVar[2], "% variance"))
+			suppressMessages(ggsave(file.path(outdir,paste("pca_12_",method,"_top",n,,".pdf",sep=""))))
+			# stat_ellipse() +
+
+			ggplot(data, aes(PC1, PC3, color = condition, group = condition, shape = replicate, label=sample)) +
+				ggtitle("PCA plot - PC1 vs PC3") +
+				scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
+				# coord_fixed() +
+				theme_bw() +
+				theme(aspect.ratio=1, legend.box = "horizontal") +
+				geom_point(size = 3) +
+				# geom_text_repel() +
+				xlab(paste0("PC1: ",percentVar[1], "% variance")) +
+				ylab(paste0("PC3: ",percentVar[3], "% variance"))
+			suppressMessages(ggsave(file.path(outdir,paste("pca_13_",method,"_top",n,,".pdf",sep=""))))
+			# stat_ellipse() +
+
+			ggplot(data, aes(PC2, PC3, color = condition, group = condition, shape = replicate, label=sample)) +
+				ggtitle("PCA plot - PC2 vs PC3") +
+				scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
+				# coord_fixed() +
+				theme_bw() +
+				theme(aspect.ratio=1, legend.box = "horizontal") +
+				geom_point(size = 3) +
+				# geom_text_repel() +
+				xlab(paste0("PC2: ",percentVar[2], "% variance")) +
+				ylab(paste0("PC3: ",percentVar[3], "% variance"))
+			suppressMessages(ggsave(file.path(outdir,paste("pca_23_",method,"_top",n,,".pdf",sep=""))))
+			# stat_ellipse() +
+		})
 	}
-
-	percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
-	data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = experiments$replicate, condition = experiments$condition, sample = experiments$sample)
-	write.table(data.frame(id=rownames(data),data), row.names = F,
-		file=file.path(outdir,paste("pca_12_",method,".tsv",sep="")), quote=F, sep="\t"
-	)
-
-	suppressMessages({
-		ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate, label=sample)) +
-			ggtitle("PCA plot - PC1 vs PC2") +
-			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			# coord_fixed() +
-			theme_bw() +
-			theme(aspect.ratio=1, legend.box = "horizontal") +
-			geom_point(size = 3) +
-			# geom_text_repel() +
-			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
-			ylab(paste0("PC2: ",percentVar[2], "% variance"))
-		suppressMessages(ggsave(file.path(outdir,paste("pca_12_",method,".pdf",sep=""))))
-		# stat_ellipse() +
-
-		ggplot(data, aes(PC1, PC3, color = condition, group = condition, shape = replicate, label=sample)) +
-			ggtitle("PCA plot - PC1 vs PC3") +
-			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			# coord_fixed() +
-			theme_bw() +
-			theme(aspect.ratio=1, legend.box = "horizontal") +
-			geom_point(size = 3) +
-			# geom_text_repel() +
-			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
-			ylab(paste0("PC3: ",percentVar[3], "% variance"))
-		suppressMessages(ggsave(file.path(outdir,paste("pca_13_",method,".pdf",sep=""))))
-		# stat_ellipse() +
-
-		ggplot(data, aes(PC2, PC3, color = condition, group = condition, shape = replicate, label=sample)) +
-			ggtitle("PCA plot - PC2 vs PC3") +
-			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			# coord_fixed() +
-			theme_bw() +
-			theme(aspect.ratio=1, legend.box = "horizontal") +
-			geom_point(size = 3) +
-			# geom_text_repel() +
-			xlab(paste0("PC2: ",percentVar[2], "% variance")) +
-			ylab(paste0("PC3: ",percentVar[3], "% variance"))
-		suppressMessages(ggsave(file.path(outdir,paste("pca_23_",method,".pdf",sep=""))))
-		# stat_ellipse() +
-	})
 }
