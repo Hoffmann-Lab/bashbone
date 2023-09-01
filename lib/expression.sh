@@ -360,41 +360,41 @@ function expression::deseq(){
 					# run deseq cmd3
 
 					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.tsv") -le 2 ]] && exit 0
+						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.fcshrunk.tsv") -le 2 ]] && exit 0
 					CMD
 						head -1 "$odir/$c-vs-$t/experiments.tpm" > "$odir/$c-vs-$t/heatmap.tpm"
 					CMD
-						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm" >> "$odir/$c-vs-$t/heatmap.tpm"
+						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm" >> "$odir/$c-vs-$t/heatmap.tpm"
 					CMD
 						heatmap.R TRUE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.tpm" "TPM" "most differentially expressed ${feature}s"
 					CMD
 
 					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.tsv") -le 2 ]] && exit 0
+						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.fcshrunk.tsv") -le 2 ]] && exit 0
 					CMD
 						head -1 "$odir/$c-vs-$t/experiments.tpm.zscores" > "$odir/$c-vs-$t/heatmap.tpm.zscores"
 					CMD
-						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.tpm.zscores"
+						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.tpm.zscores"
 					CMD
 						heatmap.R TRUE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.tpm.zscores" "Z-Score" "most differentially expressed ${feature}s"
 					CMD
 
 					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.tsv") -le 2 ]] && exit 0
+						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.fcshrunk.tsv") -le 2 ]] && exit 0
 					CMD
 						head -1 "$odir/$c-vs-$t/experiments.mean.tpm" > "$odir/$c-vs-$t/heatmap.mean.tpm"
 					CMD
-						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm" >> "$odir/$c-vs-$t/heatmap.mean.tpm"
+						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm" >> "$odir/$c-vs-$t/heatmap.mean.tpm"
 					CMD
 						heatmap.R FALSE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.mean.tpm" "TPM" "most differentially expressed ${feature}s"
 					CMD
 
 					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.tsv") -le 2 ]] && exit 0
+						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.fcshrunk.tsv") -le 2 ]] && exit 0
 					CMD
 						head -1 "$odir/$c-vs-$t/experiments.mean.tpm.zscores" > "$odir/$c-vs-$t/heatmap.mean.tpm.zscores"
 					CMD
-						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.mean.tpm.zscores"
+						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.mean.tpm.zscores"
 					CMD
 						heatmap.R FALSE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.mean.tpm.zscores" "Z-Score" "most differentially expressed ${feature}s"
 					CMD
@@ -403,14 +403,14 @@ function expression::deseq(){
 						commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
 							find -L "$odir/$c-vs-$t"
 								-type f
-								"(" -name "deseq.tsv" -or -name "deseq.noNA.tsv" -or -name "deseq.full.tsv" -or -name "deseq.fcshrunk.tsv" ")"
+								-name "deseq*.tsv" -and -not -name "*annotated*"
  								-exec annotate.pl "${gtfinfo:=0}" "$gtf" $feature "{}" \;
 						CMD
 
 						commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD
 							find -L "$odir/$c-vs-$t"
 								-type f
-								-name "deseq.fcshrunk.annotated.tsv"
+								-name "deseq.full.fcshrunk.annotated.tsv"
  								-exec volcano.R "{}" "volcano_plot.fcshrunk.pdf" \;
 						CMD
 
@@ -437,7 +437,7 @@ function expression::deseq(){
 						commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD
 							find -L "$odir/$c-vs-$t"
 								-type f
-								-name "deseq.fcshrunk.tsv"
+								-name "deseq.full.fcshrunk.tsv"
  								-exec volcano.R "{}" "volcano_plot.fcshrunk.pdf" \;
 						CMD
 
@@ -536,7 +536,7 @@ function expression::_deseq(){
 			commander::makecmd -a _cmds2_deseq -s ';' -c {COMMANDER[0]}<<- CMD
 				find -L "$odir"
 					-type f
-					"(" -name "deseq.tsv" -or -name "deseq.noNA.tsv" -or -name "deseq.full.tsv" ")"
+					-name "deseq*.tsv" -and -not -name "*annotated*"
 					-exec annotate.pl "${gtfinfo:=0}" "$gtf" $feature "{}" \;
 			CMD
 

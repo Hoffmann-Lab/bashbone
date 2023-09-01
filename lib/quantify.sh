@@ -171,7 +171,7 @@ function quantify::tpm(){
 					dds = DESeqDataSetFromHTSeqCount(sampleTable=read.table(args$csv, header=F, sep=",", stringsAsFactors=F, check.names=F, quote=""), directory="", design=~1);
 					dds = estimateSizeFactors(dds);
 					vsd = rbind(colnames(dds),assay(varianceStabilizingTransformation(dds, blind=FALSE)));
-					ret = apply(vsd, 2, function(x){ write.table(data.frame(rownames(dds), x[2:length(x)], check.names=F), file=paste0(x[1],".vsc"), col.names=F, row.names=F, quote=F, sep='\t') });
+					ret = apply(vsd, 2, function(x){ write.table(data.frame(rownames(dds), x[2:length(x)], check.names=F), file=paste0(x[1],".vsc"), col.names=F, row.names=F, quote=F, sep="\t") });
 				'
 			CMD
 				-c "$csv"
@@ -321,7 +321,7 @@ function quantify::bamcoverage(){
 					$params
 					-Q 0
 					--maxMOp 999
-					-s $(declare -p ${!_strandness_bam2bedg} &> /dev/null && echo ${_strandness_bam2bedg["$f"]} || echo 0)
+					-s $(declare -p _strandness_bam2bedg | grep -q '=' && echo ${_strandness_bam2bedg["$f"]} || echo 0)
 					-T $ithreads
 					-f
 					-M

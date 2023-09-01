@@ -520,7 +520,7 @@ function commander::qsubcmd(){
 		# ex=$(qacct -j $jobid | awk '/^exit_status/{if($NF>x){x=$NF}}END{print x}')
 		if $benchmark; then
 			qacct -j $jobid | perl -M'List::Util qw(min max)' -lanE 'if($F[0] eq "start_time"){$d=join(" ",@F[1..$#F]); $d=`date -d "$d" +%s`; $sta=min($d,$sta?$sta:$d)} if($F[0] eq "end_time"){$d=join(" ",@F[1..$#F]); $d=`date -d "$d" +%s`; $sto=max($d,$sto?$sto:$d)} END{$s=$sto-$sta; if($s>3600){$d=3600}else{$d=60}; $hm=sprintf("%.0d",$s/$d); $hm=0 unless $hm; $ms=sprintf("%05.2f",($s/$d-$hm)*60); say ":BENCHMARK: runtime $hm:$ms [hours:]minutes:seconds"}'
-			printf ":BENCHMARK: memory %s Kbytes\n" $(qacct -j $jobid | sed -nE 's/^ru_maxrss\s+([0-9.]+)\s*$/\1/p' | sort -gr | head -1)
+			printf ":BENCHMARK: memory %s\n" $(qacct -j $jobid | sed -nE 's/^ru_maxrss\s+([0-9.]+)\s*(.*)$/\1 \2/p' | sort -gr | head -1)
 		fi
 		return $ex
 	else

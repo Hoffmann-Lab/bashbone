@@ -22,7 +22,7 @@ usage(){
 		  - ebi uk mirror can be defined as fallback upon fastq-dump errors
 
 		VERSION
-		0.3.2
+		0.4.0
 
 		REQUIREMENTS
 		Depends on chosen options
@@ -43,7 +43,7 @@ usage(){
 		-l        : convert local sra files to compressed fastq files
 		-s        : show received meta information for given accession numbers and exit
 		-r        : do not fetch meta information for given SRR* accession numbers
-		-o [file] : additionally print information for given accession numbers to file
+		-o [file] : additionally write information for given accession numbers to file
 		-a [list] : fetch all, biological and technical reads, and reassign mate ids according to a comma separated list e.g. 1,3,2
 		-w        : unless -a, download from ebi uk mirror utilizing wget
 		            HINT1: outperformes fastq-dump but uses less stable connections which may requires additional runs
@@ -51,6 +51,9 @@ usage(){
 		-c        : unless -a, download from ebi uk mirror utilizing curl
 		            HINT1: experimental!
 		-f        : unless -a, use ebi uk mirror as fallback upon fastq-dump failures. requires -w or -c
+		-z        : unless -a, download sra file from amazon aws utilizing awscli
+		            HINT1: uses -p 1 due to download of multiple chunks
+		            HINT2: use -l in a final run to convert sra files
 
 		EXAMPLES
 		$(basename "$0") -p 2 -t 4 -m /tmp GSM1446883 SRR1528586 SRX663213
@@ -63,7 +66,7 @@ usage(){
 	return 1
 }
 
-while getopts o:p:m:t:d:a:srwcfhl ARG; do
+while getopts o:p:m:t:d:a:srwcfhlz ARG; do
 	case $ARG in
 		o) outfile="$OPTARG";;
 		p) instances=$OPTARG;;
@@ -74,6 +77,7 @@ while getopts o:p:m:t:d:a:srwcfhl ARG; do
 		l) files=true;;
 		w) ebi=true; method=wget;;
 		c) ebi=true; method=curl;;
+		z) aws=true; method=awscli;;
 		s) nodownload=true;;
 		r) outfile=/dev/null; nofetch=true;;
 		f) fallback=true;;
@@ -90,9 +94,10 @@ threads=${threads:-1}
 tmp="$(mktemp -d -p "${t:-$PWD}" tmp.XXXXXXXXXX.sradump)"
 faster=${faster:-false}
 files=${files:-false}
-$files && ebi=false && fallback=false
+$files && ebi=false && aws=false && fallback=false
 ebi=${ebi:-false}
-[[ $mateid ]] && ebi=false && fallback=false
+aws=${aws:-false}
+[[ $mateid ]] && ebi=false && aws=false && fallback=false
 nodownload=${nodownload:-false}
 nofetch=${nofetch:-false}
 fallback=${fallback:-false}
@@ -122,12 +127,16 @@ else
 			srr+=("$id")
 		} || {
 			i="${#srr[@]}"
-			#esearch -db sra -query "$id" | efetch -format docsum
 			mapfile -t mapdata < <(esearch -db sra -query "$id" | efetch -format xml | grep .)
-			srr+=($(printf '%s\n' "${mapdata[@]}" | sed -nE 's/^\s*<RUN\s.*accession="([SED]RR[^"]+)".*/\1/p' | sort -Vu))
-			n="$({ printf '%s\n' "${mapdata[@]}" | grep -oE 'sample_(title|name)="[^"]+' || echo "NA"; } | sort -Vr | head -1 | cut -d '"' -f 2)"
-			meta="$(printf '%s\n' "${mapdata[@]}" | grep '<SAMPLE_ATTRIBUTE>' -A 2 | grep '<TAG>' -A 1 | grep -vx -- '--' | sed -nE 's/^\s*<([^>]+>)(.+)<\/\1/\2/p' | paste - - | awk -F '\t' '{gsub(/\s+/,"_",$1); print $1"=\""$2"\";"}' | sed ':a;N;$!ba; s/\n/ /g')"
-			printf "$id\t%s\t$n\tsample_name=\"$n;\" $meta\n" "${srr[@]:$i}"  | tee -a "$outfile" >&2
+
+			# srr+=($(printf '%s\n' "${mapdata[@]}" | sed -nE 's/^\s*<RUN\s.*accession="([SED]RR[^"]+)".*/\1/p' | sort -Vu))
+			# n="$({ printf '%s\n' "${mapdata[@]}" | grep -oE 'sample_(title|name)="[^"]+' || echo "NA"; } | sort -Vr | head -1 | cut -d '"' -f 2)"
+			# meta="$(printf '%s\n' "${mapdata[@]}" | grep '<SAMPLE_ATTRIBUTE>' -A 2 | grep '<TAG>' -A 1 | grep -vx -- '--' | sed -nE 's/^\s*<([^>]+>)(.+)<\/\1/\2/p' | paste - - | awk -F '\t' '{gsub(/\s+/,"_",$1); print $1"=\""$2"\";"}' | sed ':a;N;$!ba; s/\n/ /g')"
+			# printf "$id\t%s\t$n\tsample_name=\"$n;\" $meta\n" "${srr[@]:$i}" | tee -a "$outfile" >&2
+
+			mapfile -t mapdata < <(join <(printf '%s\n' "${mapdata[@]}" | xtract -pattern EXPERIMENT_PACKAGE -element RUN@accession,EXPERIMENT/TITLE,Member@sample_name,Member@sample_title | sed -E ':a;s/([^\t]+)\t\1/\1/;ta' | awk -F '\t' '{if($4){$3=$4}; print $1"\tsample_name=\""$3"\";\tsample_title=\""$2"\";"}') <(printf '%s\n' "${mapdata[@]}" | xtract -pattern EXPERIMENT_PACKAGE -element RUN@accession,SAMPLE_ATTRIBUTE/TAG,SAMPLE_ATTRIBUTE/VALUE | perl -F'\t' -lane '$F[$_].="=\"$F[$_+$#F/2]\";" for 1..$#F/2; print join"\t",@F[0..$#F/2]'))
+			srr+=($(printf '%s\n' "${mapdata[@]}" | cut -f 1))
+			printf '%s\n' "${mapdata[@]}" | sed "s/^/$id /" | tee -a "$outfile" >&2
 		}
 	done
 	$nodownload && exit 0
@@ -198,12 +207,12 @@ fasterqdump(){
 	return 0
 }
 
-awsdump(){
+s3dump_awscli(){
+	# wget https://sra-pub-run-odp.s3.amazonaws.com/sra/$id/$id
 	local id
 	for id in "${srr[@]}"; do
-		# -3|--split-3  or  -S|--split-files
-		echo "aws s3 sync 's3://sra-pub-run-odp/sra/$id' '$id' --no-sign-request && fasterq-dump '$id' --progres -e 56" >&2
-		echo -ne "aws s3 sync 's3://sra-pub-run-odp/sra/$id' '$id' --no-sign-request && fasterq-dump -t '$tmp' -p -f -P -O '$outdir' '$id'\0"
+		echo "aws s3 sync 's3://sra-pub-run-odp/sra/$id' '$outdir' --no-sign-request && mv '$outdir/$id' '$outdir/$id.sra'" >&2
+		echo -ne "aws s3 sync 's3://sra-pub-run-odp/sra/$id' '$outdir' --no-sign-request && mv '$outdir/$id' '$outdir/$id.sra'\0"
 	done | xargs -0 -P $instances -I {} bash -c {}
 	return 0
 }
@@ -256,6 +265,9 @@ else
 	elif $ebi; then
 		BASHBONE_ERROR="@ ftpdump_$method"
 		ftpdump_$method
+	elif $aws; then
+		BASHBONE_ERROR="@ s3dump_$method"
+		s3dump_$method
 	else
 		BASHBONE_ERROR="@ fastqdump_$compression"
 		fastqdump_$compression

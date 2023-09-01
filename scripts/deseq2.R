@@ -86,6 +86,7 @@ get_design = function(experiments,interactionterms=F){
 
 design = get_design(experiments)
 cat(paste("using design formula: ",design,"\n",sep=""))
+
 suppressMessages({
 	dds = DESeqDataSetFromHTSeqCount(sampleTable = experiments, directory = "", design = as.formula(design))
 	dds = tryCatch(
@@ -98,86 +99,96 @@ suppressMessages({
 		}
 	)
 })
-save(dds, file = file.path(outdir,"dds.Rdata"))
+save(dds, file = file.path(outdir,"dds.RData"))
 
 pdf(file.path(outdir,"dispersion.pdf"))
 plotDispEsts(dds)
 graphics.off()
 
-
 ###### pca
 
-
-log = DESeqTransform(SummarizedExperiment(log2(counts(dds, normalized=T) + 1), colData=colData(dds)))
-save(log, file = file.path(outdir,"log.Rdata"))
+# log = DESeqTransform(SummarizedExperiment(log2(counts(dds, normalized=T) + 1), colData=colData(dds)))
+# save(log, file = file.path(outdir,"log.RData"))
 vsd = varianceStabilizingTransformation(dds, blind=FALSE)
-save(vsd, file = file.path(outdir,"vsd.Rdata"))
+save(vsd, file = file.path(outdir,"vsd.RData"))
 rld = rlog(dds, blind=FALSE)
-save(rld, file = file.path(outdir,"rld.Rdata"))
+save(rld, file = file.path(outdir,"rld.RData"))
 
-for (method in c("log","vsd","rld")){
+# for (method in c("log","vsd","rld")){
+for (method in c("vsd","rld")){
 	# deseq method
 	# data = plotPCA(get(normed), intgroup = c("condition", "replicate"), returnData = T)
 	# percentVar = round(100 * attr(data, "percentVar"))
 
 	normed = assay(get(method))
-	vars = rowVars(normed)
-	n = min(10000,length(vars))
-	topidx = order(vars, decreasing = TRUE)[1:n]
-	pca = prcomp(t(normed[topidx, ]), scale = F)
+	vars = order(rowVars(normed), decreasing = TRUE)
 
-	loadings = pca$rotation
-	for (i in 1:3){
-		ids = rownames(loadings[order(abs(loadings[,i]), decreasing = TRUE),])
-		ids = head(ids,n=max(1,length(ids)*0.05)) # variables that drive variation in PC1
-		sink(file.path(outdir,paste("pca_pc",i,"_",method,".variables",sep="")))
-		lapply(ids, cat, "\n")
-		sink()
+	for (n in c(500,2000,5000,10000)){
+		n = min(n,length(vars))
+		topidx = vars[1:n]
+		pca = prcomp(t(normed[topidx, ]), scale = F)
+
+		loadings = pca$rotation
+		for (i in 1:3){
+			ids = rownames(loadings[order(abs(loadings[,i]), decreasing = TRUE),])
+			ids = head(ids,n=max(1,length(ids)*0.05)) # variables that drive variation in PC1
+			sink(file.path(outdir,paste("pca_pc",i,"_",method,"_top",n,".variables",sep="")))
+			lapply(ids, cat, "\n")
+			sink()
+		}
+
+		percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
+		if (length(unique(experiments$replicate))==nrow(experiments)){
+			if(is.null(experiments$factor1)){
+				data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = "replicate", condition = experiments$condition)
+			} else {
+				data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = experiments$factor1, condition = experiments$condition)
+			}
+		} else {
+			data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = experiments$replicate, condition = experiments$condition)
+		}
+		write.table(data.frame(id=rownames(data),data), row.names = F,
+			file=file.path(outdir,paste("pca_12_",method,"_top",n,".tsv",sep="")), quote=F, sep="\t"
+		)
+
+		suppressMessages({
+			ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
+				ggtitle("PCA plot - PC1 vs PC2") +
+				scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
+				# coord_fixed() +
+				theme_bw() +
+				theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank()) +
+				geom_point(size = 3) +
+				xlab(paste0("PC1: ",percentVar[1], "% variance")) +
+				ylab(paste0("PC2: ",percentVar[2], "% variance"))
+			suppressMessages(ggsave(file.path(outdir,paste("pca_12_",method,"_top",n,".pdf",sep=""))))
+			# stat_ellipse() +
+
+			ggplot(data, aes(PC1, PC3, color = condition, group = condition, shape = replicate)) +
+				ggtitle("PCA plot - PC1 vs PC3") +
+				scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
+				# coord_fixed() +
+				theme_bw() +
+				theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank()) +
+				geom_point(size = 3) +
+				xlab(paste0("PC1: ",percentVar[1], "% variance")) +
+				ylab(paste0("PC3: ",percentVar[3], "% variance"))
+			suppressMessages(ggsave(file.path(outdir,paste("pca_13_",method,"_top",n,".pdf",sep=""))))
+			# stat_ellipse() +
+
+			ggplot(data, aes(PC2, PC3, color = condition, group = condition, shape = replicate)) +
+				ggtitle("PCA plot - PC2 vs PC3") +
+				scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
+				# coord_fixed() +
+				theme_bw() +
+				theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank()) +
+				geom_point(size = 3) +
+				xlab(paste0("PC2: ",percentVar[2], "% variance")) +
+				ylab(paste0("PC3: ",percentVar[3], "% variance"))
+			suppressMessages(ggsave(file.path(outdir,paste("pca_23_",method,"_top",n,".pdf",sep=""))))
+			# stat_ellipse() +
+		})
 	}
-
-	percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
-	data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = experiments$replicate, condition = experiments$condition)
-	write.table(data.frame(id=rownames(data),data), row.names = F,
-		file=file.path(outdir,paste("pca_12_",method,".tsv",sep="")), quote=F, sep="\t"
-	)
-
-	suppressMessages({
-		ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
-			ggtitle("PCA plot - PC1 vs PC2") +
-			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			# coord_fixed() +
-			theme_bw() +
-			theme(aspect.ratio=1, legend.box = "horizontal") +
-			geom_point(size = 3) +
-			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
-			ylab(paste0("PC2: ",percentVar[2], "% variance"))
-		suppressMessages(ggsave(file.path(outdir,paste("pca_12_",method,".pdf",sep=""))))
-		# stat_ellipse() +
-
-		ggplot(data, aes(PC1, PC3, color = condition, group = condition, shape = replicate)) +
-			ggtitle("PCA plot - PC1 vs PC3") +
-			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			# coord_fixed() +
-			theme_bw() +
-			theme(aspect.ratio=1, legend.box = "horizontal") +
-			geom_point(size = 3) +
-			xlab(paste0("PC1: ",percentVar[1], "% variance")) +
-			ylab(paste0("PC3: ",percentVar[3], "% variance"))
-		suppressMessages(ggsave(file.path(outdir,paste("pca_13_",method,".pdf",sep=""))))
-		# stat_ellipse() +
-
-		ggplot(data, aes(PC2, PC3, color = condition, group = condition, shape = replicate)) +
-			ggtitle("PCA plot - PC2 vs PC3") +
-			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			# coord_fixed() +
-			theme_bw() +
-			theme(aspect.ratio=1, legend.box = "horizontal") +
-			geom_point(size = 3) +
-			xlab(paste0("PC2: ",percentVar[2], "% variance")) +
-			ylab(paste0("PC3: ",percentVar[3], "% variance"))
-		suppressMessages(ggsave(file.path(outdir,paste("pca_23_",method,".pdf",sep=""))))
-		# stat_ellipse() +
-	})
 }
 
 
@@ -402,69 +413,81 @@ get_table = function(dds){
 	ddsrf = results(dds, contrast=c("condition",treat[i],ctr[i]), parallel = TRUE, BPPARAM = BPPARAM)
 	ddsr = ddsrf
 
+	ddsr = ddsr[order(abs(ddsr$log2FoldChange),decreasing=T) , ]
+	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
+		file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
+	)
+
 	# ddsr = results(dds, contrast=c("condition",treat[i],ctr[i]), alpha = 0.05, parallel = TRUE, BPPARAM = BPPARAM) # alpha (default: 0.1) should be set to FDR cutoff
 	# shrinkage can be used for data visualization and ranking of RNA-Seq data (remove high LFCs from lowly expressed genes with high variability among samples and estimate moderate FCs more close to reality) if DESeq() was executed with betaPrior=FALSE, which is the default since v1.16
 	suppressMessages({
-		ddsrshrunk <- lfcShrink(dds, contrast=c("condition",treat[i],ctr[i]), res=ddsr, type="ashr", parallel = TRUE, BPPARAM = BPPARAM) # 'apeglm' and 'ashr' outperform the original 'normal' shrinkage estimator. but ‘apeglm’ requires use of ‘coef’ i.e. a name from resultsNames
+		ddsrshrunkf <- lfcShrink(dds, contrast=c("condition",treat[i],ctr[i]), res=ddsr, type="ashr", parallel = TRUE, BPPARAM = BPPARAM) # 'apeglm' and 'ashr' outperform the original 'normal' shrinkage estimator. but ‘apeglm’ requires use of ‘coef’ i.e. a name from resultsNames
+		ddsrshrunk = ddsrshrunkf
 	})
 
-	ddsrshrunk = ddsrshrunk[order(ddsrshrunk$padj) , ]
+	ddsrshrunk = ddsrshrunk[order(abs(ddsrshrunk$log2FoldChange),decreasing=T) , ]
 	write.table(data.frame(id=rownames(ddsrshrunk),ddsrshrunk), row.names = F,
-		file=file.path(odir,"deseq.fcshrunk.tsv"), quote=F, sep="\t"
+		file=file.path(odir,"deseq.full.fcshrunk.tsv"), quote=F, sep="\t"
 	)
 
-	ddsr = ddsr[order(ddsr$padj) , ]
-	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
-		file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
+	ddsrshrunk = ddsrshrunk[!is.na(ddsrshrunk$log2FoldChange) , ]
+	ddsrshrunk = ddsrshrunk[!is.na(ddsrshrunk$padj) , ]
+	ddsrshrunk = ddsrshrunk[ddsrshrunk$baseMean > 0 , ]
+	ddsrshrunk = ddsrshrunk[ddsrshrunk$padj <= 0.05 , ]
+	write.table(data.frame(id=rownames(ddsrshrunk),ddsrshrunk), row.names = F,
+		file=file.path(odir,"deseq.fcshrunk.tsv"), quote=F, sep="\t"
 	)
 
 	ddsr = ddsr[!is.na(ddsr$log2FoldChange) , ]
 	ddsr = ddsr[!is.na(ddsr$padj) , ]
 	ddsr = ddsr[ddsr$baseMean > 0 , ]
-
-	#ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ]
-
-	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
-		file=file.path(odir,"deseq.noNA.tsv"), quote=F, sep="\t"
-	)
-
 	ddsr = ddsr[ddsr$padj <= 0.05 , ]
 	write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
 		file=file.path(odir,"deseq.tsv"), quote=F, sep="\t"
 	)
 
 	if(nrow(ddsr)>0){
-		pdf(file.path(odir,"ma_plot.full.pdf"))
+		pdf(file.path(odir,"ma_plot.pdf"))
 		plotMA(ddsrf)
 		graphics.off()
-		pdf(file.path(odir,"ma_plot.pdf"))
-		plotMA(ddsr)
-		graphics.off()
+		# pdf(file.path(odir,"ma_plot.pdf"))
+		# plotMA(ddsr)
+		# graphics.off()
 		pdf(file.path(odir,"ma_plot.fcshrunk.pdf"))
-		plotMA(ddsrshrunk)
+		plotMA(ddsrshrunkf)
 		graphics.off()
 	}
 
-	rldr = rld[,rld$condition %in% c(ctr[i],treat[i])]
-	data = plotPCA(rldr, intgroup = c("condition", "replicate"), returnData = T)
-	write.table(data.frame(id=rownames(data),data), row.names = F,
-		file=file.path(odir,"pca.tsv"), quote=F, sep="\t"
-	)
-	percentVar = round(100 * attr(data, "percentVar"))
+	#for (method in c("log","vsd","rld")){
+	for (method in c("vsd","rld")){
 
-	suppressMessages({
-		ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
-			ggtitle(paste("PC1 vs PC2: ", length(rownames(rldr)), " genes")) +
-			scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-			# coord_fixed() +
-			theme_bw() +
-			theme(aspect.ratio=1, legend.box = "horizontal") +
-			geom_point(size = 3) +
-			xlab(paste("PC1:",percentVar[1],"% variance",sep=" ")) +
-			ylab(paste("PC2:",percentVar[2],"% variance",sep=" "))
-		suppressMessages(ggsave(file.path(odir,"pca.pdf")))
-	})
-	# stat_ellipse() +
+		normed = get(method)
+		normed = normed[,normed$condition %in% c(ctr[i],treat[i])]
+		topids = rownames(normed)[order(rowVars(assay(normed)), decreasing=T)]
+
+		for (n in c(500,2000,5000,10000)){
+			n = min(n,length(topids))
+			data = plotPCA(normed[rownames(normed) %in% head(topids,n=n) , ], intgroup = c("condition", "replicate"), returnData = T)
+			write.table(data.frame(id=rownames(data),data), row.names = F,
+				file=file.path(odir,paste("pca_12_",method,"_top",n,".tsv",sep="")), quote=F, sep="\t"
+			)
+			percentVar = round(100 * attr(data, "percentVar"))
+
+			suppressMessages({
+				ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
+					ggtitle("PCA plot - PC1 vs PC2") +
+					scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
+					# coord_fixed() +
+					theme_bw() +
+					theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank()) +
+					geom_point(size = 3) +
+					xlab(paste0("PC1:",percentVar[1],"% variance")) +
+					ylab(paste0("PC2:",percentVar[2],"% variance"))
+				suppressMessages(ggsave(file.path(odir,paste("pca_12_",method,"_top",n,".pdf",sep=""))))
+			})
+		}
+	}
+
 
 	vsdr = vsd[,vsd$condition %in% c(ctr[i],treat[i])]
 
@@ -500,9 +523,7 @@ get_table = function(dds){
 	if(nrow(ddsr)>1){
 		color = colorRampPalette(brewer.pal(9, "GnBu"))(100)
 
-		# ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ]
-		# topids = rownames(ddsr)[1:min(50,nrow(ddsr))]
-		topids = head(rownames(ddsr)[rev(order(abs(ddsrshrunk[rownames(ddsrshrunk) %in% rownames(ddsr),]$log2FoldChange)))],n=50)
+		topids = head(rownames(ddsrshrunk),n=50)
 
 		vsc = vsc[rownames(vsc) %in% topids , ]
 		write.table(data.frame(id=rownames(vsc),vsc,check.names=F), row.names = F,
@@ -535,15 +556,14 @@ get_table = function(dds){
 ######
 
 makename = function(name){
-  name = make.names(paste0("ADAPTER",name)) # replaces \W characters by '.' and prepend X if starting with \W
-  return(sub("ADAPTER","",name))
+	name = make.names(paste0("ADAPTER",name)) # replaces \W characters by '.' and prepend X if starting with \W
+	return(sub("ADAPTER","",name))
 }
 
 get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 
 	design_interactionterms = get_design(experiments,T)
 	design(dds) = as.formula(design_interactionterms)
-
 	# each condition needs all factors - twice to be able to run Ca_Fx vs Cb_Fx with replicates
 	# use try catch to ensure this
 	try = tryCatch(
@@ -551,15 +571,16 @@ get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 			DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM)
 		},
 		error = function(e){
-			cat(e)
+			cat("WARNING: ",file=stderr())
+			message(e)
 			return(NA)
 		}
 	)
 	if(is.na(try)){
-		cat(paste("calculating effects (interaction terms) of secondary factors not possible\n",sep=""))
+		message(". calculating effects (interaction terms) of secondary factors not possible.")
 		return()
 	} else {
-		cat(paste("calculating effects (interaction terms) of secondary factors\n",sep=""))
+		cat("calculating effects (interaction terms) of secondary factors\n")
 	}
 
 	for (f in 5:ncol(experiments)){
@@ -586,11 +607,12 @@ get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 
 				odir = file.path(outdir,"interactionterms",paste0(ctr_term,"-vs-",term))
 				dir.create(odir, recursive = T, showWarnings = F)
-				save(dds, file = file.path(odir,"dds.Rdata"))
+				save(dds, file = file.path(odir,"dds.RData"))
 
 				#cat(paste("calculating effect (interaction term) of ",ctr_term," vs ",term," on ",ctr," vs ",treat," with design formula: ",design_interactionterms,"\n",sep=""))
 				ddsr = results(dds, name=paste0(fac,makename(term),".condition",makename(treat)), parallel = TRUE, BPPARAM = BPPARAM)
 
+                ddsr = ddsr[order(abs(ddsr$log2FoldChange),decreasing=T) , ]
 				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
 					file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
 				)
@@ -598,11 +620,6 @@ get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 				ddsr = ddsr[!is.na(ddsr$log2FoldChange) , ]
 				ddsr = ddsr[!is.na(ddsr$padj) , ]
 				ddsr = ddsr[ddsr$baseMean > 0 , ]
-				ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ]
-				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
-					file=file.path(odir,"deseq.noNA.tsv"), quote=F, sep="\t"
-				)
-
 				ddsr = ddsr[ddsr$padj <= 0.05 , ]
 				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
 					file=file.path(odir,"deseq.tsv"), quote=F, sep="\t"
@@ -637,7 +654,7 @@ for (i in 1:length(ctr)){
 	# if (design != thisdesign){ # use in case of matrix not full rank error
 	# 	design(thisdds) = as.formula(thisdesign)
 	# 	thisdds = DESeq(thisdds, parallel = TRUE, BPPARAM = BPPARAM)
-	# 	save(thisdds, file = file.path(odir,"dds.Rdata"))
+	# 	save(thisdds, file = file.path(odir,"dds.RData"))
 	# }
 	get_table(thisdds)
 	if(ncol(experiments) > 4){
@@ -665,6 +682,7 @@ for (ctr in names(toplus)){
 				ddsr = results(dds, contrast=list(paste0("condition_",makename(treats[i]),"_vs_",makename(ctr)),paste0("condition_",makename(treats[j]),"_vs_",makename(ctr))), parallel = TRUE, BPPARAM = BPPARAM)
 				ddsr$log2FoldChange = -1*ddsr$log2FoldChange
 
+				ddsr = ddsr[order(abs(ddsr$log2FoldChange),decreasing=T) , ]
 				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
 					file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
 				)
@@ -673,10 +691,6 @@ for (ctr in names(toplus)){
 				ddsr = ddsr[!is.na(ddsr$padj) , ]
 				ddsr = ddsr[ddsr$baseMean > 0 , ]
 				ddsr = ddsr[rev(order(abs(ddsr$log2FoldChange))) , ]
-				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
-					file=file.path(odir,"deseq.noNA.tsv"), quote=F, sep="\t"
-				)
-
 				ddsr = ddsr[ddsr$padj <= 0.05 , ]
 				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
 					file=file.path(odir,"deseq.tsv"), quote=F, sep="\t"

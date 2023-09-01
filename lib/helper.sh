@@ -90,10 +90,10 @@ function helper::vcfsort(){
 	local instances maxmemory tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vcfsort)"
 	read -r instances maxmemory < <(configure::memory_by_instances -i 1 -M "$maxmemory")
 	if $zip; then
-		bcftools view "$f" | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[a[1]]=i} /^#/{print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[i]=a[1]} /^#/{print; next} {$1=c[$1]; print}' | bgzip -k -c -@ $threads /dev/stdin > "$o"
+		bcftools view "$f" 2> >(sed -u '/vcf_parse/{q 1}' >&2) | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[a[1]]=i}; print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[i]=a[1]}; print; next} {$1=c[$1]; print}' | bgzip -k -c -@ $threads /dev/stdin > "$o"
 		tabix -f -p vcf "$o"
 	else
-		bcftools view "$f" | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[a[1]]=i} /^#/{print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' 'match($0,/.*#contig=<ID=(\S+),length.*/,a){i++; c[i]=a[1]} /^#/{print; next} {$1=c[$1]; print}' > "$o"
+		bcftools view "$f" 2> >(sed -u '/vcf_parse/{q 1}' >&2) | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[a[1]]=i}; print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' '/^#/{if(match($0,/.*#contig=<ID=(\S+),length.*/,a)){i++; c[i]=a[1]}; print; next} {$1=c[$1]; print}' > "$o"
 	fi
 
 	return 0

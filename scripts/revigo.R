@@ -33,11 +33,11 @@ revigo = function(GOtable,destFolder,cutoff="0.70",isPValue="yes",whatIsBetter="
 		treemap_R = gsub("\r","",treemap_R)
 		treemap_R = gsub("REVIGO Gene Ontology treemap",title,treemap_R)
 		treemap_R = gsub("file=[^,]+",paste(sep="","file='",outprefix,".treemap.pdf'"),treemap_R)
-		save(treemap_R, file=paste(sep="",outprefix,".treemap.Rdata"))
+		save(treemap_R, file=paste(sep="",outprefix,".treemap.RData"))
 		eval(parse(text=treemap_R))
 
 		scatter_R = gsub("\r","",scatter_R)
-		save(scatter_R, file=paste(sep="",outprefix,".scatterplot.Rdata"))
+		save(scatter_R, file=paste(sep="",outprefix,".scatterplot.RData"))
 		eval(parse(text=paste0(scatter_R,paste(sep="","\nggsave(\"",outprefix,".scatterplot.pdf\")"))))
 	} else {
 		stop()

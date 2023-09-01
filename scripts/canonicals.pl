@@ -63,7 +63,7 @@ for my $g (keys %m){
 		push @ts,$t;
 	}
 	my $max = max(@ls);
-	say $ts[(grep {$ls[$_]==$max} 0..$#ls)[0]];
+	say $g."\t".$ts[(grep {$ls[$_]==$max} 0..$#ls)[0]];
 }
 
 exit 0;
