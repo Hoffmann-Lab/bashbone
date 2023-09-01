@@ -621,7 +621,7 @@ function alignment::postprocess(){
 			-s <softskip>  | optional. default: false
 			               | [true|false] do nothing but check for files and print commands
 			-j <job>       | mandatory
-			               | [uniqify|exclude|sizeselect|sort|index] to be applied on alignments (see -r). index requires coordinate sorted alignment files
+			               | [uniqify|blacklist|sizeselect|sort|index] to be applied on alignments (see -r). index requires coordinate sorted alignment files
 			-f <string>    | of a path to a blacklist file for exclusion job or a size range filter fragments for. default: 0:1000
 			-t <threads>   | mandatory
 			               | number of threads
@@ -958,7 +958,7 @@ function alignment::_blacklist(){
 		bedtools subtract
 			-a <(samtools view -H "$bam" | awk '/^@SQ/{\$1=""; print}' | cut -d ':' -f 2,3 | sed -r 's/(\S+)\s+LN:(.+)/\1\t0\t\2/' | helper::sort -k1,1 -k2,2n -k3,3n -t $threads)
 			-b <(helper::sort -k1,1 -k2,2n -k3,3n -t $threads -f "$blacklist")
-		> "$tmpdir/blacklist.bed"
+		> "$tmpdir/whitelist.bed"
 	CMD
 
 	# infer SE or PE
@@ -976,7 +976,7 @@ function alignment::_blacklist(){
 				-@ $threads
 				-u
 				-p
-				-L "$tmpdir/blacklist.bed"
+				-L "$tmpdir/whitelist.bed"
 				"$bam"
 		CMD
 			samtools sort
@@ -1009,7 +1009,7 @@ function alignment::_blacklist(){
 				$params
 				-@ $threads
 				-b
-				-L "$tmpdir/blacklist.bed"
+				-L "$tmpdir/whitelist.bed"
 				"$bam"
 			> "$_returnfile_blacklist"
 		CMD
