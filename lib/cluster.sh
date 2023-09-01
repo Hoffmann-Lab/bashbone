@@ -23,13 +23,14 @@ function cluster::coexpression_deseq(){
 			-j <deseqdir> | path to
 			-o <outdir>   | path to
 			-f <feature>  | feature (default: gene)
+			-x <idfile>   | path to file containing ids of interest to extract from experiments files at counts directory. replaces -c -n -g -b -j
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" deseqdir countsdir clusterfilter=NA biotype gtf feature="gene"
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" deseqdir countsdir clusterfilter=NA biotype gtf feature="gene" extractids
 	declare -n _mapper_coexpression _cmpfiles_coexpression _idfiles_coexpression
-	while getopts 'S:s:n:b:g:t:M:c:r:i:j:o:l:f:' arg; do
+	while getopts 'S:s:n:b:g:t:M:c:r:i:j:o:l:f:x:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -38,20 +39,21 @@ function cluster::coexpression_deseq(){
 			g)	gtf="$OPTARG";;
 			t)	((++mandatory)); threads=$OPTARG;;
 			M)	((++mandatory)); maxmemory=$OPTARG;;
-			c)	((++mandatory)); _cmpfiles_coexpression=$OPTARG;;
+			c)	_cmpfiles_coexpression=$OPTARG;;
 			r)	((++mandatory)); _mapper_coexpression=$OPTARG;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
-			j)	((++mandatory)); deseqdir="$OPTARG";;
+			j)	deseqdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			l)	_idfiles_coexpression=$OPTARG;;
 			f)	feature=$OPTARG;;
+			x)	extractids="$OPTARG";;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 7 ]] && _usage
+	[[ $mandatory -lt 5 ]] && _usage
 	[[ $biotype && ! $gtf ]] && _usage
 
-	declare -p ${!_idfiles_coexpression} &> /dev/null || {
+	declare -p _idfiles_coexpression | grep -q '=' || {
 		unset _idfiles_coexpression
 		declare -a _idfiles_coexpression
 	}
@@ -70,75 +72,79 @@ function cluster::coexpression_deseq(){
 		ddir="$deseqdir/$m"
 		mkdir -p "$odir"
 
-		visited=()
-		tpmtojoin=()
-		rm -f "$joined"
-		for f in "${_cmpfiles_coexpression[@]}"; do
-			mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
-			i=0
-			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
-				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
-					awk 'NR>1' "$ddir/$c-vs-$t/deseq.full.tsv" | sort -k1,1V | cut -f 1,2,3,7 | sed -E 's/\s+NA(\s+|$)/\t0\1/g' > "$tojoin"
-					if [[ -s "$joined" ]]; then
-						join -t $'\t' "$joined" "$tojoin" > "$tmp"
-						mv "$tmp" "$joined"
-					else
-						mv "$tojoin" "$joined"
-					fi
+		if [[ ! -e "$extractids" ]]; then
+			visited=()
+			tpmtojoin=()
+			rm -f "$joined"
+			for f in "${_cmpfiles_coexpression[@]}"; do
+				mapfile -t mapdata < <(perl -F'\t' -lane 'next if exists $m{$F[1]}; $m{$F[1]}=1; print $F[1]' "$f")
+				i=0
+				for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
+					for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
+						awk 'NR>1' "$ddir/$c-vs-$t/deseq.full.tsv" | sort -k1,1V | cut -f 1,2,3,7 | sed -E 's/\s+NA(\s+|$)/\t0\1/g' > "$tojoin"
+						if [[ -s "$joined" ]]; then
+							join -t $'\t' "$joined" "$tojoin" > "$tmp"
+							mv "$tmp" "$joined"
+						else
+							mv "$tojoin" "$joined"
+						fi
+					done
 				done
 			done
-		done
-		mv "$joined" "$odir/experiments.deseq.tsv"
+			mv "$joined" "$odir/experiments.deseq.tsv"
 
-		# filter joined deseq tables requiers padj >0 due to NA replacement
-		perl -F'\t' -slane '
-			$okmean=0;
-			$okfc=0;
-			$okpval=0;
-			for (my $i=1; $i<$#F; $i+=3){
-				$okmean=1 if $F[$i] >= 5;
-				$okfc=1 if exists $F[$i+4] && abs(abs($F[$i+1])-abs($F[$i+4]))>=0.5;
-				$okpval=1 if $F[$i+2] > 0 && $F[$i+2] <= 0.05;
-			}
-			if ($cf=~/[012]{3,3}/){
-				print $F[0] if $okmean+$okfc+$okpval == 3;
-			} elsif ($cf=~/[01]{2,2}/) {
-				print $F[0] if $okfc+$okpval == 2;
-			} elsif ($cf==0) {
-				print $F[0] if $okpval == 1;
-			} elsif	($cf==1) {
-				print $F[0] if $okfc == 1;
-			} else {
-				print $F[0];
-			}
-		' -- -cf=$clusterfilter "$odir/experiments.deseq.tsv" > "$odir/experiments.filtered.genes"
-		# 0 padj 1 fc>0.5 2 basemean > 5 3 30% see below
-
-		if [[ $clusterfilter =~ 4 ]]; then
-			awk '{i=2; ok=0; while(i<NF){if($i>=5){ok=1} i=i+1} if(ok){print $1}}' "$cdir/experiments.tpm" | grep -Fw -f "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
-			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
-		fi
-
-		[[ $biotype && "$biotype" != "." ]] && {
+			# filter joined deseq tables requiers padj >0 due to NA replacement
 			perl -F'\t' -slane '
-				next if /^#/;
-				if($#F<5){
-					print $F[0] if $F[2]==$cb;
-				} else {
-					$F[-1]=~/${ft}_(bio)?type\s+"([^"]+)/;
-					if ($2 =~ /$cb/ && $F[-1]=~/${ft}_id\s+"([^"]+)/){
-						print $1 unless exists $m{$1};
-						$m{$1}=1;
-					}
+				$okmean=0;
+				$okfc=0;
+				$okpval=0;
+				for (my $i=1; $i<$#F; $i+=3){
+					$okmean=1 if $F[$i] >= 5;
+					$okfc=1 if exists $F[$i+4] && abs(abs($F[$i+1])-abs($F[$i+4]))>=0.5;
+					$okpval=1 if $F[$i+2] > 0 && $F[$i+2] <= 0.05;
 				}
-			' -- -cb="$biotype" -ft="$feature" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
-			grep -Fw -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
-			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
-		}
+				if ($cf=~/[012]{3,3}/){
+					print $F[0] if $okmean+$okfc+$okpval == 3;
+				} elsif ($cf=~/[01]{2,2}/) {
+					print $F[0] if $okfc+$okpval == 2;
+				} elsif ($cf==0) {
+					print $F[0] if $okpval == 1;
+				} elsif	($cf==1) {
+					print $F[0] if $okfc == 1;
+				} else {
+					print $F[0];
+				}
+			' -- -cf=$clusterfilter "$odir/experiments.deseq.tsv" > "$odir/experiments.filtered.genes"
+			# 0 padj 1 fc>0.5 2 basemean > 5 3 30% see below
+
+			if [[ $clusterfilter =~ 4 ]]; then
+				awk '{i=2; ok=0; while(i<NF){if($i>=5){ok=1} i=i+1} if(ok){print $1}}' "$cdir/experiments.tpm" | grep -Fw -f "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
+				mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
+			fi
+
+			[[ $biotype && "$biotype" != "." ]] && {
+				perl -F'\t' -slane '
+					next if /^#/;
+					if($#F<5){
+						print $F[0] if $F[2]==$cb;
+					} else {
+						$F[-1]=~/${ft}_(bio)?type\s+"([^"]+)/;
+						if ($2 =~ /$cb/ && $F[-1]=~/${ft}_id\s+"([^"]+)/){
+							print $1 unless exists $m{$1};
+							$m{$1}=1;
+						}
+					}
+				' -- -cb="$biotype" -ft="$feature" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
+				grep -Fw -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
+				mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
+			}
+
+			extractids="$odir/experiments.filtered.genes"
+		fi
 
 		for e in tpm vsc; do
 			head -1 "$cdir/experiments.$e" > "$odir/experiments.filtered.$e"
-			grep -Fw -f "$odir/experiments.filtered.genes" "$cdir/experiments.$e" >> "$odir/experiments.filtered.$e"
+			grep -Fw -f "$extractids" "$cdir/experiments.$e" >> "$odir/experiments.filtered.$e"
 
 			mkdir -p "$odir/$e"
 			[[ "$e" == "tpm" ]] && params=TRUE || params=FALSE
@@ -146,7 +152,7 @@ function cluster::coexpression_deseq(){
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 				ulimit -s $(ulimit -Hs)
 			CMD
-				wgcna.R $((maxmemory/1024/2)) $params "$odir/experiments.filtered.$e" "$odir/$e" "$ddir/experiments.csv"
+				wgcna.R $((maxmemory/1024/2)) $params "$odir/experiments.filtered.$e" "$odir/$e" $([[ $deseqdir ]] && echo "'$ddir/experiments.csv'")
 			CMD
 		done
 	done
@@ -164,6 +170,8 @@ function cluster::coexpression_deseq(){
 		for e in tpm vsc; do
 			wdir="$outdir/$m/$e"
 
+			[[ -s "$wdir/wgcna.cluster2modules" ]] || continue
+
 			echo "$(head -1 "$cdir/experiments.$e") type" | tr ' ' '\t' > "$wdir/cluster.$e"
 			echo "$(head -1 "$cdir/experiments.mean.$e") type" | tr ' ' '\t' > "$wdir/cluster.mean.$e"
 			cp "$wdir/cluster.$e" "$wdir/cluster.$e.zscores"
@@ -174,13 +182,13 @@ function cluster::coexpression_deseq(){
 			cp "$wdir/cluster.mean.$e" "$wdir/cluster.top.mean.$e"
 			cp "$wdir/cluster.mean.$e" "$wdir/cluster.top.mean.$e.zscores"
 
-			for i in $(seq 0 $(cut -d ' ' -f 1 "$wdir/wgcna.cluster2modules" | sort -n | tail -1)); do
+			for i in $(cut -d ' ' -f 1 "$wdir/wgcna.cluster2modules" | sort -n); do
 				type="Cluster.$(printf '%03d' $i)"
 				odir="$wdir/$type"
 				mkdir -p "$odir"
 
-				awk -F '\t' -v i=$i '$2==i{print $1}' "$wdir/wgcna.cluster.tsv" > "$odir/genes.list"
-				awk -F '\t' -v i=$i '$2==i{print $1}' "$wdir/wgcna.cluster.top.tsv" > "$odir/genes.top.list"
+				awk -F '\t' -v i=$type '$2==i{print $1}' "$wdir/wgcna.cluster.tsv" > "$odir/genes.list"
+				awk -F '\t' -v i=$type '$2==i{print $1}' "$wdir/wgcna.cluster.top.tsv" > "$odir/genes.top.list"
 				[[ -s "$odir/genes.list" ]] || continue
 
 				# add to array for later go enrichment
@@ -281,7 +289,7 @@ function cluster::coexpression(){
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 	[[ $biotype && ! $gtf ]] && _usage && return 1
 
-	declare -p ${!_idfiles_coexpression} &> /dev/null || {
+	declare -p _idfiles_coexpression | grep -q '=' || {
 		unset _idfiles_coexpression
 		declare -a _idfiles_coexpression
 	}
@@ -419,19 +427,21 @@ function cluster::coexpression(){
 		wdir="$outdir/$m"
 		for e in tpm vsc; do
 
+			[[ -s "$wdir/wgcna.cluster2modules" ]] || continue
+
 			echo "$(head -1 "$wdir/experiments.$e") type" | tr ' ' '\t' > "$wdir/cluster.$e"
 			cp "$wdir/cluster.$e" "$wdir/cluster.$e.zscores"
 
 			cp "$wdir/cluster.$e" "$wdir/cluster.top.$e"
 			cp "$wdir/cluster.$e" "$wdir/cluster.top.$e.zscores"
 
-			for i in $(seq 0 $(cut -d ' ' -f 1 "$wdir/wgcna.cluster2modules" | sort -n | tail -1)); do
+			for i in $(cut -d ' ' -f 1 "$wdir/wgcna.cluster2modules" | sort -n); do
 				type="Cluster.$(printf '%03d' $i)"
 				odir="$wdir/$type"
 				mkdir -p "$odir"
 
-				awk -F '\t' -v i=$i '$2==i{print $1}' "$wdir/wgcna.cluster.tsv" > "$odir/genes.list"
-				awk -F '\t' -v i=$i '$2==i{print $1}' "$wdir/wgcna.cluster.top.tsv" > "$odir/genes.top.list"
+				awk -F '\t' -v i=$type '$2==i{print $1}' "$wdir/wgcna.cluster.tsv" > "$odir/genes.list"
+				awk -F '\t' -v i=$type '$2==i{print $1}' "$wdir/wgcna.cluster.top.tsv" > "$odir/genes.top.list"
 				[[ -s "$odir/genes.list" ]] || continue
 
 				# add to array for later go enrichment
