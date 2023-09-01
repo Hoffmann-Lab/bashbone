@@ -21,7 +21,7 @@ while getopts 'i:p:c:x:s:r:ah' arg; do
 		c)	BASHBONE_CONDA="$OPTARG";;
 		x)	BASHBONE_EXITFUN="$OPTARG";;
 		s)	BASHBONE_EXTENSIONDIR="$OPTARG";;
-		r)	BASHBONE_SETSID=${BASHBONE_SETSID:-$OPTARG};; # use exported state upon restart to not recurse
+		r)	BASHBONE_SETSID=${BASHBONE_SETSID:-$OPTARG}; BASHBONE_REEXEC=$BASHBONE_SETSID;; # use exported state upon restart to not recurse
 		a)	shift $((OPTIND-1)); break;;
 		h)	cat <<- 'EOF'
 				This is bashbone activation script.
@@ -59,6 +59,7 @@ if [[ ! $- =~ i ]] && ${BASHBONE_SETSID:-false}; then
 
 	# exec bash -c 'export PGID=$$; trap "trap \"\" INT TERM; env kill -INT -- -\$PGID" INT; trap "trap \"\" INT TERM; env kill -TERM -- -\$PGID" TERM; setsid --wait env --default-signal=INT,QUIT bash "$0" "$@" & PGID=$!; wait $PGID' "$(realpath -s "$0")" "$@"
 	export BASHBONE_SETSID=false
+	export BASHBONE_REEXEC=true
 	{ trap 'exit 130' INT; exec setsid --wait bash "$(realpath -s "$0")" "$@"; } &
 	BASHBONE_PGID=$!
 	# always trap INT to trigger ERR that triggers TERM to implement termination sequence with INT coming first to avoid most termination messages
@@ -67,7 +68,8 @@ if [[ ! $- =~ i ]] && ${BASHBONE_SETSID:-false}; then
 	wait $BASHBONE_PGID # would be 130 upon INT and not exit code of script if script defines trap 'exit 42' INT
 	wait $BASHBONE_PGID # would be 42 or again 130 unless script defines trap 'exit 42' INT
 	BASHBONE_EX=$?
-	[[ $BASHBONE_EX -gt 0 ]] && trap - EXIT # in case user defined EXIT trap, which must not be called here again
+	trap - EXIT # due to eval of potential user exit trap after bashbone_reset in on_exit function
+	#former without eval: [[ $BASHBONE_EX -gt 0 ]] && trap - EXIT # in case user defined EXIT trap, which must not be called here again
 	exit $BASHBONE_EX
 fi
 export -n BASHBONE_SETSID # unset or remove export property, so that a truely desired restart of a script e.g. via qsub is realized
@@ -158,13 +160,20 @@ function _bashbone_on_exit(){
 	trap "" INT TERM ERR
 	# when stacked i.e. bash -c 'activate; echo fin lvl1; bash -c "activate; echo fin lvl2";' kill at lvl1 only
 	# check also if any stdin/out/err fd is still connected, to not kill a pipe i.e. script_with_bashbone.sh | wc -l . wc runs under same pgid unless script is re-executed via setsid
-	# && -t 0 && -t 1 && -t 2  does not work when re-directed into file and when in a workload manager which dont use tty
+	# && -t 0 && -t 1 && -t 2 does not work when re-directed into file and when script_with_bashbone.sh is used in a wrapper script like a job script for a workload manager (which may not use tty at all)
 	if [[ $$ -eq $BASHBONE_PGID ]]; then
-		{ env kill -INT -- -$BASHBONE_PGID & wait $!; } &> /dev/null
-		sleep 0.1
-		{ env kill -TERM -- -$BASHBONE_PGID & wait $!; } &> /dev/null
+		# no need to check for $1 -eq 0 since killing is conducted upon error anyways
+		! [[ -t 1 && -t 2 ]] && [[ ! $BASHBONE_REEXEC ]] && {
+			commander::warn "Pipeline detected. Not killing PGID $BASHBONE_PGID may leads to orphan processes." >&2
+			commander::warn "Consider to run your script under own PGID utilizing re-execution option '-r true' upon sourcing activate.sh." >&2
+		} || {
+			{ env kill -INT -- -$BASHBONE_PGID & wait $!; } &> /dev/null
+			sleep 0.1
+			{ env kill -TERM -- -$BASHBONE_PGID & wait $!; } &> /dev/null
+		}
 	fi
 	_bashbone_reset $1
+	eval "$(trap -p EXIT | sed 's/^trap -- .//;s/. EXIT$//')"
 }
 
 function _bashbone_on_error(){
