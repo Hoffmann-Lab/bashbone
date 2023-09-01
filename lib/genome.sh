@@ -152,7 +152,7 @@ function genome::mkgodb(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads gofile skip=false tmpdir="${tmpdir:-/tmp}"
+	local OPTIND arg mandatory threads gofile skip=false tmpdir="${TMPDIR:-/tmp}"
 	while getopts 'S:s:t:g:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
@@ -206,7 +206,7 @@ function genome::mkgodb(){
 			unlink(file.path(tmpdir,"org.My.eg.db"), recursive = T);
 		'
 	CMD
-		$threads "$tmpdir" "$(dirname "$gofile")/oRgdb" "$gofile"
+		$threads "$tmpdir" "$gofile.oRgdb" "$gofile"
 	CMD
 
 	if $skip; then
