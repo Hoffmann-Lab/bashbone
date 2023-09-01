@@ -131,17 +131,23 @@ function preprocess::fastqc(){
 
 	commander::printinfo "calculating qualities"
 
-	local instances=$((${#_fq1_fastqc[@]}+${#_fq2_fastqc[@]})) ithreads jmem jgct jcgct
-	read -r instances ithreads jmem jgct jcgct < <(configure::jvm -i $instances -T $threads -m 250 -M "$maxmemory")
+	local instances=$((${#_fq1_fastqc[@]}+${#_fq2_fastqc[@]})) ithreads
+	read -r instances ithreads < <(configure::instances_by_memory -T $threads -m 1024 -M "$maxmemory")
+
+	declare -a cmdchk=("fastqc -v | sed -E 's/.*v([0-9]+\.[0-9]+).*/\1/'")
+	local version=$(commander::runcmd -c fastqc -a cmdchk) jmem
+	# increase default v0.12:512m|v0.11:250m java xmx via threads parameter trick. (workaround for fastqc freezing at 95%)
+	ithreads=$(awk '$0<=0.11{print 4}{print 2}' <<< $version)
 
 	declare -a tdirs cmd1 cmd2 cmd3
 	local f b e i=0
 	for f in {"${_fq1_fastqc[@]}","${_fq2_fastqc[@]}"}; do
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fastqc)")
+
 		commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 			MALLOC_ARENA_MAX=4
-			JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir'"
 			fastqc
+			-t $ithreads
 			-d "${tdirs[-1]}"
 			-outdir "$outdir"
 			"$f" 2>&1
@@ -157,27 +163,27 @@ function preprocess::fastqc(){
 		CMD
 			perl -M'List::Util q(max)' -M'Switch' -lane '{
 				next unless /^\d+/;
-				shift @F;
-				$m=max(@F);
+				$m=max(@F[1..4]);
 				exit if $m<0.001;
-				$i=(grep {$F[$_]==$m} 0..$#F)[0];
+				$i=(grep {$F[$_]==$m} 1..4)[0];
 				switch($i){
-					case 0 {print "AGATCGGAAGAGC"}
-					case 1 {print "TGGAATTCTCGGGTGCCAAGG"}
-					case 2 {print "GTTCAGAGTTCTACAGTCCGACGATC"}
-					case 3 {print "CTGTCTCTTATACACATCT"}
-					case 4 {print "CGCCTTGGCCGT"}
+					case 1 {print "AGATCGGAAGAGC"}
+					case 2 {print "TGGAATTCTCGGGTGCCAAGG"}
+					case 3 {print "GTTCAGAGTTCTACAGTCCGACGATC"}
+					case 4 {print "CTGTCTCTTATACACATCT"}
+					case 5 {print "CGCCTTGGCCGT"}
 				}
 				exit
 			}'
 		CMD
-		# uiversal, srna3' srna5', nextera, solexa
+		# till v0.11: pos, uiversal, srna3' srna5', nextera, solexa
+		# from v0.12: pos, uiversal, srna3' srna5', nextera, polyA, polyg
 	done
 
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -c fastqc -v -b -i $threads -a cmd1
+		commander::runcmd -c fastqc -v -b -i $instances -a cmd1
 	fi
 
 	declare -p _adapter1_fastqc | grep -q '=' && {
