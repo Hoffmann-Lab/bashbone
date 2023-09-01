@@ -3,7 +3,7 @@
 
 args = commandArgs(TRUE)
 
-if(length(args)<6){
+if(length(args)<5){
   cat("WGCNA from normalized feature counts\n")
   cat("\n")
   cat("usage parameter: <i:memory-mb> <b:log-transform> <b:filter-percentile> <f:matrix> <f:outdir> [<f:experiments>]\n")
@@ -114,6 +114,18 @@ abline(h=0.90,col='red')
 graphics.off()
 
 
+gsg = tryCatch(
+    {
+      goodSamplesGenes(t(counts), verbose = 0)
+    },
+    error = function(e){
+      cat("WARNING: ",file=stderr())
+      message(e)
+      message(" Detection of coexpressed genes not possible.")
+      quit()
+    }
+)
+
 wgcnar = blockwiseModules(
   t(counts),
 #  nThreads = threads,
@@ -135,7 +147,7 @@ wgcnar = blockwiseModules(
   maxBlockSize = blockSize(50000, rectangularBlocks = TRUE, maxMemoryAllocation = 2^31*memory)
 )
 #~10k blocksize returns different results but is 10 times faster (blocksize -> parallel blocks is memory dependent)
-save(wgcnar, file=file.path(outdir, "wgcnar.Rdata"))
+save(wgcnar, file=file.path(outdir, "wgcnar.RData"))
 
 
 ###########################
@@ -151,8 +163,7 @@ sink()
 MEs = orderMEs(moduleEigengenes(t(counts), colors=labels2colors(wgcnar$colors))$eigengenes)
 colnames(MEs) = unlist(lapply(colnames(MEs),function(x) sub("ME", "", x)))
 # convert colors to cluster ids
-MEcolnames = match(colnames(MEs),labels2colors(0:(ncol(MEs)-1)))-1
-
+MEcolnames = match(colnames(MEs),labels2colors(0:ncol(MEs)))-1
 # order by ids ???
 # MEs = MEs[,order(MEcolnames)]
 # MEcolnames = 0:(length(MEcolnames)-1)
@@ -186,6 +197,11 @@ for (i in MEcolnames){
   write.table(MEcor[match( rownames(df), rownames(MEcor) ) ,], file=file.path(outdir, "wgcna.cluster.top.tsv"), quote=FALSE, sep='\t', col.names = F, append=T)
 }
 
+if(length(MEcolnames)==1){
+  message("WARNING: No clusters inferred. Detection of coexpressed genes not possible.")
+  quit()
+}
+
 ###########################
 # plot ME hclust tree and pca
 distPC1 = 1-abs(cor(MEs, use="p"))
@@ -195,10 +211,11 @@ labels_colors(treePC1) = labels(treePC1)
 pdf(file.path(outdir, "wgcna.cluster.tree.pdf"))
 plot(treePC1, xlab="",ylab="",main="",sub="")
 graphics.off()
-mds = cmdscale(as.dist(distPC1),2)
-pdf(file.path(outdir, "wgcna.cluster.PCA.pdf"))
-plot(mds, col = names(MEs),cex=2, pch=19, xlab="PC1", ylab="PC2", main="Module eigengenes PCA")
-graphics.off()
+# does not work in case of only two clusters
+# mds = cmdscale(as.dist(distPC1),2)
+# pdf(file.path(outdir, "wgcna.cluster.PCA.pdf"))
+# plot(mds, col = names(MEs),cex=2, pch=19, xlab="PC1", ylab="PC2", main="Module eigengenes PCA")
+# graphics.off()
 
 ###########################
 # compute module/cluster-traits relationships and plot as heatmap
