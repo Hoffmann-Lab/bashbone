@@ -19,9 +19,9 @@ function peaks::_idr(){
 		return 1
 	}
 
-	local OPTIND arg mandatory t r p o
+	local OPTIND arg mandatory t r p o y="narrowPeak"
 	declare -n _cmds1_idr _cmds2_idr
-	while getopts '1:2:t:r:p:o:' arg; do
+	while getopts '1:2:t:r:p:o:y:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_idr=$OPTARG;;
 			2)	((++mandatory)); _cmds2_idr=$OPTARG;;
@@ -33,15 +33,18 @@ function peaks::_idr(){
 		esac
 	done
 	[[ $mandatory -lt 6 ]] && _usage
+	[[ "$y" == "narrowPeak" || "$y" == "bed" ]] || _usage
 
-	#p.value q.value signal.value
+	# --rank signal.value (default) p.value q.value score (bed default) <columnidx>
+	# bed does not work! bed_loader expects nine/ten columns i.e. narrowPeak format, but with score in column 5
+	# no need for sorted input!
 	commander::makecmd -a _cmds1_idr -s ';' -c {COMMANDER[0]}<<- CMD
 		idr
 		--samples "$t" "$r"
 		--peak-list "$p"
-		--input-file-type narrowPeak
-		--output-file "$o"
+		--input-file-type $y
 		--rank signal.value
+		--output-file "$o"
 		--soft-idr-threshold 0.05
 		--plot
 		--use-best-multisummit-IDR
@@ -91,15 +94,16 @@ function peaks::macs(){
 			-a <nidx>       | array of normal bam idices within -r (if paired input, requires also -i)
 			-i <tidx>       | array of IP* bam idices within -r (if paired input, requires also -a)
 			-o <outdir>     | path to
+			-w <broad>      | true/false peak detection
 			-y <pointy>     | true/false call only pointy peaks
 			-z <strict>     | true/false peak filters
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false ripseq=false genome threads memory maxmemory fragmentsize outdir tmpdir="${TMPDIR:-/tmp}" strict=false pointy=false
+	local OPTIND arg mandatory skip=false skipmd5=false ripseq=false genome threads memory maxmemory fragmentsize outdir tmpdir="${TMPDIR:-/tmp}" strict=false pointy=false broad=false
 	declare -n _mapper_macs _nidx_macs _tidx_macs
-	while getopts 'S:s:t:m:M:g:f:q:r:a:i:o:z:y:' arg; do
+	while getopts 'S:s:t:m:M:g:f:q:r:a:i:o:w:z:y:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -113,6 +117,7 @@ function peaks::macs(){
 			a)	_nidx_macs=$OPTARG;;
 			i)	_tidx_macs=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			w)	broad=$OPTARG;;
 			y)	pointy=$OPTARG;;
 			z)	strict=$OPTARG;;
 			*) _usage;;
@@ -139,7 +144,21 @@ function peaks::macs(){
 		genomesize=$(unique-kmers.py -k 100 $genome |& tail -1 | awk '{print $NF}')
 	fi
 
-	local params='' mult=5 # macs min mem in byte according to manual is numchr * buffer=100000 * mult=2 - observation max mem used ~ mult=5
+	local params
+	if $broad; then
+		params='--broad --broad-cutoff 0.05'
+		broad="broadPeak"
+	else
+		params='--call-summits' # if -p used, cutoff == pvlaue, if -1 used, cutoff == qvalue
+		broad="narrowPeak"
+	fi
+	if $strict; then
+		params+=' -q 0.05' # macs default. might be changed to 0.01
+	else
+		params+=' -p 0.01' # encode setting for downstream IDR. might be changed to -q 0.1
+	fi
+
+	local mult=5 # macs min mem in byte according to manual is numchr * buffer=100000 * mult=2 - observation max mem used ~ mult=5
 	local numchr=$(samtools view -H "${_bams_macs[0]}" | grep -c '^@SQ')
 	local buffer=$(( (1024*1024*memory)/(numchr*mult) ))
 
@@ -151,12 +170,6 @@ function peaks::macs(){
 		read -r instances2 ithreads2 < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
 	else
 		read -r instances2 ithreads2 < <(configure::instances_by_memory -T $threads -m $(( (numchr*buffer*mult)/1024/1024 )) -M "$maxmemory")
-	fi
-
-	if $strict; then
-		params+=' -q 0.05' # macs default. might be changed to 0.01
-	else
-		params+=' -p 0.01' # encode setting for downstream IDR. might be changed to -q 0.1
 	fi
 
 	# infer SE or PE
@@ -174,7 +187,6 @@ function peaks::macs(){
 
 		for i in "${!_tidx_macs[@]}"; do
 			f="${_bams_macs[${_tidx_macs[$i]}]}"
-
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
 
 			if [[ ${_nidx_macs[$i]} ]]; then
@@ -186,9 +198,9 @@ function peaks::macs(){
 				# PE: bedtools bamtobed -bedpe -mate1 -i <(samtools view -F 2028 -F 256 -F 4 -f 2 $nf -u | samtools sort -n -O BAM $nf) | awk -v OFS='\t' '{print $1,$2,$3,"N",1000,$9; print $4,$5,$6,"N",1000,$10}' | gzip -nc > $nf.tagAlign.gz
 
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-					bedtools bamtobed -split -i "$nf"
+					samtools view -u -e 'rname!~"^chrM" && rname!="MT"' "$nf"
 				CMD
-					grep -v -e '^chrM' -e '^MT'
+					bedtools bamtobed -split -i -
 				CMD
 					pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$nf").bed.gz"
 				CMD
@@ -200,9 +212,9 @@ function peaks::macs(){
 			fi
 
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-				bedtools bamtobed -split -i "$f"
+				samtools view -u -e 'rname!~"^chrM" && rname!="MT"' "$f"
 			CMD
-				grep -v -e '^chrM' -e '^MT'
+				bedtools bamtobed -split -i -
 			CMD
 				pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$f").bed.gz"
 			CMD
@@ -222,7 +234,6 @@ function peaks::macs(){
 					--outdir "$odir/$o"
 					-n "$o.nomodel"
 					--tempdir "${tdirs[-1]}"
-					--call-summits
 					-B
 					--SPMR
 					--keep-dup all
@@ -244,7 +255,6 @@ function peaks::macs(){
 					--outdir "$odir/$o"
 					-n "$o.model"
 					--tempdir "${tdirs[-1]}"
-					--call-summits
 					-B
 					--SPMR
 					--keep-dup all
@@ -263,7 +273,6 @@ function peaks::macs(){
 					--outdir "$odir/$o"
 					-n "$o.nomodel"
 					--tempdir "${tdirs[-1]}"
-					--call-summits
 					-B
 					--SPMR
 					--keep-dup all
@@ -277,9 +286,9 @@ function peaks::macs(){
 
 			# keep summit of peak with highest summit enrichment
 			commander::makecmd -a cmd3 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
-				sort -k1,1 -k2,2n -k3,3n "$odir/$o/$o.nomodel_peaks.narrowPeak" "$odir/$o/$o.model_peaks.narrowPeak"
+				sort -k1,1 -k2,2n -k3,3n "$odir/$o/$o.nomodel_peaks.$broad" "$odir/$o/$o.model_peaks.$broad"
 			CMD
-				awk '$2>=0 && $3>=0'
+				awk -v OFS='\t' '$2>=0 && $3>=0{if(!$10){$10=-1} print}'
 			CMD
 				bedtools merge -c 4,5,6,7,8,9,10 -o distinct,max,distinct,collapse,max,max,collapse
 			CMD
@@ -331,6 +340,7 @@ function peaks::macs_idr(){
 			-j <ridx>       | array of IP* bam replicates idices within -r
 			-k <pidx>       | array of IP* bam pools idices within -r
 			-o <outdir>     | path to
+			-w <broad>      | true/false peak detection
 			-y <pointy>     | true/false call only pointy peaks
 			-z <strict>     | true/false peak filters
 
@@ -339,9 +349,9 @@ function peaks::macs_idr(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false ripseq=false genome threads memory maxmemory fragmentsize outdir tmpdir="${TMPDIR:-/tmp}" strict=false pointy=false
+	local OPTIND arg mandatory skip=false ripseq=false genome threads memory maxmemory fragmentsize outdir tmpdir="${TMPDIR:-/tmp}" strict=false pointy=false broad=false
 	declare -n _mapper_macs _nidx_macs _nridx_macs _tidx_macs _ridx_macs _pidx_macs
-	while getopts 'S:s:t:m:M:g:f:q:r:a:b:i:j:k:o:z:y:' arg; do
+	while getopts 'S:s:t:m:M:g:f:q:r:a:b:i:j:k:o:w:z:y:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -358,6 +368,7 @@ function peaks::macs_idr(){
 			j)	((++mandatory)); _ridx_macs=$OPTARG;;
 			k)	((++mandatory)); _pidx_macs=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			w)	broad=$OPTARG;;
 			y)	pointy=$OPTARG;;
 			z)	strict=$OPTARG;;
 			*) _usage;;
@@ -376,7 +387,21 @@ function peaks::macs_idr(){
 		genomesize=$(unique-kmers.py -k 100 "$genome" |& tail -1 | awk '{print $NF}')
 	fi
 
-	local params='' mult=5
+	local params
+	if $broad; then
+		params='--broad --broad-cutoff 0.05'
+		broad="broadPeak"
+	else
+		params='--call-summits'
+		broad="narrowPeak"
+	fi
+	if $strict; then
+		params+=' -q 0.05'
+	else
+		params+=' -p 0.01'
+	fi
+
+	local mult=5
 	local numchr=$(samtools view -H "$nf" | grep -c '^@SQ')
 	local buffer=$(( (1024*1024*memory)/(numchr*mult) ))
 
@@ -390,12 +415,6 @@ function peaks::macs_idr(){
 		read -r instances2 ithreads2 < <(configure::instances_by_memory -T $threads -m $(( (numchr*buffer*mult)/1024/1024 )) -M "$maxmemory")
 	fi
 
-	if $strict; then
-		params+=' -q 0.05'
-	else
-		params+=' -p 0.01'
-	fi
-
 	local m i f o odir nf tf rf pf nrf pff nff x
 	declare -a tdirs cmd1 cmd2 cmd3 cmd4 cmd5 toidr
 	for m in "${_mapper_macs[@]}"; do
@@ -407,13 +426,12 @@ function peaks::macs_idr(){
 			tf="${_bams_macs[${_tidx_macs[$i]}]}"
 			rf="${_bams_macs[${_ridx_macs[$i]}]}"
 			pf="${_bams_macs[${_pidx_macs[$i]}]}"
-
-
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
+
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-				bedtools bamtobed -split -i "$nf"
+				samtools view -u -e 'rname!~"^chrM" && rname!="MT"' "$nf"
 			CMD
-				grep -v '^chrM' -e '^MT'
+				bedtools bamtobed -split -i -
 			CMD
 				pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$nf").bed.gz"
 			CMD
@@ -423,9 +441,9 @@ function peaks::macs_idr(){
 			for f in "$tf" "$rf" "$pf"; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.macs)")
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-					bedtools bamtobed -split -i "$f"
+					samtools view -u -e 'rname!~"^chrM" && rname!="MT"' "$f"
 				CMD
-					grep -v '^chrM' -e '^MT'
+					bedtools bamtobed -split -i -
 				CMD
 					pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$f").bed.gz"
 				CMD
@@ -445,7 +463,6 @@ function peaks::macs_idr(){
 						--outdir "$odir/$o"
 						-n "$o.nomodel"
 						--tempdir "${tdirs[-1]}"
-						--call-summits
 						-B
 						--SPMR
 						--keep-dup all
@@ -465,7 +482,6 @@ function peaks::macs_idr(){
 						--outdir "$odir/$o"
 						-n "$o.model"
 						--tempdir "${tdirs[-1]}"
-						--call-summits
 						-B
 						--SPMR
 						--keep-dup all
@@ -484,7 +500,6 @@ function peaks::macs_idr(){
 						--outdir "$odir/$o"
 						-n "$o.nomodel"
 						--tempdir "${tdirs[-1]}"
-						--call-summits
 						-B
 						--SPMR
 						--keep-dup all
@@ -497,9 +512,9 @@ function peaks::macs_idr(){
 				fi
 
 				commander::makecmd -a cmd3 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
-					sort -k1,1 -k2,2n -k3,3n "$odir/$o/$o.nomodel_peaks.narrowPeak" "$odir/$o/$o.model_peaks.narrowPeak"
+					sort -k1,1 -k2,2n -k3,3n "$odir/$o/$o.nomodel_peaks.$broad" "$odir/$o/$o.model_peaks.$broad"
 				CMD
-					awk '$2>=0 && $3>=0'
+					awk -v OFS='\t' '$2>=0 && $3>=0{if(!$10){$10=-1} print}'
 				CMD
 					bedtools merge -c 4,5,6,7,8,9,10 -o distinct,max,distinct,collapse,max,max,collapse
 				CMD
@@ -571,6 +586,357 @@ function peaks::macs_idr(){
 		commander::runcmd -v -b -i $threads -a cmd3
 		commander::runcmd -c idr -v -b -i $threads -a cmd4
 		commander::runcmd -v -b -i $threads -a cmd5
+	fi
+
+	return 0
+}
+
+function peaks::seacr(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-t <threads>    | number of
+			-r <mapper>     | array of sorted bams within array of
+			-a <nidx>       | array of normal bam idices within -r (if paired input, requires also -i)
+			-i <tidx>       | array of IP* bam idices within -r (if paired input, requires also -a)
+			-o <outdir>     | path to
+			-z <strict>     | true/false peak filters
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" strict=false
+	declare -n _mapper_seacr _strandness_seacr _nidx_seacr _tidx_seacr
+	while getopts 'S:s:t:r:a:i:o:z:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_seacr=$OPTARG;;
+			a)	_nidx_seacr=$OPTARG;;
+			i)	_tidx_seacr=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			z)	strict=$OPTARG;;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 3 ]] && _usage
+
+	declare -n _bams_seacr=${_mapper_seacr[0]}
+	if [[ ! $_nidx_seacr && ! $_tidx_seacr ]]; then
+		declare -a tidx_seacr=("${!_bams_seacr[@]}") # use all bams as unpaired input unless -a and -i
+		_tidx_seacr=tidx_seacr
+	fi
+
+	commander::printinfo "peak calling seacr"
+	$strict && strict="stringent" || strict="relaxed"
+
+	local m i f o odir nf
+	declare -a cmd1 cmd2 tdirs
+	for m in "${_mapper_seacr[@]}"; do
+		declare -n _bams_seacr=$m
+		odir="$outdir/$m/seacr"
+
+		for i in "${!_tidx_seacr[@]}"; do
+			f="${_bams_seacr[${_tidx_seacr[$i]}]}"
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.seacr)")
+
+			if [[ ${_nidx_seacr[$i]} ]]; then
+				nf="${_bams_seacr[${_nidx_seacr[$i]}]}"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					samtools view -u -e 'rname!~"^chrM" && rname!="MT"' "$nf"
+				CMD
+					bedtools genomecov -bg -ibam - > "${tdirs[-1]}/$(basename "$nf").bedg"
+				CMD
+				nf="$(basename "$nf").bedg"
+			else
+				# value between 0 and 1. readme example uses 0.01 ...?
+				nf="0.01"
+				o="$(basename "$f")"
+				o="${o%.*}"
+			fi
+			mkdir -p "$odir/$o"
+
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				samtools view -u -e 'rname!~"^chrM" && rname!="MT"' "$f"
+			CMD
+				bedtools genomecov -bg -ibam - > "${tdirs[-1]}/$(basename "$f").bedg"
+			CMD
+			f="${tdirs[-1]}/$(basename "$f").bedg"
+
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				cd "${tdirs[-1]}"
+			CMD
+				SEACR.sh "$f" "$nf" non $strict "$(realpath -s "$odir/$o/$o")"
+			CMD
+
+			commander::makecmd -a cmd3 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+				sed -E 's/(.+)\t\S+:([0-9]+)-([0-9]+)$/\1\t\2\t\3/' "$odir/$o/$o.$strict.bed"
+			CMD
+				awk -v OFS='\t' '{print $1,$2,$3,"peak_"NR,0,".",$5,-1,-1,sprintf("%0.f",($6+($7-$6)/2-$2))}'
+			CMD
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+	else
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -c seacr -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+	fi
+
+	return 0
+}
+
+function peaks::seacr_idr(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-t <threads>    | number of
+			-r <mapper>     | array of sorted bams within array of
+			-a <nidx>       | array of normal bam idices within -r
+			-b <nridx>      | array of normal replicates bam idices within -r (optional)
+			-i <tidx>       | array of IP* bam idices within -r
+			-j <ridx>       | array of IP* bam replicates idices within -r
+			-k <pidx>       | array of IP* bam pools idices within -r
+			-o <outdir>     | path to
+			-z <strict>     | true/false peak filters
+
+			requires prior execution of alignment::mkreplicates
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" strict=false
+	declare -n _mapper_seacr _nidx_seacr _nridx_seacr _tidx_seacr _ridx_seacr _pidx_seacr
+	while getopts 'S:s:t:r:a:b:i:j:k:o:z:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_seacr=$OPTARG;;
+			a)	((++mandatory)); _nidx_seacr=$OPTARG;;
+			b)	_nridx_seacr=$OPTARG;;
+			i)	((++mandatory)); _tidx_seacr=$OPTARG;;
+			j)	((++mandatory)); _ridx_seacr=$OPTARG;;
+			k)	((++mandatory)); _pidx_seacr=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			z)	strict=$OPTARG;;
+			*) _usage;;
+		esac
+	done
+	[[ $mandatory -lt 7 ]] && _usage
+
+	commander::printinfo "peak calling seacr"
+	$strict && strict="stringent" || strict="relaxed"
+
+	local m i f o odir nf tf rf pf nrf pff nff x
+	declare -a tdirs cmd1 cmd2 cmd3 cmd4 cmd5 toidr
+	for m in "${_mapper_seacr[@]}"; do
+		declare -n _bams_seacr=$m
+		odir="$outdir/$m/seacr"
+
+		for i in "${!_nidx_seacr[@]}"; do
+			nf="${_bams_seacr[${_nidx_seacr[$i]}]}"
+			tf="${_bams_seacr[${_tidx_seacr[$i]}]}"
+			rf="${_bams_seacr[${_ridx_seacr[$i]}]}"
+			pf="${_bams_seacr[${_pidx_seacr[$i]}]}"
+
+
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.seacr)")
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				samtools view -u -e 'rname!~"^chrM" && rname!="MT"' "$nf"
+			CMD
+				bedtools genomecov -bg -ibam - > "${tdirs[-1]}/$(basename "$nf").bedg"
+			CMD
+			nf="$(basename "$nf").bedg"
+
+			toidr=()
+			for f in "$tf" "$rf" "$pf"; do
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.seacr)")
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					samtools view -u -e 'rname!~"^chrM" && rname!="MT"' "$f"
+				CMD
+					bedtools genomecov -bg -ibam - > "${tdirs[-1]}/$(basename "$f").bedg"
+				CMD
+				f="$(basename "$f").bedg"
+
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				mkdir -p "$odir/$o"
+
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					cd "${tdirs[-1]}"
+				CMD
+					SEACR.sh "$f" "$nf" non $strict "$(realpath -s "$odir/$o/$o")"
+				CMD
+
+				commander::makecmd -a cmd3 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+					sed -E 's/(.+)\t\S+:([0-9]+)-([0-9]+)$/\1\t\2\t\3/' "$odir/$o/$o.$strict.bed"
+				CMD
+					awk -v OFS='\t' '{print $1,$2,$3,"peak_"NR,0,".",$5,-1,-1,sprintf("%0.f",($6+($7-$6)/2-$2))}'
+				CMD
+
+				toidr+=("$odir/$o.narrowPeak")
+			done
+
+			peaks::_idr \
+				-1 cmd4 \
+				-2 cmd5 \
+				-t "${toidr[0]}" \
+				-r "${toidr[1]}" \
+				-p "${toidr[2]}" \
+				-o "${toidr[2]%.*}.idr"
+		done
+		for i in "${!_nridx_seacr[@]}"; do
+			# if a normal replicate is given, then run idr on: n-pp (1/9) + nr-pp (3/9) vs nfp-fp (11/12)
+			#                                           1  2   3   4  5  6  7  8  9   10   11  12   13  14
+			# m[N1 N2 NR1 NR2 T1 T2 R1 R2 PP1 PP2] -> m[N1 N2 NR1 NR2 T1 T2 R1 R2 PP1 PP2 NFP1 FP1 NFP2 FP2]
+			# n   1 2   3 4   11 13     # n   1  2  3  4     5  6  7  8    21 23 25 27
+			# nr  3 4                   # nr  5  6  7  8
+			# t   5 6   5 6   5  6      # t   9 10 11 12     9 10 11 12     9 10 11 12
+			# r   7 8   7 8   7  8      # r  13 14 15 16    13 14 15 16    13 14 15 16
+			# p   9 10  9 10  12 14     # p  17 18 19 20    17 18 19 20    22 24 26 28
+			nf="${_bams_seacr[${_nidx_seacr[$i]}]}" # 1
+			nrf="${_bams_seacr[${_nridx_seacr[$i]}]}" # 3
+			pf="${_bams_seacr[${_pidx_seacr[$i]}]}" # 9
+
+			x=$(( ${_nridx_seacr[$i]} + ${_pidx_seacr[$i]} )) # 12
+			pff="${_bams_seacr[$x]}"
+			nff="${_bams_seacr[$((--x))]}" # 11
+
+			toidr=( "$odir/$(echo -e "$(basename "$nf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nrf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+
+			peaks::_idr \
+				-1 cmd4 \
+				-2 cmd5 \
+				-t "${toidr[0]}" \
+				-r "${toidr[1]}" \
+				-p "${toidr[2]}" \
+				-o "${toidr[2]%.*}.idr"
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+		commander::printcmd -a cmd4
+		commander::printcmd -a cmd5
+	else
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -c seacr -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -c idr -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
+	fi
+
+	return 0
+}
+
+function peaks::gopeaks(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-t <threads>    | number of
+			-r <mapper>     | array of sorted bams within array of
+			-a <nidx>       | array of normal bam idices within -r (if paired input, requires also -i)
+			-i <tidx>       | array of IP* bam idices within -r (if paired input, requires also -a)
+			-o <outdir>     | path to
+			-w <broad>      | true/false peak detection
+			-z <strict>     | true/false peak filters
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" strict=false broad=false
+	declare -n _mapper_gopeaks _strandness_gopeaks _nidx_gopeaks _tidx_gopeaks
+	while getopts 'S:s:t:r:a:i:o:w:z:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_gopeaks=$OPTARG;;
+			a)	_nidx_gopeaks=$OPTARG;;
+			i)	_tidx_gopeaks=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			w)	broad=$OPTARG;;
+			z)	strict=$OPTARG;;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 3 ]] && _usage
+
+	declare -n _bams_gopeaks=${_mapper_gopeaks[0]}
+	if [[ ! $_nidx_gopeaks && ! $_tidx_gopeaks ]]; then
+		declare -a tidx_gopeaks=("${!_bams_gopeaks[@]}") # use all bams as unpaired input unless -a and -i
+		_tidx_gopeaks=tidx_gopeaks
+	fi
+
+	commander::printinfo "peak calling gopeaks"
+
+	local params
+	$strict && params="-p 0.05" || params="-p 0.1"
+	$broad && params+=" --broad -m 3000" || params+=" -m 1000"
+	# $pointy && params+=" -w $((fragmentsize/2))" || params="-w $fragmentsize"
+	# -t  --step       Bin size for coverage bins. Default: 100
+	# -l  --slide      Slide size for coverage bins. Default: 50
+	# -w  --minwidth   Minimum width (bp) of a peak. Default: 150
+	# broad: -t * 50 (5000) , -l * 20 (1000) -> pointy: -t 50 -l 10 ?
+
+    # memory: 17X more memory per GB bam input
+    # du -b file | awk '{print $1/1024/1024/1024}'
+	local m i f o odir nf
+	declare -a cmd1
+	for m in "${_mapper_gopeaks[@]}"; do
+		declare -n _bams_gopeaks=$m
+		odir="$outdir/$m/gopeaks"
+
+		for i in "${!_tidx_gopeaks[@]}"; do
+			f="${_bams_gopeaks[${_tidx_gopeaks[$i]}]}"
+
+			if [[ ${_nidx_gopeaks[$i]} ]]; then
+				nf="${_bams_gopeaks[${_nidx_gopeaks[$i]}]}"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				nf="-c '$nf'"
+			else
+				unset nf
+				o="$(basename "$f")"
+				o="${o%.*}"
+			fi
+
+			mkdir -p "$odir/$o"
+			# gopeaks is not parallelized. golang per default uses #cpu concurrent goroutines => != parallelism
+			# on 85mb test bam: 40:3m40 vs 4:3m43 vs 2:3m50 vs 1:4m48
+			# ==> set analogous to MALLOC_ARENA_MAX=4 for single-threads java appilcations
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				GOMAXPROCS=4 gopeaks
+				$nf
+				-b "$f"
+				-o "$odir/$o/$o"
+				$params
+			CMD
+				ln -sfnr "$odir/$o/${o}_peaks.bed" "$odir/$o.bed"
+			CMD
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+	else
+		commander::runcmd -c gopeaks -v -b -i $threads -a cmd1
 	fi
 
 	return 0
@@ -1321,6 +1687,7 @@ function peaks::peakachu(){
 	# infer SE or PE
 	x=$(samtools view -F 4 "${_bams_peakachu[0]}" | head -10000 | cat <(samtools view -H "${_bams_peakachu[0]}") - | samtools view -c -f 1)
 	[[ $x -gt 0 ]] && params='--paired_end'
+	[[ ${#_tidx_peakachu[@]} -gt 1 ]] && params+=' --norm_method deseq' || params+=' --norm_method none'
 
 	local m f i nf o odir
 	declare -a cmd1 cmd2
@@ -1353,7 +1720,6 @@ function peaks::peakachu(){
 				$nf
 				--max_insert_size $((2*fragmentsize))
 				--max_proc $threads
-				--norm_method deseq
 				--mad_multiplier 0.0
 				--fc_cutoff 2
 				--padj_threshold $($strict && echo 0.05 || echo 0.1)
@@ -1459,7 +1825,7 @@ function peaks::peakachu_idr(){
 						--ctr_libs "$nf"
 						--max_insert_size $((2*fragmentsize))
 						--max_proc $threads
-						--norm_method deseq
+						--norm_method none
 						--mad_multiplier 0.0
 						--fc_cutoff 2
 						--padj_threshold $($strict && echo 0.05 || echo 0.1)
@@ -1587,7 +1953,6 @@ function peaks::genrich(){
 	for m in "${_mapper_genrich[@]}"; do
 		declare -n _bams_genrich=$m
 		odir="$outdir/$m/genrich"
-
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.genrich)")
 
 		if [[ $_nidx_genrich ]]; then
@@ -1638,7 +2003,7 @@ function peaks::genrich(){
 			Genrich
 				$f
 				$nf
-				-e chrM,MT
+				-e chrM,chrMT,MT
 				$($ripseq && echo "-j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))" || echo "-g $((fragmentsize/2))")
 				$([[ ${#_tidx_genrich[@]} -eq 1 ]] && echo "-a 0" || echo "-a $((fragmentsize/2))")
 				$($strict && echo '-p 0.01' || echo '-p 0.05')
@@ -1730,9 +2095,9 @@ function peaks::genrich_idr(){
 			tf="${_bams_genrich[${_tidx_genrich[$i]}]}"
 			rf="${_bams_genrich[${_ridx_genrich[$i]}]}"
 			pf="${_bams_genrich[${_pidx_genrich[$i]}]}"
-
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.genrich)")
 			b="$(basename "${nf%.*}")"
+
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				rm -f "${tdirs[-1]}/$b"*
 			CMD
@@ -1744,6 +2109,7 @@ function peaks::genrich_idr(){
 			for f in "$tf" "$rf" "$pf"; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.genrich)")
 				b="$(basename "${f%.*}")"
+
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					rm -f "${tdirs[-1]}/$b"*
 				CMD
@@ -1758,7 +2124,7 @@ function peaks::genrich_idr(){
 					Genrich
 						-t "$f"
 						-c "$nf"
-						-e chrM,MT
+						-e chrM,chrMT,MT
 						$($ripseq && echo "-j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))" || echo "-g $((fragmentsize/2))")
 						-a 0
 						$($strict && echo '-p 0.01' || echo '-p 0.05')
