@@ -82,7 +82,6 @@ if [[ ! $- =~ i ]] && ${BASHBONE_SETSID:-true}; then
 	wait $BASHBONE_PGID
 	wait $BASHBONE_PGID
 	BASHBONE_EX=$?
-	[[ $BASHBONE_EX -gt 0 ]] && trap - EXIT
 	exit $BASHBONE_EX
 fi
 BASHBONE_PGID=$(($(ps -o pgid= -p $BASHPID)))
