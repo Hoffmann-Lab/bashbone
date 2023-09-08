@@ -99,7 +99,7 @@ done
 [[ $j && ! $p ]] && usage
 
 
-[[ $i ]] && open=$(readlink -e "$i" | file -f - | grep -Eo '(gzip|bzip)' && echo -cd || echo cat) || open=$(readlink -e "$j" | file -f - | grep -Eo '(gzip|bzip)' && echo -cd || echo cat)
+[[ $i ]] && open=$({ readlink -e "$i" | file -b --mime-type -f - | grep -oF -e 'gzip' -e 'bzip2' || echo cat; } | sed '/cat/!{s/gzip/pigz -p 1/; s/$/ -cd/}') || open=$({ readlink -e "$j" | file -b --mime-type -f - | grep -oF -e 'gzip' -e 'bzip2' || echo cat; } | sed '/cat/!{s/gzip/pigz -p 1/; s/$/ -cd/}')
 
 if [[ $i ]] && [[ $j ]]; then
 	pigz -h 2> /dev/null && z="pigz -k -c -p $(((t+1)/2))" || z="gzip -k -c"

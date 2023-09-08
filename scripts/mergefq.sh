@@ -70,7 +70,7 @@ else
 	z='cat'
 fi
 
-open=$(readlink -e "$i" | file -f - | grep -Eo '(gzip|bzip)' && echo -cd || echo cat)
+open=$({ readlink -e "$i" | file -b --mime-type -f - | grep -oF -e 'gzip' -e 'bzip2' || echo cat; } | sed '/cat/!{s/gzip/pigz -p 1/; s/$/ -cd/}')
 
 if [[ $u -gt 0 ]]; then
 	if [[ $u -eq 2 ]]; then
