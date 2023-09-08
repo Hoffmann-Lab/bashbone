@@ -135,9 +135,9 @@ function preprocess::fastqc(){
 	read -r instances ithreads < <(configure::instances_by_memory -T $threads -m 1024 -M "$maxmemory")
 
 	declare -a cmdchk=("fastqc -v | sed -E 's/.*v([0-9]+\.[0-9]+).*/\1/'")
-	local version=$(commander::runcmd -c fastqc -a cmdchk) jmem
+	local version=$(commander::runcmd -c fastqc -a cmdchk)
 	# increase default v0.12:512m|v0.11:250m java xmx via threads parameter trick. (workaround for fastqc freezing at 95%)
-	ithreads=$(awk '$0<=0.11{print 4}{print 2}' <<< $version)
+	ithreads=$(awk '{if ($0<=0.11){print 4}else{print 2}}' <<< $version)
 
 	declare -a tdirs cmd1 cmd2 cmd3
 	local f b e i=0
@@ -563,7 +563,7 @@ function preprocess::rcorrector(){
 			o2="$outdir/$o2"
 			[[ $e2 == "fastq" || $e2 == "fq" ]] && r2="cor.fq" || r2="$e2.cor.fq"
 
-			readlink -e "${_fq1_rcorrector[$i]}" | file -f - | grep -qF 'compressed' && {
+			readlink -e "${_fq1_rcorrector[$i]}" | file -b --mime-type -f - | grep -qF -e 'gzip' -e 'bzip2' && {
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 					cd "${tdirs[-1]}"
 				CMD

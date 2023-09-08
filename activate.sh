@@ -122,7 +122,6 @@ function _bashbone_reset(){
 
 	set -m +o pipefail +o errtrace +o functrace
 	trap - RETURN INT ABRT TERM ERR EXIT
-
 	source <(IFS=; echo "$BASHBONE_BAK_TRAPS")
 	source <(printf '%s\n' "${BASHBONE_BAK_CMD_NOT_FOUND[@]}")
 	source <(printf '%s\n' "${BASHBONE_BAK_SHOPT[@]}")
@@ -212,15 +211,16 @@ function _bashbone_on_error(){
 		mkdir "$BASHBONE_TMPDIR/.lock2" &> /dev/null && _bashbone_trace $1
 	fi
 
-	# { env kill -TERM -- -$BASHBONE_PGID & wait $!; } &> /dev/null
-	# better spawn suicide job with new PGID, which also cleans up
+	# spawn suicide job with new PGID, which cleans up
 	# this allows calling functions interactively via process substitution, where PROMPT_COMMAND is not set to perform cleanup and reset under PGID e.g. cat <(fun)
-	# _bashbone_reset uses $BASHBONE_TMPDIR/.lock4 in case error happens, wehn interactive, cleanup starts and then prompt_command tries to cleanup again
+	# _bashbone_reset uses $BASHBONE_TMPDIR/.lock4 in case error happens. when interactive, e.g. in a loop, cleanup starts
+	# also prompt_command tries to cleanup again, necessary if no error occurs
 	mkdir "$BASHBONE_TMPDIR/.lock3" &> /dev/null && {
 		set -m
 		{ env kill -TERM -- -$BASHBONE_PGID; _bashbone_reset 143; } &
 		set +m
 		wait $!
+		_bashbone_reset 143
 	}
 	return 143
 }
@@ -420,6 +420,7 @@ function bashbone(){
 					echo ":ERROR: no bashbone installation found" >&2
 					return 1
 				}
+				BASHBONE_CONDA=true
 				_bashbone_setpath
 			fi
 			;;

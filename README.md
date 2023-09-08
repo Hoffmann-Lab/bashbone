@@ -744,7 +744,7 @@ enrichment::go -t $threads -r mapper -c comparisons -l coexpressions -g $go -i r
 | BWA-meth      | <https://github.com/brentp/bwa-meth>                                | arXiv:1401.1129 |
 | BCFtools      | <http://www.htslib.org/doc/bcftools.html>                           | 10.1093/bioinformatics/btr509 |
 | BEDTools      | <https://bedtools.readthedocs.io>                                   | 10.1093/bioinformatics/btq033 |
-| gztool       | <https://github.com/circulosmeos/gztool>                             | NA |
+| gztool        | <https://github.com/circulosmeos/gztool>                             | NA |
 | clusterProfiler | <https://guangchuangyu.github.io/software/clusterProfiler>        | 10.1089/omi.2011.0118 |
 | Cutadapt      | <https://cutadapt.readthedocs.io/en/stable>                         | 10.14806/ej.17.1.200 |
 | DESeq2        | <https://bioconductor.org/packages/release/bioc/html/DESeq2.html>   | 10.1186/s13059-014-0550-8 <br> 10.1093/biostatistics/kxw041|
@@ -758,10 +758,11 @@ enrichment::go -t $threads -r mapper -c comparisons -l coexpressions -g $go -i r
 | GATK          | <https://github.com/broadinstitute/gatk>                            | 10.1101/gr.107524.110 <br> 10.1038/ng.806 |
 | GEM           | <https://groups.csail.mit.edu/cgs/gem>                              | 10.1371/journal.pcbi.1002638 |
 | GNU Parallel  | <https://www.gnu.org/software/parallel/>                            | 10.5281/zenodo.1146014 |
+| GoPeaks       | <https://github.com/maxsonBraunLab/gopeaks>                         | 10.1186/s13059-022-02707-w |
 | GoSemSim      | <http://bioconductor.org/packages/release/bioc/html/GOSemSim.html>  | 10.1093/bioinformatics/btq064 |
 | GSEABase      | <https://bioconductor.org/packages/release/bioc/html/GSEABase.html> | NA |
 | HTSeq         | <https://htseq.readthedocs.io>                                      | 10.1093/bioinformatics/btu638 |
-| IDR           | <https://github.com/kundajelab/idr>                                 | 10.1214/11-AOAS466 |
+| IDR           | <https://github.com/nboley/idr>                                     | 10.1214/11-AOAS466 |
 | IGV           | <http://software.broadinstitute.org/software/igv>                   | 10.1038/nbt.1754 |
 | Intervene     | <https://github.com/asntech/intervene>                              | 10.1186/s12859-017-1708-7 |
 | khmer         | <https://khmer.readthedocs.io>                                      | 10.12688/f1000research.6924.1 |
@@ -780,6 +781,7 @@ enrichment::go -t $threads -r mapper -c comparisons -l coexpressions -g $go -i r
 | REVIGO        | <https://code.google.com/archive/p/revigo-standalone>               | 10.1371/journal.pone.0021800 |
 | RRVGO         | <https://ssayols.github.io/rrvgo>                                   | NA |
 | SAMtools      | <http://www.htslib.org/doc/samtools.html>                           | 10.1093/bioinformatics/btp352 |
+| SEACR         | <https://github.com/FredHutch/SEACR>                                | 10.1186/s13072-019-0287-4 |
 | segemehl      | <http://www.bioinf.uni-leipzig.de/Software/segemehl>                | 10.1186/gb-2014-15-2-r34 <br> 10.1371/journal.pcbi.1000502 |
 | SnpEff        | <https://pcingola.github.io/SnpEff>                                 | 10.4161/fly.19695 |
 | SortMeRNA     | <https://bioinfo.lifl.fr/RNA/sortmerna>                             | 10.1093/bioinformatics/bts611 |

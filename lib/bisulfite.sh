@@ -609,7 +609,7 @@ function bisulfite::metilene(){
 						odir="$outdir/$m$tool/$c-vs-$t"
 						mkdir -p "$odir"
 						tojoin=()
-						header="chr\tsta\tpos"
+						header="chr\tpos"
 						trep=$(awk -v s=$t -v n=$min '$2==s{i=i+1}END{if(n>1){if(i<n){n=i} print n}else{printf "%0.f", i*n}}' "$f")
 						[[ $trep -gt $cap ]] && trep=$cap
 
@@ -619,14 +619,10 @@ function bisulfite::metilene(){
 							header+="\t${condition}_$replicate"
 						done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 
-						commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-							{	echo -e "$header";
-								bedtools unionbedg
-									-filler .
-									-i $(printf '"%s" ' "${tojoin[@]}");
-							}
+						commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+							echo -e "$header" > > "$odir/merates.bedg"
 						CMD
-							cut -f 1,3- > "$odir/merates.bedg"
+							bedtools unionbedg -filler . -i $(printf '"%s" ' "${tojoin[@]}") | cut -f 1,3- >> > "$odir/merates.bedg"
 						CMD
 
 						bisulfite::_metilene \
@@ -771,7 +767,7 @@ function bisulfite::join(){
 			odir="$outdir/$m$tool"
 			mkdir -p "$odir"
 			visited=()
-			header="chr\tsta\tpos"
+			header="chr\tpos"
 			meanheader="chr\tpos"
 			tojoin=()
 			for f in "${_cmpfiles_join[@]}"; do
@@ -791,12 +787,10 @@ function bisulfite::join(){
 				done
 			done
 
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-				{	echo -e "$header";
-					bedtools unionbedg
-						-filler .
-						-i $(printf '"%s" ' "${tojoin[@]}");
-				} | cut -f 1,3- > "$odir/merates.bedg"
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				echo -e "$header" > "$odir/merates.bedg"
+			CMD
+				bedtools unionbedg -filler . -i $(printf '"%s" ' "${tojoin[@]}") | cut -f 1,3- >> "$odir/merates.bedg"
 			CMD
 
 			# allow for Rscript | head without getting SIGPIPE error. redirection to file possible via sink()

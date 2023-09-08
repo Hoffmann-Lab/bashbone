@@ -64,7 +64,7 @@ function expression::diego(){
 
 		if $forceidx || [[ ! -s "${gtf%.*}.aggregated.gtf" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::printinfo "preparing annotation for exon_id tag based quantification"
-			tmp=$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.gtf)
+			tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.gtf)"
 			commander::makecmd -a cmdprep2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				dexseq_prepare_annotation2.py
 					-r no

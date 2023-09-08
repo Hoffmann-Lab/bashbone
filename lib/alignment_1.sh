@@ -616,22 +616,22 @@ function alignment::postprocess(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} (converts sam to bam and) either filteres alignments for uniqueness (and properly aligned mate pairs), sorts by coordinate or index them
 
-			-S <hardskip>  | optional. default: false
-			               | [true|false] do nothing and return
-			-s <softskip>  | optional. default: false
-			               | [true|false] do nothing but check for files and print commands
-			-j <job>       | mandatory
-			               | [uniqify|blacklist|sizeselect|sort|index] to be applied on alignments (see -r). index requires coordinate sorted alignment files
-			-f <string>    | of a path to a blacklist file for exclusion job or a size range filter fragments for. default: 0:1000
-			-t <threads>   | mandatory
-			               | number of threads
-			-r <mapper>    | mandatory
-			               | array of array names which contain alignment paths. will be updated by suffixes according to job (see -j)
-			               | mapper=(segemehl star); [segemehl|star]=(/outdir/[segemehl|star]/1.[unique|sorted].bam /outdir/[segemehl|star]/2.[unique|sorted].bam ..);
-			-o <outdir>    | mandatory
-			               | path to output directory. subdirectories will be created according to array of array names (see -r)
-			-P <parameter> | optional
-			               | additional samtools [view|sort|index] parameter
+			-S <hardskip>    | optional. default: false
+			                 | [true|false] do nothing and return
+			-s <softskip>    | optional. default: false
+			                 | [true|false] do nothing but check for files and print commands
+			-j <job>         | mandatory
+			                 | [uniqify|blacklist|sizeselect|sort|index] to be applied on alignments (see -r). index requires coordinate sorted alignment files
+			-f <path/string> | bedfile of regions or reference/chromosome name to remove alignments (-j blacklist) or a range of insert sizes to keep (-j sizeselect). default: 0:1000
+			-t <threads>     | mandatory
+			                 | number of threads
+			-r <mapper>      | mandatory
+			                 | array of array names which contain alignment paths. will be updated by suffixes according to job (see -j)
+			                 | mapper=(segemehl star); [segemehl|star]=(/outdir/[segemehl|star]/1.[unique|sorted].bam /outdir/[segemehl|star]/2.[unique|sorted].bam ..);
+			-o <outdir>      | mandatory
+			                 | path to output directory. subdirectories will be created according to array of array names (see -r)
+			-P <parameter>   | optional
+			                 | additional samtools [view|sort|index] parameter
 
 			example:
 			    mapper=(segemehl star)
@@ -816,7 +816,7 @@ function alignment::_uniqify(){
 
 	_returnfile_uniqify="$outbase.unique.bam"
 
-	readlink -e "$sambam" | file -f - | grep -qF compressed || {
+	readlink -e "$sambam" | file -b --mime-type -f - | grep -qF -e 'gzip' || {
 		commander::makecmd -a _cmds1_uniqify -s '|' -c {COMMANDER[0]}<<- CMD
 			samtools view
 				-@ $threads
@@ -903,7 +903,7 @@ function alignment::_blacklist(){
 			-t <threads>   | mandatory
 			               | number of threads
 			-b <blacklist> | mandatory
-			               | bed file
+			               | bed file or reference/chromosome name
 			-f <sam|bam>   | mandatory
 			               | path to alignment in SAM or BAM format
 			-o <outbase>   | mandatory
@@ -953,63 +953,76 @@ function alignment::_blacklist(){
 
 	_returnfile_blacklist="$outbase.blacklisted.bam"
 
-	# or bedtools complement
-	commander::makecmd -a _cmds1_blacklist -s ';' -c {COMMANDER[0]}<<- CMD
-		bedtools subtract
-			-a <(samtools view -H "$bam" | awk '/^@SQ/{\$1=""; print}' | cut -d ':' -f 2,3 | sed -r 's/(\S+)\s+LN:(.+)/\1\t0\t\2/' | helper::sort -k1,1 -k2,2n -k3,3n -t $threads)
-			-b <(helper::sort -k1,1 -k2,2n -k3,3n -t $threads -f "$blacklist")
-		> "$tmpdir/whitelist.bed"
-	CMD
+	if [[ -s "$blacklist" ]]; then
 
-	# infer SE or PE
-	local params="$inparams"
-	local x=$(samtools view -F 4 "$bam" | head -10000 | cat <(samtools view -H "$bam") - | samtools view -c -f 1)
+		# or bedtools complement
+		commander::makecmd -a _cmds1_blacklist -s ';' -c {COMMANDER[0]}<<- CMD
+			bedtools subtract
+				-a <(samtools view -H "$bam" | awk '/^@SQ/{\$1=""; print}' | cut -d ':' -f 2,3 | sed -r 's/(\S+)\s+LN:(.+)/\1\t0\t\2/' | helper::sort -k1,1 -k2,2n -k3,3n -t $threads)
+				-b <(helper::sort -k1,1 -k2,2n -k3,3n -t $threads -f "$blacklist")
+			> "$tmpdir/whitelist.bed"
+		CMD
 
-	if [[ $x -gt 0 ]]; then
-		# needs workaraound
-		# filter for a region allows to keep second mate and set second mate either to
-		# 	- unmapped (cigar to * from version 1.16) -> proper paired flag kept in first read
-		# 	- or keep it (from v1.15) iterator initialization bug still existing in v1.17
-		commander::makecmd -a _cmds2_blacklist -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
-			samtools view
-				$params
-				-@ $threads
-				-u
-				-p
-				-L "$tmpdir/whitelist.bed"
-				"$bam"
-		CMD
-			samtools sort
-				-@ $threads
-				-u
-				-n
-				-T "$tmpdir/nsrt.$(basename "$outbase")"
-		CMD
-			samtools fixmate
-				-@ $threads
-				-u
-				-r
-				- -
-		CMD
-			samtools view
-				-@ $threads
-				-u
-				-F 4
-				-f 2
-		CMD
-			samtools sort
-				-@ $threads
-				-O BAM
-				-T "$tmpdir/psrt.$(basename "$outbase")"
-			> "$_returnfile_blacklist"
-		CMD
+		# infer SE or PE
+		local params="$inparams"
+		local x=$(samtools view -F 4 "$bam" | head -10000 | cat <(samtools view -H "$bam") - | samtools view -c -f 1)
+
+		if [[ $x -gt 0 ]]; then
+			# needs workaraound
+			# filter for a region allows to keep second mate and set second mate either to
+			# 	- unmapped (cigar to * from version 1.16) -> proper paired flag kept in first read
+			# 	- or keep it (from v1.15) iterator initialization bug still existing in v1.17
+			commander::makecmd -a _cmds2_blacklist -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
+				samtools view
+					$params
+					-@ $threads
+					-u
+					-p
+					-L "$tmpdir/whitelist.bed"
+					"$bam"
+			CMD
+				samtools sort
+					-@ $threads
+					-u
+					-n
+					-T "$tmpdir/nsrt.$(basename "$outbase")"
+			CMD
+				samtools fixmate
+					-@ $threads
+					-u
+					-r
+					- -
+			CMD
+				samtools view
+					-@ $threads
+					-u
+					-F 4
+					-f 2
+			CMD
+				samtools sort
+					-@ $threads
+					-O BAM
+					-T "$tmpdir/psrt.$(basename "$outbase")"
+				> "$_returnfile_blacklist"
+			CMD
+		else
+			commander::makecmd -a _cmds2_blacklist -s ';' -c {COMMANDER[0]}<<- CMD
+				samtools view
+					$params
+					-@ $threads
+					-b
+					-L "$tmpdir/whitelist.bed"
+					"$bam"
+				> "$_returnfile_blacklist"
+			CMD
+		fi
 	else
 		commander::makecmd -a _cmds2_blacklist -s ';' -c {COMMANDER[0]}<<- CMD
 			samtools view
 				$params
 				-@ $threads
 				-b
-				-L "$tmpdir/whitelist.bed"
+				-e 'rname!="$blacklist"'
 				"$bam"
 			> "$_returnfile_blacklist"
 		CMD

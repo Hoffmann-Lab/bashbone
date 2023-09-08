@@ -69,7 +69,7 @@ ${z:-false} && {
 	e=".fastq"
 }
 
-open=$(readlink -e "$i" | file -f - | grep -Eo '(gzip|bzip)' && echo -cd || echo cat)
+open=$({ readlink -e "$i" | file -b --mime-type -f - | grep -oF -e 'gzip' -e 'bzip2' || echo cat; } | sed '/cat/!{s/gzip/pigz -p 1/; s/$/ -cd/}')
 
 if [[ $j ]]; then
 	paste <($open "$i" | sed -E '/^\s*$/d' | paste - - - -) <($open "$j" | sed -E '/^\s*$/d' | paste - - - -) | shuf > "$tmp"
