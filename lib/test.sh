@@ -19,6 +19,7 @@ function test::test(){
 		esac
 	done
 	commander::printinfo "running test::test"
+	echo "echo test::test cleanup" >> "$BASHBONE_CLEANUP"
 	declare -a cmd=('sleep 2')
 	commander::runcmd -v -b -i 1 -a cmd
 }
