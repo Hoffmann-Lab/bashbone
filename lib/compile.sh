@@ -266,7 +266,7 @@ function compile::conda_tools(){
 	}
 
 	# better do not predefine python version. if tool recipe depends on earlier version, conda installs an older or the oldest version (freebayes)
-	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 genrich peakachu diego gatk4 freebayes varscan igv intervene raxml metilene umitools methyldackel idr clust; do
+	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 genrich peakachu diego gatk4 freebayes varscan igv intervene raxml metilene umitools methyldackel idr clust seacr gopeaks; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
 		[[ $tool == "bwa" ]] && tool+=" bwa-mem2"
@@ -289,10 +289,15 @@ function compile::conda_tools(){
 			done
 		}
 	done
-	chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl" # necessary fix
+	# necessary fixes
+	chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl"
+	cat <<-EOF > "$insdir/conda/envs/seacr/bin/SEACR.sh"
+		#!/usr/bin/env bash
+		exec "\$(realpath -s "\$(dirname "\$0")")/$(basename "$insdir/conda/envs/seacr/bin/"SEACR_*.sh)" \$*
+	EOF
+	chmod 755 "$insdir/conda/envs/seacr/bin/SEACR.sh"
 
 	star_version=$(mamba list -n star -f star | tail -1 | awk '{print $2}')
-
 	# manual setup of requirements from bioconda meta.yaml (see compile::starfusion) due to non-latest installation via conda
 	# note: recent star (star indexer 2.7.1a) is not compatible with CTAT plug-n-play genome index for star-fusion v1.9 (star indexer 2.4.1)
 	tool=star-fusion
