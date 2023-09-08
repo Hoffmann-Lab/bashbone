@@ -213,12 +213,21 @@ function commander::runcmd(){
 	$verbose && commander::printinfo "running commands of array ${!_cmds_runcmd}"
 
 	local i id sh ex log tmpdir
-	[[ $logdir ]] && tmpdir="$logdir" || tmpdir=$(mktemp -d -p "${TMPDIR:-/tmp}" jobs.XXXXXXXXXX)
+	[[ $logdir ]] && tmpdir="$logdir" || tmpdir="$(mktemp -d -p "${TMPDIR:-/tmp}" jobs.XXXXXXXXXX)"
 	[[ $jobname ]] || jobname="$(command mktemp -u XXXXXXXXXX)"
 	echo $instances > "$tmpdir/instances.$jobname"
 	ex="$tmpdir/exitcodes.$jobname"
 	touch "$ex" # for runstat
 	[[ $stopid ]] || stopid=${#_cmds_runcmd[@]}
+
+	# attention: parallel sources bashrc which in worst case modifies PATH so that bashbone may not serve its binaries first
+	# solution: use a fake shell via PARALLEL_SHELL to prevent sourcing bashrc
+	cat <<- 'EOF' > "$tmpdir/shell.$jobname"
+		#!/usr/bin/env bash
+		shift
+		exec $*
+	EOF
+	chmod 755 "$tmpdir/shell.$jobname"
 
 	declare -a scripts
 	# necessary for runstat
@@ -267,12 +276,12 @@ function commander::runcmd(){
 		# solution2: gnu parallel
 		# drawback: in contrast to xargs, where USR signal to increase instace count has an instant effect, parallel reads instances file only after completing one job
 		# -> implement somehow respawning dummy job?
-		printf '%q\n' "${scripts[@]}" | env time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P "$tmpdir/instances.$jobname" -I {} bash {}
+		printf '%q\n' "${scripts[@]}" | env PARALLEL_SHELL="$tmpdir/shell.$jobname" time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P "$tmpdir/instances.$jobname" -I {} bash {}
 		# time: is also a bash shell keyword which works differently and does not record memory usage
 		# due to set -E based error tracing, command time may leads to *** longjmp causes uninitialized stack frame ***: bash terminated
 		# workaround: use full path, which, env or $(command -v time) <- prefer env to use env bash too
 	else
-		printf '%q\n' "${scripts[@]}" | parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P "$tmpdir/instances.$jobname" -I {} bash {}
+		printf '%q\n' "${scripts[@]}" | PARALLEL_SHELL="$tmpdir/shell.$jobname" parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P "$tmpdir/instances.$jobname" -I {} bash {}
 	fi
 
 	return 0
@@ -445,7 +454,7 @@ function commander::qsubcmd(){
 	[[ $_cmds_qsubcmd ]] || return 0
 	"${BASHBONE_HOOKCMD:-:}" _cmds_runcmd
 
-	local conf=$(mktemp -p "${TMPDIR:-/tmp}" $q.XXXXXXXXXX.conf)
+	local conf="$(mktemp -p "${TMPDIR:-/tmp}" $q.XXXXXXXXXX.conf)"
 	qconf -sq $q > "$conf" 2> /dev/null && {
 		if [[ $(awk '/^terminate_method/{print $NF}' "$conf") != SIGINT ]]; then
 			commander::warn "SGE termination method cannot be set to SIGINT. Cleanup upon error or job deletion not possible!"
@@ -466,6 +475,14 @@ function commander::qsubcmd(){
 	local ex="$logdir/exitcodes.$jobname"
 	local log="$logdir/job.$jobname.\$TASK_ID.log" # not SGE_TASK_ID
 
+	# attention: -S /bin/bash cannot be -S "/bin/bash --noprofile" and thus sources bash_profile and bashrc which in worst case modifies PATH so that bashbone may not serve its binaries first
+	# solution: use a fake shell to prevent sourcing bashrc
+	cat <<- 'EOF' > "$logdir/shell.$jobname"
+		#!/usr/bin/env bash
+		exec bash $*
+	EOF
+	chmod 755 "$logdir/shell.$jobname"
+
 	local i id sh
 	for i in "${!_cmds_qsubcmd[@]}"; do
 		id=$((i+1))
@@ -482,7 +499,6 @@ function commander::qsubcmd(){
 		echo "    echo \"$jobname.$id (\$JOB_ID) exited with exit code \$1\" >> '$ex'" >> "$sh"
 		[[ "$dowait" == "y" ]] && echo '    [[ $1 -gt 0 ]] && qdel $JOB_ID &> /dev/null || true' >> "$sh"
 		echo '}' >> "$sh"
-		# attention: -S /bin/bash cannot be -S "/bin/bash --noprofile" and thus sources bash_profile and bashrc which in worst case modifies PATH so that bashbone may not serve its binaries first
 		# re-execution via setsid required!
 		# 1 so that any SGE version that sends kill to PID or PGID lets bashbone kill its BASHBONE_PGID and thereby performs cleanup via exit trap before getting cut from terminal/pty
 		# 2 sournal can be executed explicitly, so that no fork runs in backround that will be killed otherwise and thus leaves unlogged write events
@@ -508,7 +524,8 @@ function commander::qsubcmd(){
 				echo "qdel $jobid &> /dev/null" >> "$BASHBONE_CLEANUP"
 			fi
 			# requires 1>&2 : echo "$l" | sed -E '/exited/!d; s/Job ([0-9]+)\.(.+)\./\1 job.'$jobname'.\2/;t;s/Job ([0-9]+) (.+)\./\1 job.'$jobname'.1 \2/'
-		done < <(echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -terse -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
+			# "$(env bash -c 'command -v bash')"
+		done < <(echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -terse -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$logdir/shell.$jobname" -V -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
 
 		# use command/env qstat in case someone like me makes use of an alias :)
 		# wait until accounting record is written to epilog after jobs post-processing metrics collection
@@ -524,7 +541,7 @@ function commander::qsubcmd(){
 		fi
 		return $ex
 	else
-		echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(env bash -c 'which bash')" -V -cwd -o "$log" -j y -N $jobname
+		echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$logdir/shell.$jobname" -V -cwd -o "$log" -j y -N $jobname
 		return 0
 	fi
 }
