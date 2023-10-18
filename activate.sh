@@ -81,7 +81,7 @@ shopt -s expand_aliases extglob # inevitable for defining wrapper aliases and to
 export TMPDIR="${TMPDIR:-/tmp}" && mkdir -p "$TMPDIR" || return 1
 
 function _bashbone_setpath(){
-	PATH="${PATH/$BASHBONE_PATH/}"
+	# PATH="${PATH/$BASHBONE_PATH/}"
 	export BASHBONE_PATH=""
 	if [[ -e "$BASHBONE_DIR/scripts" ]]; then
 		BASHBONE_PATH+="$(realpath -s "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):"
@@ -95,7 +95,8 @@ function _bashbone_setpath(){
 	if [[ -e "$BASHBONE_TOOLSDIR/latest" ]]; then
 		BASHBONE_PATH+="$(realpath -s "$BASHBONE_TOOLSDIR/latest/"!(java|bashbone) | xargs -echo | sed 's/ /:/g'):"
 	fi
-	PATH="$BASHBONE_PATH$PATH"
+	[[ ":$PATH:" == *":$BASHBONE_PATH"* ]] || PATH="$BASHBONE_PATH$PATH"
+	# PATH="$BASHBONE_PATH$PATH"
 }
 
 if ${BASHBONE_CONDA:-false}; then
@@ -220,7 +221,7 @@ function _bashbone_on_error(){
 		{ env kill -TERM -- -$BASHBONE_PGID; _bashbone_reset 143; } &
 		set +m
 		wait $!
-		_bashbone_reset 143
+		# _bashbone_reset 143 # dont! unless in prompt-command
 	}
 	return 143
 }
