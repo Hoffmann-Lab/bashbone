@@ -1,6 +1,51 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
+### arriba 1.2                   ### arriba 2                   ### star-fusion (fusioninspector) ### fusioncatcher
+# 1 #gene1                       1  #gene1                      1  #FusionName                    1  Gene_1_symbol(5end_fusion_partner)
+# 2 gene2                        2  gene2                       2  JunctionReadCount              2  Gene_2_symbol(3end_fusion_partner)
+# 3 strand1(gene/fusion)         3  strand1(gene/fusion)        3  SpanningFragCount              3  Fusion_description
+# 4 strand2(gene/fusion)         4  strand2(gene/fusion)        4  est_J                          4  Counts_of_common_mapping_reads
+# 5 breakpoint1                  5  breakpoint1                 5  est_S                          5  Spanning_pairs
+# 6 breakpoint2                  6  breakpoint2                 6  LeftGene                       6  Spanning_unique_reads
+# 7 site1                        7  site1                       7  LeftLocalBreakpoint            7  Longest_anchor_found
+# 8 site2                        8  site2                       8  LeftBreakpoint                 8  Fusion_finding_method
+# 9 type                         9  type                        9  RightGene                      9  Fusion_point_for_gene_1(5end_fusion_partner)
+# 10 direction1                  10 split_reads1                10 RightLocalBreakpoint           10 Fusion_point_for_gene_2(3end_fusion_partner)
+# 11 direction2                  11 split_reads2                11 RightBreakpoint                11 Gene_1_id(5end_fusion_partner)
+# 12 split_reads1                12 discordant_mates            12 SpliceType                     12 Gene_2_id(3end_fusion_partner)
+# 13 split_reads2                13 coverage1                   13 LargeAnchorSupport             13 Exon_1_id(5end_fusion_partner)
+# 14 discordant_mates            14 coverage2                   14 NumCounterFusionLeft           14 Exon_2_id(3end_fusion_partner)
+# 15 coverage1                   15 confidence                  15 NumCounterFusionRight          15 Fusion_sequence
+# 16 coverage2                   16 reading_frame               16 FAR_left                       16 Predicted_effect
+# 17 confidence                  17 tags                        17 FAR_right
+# 18 closest_genomic_breakpoint1 18 retained_protein_domains    18 LeftBreakDinuc
+# 19 closest_genomic_breakpoint2 19 closest_genomic_breakpoint1 19 LeftBreakEntropy
+# 20 filters                     20 closest_genomic_breakpoint2 20 RightBreakDinuc
+# 21 fusion_transcript           21 gene_id1                    21 RightBreakEntropy
+# 22 reading_frame               22 gene_id2                    22 FFPM
+# 23 peptide_sequence            23 transcript_id1              23 annots
+# 24 read_identifiers            24 transcript_id2              24 CDS_LEFT_ID
+#                                25 direction1                  25 CDS_LEFT_RANGE
+#                                26 direction2                  26 CDS_RIGHT_ID
+#                                27 filters                     27 CDS_RIGHT_RANGE
+#                                28 fusion_transcript           28 PROT_FUSION_TYPE
+#                                29 peptide_sequence            29 FUSION_MODEL
+#                                30 read_identifiers            30 FUSION_CDS
+#                                                               31 FUSION_TRANSL
+#                                                               32 PFAM_LEFT
+#                                                               33 PFAM_RIGHT
+
+# -> difference supporting read counts due to multimapped vs unique mapped (may change with arriba 2 able to use multimapped junctions)
+
+# star-fusion to arriba: 1 | sed 's/--/\t/' (~1,2), 2 (~12+13), 3 (~14), 8 | cut -d ':' -f 1,2 (~5), 11 | cut -d ':' -f 1,2 (~6), 28 (~22)
+# fusioncatcher to arriba: 1 (~1), 2 (~2), 6 (~12+13), 5 (~14), 9 | cut -d ':' -f 1,2 (~5), 10 | cut -d ':' -f 1,2 (~6), 16 (~22)
+# -> 6 (different to JR + SR)
+
+# f="$fusionsdir/fusioncatcher/$(ls "$fusionsdir/fusioncatcher" | awk -v s=$s 's~$1')/final-list_candidate-fusion-genes.txt"
+# full: tail -n +2 "$f" | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{gsub(":(+|-)$","",$9); gsub(":(+|-)$","",$10); if($6+$5>=10){print s,t,$1,$2,$6,$5,"chr"$9,"chr"$10,$16}}'
+# filtered: tail -n +2 "$f" | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{gsub(":(+|-)$","",$9); gsub(":(+|-)$","",$10); print s,t,$1,$2,$6,$5,"chr"$9,"chr"$10,$16}'
+
 function fusions::starfusion(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
@@ -90,7 +135,7 @@ function fusions::starfusion(){
 		-P "$params"
 
 	local i j odir b e
-	declare -a cmd1=()
+	declare -a cmd1 cmd2
 	for i in "${!_fq1_starfusion[@]}"; do
 		helper::basename -f "${_fq1_starfusion[$i]}" -o b -e e
 		j="$outdir/star/$b.Chimeric.out.junction"
@@ -126,6 +171,26 @@ function fusions::starfusion(){
 				--examine_coding_effect
 			CMD
 		fi
+
+		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+			tail -n +2 "$odir/FusionInspector-validate/finspector.FusionInspector.fusions.abridged.tsv.annotated.coding_effect"
+		CMD
+			perl -F'\t' -lane '
+				BEGIN{
+					print "gene1\tgene2\tjunction_count\tspanning_pairs\tbreakpoint1\tbreakpoint2\teffect"
+				}
+				$F[27]="NA" if $F[27] eq ".";
+				@g=split/--/,$F[0]; $F[7]=~s/:[+-]$//g; $F[10]=~s/:[+-]$//g;
+				for my $g1 (split/,/,$g[0]){ $g1=~s/\(\d+\)$//;
+					for my $g2 (split/,/,$g[1]){ $g2=~s/\(\d+\)$//;
+						next if $g1 eq $g2;
+						print $g1 lt $g2 ? join("\t",($g1,$g2,$F[1],$F[2],$F[7],$F[10],$F[27])) : join("\t",($g2,$g1,$F[1],$F[2],$F[10],$F[7],$F[27]));
+					}
+				}
+			'
+		CMD
+			tee >(awk -F '\t' 'NR==1 || \$3+\$4>=10' > "$outdir/$b.tsv") > "$outdir/$b.full.tsv" | cat
+		CMD
 	done
 
 	if $skip; then
@@ -263,20 +328,22 @@ function fusions::arriba(){
 
 	cmdchk=('ls "$CONDA_PREFIX/var/lib/arriba/blacklist_"*'${genomeversion}'_*.gz 2> /dev/null || mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.arriba')
 	local params="-b '$(commander::runcmd -c arriba -a cmdchk)'"
- 	# for arriba 2.x -T/-P/-I are now default and -T -T/-P -P/-I -I is now -X (ie report sequences and read ides in the discarded fusions file too)
+		# for arriba 2.x -T/-P/-I are now default and -T -T/-P -P/-I -I is now -X (ie report sequences and read ides in the discarded fusions file too)
 	[[ $version -lt 2 ]] && params+=" -T -P -I"
 
-	local m f o
-	declare -a cmd1
+	local m f odir b
+	declare -a cmd1 cmd2
 	for f in "${star[@]}"; do
-		o="$outdir/$(basename "$f" .bam)"
+		b=$(basename "$f" .sorted.bam)
+		odir="$outdir/$b"
+		mkdir -p "$odir"
 		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 			arriba
 				-a "$genome"
 				-g "$gtf"
 				-x "$f"
-				-o "$o.fusions.tsv"
-				-O "$o.fusions.discarded.tsv"
+				-o "$odir/$b.tsv"
+				-O "$odir/$b.discarded.tsv"
 				-s $(case ${strandness["$f"]} in 0) echo "no";; 1) echo "yes";; 2) echo "reverse";; *) echo "?";; esac)
 				-F $fragmentsize
 				$params
@@ -285,175 +352,160 @@ function fusions::arriba(){
 		# but I encountered errors yelling unable to determine strandness AND alignment::star checks for star index version
 		# -k "\$(ls '\$CONDA_PREFIX/var/lib/arriba/known_fusions_${genomeversion}_'*.gz)"
 		# -p "\$(ls '\$CONDA_PREFIX/var/lib/arriba/protein_domains_${genomeversion}_'*.gff3)"
+
+		if [[ $version -lt 2 ]]; then
+			# NOTE: arriba v1 also removes chr prefix. v2.0 does not
+			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+				tail -n +2 "$odir/$b.tsv"
+			CMD
+				perl -F'\t' -lane '
+					BEGIN{
+						print "gene1\tgene2\tjunction_count\tspanning_pairs\tbreakpoint1\tbreakpoint2\teffect"
+					}
+					$F[21]="NA" if $F[21] eq ".";
+					$F[4]="chr$F[4]"; $F[5]="chr$F[5]";
+					for my $g1 (split/,/,$F[0]){ $g1=~s/\(\d+\)$//;
+						for my $g2 (split/,/,$F[1]){ $g2=~s/\(\d+\)$//;
+							next if $g1 eq $g2;
+							print $g1 lt $g2 ? join("\t",($g1,$g2,$F[11]+$F[12],$F[13],$F[4],$F[5],$F[21])) : join("\t",($g2,$g1,$F[11]+$F[12],$F[13],$F[5],$F[4],$F[21]));
+						}
+					}
+				'
+			CMD
+				tee >(awk -F '\t' 'NR==1 || \$3+\$4>=10' > "$outdir/$b.tsv") > "$outdir/$b.full.tsv" | cat
+			CMD
+		else
+			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+				tail -n +2 "$odir/$b.tsv"
+			CMD
+				perl -F'\t' -lane '
+					BEGIN{
+						print "gene1\tgene2\tjunction_count\tspanning_pairs\tbreakpoint1\tbreakpoint2\teffect"
+					}
+					$F[15]="NA" if $F[15] eq ".";
+					for my $g1 (split/,/,$F[0]){ $g1=~s/\(\d+\)$//;
+						for my $g2 (split/,/,$F[1]){ $g2=~s/\(\d+\)$//;
+							next if $g1 eq $g2;
+							print $g1 lt $g2 ? join("\t",($g1,$g2,$F[9]+$F[10],$F[11],$F[4],$F[5],$F[15])) : join("\t",($g2,$g1,$F[9]+$F[10],$F[11],$F[5],$F[4],$F[15]));
+						}
+					}
+				'
+			CMD
+				tee >(awk -F '\t' 'NR==1 || \$3+\$4>=10' > "$outdir/$b.tsv") > "$outdir/$b.full.tsv" | cat
+			CMD
+		fi
 	done
 
 	if $skip; then
 		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
 	else
 		commander::runcmd -c arriba -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0
 }
 
-function fusions::join2arriba(){
+function fusions::join(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[1]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
-			-w <whitelist>  | path to
 			-i <fusionsdir> | path to
 			-o <outdir>     | path to
+			-d <tool>       | name identical to subdir in fusionsdir. parameter can be used multiple times
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads countsdir deseqdir outdir tmpdir="${TMPDIR:-/tmp}" whitelist
-	while getopts 'S:s:t:w:r:i:o:' arg; do
+	local OPTIND arg mandatory skip=false threads fusionsdir outdir tmpdir="${TMPDIR:-/tmp}"
+	declare -a tools
+	while getopts 'S:s:t:i:o:d:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
-			w)	whitelist="$OPTARG";;
 			i)	((++mandatory)); fusionsdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" ;;
+			d)	tools+=("$OPTARG");;
 			*)	_usage;;
 		esac
 	done
 	[[ $mandatory -lt 3 ]] && _usage
 
-	if [[ $whitelist ]]; then
-		local tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.whitelist)"
-		sed -E 's/^\s*(\S+).*/\1\t/' "$whitelist" > "$tmp"
-		whitelist="$tmp"
-	fi
 
-	### arriba                       ### star-fusion (fusioninspector)    ### fusioncatcher
-	# 1 #gene1                       1  #FusionName                       1  Gene_1_symbol(5end_fusion_partner)
-	# 2 gene2                        2  JunctionReadCount                 2  Gene_2_symbol(3end_fusion_partner)
-	# 3 strand1(gene/fusion)         3  SpanningFragCount                 3  Fusion_description
-	# 4 strand2(gene/fusion)         4  est_J                             4  Counts_of_common_mapping_reads
-	# 5 breakpoint1                  5  est_S                             5  Spanning_pairs
-	# 6 breakpoint2                  6  LeftGene                          6  Spanning_unique_reads
-	# 7 site1                        7  LeftLocalBreakpoint               7  Longest_anchor_found
-	# 8 site2                        8  LeftBreakpoint                    8  Fusion_finding_method
-	# 9 type                         9  RightGene                         9  Fusion_point_for_gene_1(5end_fusion_partner)
-	# 10 direction1                  10 RightLocalBreakpoint              10 Fusion_point_for_gene_2(3end_fusion_partner)
-	# 11 direction2                  11 RightBreakpoint                   11 Gene_1_id(5end_fusion_partner)
-	# 12 split_reads1                12 SpliceType                        12 Gene_2_id(3end_fusion_partner)
-	# 13 split_reads2                13 LargeAnchorSupport                13 Exon_1_id(5end_fusion_partner)
-	# 14 discordant_mates            14	NumCounterFusionLeft              14 Exon_2_id(3end_fusion_partner)
-	# 15 coverage1                   15	NumCounterFusionRight             15 Fusion_sequence
-	# 16 coverage2                   16	FAR_left                          16 Predicted_effect
-	# 17 confidence                  17	FAR_right
-	# 18 closest_genomic_breakpoint1 18	LeftBreakDinuc
-	# 19 closest_genomic_breakpoint2 19	LeftBreakEntropy
-	# 20 filters                     20	RightBreakDinuc
-	# 21 fusion_transcript           21	RightBreakEntropy
-	# 22 reading_frame               22	FFPM
-	# 23 peptide_sequence            23	annots
-	# 24 read_identifiers            24	CDS_LEFT_ID
-	#                                25 CDS_LEFT_RANGE
-	#                                26 CDS_RIGHT_ID
-	#                                27 CDS_RIGHT_RANGE
-	#                                28 PROT_FUSION_TYPE
-	#                                29 FUSION_MODEL
-	#                                30 FUSION_CDS
-	#                                31 FUSION_TRANSL
-	#                                32 PFAM_LEFT
-	#                                33 PFAM_RIGHT
+	echo -e "sample tool fusion gene1 gene2 junction_count spanning_pairs breakpoint1 breakpoint2 effect" | sed 's/ /\t/g' > "$outdir/fusions.tsv"
+	head -1 "$outdir/fusions.tsv" > "$outdir/fusions.full.tsv"
+	local s farr fsfus
+	while read -r s; do
+		for tool in "${tools[@]}"; do
+			case $tool in
+				arriba) farr=$(find -L "$fusionsdir/arriba/" -type f -name "$s*.fusions.tsv" | grep .);;
+				starfusion) fsfus=$(realpath -s "$fusionsdir/starfusion/$s/FusionInspector-validate/finspector.FusionInspector.fusions.abridged.tsv.annotated.coding_effect");;
+				*) commander::printerr "$tool not supported for joining gene fusion predictions"; return 1;;
+				# f="$fusionsdir/fusioncatcher/$(ls "$fusionsdir/fusioncatcher" | awk -v s=$s 's~$1')/final-list_candidate-fusion-genes.txt"
+				# full: tail -n +2 "$f" | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{gsub(":(+|-)$","",$9); gsub(":(+|-)$","",$10); if($6+$5>=10){print s,t,$1,$2,$6,$5,"chr"$9,"chr"$10,$16}}'
+				# filtered: tail -n +2 "$f" | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{gsub(":(+|-)$","",$9); gsub(":(+|-)$","",$10); print s,t,$1,$2,$6,$5,"chr"$9,"chr"$10,$16}'
+			esac
+		done
 
-	# -> difference supporting read counts due to multimapped vs unique mapped (may change with arriba 2 able to use multimapped junctions)
+		if [[ $(head -1 "$farr" | tr '\t' '\n' | wc -l) -lt 30 ]]; then
+			# arriba v1
+			{
+				tail -n +2 "$farr" | perl -slane '
+					$F[21]="NA" if $F[21] eq ".";
+					$F[4]="chr$F[4]"; $F[5]="chr$F[5]";
+					for my $g1 (split/,/,$F[0]){ $g1=~s/\(\d+\)$//;
+						for my $g2 (split/,/,$F[1]){ $g2=~s/\(\d+\)$//;
+							next if $g1 eq $g2;
+							print $g1 lt $g2 ? join("\t",($s,"arriba",$g1,$g2,$F[11]+$F[12],$F[13],$F[4],$F[5],$F[21])) : join("\t",($g2,$g1,$F[11]+$F[12],$F[13],$F[5],$F[4],$F[21]));
+						}
+					}
+				' -- -s=$s
+				tail -n +2 "$fsfus" | perl -slane '
+					$F[27]="NA" if $F[27] eq ".";
+					@g=split/--/,$F[0]; $F[7]=~s/:[+-]$//g; $F[10]=~s/:[+-]$//g;
+					for my $g1 (split/,/,$g[0]){ $g1=~s/\(\d+\)$//;
+						for my $g2 (split/,/,$g[1]){ $g2=~s/\(\d+\)$//;
+							next if $g1 eq $g2;
+							print $g1 lt $g2 ? join("\t",($s,"starfusion",$g1,$g2,$F[1],$F[2],$F[7],$F[10],$F[27])) : join("\t",($s,"starfusion",$g2,$g1,$F[1],$F[2],$F[10],$F[7],$F[27]));
+						}
+					}
+				' -- -s=$s
+			} | helper::sort -t $threads -k3,3 -k4,4 -k7,7 -k8,8 | tee >(awk '$5+$6>=10' >> "$outdir/fusions.tsv") >> "$outdir/fusions.full.tsv"
+		else
+			# arriba v2
+			{
+				tail -n +2 "$farr" | perl -slane '
+					$F[15]="NA" if $F[15] eq ".";
+					for my $g1 (split/,/,$F[0]){ $g1=~s/\(\d+\)$//;
+						for my $g2 (split/,/,$F[1]){ $g2=~s/\(\d+\)$//;
+							next if $g1 eq $g2;
+							print $g1 lt $g2 ? join("\t",($s,"arriba",$g1,$g2,$F[9]+$F[10],$F[11],$F[4],$F[5],$F[15])) : join("\t",($s,"arriba",$g2,$g1,$F[9]+$F[10],$F[11],$F[5],$F[4],$F[15]));
+						}
+					}
+				' -- -s=$s
+				tail -n +2 "$fsfus" | perl -slane '
+					$F[27]="NA" if $F[27] eq ".";
+					@g=split/--/,$F[0]; $F[7]=~s/:[+-]$//g; $F[10]=~s/:[+-]$//g;
+					for my $g1 (split/,/,$g[0]){ $g1=~s/\(\d+\)$//;
+						for my $g2 (split/,/,$g[1]){ $g2=~s/\(\d+\)$//;
+							next if $g1 eq $g2;
+							print $g1 lt $g2 ? join("\t",($s,"starfusion",$g1,$g2,$F[1],$F[2],$F[7],$F[10],$F[27])) : join("\t",($s,"starfusion",$g2,$g1,$F[1],$F[2],$F[10],$F[7],$F[27]));
+						}
+					}
+				' -- -s=$s
+			} | helper::sort -t $threads -k3,3 -k4,4 -k7,7 -k8,8 | tee >(awk '$5+$6>=10' >> "$outdir/fusions.tsv") >> "$outdir/fusions.full.tsv"
+		fi
+	done < <(find -L "$fusionsdir/arriba/star/" -type f -name "*.sorted.bam" -exec basename {} .sorted.bam \; | grep .)
 
-	# star-fusion to arriba: 1 | sed 's/--/\t/' (~1,2), 2 (~12+13), 3 (~14), 8 | cut -d ':' -f 1,2 (~5), 11 | cut -d ':' -f 1,2 (~6), 28 (~22)
-	# fusioncatcher to arriba: 1 (~1), 2 (~2), 6 (~12+13), 5 (~14), 9 | cut -d ':' -f 1,2 (~5), 10 | cut -d ':' -f 1,2 (~6), 16 (~22)
-	# -> 6 (different to JR + SR)
-
-	# suggested filters
-	# gene1 != gene2
-	# gene1 or gene2 in whitelist or JR+SR>=10, for arriba discarded: if gen1 or gene2 in whitelist and JR>1 and SR>1
-
-	# NOTE: arriba v1.2 removes chr prefix. v2.0 does not
-	local f s t
-	echo -e "sample tool fusion gene1 gene2 junction_count spanning_pairs breakpoint1 breakpoint2 effect in_whitelist" | sed 's/ /\t/g' > "$outdir/FUSIONS.full.tsv"
-	for f in "$fusionsdir/arriba/"*fusions.tsv; do
-		{	s=$(basename "$f" .sorted.fusions.tsv)
-			t=arriba
-			tail -n +2 "$f" | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{if($22=="."){$22="NA"}; if($5!~/^chr/){$5="chr"$5; $6="chr"$6}; print s,t,$1,$2,$12+$13,$14,$5,$6,$22,"no"}'
-
-			f="$(dirname "$f")/$(basename "$f" .tsv).discarded.tsv"
-			[[ $whitelist ]] && { grep -F -f "$whitelist" "$f" || true; } | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{if($22=="."){$22="NA"}; if($5!~/^chr/){$5="chr"$5; $6="chr"$6}; print s,t,$1,$2,$12+$13,$14,$5,$6,$22,"yes"}'
-
-			f="$fusionsdir/starfusion/$s/FusionInspector-validate/finspector.FusionInspector.fusions.abridged.tsv.annotated.coding_effect"
-			t=starfusion
-			[[ -s "$f" ]] && tail -n +2 "$f" | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{gsub("--","\t",$1); gsub(":(+|-)$","",$8); gsub(":(+|-)$","",$11); if($28=="."){$28="NA"}; print s,t,$1,$2,$3,$8,$11,$28,"no"}'
-
-			f="$fusionsdir/fusioncatcher/$(ls "$fusionsdir/fusioncatcher" | awk -v s=$s 's~$1')/final-list_candidate-fusion-genes.txt"
-			t=fusioncatcher
-			[[ -s "$f" ]] && tail -n +2 "$f" | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{gsub(":(+|-)$","",$9); gsub(":(+|-)$","",$10); print s,t,$1,$2,$6,$5,"chr"$9,"chr"$10,$16,"no"}'
-		} | perl -lane 'for my $g1 (split/,/,$F[2]){ $g1=~s/\(\d+\)$//; for my $g2 (split/,/,$F[3]){ $g2=~s/\(\d+\)$//; print join("\t",($F[0],$F[1],$g1,$g2,@F[4..$#F])) } }' \
-			| perl -lane '$F[1].="\t".join("/",sort {$a cmp $b} @F[2..3]); print join"\t",@F' \
-			| sort -k3,3 -k8,8 -k9,9
-	done >> "$outdir/FUSIONS.full.tsv"
-
-	if [[ $whitelist ]]; then
-		echo -e "sample tool fusion gene1 gene2 junction_count spanning_pairs breakpoint1 breakpoint2 effect in_whitelist" | sed 's/ /\t/g' > "$outdir/FUSIONS.tsv"
-		for f in "$fusionsdir/arriba/"*fusions.tsv; do
-			{	s=$(basename "$f" .sorted.fusions.tsv)
-				t=arriba
-				{ grep -F -f "$whitelist" "$f" || true; } | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{if($22=="."){$22="NA"}; if($5!~/^chr/){$5="chr"$5; $6="chr"$6}; print s,t,$1,$2,$12+$13,$14,$5,$6,$22,"yes"}'
-				{ grep -v -F -f "$whitelist" <(tail -n +2 "$f") || true; } | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{if($22=="."){$22="NA"}; if($5!~/^chr/){$5="chr"$5; $6="chr"$6}; if($12+$13+$14>=10){print s,t,$1,$2,$12+$13,$14,$5,$6,$22,"no"}}'
-
-				f="$(dirname "$f")/$(basename "$f" .tsv).discarded.tsv"
-				{ grep -F -f "$whitelist" "$f" || true; } | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{if($22=="."){$22="NA"}; if($5!~/^chr/){$5="chr"$5; $6="chr"$6}; if($12+$13>1 && $14>1){print s,t,$1,$2,$12+$13,$14,$5,$6,$22,"yes"}}'
-
-				f="$fusionsdir/starfusion/$s/FusionInspector-validate/finspector.FusionInspector.fusions.abridged.tsv.annotated.coding_effect"
-				t=starfusion
-				[[ -s "$f" ]] && {
-					{ grep -F -f "$whitelist" "$f" || true; } | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{gsub("--","\t",$1); gsub(":(+|-)$","",$8); gsub(":(+|-)$","",$11); if($28=="."){$28="NA"}; print s,t,$1,$2,$3,$8,$11,$28,"yes"}'
-					{ grep -v -F -f "$whitelist" <(tail -n +2 "$f") || true; } | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{gsub("--","\t",$1); gsub(":(+|-)$","",$8); gsub(":(+|-)$","",$11); if($28=="."){$28="NA"}; if($2+$3>=10){print s,t,$1,$2,$3,$8,$11,$28,"no"}}'
-				}
-
-				f="$fusionsdir/fusioncatcher/$(ls "$fusionsdir/fusioncatcher" | awk -v s=$s 's~$1')/final-list_candidate-fusion-genes.txt"
-				t=fusioncatcher
-				[[ -s "$f" ]] && {
-					{ grep -F -f "$whitelist" "$f" || true; } | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{gsub(":(+|-)$","",$9); gsub(":(+|-)$","",$10); print s,t,$1,$2,$6,$5,"chr"$9,"chr"$10,$16,"yes"}'
-					{ grep -v -F -f "$whitelist" <(tail -n +2 "$f") || true; } | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{gsub(":(+|-)$","",$9); gsub(":(+|-)$","",$10); if($6+$5>=10){print s,t,$1,$2,$6,$5,"chr"$9,"chr"$10,$16,"no"}}'
-				}
-			} | perl -lane 'for my $g1 (split/,/,$F[2]){ $g1=~s/\(\d+\)$//; for my $g2 (split/,/,$F[3]){ $g2=~s/\(\d+\)$//; unless($g1 eq $g2){print join("\t",($F[0],$F[1],$g1,$g2,@F[4..$#F]))} } }' \
-				| perl -lane '$F[1].="\t".join("/",sort {$a cmp $b} @F[2..3]); print join"\t",@F' \
-				| sort -k3,3 -k8,8 -k9,9
-		done >> "$outdir/FUSIONS.tsv"
-	else
-		echo -e "sample tool fusion gene1 gene2 junction_count spanning_pairs breakpoint1 breakpoint2 effect in_whitelist" | sed 's/ /\t/g' > "$outdir/FUSIONS.tsv"
-		for f in "$fusionsdir/arriba/"*fusions.tsv; do
-			{	s=$(basename "$f" .sorted.fusions.tsv)
-				t=arriba
-				tail -n +2 "$f" | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{if($22=="."){$22="NA"}; if($5!~/^chr/){$5="chr"$5; $6="chr"$6}; if($12+$13+$14>=10){print s,t,$1,$2,$12+$13,$14,$5,$6,$22,"no"}}'
-
-				f="$fusionsdir/starfusion/$s/FusionInspector-validate/finspector.FusionInspector.fusions.abridged.tsv.annotated.coding_effect"
-				t=starfusion
-				[[ -s "$f" ]] && tail -n +2 "$f" | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{gsub("--","\t",$1); gsub(":(+|-)$","",$8); gsub(":(+|-)$","",$11); if($28=="."){$28="NA"}; if($2+$3>=10){print s,t,$1,$2,$3,$8,$11,$28,"no"}}'
-
-				f="$fusionsdir/fusioncatcher/$(ls "$fusionsdir/fusioncatcher" | awk -v s=$s 's~$1')/final-list_candidate-fusion-genes.txt"
-				t=fusioncatcher
-				[[ -s "$f" ]] && tail -n +2 "$f" | awk -F '\t' -v OFS='\t' -v s=$s -v t=$t '{gsub(":(+|-)$","",$9); gsub(":(+|-)$","",$10); if($6+$5>=10){print s,t,$1,$2,$6,$5,"chr"$9,"chr"$10,$16,"no"}}'
-			} | perl -lane 'for my $g1 (split/,/,$F[2]){ $g1=~s/\(\d+\)$//; for my $g2 (split/,/,$F[3]){ $g2=~s/\(\d+\)$//; unless($g1 eq $g2){print join("\t",($F[0],$F[1],$g1,$g2,@F[4..$#F]))} } }' \
-				| perl -lane '$F[1].="\t".join("/",sort {$a cmp $b} @F[2..3]); print join"\t",@F' \
-				| sort -k3,3 -k8,8 -k9,9
-		done >> "$outdir/FUSIONS.tsv"
-	fi
-
-	head -1 "$outdir/FUSIONS.tsv" > "$outdir/FUSIONS_nowhitelist.tsv"
-	tail -n +2 "$outdir/FUSIONS.tsv" | awk '$NF=="no"' >> "$outdir/FUSIONS_nowhitelist.tsv"
-
-	head -1 "$outdir/FUSIONS.tsv" > "$outdir/FUSIONS_merged.tsv"
-	tail -n +2 "$outdir/FUSIONS.tsv" | perl -lane 'if($F[0] eq $o[0] && $F[2] eq $o[2]){@o=@F if $F[5]+$F[6] > $o[5]+$o[6]}else{print join"\t",@o if @o; @o=@F}END{print join"\t",@o}' >> "$outdir/FUSIONS_merged.tsv"
-
-	head -1 "$outdir/FUSIONS.tsv" > "$outdir/FUSIONS_merged_nowhitelist.tsv"
-	tail -n +2 "$outdir/FUSIONS.tsv" | perl -lane 'next if $F[-1] eq "yes"; if($F[0] eq $o[0] && $F[2] eq $o[2]){@o=@F if $F[5]+$F[6] > $o[5]+$o[6]}else{print join"\t",@o if @o; @o=@F}END{print join"\t",@o}' >> "$outdir/FUSIONS_merged_nowhitelist.tsv"
+	head -1 "$outdir/fusions.tsv" > "$outdir/fusions.merged.tsv"
+	tail -n +2 "$outdir/fusions.tsv" | perl -lane 'if($F[0] eq $o[0] && $F[2] eq $o[2] && $F[3] eq $o[3]){@o=@F if $F[4]+$F[5] > $o[4]+$o[5]}else{print join"\t",@o if @o; @o=@F}END{print join"\t",@o}' >> "$outdir/fusions.merged.tsv"
+	head -1 "$outdir/fusions.full.tsv" > "$outdir/fusions.full.merged.tsv"
+	tail -n +2 "$outdir/fusions.full.tsv" | perl -lane 'if($F[0] eq $o[0] && $F[2] eq $o[2] && $F[3] eq $o[3]){@o=@F if $F[4]+$F[5] > $o[4]+$o[5]}else{print join"\t",@o if @o; @o=@F}END{print join"\t",@o}' >> "$outdir/fusions.full.merged.tsv"
 
 	return 0
 }
