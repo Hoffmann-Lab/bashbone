@@ -31,6 +31,7 @@ usage(){
 		-a | --annotation         : download Ensembl gtf
 		-d | --descriptions       : download Ensembl gene description and Ensembl gene ontology information (requires R in PATH)
 		-m | --msigdb             : download Ensembl gene description and MSigDB gene ontology information (requires R in PATH)
+		-e | --enrichr            : download Ensembl gene description and Enrichr human gene ontology information (requires R in PATH)
 		-s | --dbsnp              : download Ensembl dbSNP
 		-n | --ncbi               : switch to NCBI dbSNP
 
@@ -112,6 +113,88 @@ dlgenome::_go.ensembl(){
 
 	echo ":INFO: downloading gene ontology and descriptions"
 	Rscript "$outdir/tmp/download.R"
+	return 0
+}
+
+dlgenome::_go.enrichr(){
+	out="$outdir/$genome.fa.gtf"
+
+	export R_LIBS="$outdir/tmp"
+	mkdir -p "$R_LIBS"
+
+	[[ $(R --version | head -1 | awk '$3<3.5{print 1}') ]] && {
+		cat <<- EOF > $outdir/tmp/download.R
+			if (!requireNamespace("biomaRt", quietly = TRUE)) {
+				if (!requireNamespace("biocLite", quietly = TRUE)) source("https://bioconductor.org/biocLite.R")
+				biocLite("biomaRt", suppressUpdates=TRUE)
+			}
+			library("biomaRt")
+			v <- "$version"
+			if ("$version" == "latest") v <- listEnsemblArchives()\$version[2]
+			ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			descriptions <- data.frame()
+			for (chr in grep("^(MT|X|Y|\\\d+)$",listFilterOptions(mart = ensembl, filter = "chromosome_name"), value=T, perl=T)){
+				cat(paste0("downloading datasets of chr",chr,", please wait...\n"))
+				descriptions <- rbind(descriptions, getBM(mart=ensembl, attributes=c("ensembl_gene_id","external_gene_name","gene_biotype","description"), filters=c("chromosome_name"), values=list(chr)))
+			}
+			descriptions[,2][descriptions[2]==""] <- descriptions[,1][descriptions[2]==""]
+			write.table(descriptions,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.info")
+		EOF
+	} || {
+		cat <<- EOF > $outdir/tmp/download.R
+			if (!requireNamespace("biomaRt", quietly = TRUE)) {
+				if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager", repos="http://cloud.r-project.org", Ncpus=$threads, clean=T)
+				library("BiocManager")
+				BiocManager::install(c("biomaRt"), Ncpus=$threads, clean=T)
+			}
+			library("biomaRt")
+			v <- "$version"
+			if ("$version" == "latest") v <- listEnsemblArchives()\$version[2]
+			ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			descriptions <- data.frame()
+			for (chr in grep("^(MT|X|Y|\\\d+)$",listFilterOptions(mart = ensembl, filter = "chromosome_name"), value=T, perl=T)){
+				cat(paste0("downloading datasets of chr",chr,", please wait...\n"))
+				descriptions <- rbind(descriptions, getBM(mart=ensembl, attributes=c("ensembl_gene_id","external_gene_name","gene_biotype","description"), filters=c("chromosome_name"), values=list(chr)))
+			}
+			descriptions[,2][descriptions[2]==""] <- descriptions[,1][descriptions[2]==""]
+			write.table(descriptions,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.info")
+		EOF
+	}
+
+	echo ":INFO: downloading gene ontology and descriptions"
+	Rscript "$outdir/tmp/download.R"
+
+	wget -O "$outdir/tmp/ncbi.info.gz" -c -q --show-progress --progress=bar:force --waitretry=10 --tries=10 --retry-connrefused --timestamping "https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz"
+	gzip -dc "$outdir/tmp/ncbi.info.gz" | perl -lanE 'next unless $F[5]=~/Ensembl:(ENSG\d+)/; say "$F[2]\t$1"' > "$outdir/tmp/ncbi.info"
+
+	rm -f "$out.go"
+	for domain in Biological_Process Molecular_Function Cellular_Component; do
+		version=$(date +%Y)
+		while :; do	wget -O "$outdir/tmp/$domain.gmt" -c -q --show-progress --progress=bar:force --waitretry=10 --tries=10 --retry-connrefused --timestamping "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=GO_${domain}_$version" && break || ((version--)); done
+		perl -F'\t' -slanE '
+			BEGIN{
+				open F,"<$info" or die $!;
+				while(<F>){
+					chomp;
+					@F=split/\t/;
+					$g2i{$F[0]}=$F[1];
+				}
+				close F;
+			}
+			$F[0]=~s/\s+\((GO:\d+)\)$//;
+			for (@F[2..$#F]){
+				$i=$g2i{$_};
+				next unless $i;
+				say join"\t",($i,$1,$domain,$F[0]);
+			}
+		' -- -info="$outdir/tmp/ncbi.info" -domain="${domain,,}" "$outdir/tmp/$domain.gmt" >> "$out.go"
+	done
+
+	cat <<-EOF > "$out.go.README"
+		$(date)
+		$USER
+		Enrichr go v$version
+	EOF
 	return 0
 }
 
@@ -823,6 +906,7 @@ checkopt() {
 		-n | --n | -ncbi | --ncbi) db='ncbi';;
 		-d | --d | -descriptions | --descriptions) godb="ensembl";;
 		-m | --m | -msigdb | --msigdb) godb="msigdb";;
+		-e | --e | -enrichr | --enrichr) godb="enrichr";;
 		-*) echo ":ERROR: illegal option $1"; return 1;;
 		*) echo ":ERROR: illegal option $2"; return 1;;
 	esac
