@@ -335,7 +335,7 @@ function cluster::coexpression(){
 						args = add_argument(args, "--out", short="-o", help="path to output tsv", flag=F);
 						args = parse_args(args);
 						dds = DESeqDataSetFromHTSeqCount(sampleTable=read.table(args$csv, header=F, sep=",", stringsAsFactors=F, check.names=F, quote=""), directory="", design=~1);
-						vsd = as.data.frame(assay(varianceStabilizingTransformation(dds, blind=FALSE)));
+						vsd = as.data.frame(assay(varianceStabilizingTransformation(dds, blind=TRUE)));
 						write.table(data.frame(id=rownames(vsd), vsd, check.names=F), file=args$out, col.names=T, row.names=F, quote=F, sep = '\t');
 					'
 				CMD

@@ -19,7 +19,7 @@ function alignment::mkreplicates(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir="${TMPDIR:-/tmp}"
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}"
 	declare -n _mapper_mkreplicates _nidx_mkreplicates _nridx_mkreplicates _tidx_mkreplicates _ridx_mkreplicates _pidx_mkreplicates
 	while getopts 'S:s:q:t:r:n:m:i:j:k:o:' arg; do
 		case $arg in
@@ -63,19 +63,21 @@ function alignment::mkreplicates(){
 			odir=$outdir/$m
 			mkdir -p "$odir"
 			for i in "${!_nidx_mkreplicates[@]}"; do
-				tf=${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}
-				rf=${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}
-				o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(\..+)\t(.+)\1/-\2.pseudopool\1/')
+				tf="${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}"
+				rf="${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}"
+				o="$odir/$(echo -e "$(basename "$tf")\t$(basename "$rf")" | sed -E 's/(\..+)\t(.+)\1/-\2.pseudopool\1/')"
 
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					samtools merge
 						-f
 						-c
 						-p
 						-@ $ithreads1
 						"$o"
-						<(samtools view -@ $(((ithreads1+1)/2)) -u -s 0.5 $tf)
-						<(samtools view -@ $(((ithreads1+1)/2)) -u -s 0.5 $rf)
+						<(samtools view -@ $(((ithreads1+1)/2)) -u -s 0.5 "$tf")
+						<(samtools view -@ $(((ithreads1+1)/2)) -u -s 0.5 "$rf")
+				CMD
+					samtools index -@ $ithreads1 "$o" "${o%.*}.bai"
 				CMD
 
 				_bams_mkreplicates+=("$o")
@@ -105,24 +107,28 @@ function alignment::mkreplicates(){
 			_pidx_mkreplicates+=("${_pidx_mkreplicates[@]}")
 			for m in "${_mapper_mkreplicates[@]}"; do
 				declare -n _bams_mkreplicates=$m
-				odir=$outdir/$m
+				odir="$outdir/$m"
 				mkdir -p $odir
 				for i in "${!_nridx_mkreplicates[@]}"; do
-					nf=${_bams_mkreplicates[${_nidx_mkreplicates[$i]}]}
-					nrf=${_bams_mkreplicates[${_nridx_mkreplicates[$i]}]}
-					o=$odir/$(echo -e "$(basename $nf)\t$(basename $nrf)" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')
+					nf="${_bams_mkreplicates[${_nidx_mkreplicates[$i]}]}"
+					nrf="${_bams_mkreplicates[${_nridx_mkreplicates[$i]}]}"
+					o="$odir/$(echo -e "$(basename "$nf")\t$(basename "$nrf")" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')"
 
-					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-						samtools merge -f -c -p -@ $ithreads2 $o $nf $nrf
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+						samtools merge -f -c -p -@ $ithreads2 "$o" "$nf" "$nrf"
+					CMD
+						samtools index -@ $ithreads2 "$o" "${o%.*}.bai"
 					CMD
 					_bams_mkreplicates+=("$o")
 					$addindex && _nidx_mkreplicates+=($((${#_bams_mkreplicates[@]}-1)))
 
-					tf=${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}
-					rf=${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}
-					o=$odir/$(echo -e "$(basename $tf)\t$(basename $rf)" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')
-					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-						samtools merge -f -c -p -@ $ithreads2 $o $tf $rf
+					tf="${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}"
+					rf="${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}"
+					o="$odir/$(echo -e "$(basename "$tf")\t$(basename "$rf")" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')"
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+						samtools merge -f -c -p -@ $ithreads2 "$o" "$tf" "$rf"
+					CMD
+						samtools index -@ $ithreads2 "$o" "${o%.*}.bai"
 					CMD
 					_bams_mkreplicates+=("$o")
 					$addindex && _pidx_mkreplicates+=($((${#_bams_mkreplicates[@]}-1)))
@@ -144,12 +150,12 @@ function alignment::mkreplicates(){
 		#          2 vs 7 + 2 vs 8 + 2 vs 4
 		for m in "${_mapper_mkreplicates[@]}"; do
 			declare -n _bams_mkreplicates=$m
-			odir=$outdir/$m
-			mkdir -p $odir $tdir
+			odir="$outdir/$m"
+			mkdir -p "$odir"
 
 			for i in "${!_nidx_mkreplicates[@]}"; do
-				pf=${_bams_mkreplicates[${_pidx_mkreplicates[$i]}]}
-				o=$odir/$(basename ${pf%.*}.pseudorep)
+				pf="${_bams_mkreplicates[${_pidx_mkreplicates[$i]}]}"
+				o="$odir/$(basename "${pf%.*}").pseudorep"
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.mkreplicates)")
 
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
@@ -158,7 +164,7 @@ function alignment::mkreplicates(){
 						-n $((threads<64?64:threads))
 						-u
 						-O
-						$pf ${tdirs[-1]}/$(basename ${pf%.*})
+						"$pf" "${tdirs[-1]}/$(basename "${pf%.*}")"
 				CMD
 					samtools view -@ $ithreads1
 				CMD
@@ -166,9 +172,11 @@ function alignment::mkreplicates(){
 						--numeric-suffixes=1
 						--additional-suffix=.bam
 						-a 1
-						-l \$(( (\$(samtools view -c -@ $ithreads1 $pf)+1)/2 ))
-						--filter='cat <(samtools view -H $pf) - | samtools sort -@ $ithreads1 -O BAM -T ${tdirs[-1]}/\$(basename \${FILE%.*}) > \$FILE'
-						- $o
+						-l \$(( (\$(samtools view -c -@ $ithreads1 "$pf")+1)/2 ))
+						--filter='cat <(samtools view -H "$pf") - | samtools sort -@ $ithreads1 -O BAM -T "${tdirs[-1]}/\$(basename "\${FILE%.*}")" > "\$FILE"'
+						- "$o";
+					samtools index -@ $ithreads1 "${o}1.bam" "${o}1.bai";
+					samtools index -@ $ithreads1 "${o}2.bam" "${o}2.bai";
 				CMD
 				# -n number of temporary files has default 64
 				# -u not equals --output-fmt SAM => a small compression level (optimum: -l 3) reduces amount of data stream through pipe
@@ -218,13 +226,14 @@ function alignment::strandsplit(){
 			-r <mapper>     | array of sorted, indexed bams within array of
 			-x <strandness> | hash per bam of
 			-g <gtf>        | path to
+			-o <outdir>     | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads outdir tmpdir="${TMPDIR:-/tmp}" gtf
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" gtf
 	declare -n _mapper_strandsplit _strandness_strandsplit
-	while getopts 'S:s:t:r:x:g:' arg; do
+	while getopts 'S:s:t:r:x:g:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -232,6 +241,7 @@ function alignment::strandsplit(){
 			t)	((++mandatory)); threads=$OPTARG;;
 			r)	((++mandatory)); _mapper_strandsplit=$OPTARG;;
 			x)	((++mandatory)); _strandness_strandsplit=$OPTARG;;
+			o)	outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
 	done
@@ -239,11 +249,16 @@ function alignment::strandsplit(){
 
 	commander::printinfo "splitting alignments according to strandness"
 
-	declare -a tdirs cmd1
-	local m f odir b x
+	declare -a tdirs cmd1 cmd2
+	local m f odir b x s r o
 	for m in "${_mapper_strandsplit[@]}"; do
 		declare -n _bams_strandsplit=$m
 		for f in "${_bams_strandsplit[@]}"; do
+			odir="$outdir/$m"
+			[[ $outdir ]] || odir="$(dirname "$f")"
+			mkdir -p "$odir"
+			o="$odir/$(basename "${f%.*}")"
+
 			if [[ _strandness_strandsplit["$f"] -eq 0 ]]; then
 				commander::warn "library preparation for $f was not strand specific. skipping."
 				continue
@@ -258,7 +273,6 @@ function alignment::strandsplit(){
 			fi
 			b="$(basename "$f")"
 			b="${b%.*}"
-			o="${f%.*}"
 
 			# infer SE or PE filter
 			x=$(samtools view -F 4 "$f" | head -10000 | cat <(samtools view -H "$f") - | samtools view -c -f 1)
@@ -267,9 +281,7 @@ function alignment::strandsplit(){
 			if [[ $x -gt 0 ]]; then
 				# 98 = proper-pair + first-in-pair + mate-reverse
 				# 146 = poper-pair + second-in-pair + reverse
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					rm -f "${tdirs[-1]}/$b"*
-				CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					samtools merge
 					-f
 					-c
@@ -300,9 +312,7 @@ function alignment::strandsplit(){
 				# 82 = proper-pair + first-in-pair + reverse
 				# 162 = proper-pair + second-in-pair + mate-reverse
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)")
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					rm -f "${tdirs[-1]}/$b"*
-				CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					samtools merge
 					-f
 					-c
@@ -314,9 +324,7 @@ function alignment::strandsplit(){
 				CMD
 			else
 				# 16 = reverse
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					rm -f "${tdirs[-1]}/$b"*
-				CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					samtools view -@ $threads -u -F 4 -f 16 "$f" | samtools sort -O BAM -@ $threads -T "${tdirs[-1]}/$b" > "$o.$r.bam"
 				CMD
 			fi
@@ -337,6 +345,98 @@ function alignment::strandsplit(){
 	else
 		commander::runcmd -v -b -i 1 -a cmd1
 		commander::runcmd -v -b -i 1 -a cmd2
+	fi
+
+	return 0
+}
+
+function alignment::downsample(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[1]} usage:
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands. use with -d
+			-t <threads>    | number of
+			-r <mapper>     | array of sorted, indexed bams within array of
+			-o <outdir>     | path to
+			-m <basename>   | of merged bam from downsampled files. optional
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads outdir merged
+	declare -n _mapper_downsample
+	while getopts 'S:s:t:r:o:m:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_downsample=$OPTARG;;
+			o)	outdir="$OPTARG"; mkdir -p "$outdir";;
+			m)	merged="$OPTARG";;
+			*)	_usage;;
+		esac
+	done
+	[[ $mandatory -lt 2 ]] && _usage
+	[[ $merged && ! $outdir ]] && _usage
+
+	commander::printinfo "downsampling alignments to smallest"
+
+	declare -n _bams_downsample="${_mapper_downsample[0]}"
+	local ithreads instances=$((${#_mapper_downsample[@]}*${#_bams_downsample[@]}))
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+
+
+	declare -a cmd1 cmd2 cmd3 tomerge
+	local m i n f min odir
+	for m in "${_mapper_downsample[@]}"; do
+		declare -n _bams_downsample=$m
+		[[ $outdir ]] && odir="$outdir/$m" && mkdir -p "$odir"
+
+		tomerge=()
+		min=0
+		while read -r n i; do
+			f="${_bams_downsample[$i]}"
+			[[ $outdir ]] || odir="$(dirname "$f")"
+			o="$odir/$(basename "${f%.*}").downsampled.bam"
+			tomerge+=("$o")
+
+			if [[ $min -eq 0 ]]; then
+				min=$n
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					ln -sfnr "$f" "$o"
+				CMD
+			else
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					samtools view -b --subsample-seed 1234 -s $(echo $n | awk -v min=$min '{print min/$1}') "$f" > "$o"
+				CMD
+			fi
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+				samtools index -@ $ithreads "$o" "${o%.*}.bai"
+			CMD
+		done < <(
+			for i in "${!_bams_downsample[@]}"; do
+				echo "$(samtools idxstats "${_bams_downsample[$i]}" | awk '{n=n+$3}END{print n}') $i"
+			done | sort -k1,1n
+		)
+
+		if [[ $merged ]]; then
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				samtools merge -@ $threads -f -c -p "$outdir/$m/$merged" $(printf '"%s" ' "${tomerge[@]}")
+			CMD
+				samtools index -@ $threads "$outdir/$m/$merged" "$outdir/$m/${merged%.*}.bai"
+			CMD
+		fi
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+	else
+		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
+		commander::runcmd -v -b -i 1 -a cmd3
 	fi
 
 	return 0

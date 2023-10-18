@@ -1105,7 +1105,7 @@ function alignment::_sizeselect(){
 	[[ $minsize -lt $maxsize ]]
 	unset BASHBONE_ERROR
 
-	commander::makecmd -a _cmds1_sizeselect -s ';' -c {COMMANDER[0]}<<- CMD
+	commander::makecmd -a _cmds1_sizeselect -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 		MALLOC_ARENA_MAX=4 picard
 			-Xmx250m
 			-XX:ParallelGCThreads=1
@@ -1121,6 +1121,8 @@ function alignment::_sizeselect(){
 			ASSUME_SORTED=true
 			VALIDATION_STRINGENCY=SILENT
 			VERBOSITY=WARNING
+	CMD
+		awk -v OFS='\t' '!/^\S*$/{if(p){print \$1,\$2}if(/insert_size/){p=1}}' "$outbase.sizemetrics.txt" > "$outbase.sizemetrics.tsv"
 	CMD
 
 	declare -a cmdchk=("samtools --version | head -1 | cut -d '.' -f 2")
@@ -1801,11 +1803,13 @@ function alignment::qcstats(){
 	commander::printinfo "plotting mapping stats"
 
 	local filter b o all a s c x odir
-	declare -a cmd1
+	declare -a cmd1 tojoin header
 	for m in "${_mapper_bamstats[@]}"; do
 		declare -n _bams_bamstats=$m
 		odir="$outdir/$m"
 		mkdir -p "$odir"
+		header="size"
+		tojoin=()
 		echo -e "sample\ttype\tcount" > "$odir/mapping.barplot.tsv"
 		for i in "${!_bams_bamstats[@]}"; do
 			[[ "${_bams_bamstats[$i]}" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
@@ -1819,6 +1823,8 @@ function alignment::qcstats(){
 			o="$odir/$b.stats"
 			unset all filter
 			for bam in "${_mi_bamstats[@]}"; do
+				[[ -s "${bam%.*}.sizemetrics.tsv" ]] && header+="\t$b" && tojoin+=("${bam%.*}.sizemetrics.tsv")
+
 				# total = primary mapped + secondary + supplementary (primary mapped may include unampped reads if any i.e. 0 = total - secondary - supplementary)
 				# primary mapped = mapped - secondary - supplementary
 				[[ ! $filter ]] && filter='mapped' || filter=$(echo "${bam/\.sorted\./.}" | rev | cut -d '.' -f 2 | rev)
@@ -1846,39 +1852,81 @@ function alignment::qcstats(){
 			perl -F'\t' -lane '$all=$F[2] unless $all; $F[0].=" ($all)"; $F[2]=(100*$F[2]/$all); print join"\t",@F' $o | tac | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$odir/mapping.barplot.tsv"
 		done
 
-		commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-			Rscript - <<< '
-				suppressMessages(library("ggplot2"));
-				suppressMessages(library("scales"));
-				args <- commandArgs(TRUE);
-				intsv <- args[1];
-				outfile <- args[2];
-				m <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-				l <- length(m$type)/length(unique(m$sample));
-				l <- m$type[1:l];
-				m$type = factor(m$type, levels=l);
-				pdf(outfile);
-				ggplot(m, aes(x = sample, y = count, fill = type)) +
-					ggtitle("Mapping") + xlab("Sample") + ylab("Readcount in %") +
-					theme_bw() + guides(fill=guide_legend(title=NULL)) +
-					theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8)) +
-					geom_bar(position = "fill", stat = "identity") +
-					scale_y_continuous(labels = percent_format());
-				graphics.off();
-			'
-		CMD
-			"$odir/mapping.barplot.tsv"  "$odir/mapping.barplot.pdf"
-		CMD
+		if [[ $x -ge 2 ]]; then
+			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				Rscript - <<< '
+					suppressMessages(library("ggplot2"));
+					suppressMessages(library("scales"));
+					args <- commandArgs(TRUE);
+					intsv <- args[1];
+					outfile <- args[2];
+					m <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+					l <- length(m$type)/length(unique(m$sample));
+					l <- m$type[1:l];
+					m$type = factor(m$type, levels=l);
+					pdf(outfile);
+					ggplot(m, aes(x = sample, y = count, fill = type)) +
+						ggtitle("Mapping") + xlab("Sample") + ylab("Readcount in %") +
+						theme_bw() + guides(fill=guide_legend(title=NULL)) +
+						theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8)) +
+						geom_bar(position = "fill", stat = "identity") +
+						scale_y_continuous(labels = percent_format());
+					graphics.off();
+				'
+			CMD
+				"$odir/mapping.barplot.tsv"  "$odir/mapping.barplot.pdf"
+			CMD
+		fi
+
+		if [[ ${#tojoin[@]} -eq 1 ]]; then
+			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+				{	echo -e "$header";
+					cat "$tojoin";
+				} >  "$odir/insertsizes.histogram.tsv";
+			CMD
+				Rscript - <<< '
+					suppressMessages(library("ggpubr"));
+					suppressMessages(library("tidyr"));
+					args <- commandArgs(TRUE);
+					intsv <- args[1];
+					outfile <- args[2];
+					df <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+					df <- as.data.frame(pivot_longer(df,2:ncol(df),names_to="sample",values_to="count"));
+					ggline(df, x = "size", y = "count", color = "sample", plot_type = "l");
+					ggsave(outfile, width=16, height=9);
+				'
+			CMD
+				"$odir/insertsizes.histogram.tsv" "$odir/insertsizes.histogram.pdf"
+			CMD
+		elif [[ ${#tojoin[@]} -gt 1 ]]; then
+			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+				helper::multijoin
+					-e 'NA'
+					-h "$(echo -e "$header")"
+					-o "$odir/insertsizes.histogram.tsv"
+					-f $(printf '"%s" ' "${tojoin[@]}");
+			CMD
+				Rscript - <<< '
+					suppressMessages(library("ggpubr"));
+					suppressMessages(library("tidyr"));
+					args <- commandArgs(TRUE);
+					intsv <- args[1];
+					outfile <- args[2];
+					df <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+					df <- as.data.frame(pivot_longer(df,2:ncol(df),names_to="sample",values_to="count"));
+					ggline(df, x = "size", y = "count", color = "sample", plot_type = "l");
+					ggsave(outfile, width=16, height=9);
+				'
+			CMD
+				"$odir/insertsizes.histogram.tsv" "$odir/insertsizes.histogram.pdf"
+			CMD
+		fi
 	done
 
-	if [[ $x -lt 2 ]]; then
-		commander::warn "too few postprocessing steps applied for plotting"
+	if $skip; then
+		commander::printcmd -a cmd1
 	else
-		if $skip; then
-			commander::printcmd -a cmd1
-		else
-			commander::runcmd -v -b -i $threads -a cmd1
-		fi
+		commander::runcmd -v -b -i $threads -a cmd1
 	fi
 
 	return 0

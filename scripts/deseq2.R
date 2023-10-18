@@ -496,7 +496,7 @@ get_table = function(dds){
 		file=file.path(odir,"experiments.vsc"), quote=F, sep="\t"
 	)
 
-	zscores = log(vsc+1)
+	zscores = vsc #log(vsc+1)
 	zscores = zscores-rowMeans(zscores)
 	zscores = zscores/apply(zscores,1,sd)
 	zscores[is.na(zscores)] = 0
@@ -512,7 +512,7 @@ get_table = function(dds){
 	write.table(data.frame(id=rownames(meanvsc),meanvsc,check.names=F), row.names = F,
 		file = file.path(odir,"experiments.mean.vsc"), quote=F, sep="\t"
 	)
-	meanzscores = log(meanvsc+1)
+	meanzscores = meanvsc #log(meanvsc+1)
 	meanzscores = meanzscores-rowMeans(meanzscores)
 	meanzscores = meanzscores/apply(meanzscores,1,sd)
 	meanzscores[is.na(meanzscores)] = 0

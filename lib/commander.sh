@@ -104,8 +104,9 @@ function commander::makecmd(){
 	declare -n _cmds_makecmd # be very careful with circular name reference
 	while getopts 'v:a:o:s:c' arg; do
 		case $arg in
-			v)	declare -n _var_makecmd=$OPTARG
-				vars+="$OPTARG=$(printf '%q;' "$_var_makecmd") " # to use multi-line variable assignemnts for job shell use '%q\n'
+			v)	# declare -n _var_makecmd=$OPTARG
+				# vars+="$OPTARG=$(printf '%q;' "$_var_makecmd") " # to use multi-line variable assignemnts for job shell use '%q\n'
+				vars+="$(declare -p $OPTARG); "
 			;;
 			a)	((++mandatory)); _cmds_makecmd=$OPTARG;;
 			s)	sep=$(echo -e "$OPTARG");; # echo -e here to make e.g. '\t' but not '\n' possible
@@ -224,8 +225,7 @@ function commander::runcmd(){
 	# solution: use a fake shell via PARALLEL_SHELL to prevent sourcing bashrc
 	cat <<- 'EOF' > "$tmpdir/shell.$jobname"
 		#!/usr/bin/env bash
-		shift
-		exec $*
+		exec bash "$@"
 	EOF
 	chmod 755 "$tmpdir/shell.$jobname"
 
@@ -477,11 +477,12 @@ function commander::qsubcmd(){
 
 	# attention: -S /bin/bash cannot be -S "/bin/bash --noprofile" and thus sources bash_profile and bashrc which in worst case modifies PATH so that bashbone may not serve its binaries first
 	# solution: use a fake shell to prevent sourcing bashrc
-	cat <<- 'EOF' > "$logdir/shell.$jobname"
-		#!/usr/bin/env bash
-		exec bash $*
-	EOF
-	chmod 755 "$logdir/shell.$jobname"
+	# or better source rc to allow user configs like shorunal and don't submit current environment
+	# cat <<- 'EOF' > "$logdir/shell.$jobname"
+	# 	#!/usr/bin/env bash
+	# 	exec bash "$@"
+	# EOF
+	# chmod 755 "$logdir/shell.$jobname"
 
 	local i id sh
 	for i in "${!_cmds_qsubcmd[@]}"; do
@@ -523,9 +524,8 @@ function commander::qsubcmd(){
 				jobid=$(cut -d '.' -f 1 <<< $l)
 				echo "qdel $jobid &> /dev/null" >> "$BASHBONE_CLEANUP"
 			fi
-			# requires 1>&2 : echo "$l" | sed -E '/exited/!d; s/Job ([0-9]+)\.(.+)\./\1 job.'$jobname'.\2/;t;s/Job ([0-9]+) (.+)\./\1 job.'$jobname'.1 \2/'
-			# "$(env bash -c 'command -v bash')"
-		done < <(echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -terse -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$logdir/shell.$jobname" -V -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
+		done < <(echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -terse -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(command -v bash)" -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
+		# done < <(echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -terse -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$logdir/shell.$jobname" -V -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
 
 		# use command/env qstat in case someone like me makes use of an alias :)
 		# wait until accounting record is written to epilog after jobs post-processing metrics collection
@@ -534,14 +534,14 @@ function commander::qsubcmd(){
 		done
 		touch "$ex" #nfs requirend to make file visible in current shell on current node
 		ex=$(awk '{print $NF}' "$ex" | sort -rg | head -1)
-		# ex=$(qacct -j $jobid | awk '/^exit_status/{if($NF>x){x=$NF}}END{print x}')
 		if $benchmark; then
 			qacct -j $jobid | perl -M'List::Util qw(min max)' -lanE 'if($F[0] eq "start_time"){$d=join(" ",@F[1..$#F]); $d=`date -d "$d" +%s`; $sta=min($d,$sta?$sta:$d)} if($F[0] eq "end_time"){$d=join(" ",@F[1..$#F]); $d=`date -d "$d" +%s`; $sto=max($d,$sto?$sto:$d)} END{$s=$sto-$sta; if($s>3600){$d=3600}else{$d=60}; $hm=sprintf("%.0d",$s/$d); $hm=0 unless $hm; $ms=sprintf("%05.2f",($s/$d-$hm)*60); say ":BENCHMARK: runtime $hm:$ms [hours:]minutes:seconds"}'
 			printf ":BENCHMARK: memory %s\n" $(qacct -j $jobid | sed -nE 's/^ru_maxrss\s+([0-9.]+)\s*(.*)$/\1 \2/p' | sort -gr | head -1)
 		fi
 		return $ex
 	else
-		echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$logdir/shell.$jobname" -V -cwd -o "$log" -j y -N $jobname
+		echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(command -v bash)" -cwd -o "$log" -j y -N $jobname
+		# echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$logdir/shell.$jobname" -V -cwd -o "$log" -j y -N $jobname
 		return 0
 	fi
 }

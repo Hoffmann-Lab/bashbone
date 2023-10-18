@@ -49,7 +49,7 @@ dds = estimateSizeFactors(dds)
 
 log = DESeqTransform(SummarizedExperiment(log2(counts(dds, normalized=T) + 1), colData=colData(dds))) # normalized=T devides by library size factors
 save(log, file = file.path(outdir,"log.RData"))
-vsd = varianceStabilizingTransformation(dds, blind=FALSE)
+vsd = varianceStabilizingTransformation(dds, blind=TRUE)
 save(vsd, file = file.path(outdir,"vsd.RData"))
 rld = rlog(dds, blind=FALSE)
 save(rld, file = file.path(outdir,"rld.RData"))

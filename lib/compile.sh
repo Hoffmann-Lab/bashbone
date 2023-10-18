@@ -266,7 +266,7 @@ function compile::conda_tools(){
 	}
 
 	# better do not predefine python version. if tool recipe depends on earlier version, conda installs an older or the oldest version (freebayes)
-	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 genrich peakachu diego gatk4 freebayes varscan igv intervene raxml metilene umitools methyldackel idr clust seacr gopeaks; do
+	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 genrich peakachu diego gatk4 freebayes varscan igv intervene deeptools raxml metilene umi_tools methyldackel idr clust seacr gopeaks; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
 		[[ $tool == "bwa" ]] && tool+=" bwa-mem2"
@@ -293,7 +293,7 @@ function compile::conda_tools(){
 	chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl"
 	cat <<-EOF > "$insdir/conda/envs/seacr/bin/SEACR.sh"
 		#!/usr/bin/env bash
-		exec "\$(realpath -s "\$(dirname "\$0")")/$(basename "$insdir/conda/envs/seacr/bin/"SEACR_*.sh)" \$*
+		exec "\$(realpath -s "\$(dirname "\$0")")/$(basename "$insdir/conda/envs/seacr/bin/"SEACR_*.sh)" "\$@"
 	EOF
 	chmod 755 "$insdir/conda/envs/seacr/bin/SEACR.sh"
 
