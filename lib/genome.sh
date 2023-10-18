@@ -334,18 +334,19 @@ function genome::view(){
 				      format: "gtf",
 				      indexed: false,
 				      hidden: true
-				    }
-				  ]
-				}
+                    }
+                  ]
 			EOF
 		else
 			cat <<- EOF >> "$igvdir/genomes/current.json"
 			    }
 			  ]
-			}
 			EOF
 		fi
 	fi
+	cat <<- EOF >> "$igvdir/genomes/current.json"
+		}
+	EOF
 
 	local i x l f="$outdir/igv.batch"
 	# do not use "new"
