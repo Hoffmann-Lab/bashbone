@@ -669,15 +669,16 @@ function expression::join_deseq(){
 					args <- commandArgs(TRUE);
 					intsv <- args[1];
 					outf <- args[2];
+					dolog <- args[3];
 					df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-					df <- log(df+1);
+					if(dolog) df <- log(df+1);
 					df <- df-rowMeans(df);
 					df <- df/apply(df,1,sd);
 					df[is.na(df)] <- 0;
 					write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
 				'
 			CMD
-				"$odir/experiments.$e" "$odir/experiments.$e.zscores"
+				"$odir/experiments.$e" "$odir/experiments.$e.zscores" $([[ ! $e =~ vsc ]] && echo TRUE || echo false)
 			CMD
 
 			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
@@ -685,15 +686,16 @@ function expression::join_deseq(){
 					args <- commandArgs(TRUE);
 					intsv <- args[1];
 					outf <- args[2];
+					dolog <- args[3];
 					df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-					df <- log(df+1);
+					if(dolog) df <- log(df+1);
 					df <- df-rowMeans(df);
 					df <- df/apply(df,1,sd);
 					df[is.na(df)] <- 0;
 					write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
 				'
 			CMD
-				"$odir/experiments.mean.$e" "$odir/experiments.mean.$e.zscores"
+				"$odir/experiments.mean.$e" "$odir/experiments.mean.$e.zscores" $([[ ! $e =~ vsc ]] && echo TRUE || echo false)
 			CMD
 
 			if $joinheatmaps && [[ "$e" != "htsc" && $(wc -l < "$topids") -gt 1 ]]; then
