@@ -57,7 +57,9 @@ function helper::sort(){
 
 	local instances tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sort)"
 	read -r instances maxmemory < <(configure::memory_by_instances -i 1 -M "$maxmemory")
-	LC_ALL=C sort --parallel="$threads" -S "${maxmemory}M" -T "$tdir" "${args[@]}" "$f" > "$o"
+	LC_ALL=C sort --parallel="$threads" -S "${maxmemory}M" -T "$tdir" "${args[@]}" "$f" > "$o" | cat
+	# fun(){ echo foo > /dev/stdout; }; echo bar > tmp; fun >> tmp. cat tmp # foo
+	# fun(){ echo foo > /dev/stdout | cat; }; echo bar > tmp; fun >> tmp. cat tmp # bar foo
 
 	return 0
 }
@@ -90,10 +92,10 @@ function helper::vcfsort(){
 	local instances maxmemory tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vcfsort)"
 	read -r instances maxmemory < <(configure::memory_by_instances -i 1 -M "$maxmemory")
 	if $zip; then
-		bcftools view "$f" 2> >(sed -u '/vcf_parse/{q 1}' >&2) | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[a[1]]=i}; print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[i]=a[1]}; print; next} {$1=c[$1]; print}' | bgzip -k -c -@ $threads /dev/stdin > "$o"
+		bcftools view "$f" 2> >(sed -u '/vcf_parse/{q 1}' >&2) | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[a[1]]=i}; print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[i]=a[1]}; print; next} {$1=c[$1]; print}' | bgzip -k -c -@ $threads /dev/stdin > "$o" | cat
 		tabix -f -p vcf "$o"
 	else
-		bcftools view "$f" 2> >(sed -u '/vcf_parse/{q 1}' >&2) | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[a[1]]=i}; print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' '/^#/{if(match($0,/.*#contig=<ID=(\S+),length.*/,a)){i++; c[i]=a[1]}; print; next} {$1=c[$1]; print}' > "$o"
+		bcftools view "$f" 2> >(sed -u '/vcf_parse/{q 1}' >&2) | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[a[1]]=i}; print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' '/^#/{if(match($0,/.*#contig=<ID=(\S+),length.*/,a)){i++; c[i]=a[1]}; print; next} {$1=c[$1]; print}' > "$o" | cat
 	fi
 
 	return 0
@@ -225,12 +227,12 @@ function helper::multijoin(){
 	local tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.join)"
 	local joined="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.joined)"
 
-	join -t "$sep" -1 1 -2 1 -a 1 -a 2 -e "$empty" -o '0,1.2,2.2' "$1" "$2" > "$joined"
+	join --nocheck-order -t "$sep" -1 1 -2 1 -a 1 -a 2 -e "$empty" -o '0,1.2,2.2' "$1" "$2" > "$joined"
 	for i in $(seq 3 $#); do
 		format="0"
 		for j in $(seq 2 $i); do format+=",1.$j"; done
 		format+=",2.2"
-		join -t "$sep" -1 1 -2 1 -a 1 -a 2 -e "$empty" -o "$format" "$joined" "${!i}" > "$tmp"
+		join --nocheck-order -t "$sep" -1 1 -2 1 -a 1 -a 2 -e "$empty" -o "$format" "$joined" "${!i}" > "$tmp"
 		mv "$tmp" "$joined"
 	done
 
