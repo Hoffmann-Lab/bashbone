@@ -113,7 +113,7 @@ mkdir -p "$(dirname "$outfile")"
 BASHBONE_ERROR="cannot create output file"
 touch "$outfile"
 resume=true
-unset ERROR
+unset BASHBONE_ERROR
 
 if $files; then
 	for i in $(seq 1 $#); do
