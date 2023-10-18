@@ -354,7 +354,7 @@ function bisulfite::mecall(){
 			-t <threads>  | number of
 			-M <maxmemory>| amount of
 			-g <genome>   | path to
-			-x <context>  | Cp* base - default: CG
+			-x <context>  | 2-base - default: CG
 			-r <mapper>   | array of bams within array of
 			-o <outdir>   | path to
 		EOF
@@ -370,7 +370,7 @@ function bisulfite::mecall(){
 			t)	((++mandatory)); threads=$OPTARG;;
 			M)	maxmemory=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
-			x)	context=$OPTARG;;
+			x)	context="$OPTARG";;
 			r)	((++mandatory)); _mapper_haarz=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
@@ -420,7 +420,7 @@ function bisulfite::mecall(){
 					print join"\t",($F[0],$F[1]-1,$F[1],(split/:/,$F[-1])[-3,-4,0])
 				'
 			CMD
-				-- -c=$context |
+				-- -c="$context" |
 			CMD
 				bedtools merge -d -1 -c 4,5,6 -o sum,sum,max |
 			CMD
@@ -458,7 +458,7 @@ function bisulfite::methyldackel(){
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
 			-g <genome>   | path to
-			-x <context>  | Cp* base - default: CG
+			-x <context>  | 2-base - default: CG
 			-r <mapper>   | array of bams within array of
 			-o <outdir>   | path to
 		EOF
@@ -473,7 +473,7 @@ function bisulfite::methyldackel(){
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
-			x)	context=CG;;
+			x)	context="$OPTARG";;
 			r)	((++mandatory)); _mapper_methyldackel=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
@@ -521,7 +521,7 @@ function bisulfite::methyldackel(){
 					print join"\t",($F[0],$F[1]-1,$F[1],$F[3],$F[3]+$F[4])
 				'
 			CMD
-				-- -c=$context |
+				-- -c="$context" |
 			CMD
 				bedtools merge -d -1 -c 4,5 -o sum,sum |
 			CMD
@@ -620,9 +620,9 @@ function bisulfite::metilene(){
 						done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 
 						commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-							echo -e "$header" > > "$odir/merates.bedg"
+							echo -e "$header" > "$odir/merates.bedg"
 						CMD
-							bedtools unionbedg -filler . -i $(printf '"%s" ' "${tojoin[@]}") | cut -f 1,3- >> > "$odir/merates.bedg"
+							bedtools unionbedg -filler . -i $(printf '"%s" ' "${tojoin[@]}") | cut -f 1,3- >> "$odir/merates.bedg"
 						CMD
 
 						bisulfite::_metilene \
