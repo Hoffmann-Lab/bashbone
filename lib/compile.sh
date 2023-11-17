@@ -496,6 +496,51 @@ function compile::conda_tools(){
 		done
 	}
 
+	tool=danpos
+	n=${tool/=*/}
+	n=${n//[^[:alpha:]]/}
+	$upgrade && ${envs[$n]:=false} || {
+		doclean=true
+
+		commander::printinfo "setup conda $n env"
+
+		rm -rf "$insdir/DANPOS3"
+		git clone https://github.com/sklasfeld/DANPOS3.git "$insdir/DANPOS3"
+		chmod 755 "$insdir/DANPOS3/"*.py
+
+		sed -i -E 's/,\s*lower_tail\s*=\s*False,\s*log_bool\s*=\s*True\s*//' "$insdir/DANPOS3/reads.py"
+
+		for x in $(grep -nF 'while( (0-functions.div(float(functions.ppois(height,m.item()).split()[-1]),log(10))) < pheight):height+=1' "$insdir/DANPOS3/wig.py" | cut -d : -f 1); do
+			sed -i -E "$x,$x{s/^(\s*).+/\1while( (0-functions.div(float(str(functions.ppois(height, m.item())).split('.')[-1]), log(10))) < pheight):height+=1/}" "$insdir/DANPOS3/wig.py"
+		done
+		for x in $(grep -nF 'pvl=functions.div(float(functions.ppois(v.item(),m.item()).split()[-1]),log(10))' "$insdir/DANPOS3/wig.py" | cut -d : -f 1); do
+			sed -i -E "$x,$x{s/^(\s*).+/\1pvl=functions.div(float(str(functions.ppois(v.item(),m.item())).split('.')[-1]),log(10))/}" "$insdir/DANPOS3/wig.py"
+		done
+		for x in $(grep -nF 'while( (0-functions.div(float(functions.ppois(height,m.item())).split()[-1],log(10))) < pheight):height+=1' "$insdir/DANPOS3/wig.py" | cut -d : -f 1); do
+			sed -i -E "$x,$x{s/^(\s*).+/\1while( (0-functions.div(float(str(functions.ppois(height,m.item())).split('.')[-1]),log(10))) < pheight):height+=1/}" "$insdir/DANPOS3/wig.py"
+		done
+		for x in $(grep -nF 'while( (0-float(functions.ppois(height,m.item())/log(10).split()[-1])) < pcut):height+=1' "$insdir/DANPOS3/wig.py" | cut -d : -f 1); do
+			sed -i -E "$x,$x{s@^(\s*).+@\1while( (0-float(functions.ppois(height,m.item())/float(str(log(10)).split()[-1]))) < pcut):height+=1@}" "$insdir/DANPOS3/wig.py"
+		done
+
+		mkdir -p "$insdir/latest"
+		ln -sfn "$insdir/DANPOS3" "$insdir/latest/danpos"
+
+		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+			mamba env create -n $n --force --file "$src/config/$n.yaml"
+		else
+			mamba create -y -n $n
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults ucsc-wigtobigwig ucsc-bigwigtobedgraph ucsc-bedgraphtobigwig samtools scipy "r-base>=4" $(awk '!/^\s*#/{print $1}' "$insdir/latest/danpos/requirements.txt")
+		fi
+
+		mkdir -p "$insdir/config"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
+	}
+
 	# this is a pipeline itself with own genome and databases and thus will not be part of bashbone
 	# commander::printinfo "setup conda fusion-catcher env"
 	# tool=fusioncatcher
