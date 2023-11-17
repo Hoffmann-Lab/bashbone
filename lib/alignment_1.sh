@@ -972,7 +972,7 @@ function alignment::_blacklist(){
 			# filter for a region allows to keep second mate and set second mate either to
 			# 	- unmapped (cigar to * from version 1.16) -> proper paired flag kept in first read
 			# 	- or keep it (from v1.15) iterator initialization bug still existing in v1.17
-			commander::makecmd -a _cmds2_blacklist -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
+			commander::makecmd -a _cmds2_blacklist -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 				samtools view
 					$params
 					-@ $threads
@@ -992,12 +992,6 @@ function alignment::_blacklist(){
 					-u
 					-r
 					- -
-			CMD
-				samtools view
-					-@ $threads
-					-u
-					-F 4
-					-f 2
 			CMD
 				samtools sort
 					-@ $threads
@@ -1893,7 +1887,7 @@ function alignment::qcstats(){
 					df <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 					df <- as.data.frame(pivot_longer(df,2:ncol(df),names_to="sample",values_to="count"));
 					ggline(df, x = "size", y = "count", color = "sample", plot_type = "l");
-					ggsave(outfile, width=16, height=9);
+					ggsave(outfile, width=16, height=10);
 				'
 			CMD
 				"$odir/insertsizes.histogram.tsv" "$odir/insertsizes.histogram.pdf"
@@ -1915,7 +1909,7 @@ function alignment::qcstats(){
 					df <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 					df <- as.data.frame(pivot_longer(df,2:ncol(df),names_to="sample",values_to="count"));
 					ggline(df, x = "size", y = "count", color = "sample", plot_type = "l");
-					ggsave(outfile, width=16, height=9);
+					ggsave(outfile, width=16, height=10);
 				'
 			CMD
 				"$odir/insertsizes.histogram.tsv" "$odir/insertsizes.histogram.pdf"
