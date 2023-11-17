@@ -20,30 +20,34 @@ use warnings;
 use feature ":5.10";
 use List::Util qw(min max);
 
-unless ($ARGV[0] && $ARGV[1]){
-	say "usage: tpm.pl file.gtf htseq.counts";
-	say "gtf needs to contain gen_id and transcript_id identifiers";
+if ($#ARGV < 3){
+	say "usage: tpm.pl file.gtf feature-level feature-tag htseq.counts";
+	say "gtf needs to contain feature level e.g. exon to be summarized";
+	say "and feature id tag e.g. gene_id with optional transcript_id";
 	exit 1;
 }
 
+my $lvl=$ARGV[1];
+my $ft=$ARGV[2];
 my %m;
 open F, "<".$ARGV[0] or die $!;
 while(<F>){
 	chomp;
+	next if /^(\s*$|#)/;
 	my @l = split /\t+/;
-	next unless $l[2] eq 'exon';
-	$l[-1]=~/gene_id\s+(\S+)/;
+	next unless $l[2] eq $lvl;
+	$l[-1]=~/$ft\s+(\S+)/;
 	my $g = $1 ? $1 : $l[-1];
 	$g=~s/("|;)//g;
 	$l[-1]=~/transcript_id\s+(\S+)/;
 	my $t = $1 ? $1 : 'transcript';
 	$t=~s/("|;)//g;
 	if ($l[-1]=~/tag\s+\"CCDS\"/) {
-		$m{$g}{1}{$t} += $l[4]-$l[3];
+		$m{$g}{1}{$t} += $l[4]-$l[3]+1;
 	} elsif ($l[2] eq 'ensembl_havana') {
-		$m{$g}{2}{$t} += $l[4]-$l[3];
+		$m{$g}{2}{$t} += $l[4]-$l[3]+1;
 	} else{
-		$m{$g}{3}{$t} += $l[4]-$l[3];
+		$m{$g}{3}{$t} += $l[4]-$l[3]+1;
 	}
 }
 close F;
@@ -60,7 +64,7 @@ for my $g (keys %m){
 my @ids;
 my %id2count;
 my $f;
-open F, "<".$ARGV[1] or die $!;
+open F, "<".$ARGV[3] or die $!;
 while(<F>){
 	chomp;
 	my @l = split /\s+/;
