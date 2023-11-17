@@ -626,7 +626,7 @@ function variants::bcftools(){
 		-a ${#threads}
 		-n l/$threads
 		--additional-suffix=.bed
-		--filter='bedtools merge -d 1 -i - > \$(dirname \$FILE)/\$(basename \$FILE | sed "s/^x0*/slice./")'
+		--filter='bedtools merge -d 1 -i - > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
 		"${tdirs[0]}/tmp" "${tdirs[0]}/x"
 	CMD
 
@@ -872,7 +872,7 @@ function variants::freebayes(){
 		-a ${#threads}
 		-n l/$threads
 		--additional-suffix=.bed
-		--filter='bedtools merge -d 1 -i - > \$(dirname \$FILE)/\$(basename \$FILE | sed "s/^x0*/slice./")'
+		--filter='bedtools merge -d 1 -i - > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
 		"${tdirs[0]}/tmp" "${tdirs[0]}/x"
 	CMD
 
@@ -1093,7 +1093,7 @@ function variants::varscan(){
 		-a ${#minstances}
 		-n l/$minstances
 		--additional-suffix=.bed
-		--filter='bedtools merge -d 1 -i - > \$(dirname \$FILE)/\$(basename \$FILE | sed "s/^x0*/slice./")'
+		--filter='bedtools merge -d 1 -i - > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
 		"${tdirs[0]}/tmp" "${tdirs[0]}/x"
 	CMD
 
@@ -1371,7 +1371,7 @@ function variants::vardict(){
 		-a ${#minstances}
 		-n l/$minstances
 		--additional-suffix=.bed
-		--filter='cat > \$(dirname \$FILE)/\$(basename \$FILE | sed "s/^x0*/slice./")'
+		--filter='cat > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
 		"${tdirs[0]}/tmp" "${tdirs[0]}/x"
 	CMD
 
