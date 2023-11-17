@@ -139,7 +139,7 @@ function alignment::rmduplicates(){
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-k             | keep marked duplicates in bam
-			-l             | true/false legacy mode. true:MarkDuplikates/UMI-tools, false: MarkDuplicatesWithMateCigar/UmiAwareMarkDuplicatesWithMateCigar - for fixmated PE (MC tag) or SE DNA-seq else fallback to legacy! (default: true)
+			-l             | true/false legacy mode. true:MarkDuplikates/UMI-tools, false: MarkDuplicatesWithMateCigar/UmiAwareMarkDuplicatesWithMateCigar - for SE or PE DNA-seq only! (default: true)
 			-t <threads>   | number of
 			-m <memory>    | amount of
 			-M <maxmemory> | amount of
@@ -180,7 +180,7 @@ function alignment::rmduplicates(){
 	local nfh=$(($(ulimit -n)/minstances))
 	[[ ! $nfh ]] || [[ $nfh -le 1 ]] && nfh=$((1024/minstances))
 
-	local m i o e slice instances ithreads odir params x catcmd oinstances othreads sinstances
+	local m i o e slice instances ithreads odir params x=0 catcmd oinstances othreads sinstances
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
 		i=$(wc -l < "${_bamslices_rmduplicates[${_bams_rmduplicates[0]}]}")
@@ -219,17 +219,19 @@ function alignment::rmduplicates(){
 		if $legacy; then # umitools for SE and PE. handles large split reads since simple 5' position based dedup
 			x=$(samtools view -F 4 "${_bams_rmduplicates[0]}" | head -10000 | cat <(samtools view -H "${_bams_rmduplicates[0]}") - | samtools view -c -f 1)
 			[[ $x -gt 0 ]] && params="--paired"
-		else # picard UmiAwareMarkDuplicatesWithMateCigar for PE without N-cigar but with MC tag (works also for SE without MC). due to 5'trimming searches +- readlenght around 5' position for reads of identical fragment
-			x=$(samtools view -F 4 "${_bams_rmduplicates[0]}" | head -10000 | cat <(samtools view -H "${_bams_rmduplicates[0]}") - | samtools view -c -f 1 -d MC)
-			[[ $x -eq 0 ]] && legacy=true || params=""
+		else
+			# picard UmiAwareMarkDuplicatesWithMateCigar designed for PE without N-cigar (ie not for RNA-seq)
+			# needs MC tag (works also for SE without MC). due to 5'trimming searches +- readlenght around 5' position for reads of identical fragment
+			# x=$(samtools view -F 4 "${_bams_rmduplicates[0]}" | head -10000 | cat <(samtools view -H "${_bams_rmduplicates[0]}") - | samtools view -c -f 1 -d MC)
+			params="UmiAwareMarkDuplicatesWithMateCigar"
 			[[ $regex ]] && params+=" READ_NAME_REGEX='$regex'" # default is to follow casava i.e. split by 5 or 7 colons and use the last 3 groups i.e. \s+:\d+:\d+:\d+.*
 		fi
-	else # picard MarkDuplicates for SE (and PE) and large splits
-		params="MarkDuplicates"
+	else
+		# picard MarkDuplicates for SE (and PE) and large splits
+		params="MarkDuplicates MAX_FILE_HANDLES=$nfh"
 		if ! $legacy; then
-			x=$(samtools view -F 4 "${_bams_rmduplicates[0]}" | head -10000 | cat <(samtools view -H "${_bams_rmduplicates[0]}") - | samtools view -c -f 1 -d MC)
+			x=$(samtools view -F 4 "${_bams_rmduplicates[0]}" | head -10000 | cat <(samtools view -H "${_bams_rmduplicates[0]}") - | samtools view -c -f 1)
 			[[ $x -gt 0 ]] && params="MarkDuplicatesWithMateCigar"
-			# MarkDuplicatesWithMateCigar works for PE with MC tag as well as SE but for SE result is identical to MarkDuplicates
 		fi
 		[[ $regex ]] && params+=" READ_NAME_REGEX='$regex'"
 		legacy=false # for runcmd conda env selection
@@ -243,16 +245,22 @@ function alignment::rmduplicates(){
 		for i in "${!_bams_rmduplicates[@]}"; do
 			tomerge=()
 			while read -r slice; do
-				if [[ $_umi_rmduplicates ]]; then
-					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rmduplicates)")
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rmduplicates)")
 
-					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
+				if [[ $_umi_rmduplicates ]]; then
+					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD
 						samtools sort
 							-n
 							-@ $ithreads
-							-O SAM
-							-T "${tdirs[-1]}/$(basename "$slice")"
+							-u
+							-T "${tdirs[-1]}/$(basename "${slice%.*}")"
 							"$slice"
+					CMD
+						| samtools fixmate
+							-@ $ithreads
+							-r
+							-O SAM
+							- -
 					CMD
 						| perl -slane '
 							BEGIN{
@@ -273,10 +281,12 @@ function alignment::rmduplicates(){
 						| samtools sort
 							-@ $ithreads
 							-O BAM
-							-T "${tdirs[-1]}/$(basename "$slice").rx"
+							-T "${tdirs[-1]}/$(basename "${slice%.*}").rx"
 						> "$slice.rx";
 					CMD
-						samtools index -@ $ithreads "$slice.rx" "$slice.rx.bai"
+						mv "$slice.rx" "$slice";
+					CMD
+						samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 					CMD
 
 					# commander::makecmd -a cmd -s ';' -c {COMMANDER[0]}<<- CMD
@@ -301,7 +311,7 @@ function alignment::rmduplicates(){
 					if $legacy; then
 						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 							umi_tools dedup
-							-I "$slice.rx"
+							-I "$slice"
 							-S "$slice.rmdup"
 							--temp-dir "${tdirs[-1]}"
 							--extract-umi-method tag
@@ -318,11 +328,11 @@ function alignment::rmduplicates(){
 								-XX:ParallelGCThreads=$jgct
 								-XX:ConcGCThreads=$jcgct
 								-Djava.io.tmpdir="$tmpdir"
-								UmiAwareMarkDuplicatesWithMateCigar
 								$params
-								I="$slice.rx"
+								I="$slice"
 								O="$slice.rmdup"
 								M="$slice.metrics"
+								TMP_DIR="${tdirs[-1]}"
 								UMI_METRICS_FILE="$slice.umimetrics"
 								MAX_EDIT_DISTANCE_TO_JOIN=1
 								UMI_TAG_NAME=RX
@@ -335,6 +345,33 @@ function alignment::rmduplicates(){
 						CMD
 					fi
 				else
+					if [[ $x -gt 0 ]]; then
+						commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
+							samtools sort
+								-n
+								-@ $ithreads
+								-u
+								-T "${tdirs[-1]}/$(basename "${slice%.*}")"
+								"$slice"
+						CMD
+							| samtools fixmate
+								-@ $ithreads
+								-r
+								-u
+								- -
+						CMD
+							| samtools sort
+								-@ $ithreads
+								-O BAM
+								-T "${tdirs[-1]}/$(basename "${slice%.*}").mc"
+							> "$slice.mc";
+						CMD
+							mv "$slice.mc" "$slice";
+						CMD
+							samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
+						CMD
+					fi
+
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 						MALLOC_ARENA_MAX=4 picard
 							-Xmx${jmem}m
@@ -345,11 +382,11 @@ function alignment::rmduplicates(){
 							I="$slice"
 							O="$slice.rmdup"
 							M="$slice.metrics"
+							TMP_DIR="${tdirs[-1]}"
 							REMOVE_DUPLICATES=$remove
 							ASSUME_SORT_ORDER=coordinate
 							VALIDATION_STRINGENCY=SILENT
 							VERBOSITY=WARNING
-							MAX_FILE_HANDLES=$nfh
 					CMD
 					# note REMOVE_DUPLICATES=true removes, without -> marks
 					# alternative1: samtools sort -n -u -@ $threads -T $tmp/$prefix1 $bam | samtools fixmate -@ $threads -m -u - - | samtools sort -u -@ $threads -T $tmp/$prefix2 | samtools markdup -r -S -T $tmp/$prefix3 -u -@ $threads - $bam.rmdup
@@ -408,7 +445,11 @@ function alignment::rmduplicates(){
 	return 0
 }
 
-function alignment::clipmateoverlaps_alt(){
+function alignment::tn5clip(){
+	alignment::clip "$@" -5 4 -3 0 -5 5 -3 0
+}
+
+function alignment::clip(){
 	# does not handle secondary and supplementary alignments
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
@@ -418,79 +459,115 @@ function alignment::clipmateoverlaps_alt(){
 			-t <threads>   | number of
 			-m <memory>    | amount of
 			-M <maxmemory> | amount of
+			-g <genome>    | mandatory
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-o <outdir>    | path to
+			-5 <value>     | to be clipped from single or first mate 5'. use twice for mate pairs.
+			-3 <value>     | to be clipped from single or first mate 3'. use twice for mate pairs.
+			-H             | swtich from soft to hard clip
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory outdir tmpdir="${TMPDIR:-/tmp}"
-	declare -n _mapper_clipmateoverlaps _bamslices_clipmateoverlaps
+	local OPTIND arg mandatory skip=false genome threads memory maxmemory outdir tmpdir="${TMPDIR:-/tmp}" r15 r13 r25 r23 mode=Soft
+	declare -n _mapper_clip _bamslices_clip
 	declare -A nidx tidx
-	while getopts 'S:s:t:m:M:r:c:o:' arg; do
+	while getopts 'S:s:t:m:M:g:r:c:o:5:3:H' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
 			M)	maxmemory=$OPTARG;;
-			r)	((++mandatory)); _mapper_clipmateoverlaps=$OPTARG;;
-			c)	((++mandatory)); _bamslices_clipmateoverlaps=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			r)	((++mandatory)); _mapper_clip=$OPTARG;;
+			c)	((++mandatory)); _bamslices_clip=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			5)	[[ $r15 ]] && r25="$OPTARG" || r15="$OPTARG";;
+			3)	[[ $r13 ]] && r23="$OPTARG" || r13="$OPTARG";;
+			H)	mode=Hard;;
 			*)	_usage;;
 		esac
 	done
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
+	[[ $r15 ]] || [[ $r13 ]] || _usage
 
-	commander::printinfo "clipping ends of overlapping mate pairs"
+	commander::printinfo "${mode,,}-clipping read ends"
 
-	declare -n _bams_clipmateoverlaps="${_mapper_clipmateoverlaps[0]}"
-	local instances=$((${#_mapper_clipmateoverlaps[@]}*${#_bams_clipmateoverlaps[@]}))
+	declare -n _bams_clip="${_mapper_clip[0]}"
+	local instances=$((${#_mapper_clip[@]}*${#_bams_clip[@]}))
 	local ithreads minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	local m i o slice odir
+	# version < 2 output is always coordiante sorted and indexed, >2 add may use --sort-order=Unsorted and use /dev/stdout | samtools sort for speedup
+	declare -a cmdchk=("{ fgbio -v 2>&1 || true; } | grep -m 1 Version | awk '{print \$2}' | cut -d '.' -f 1")
+	local params version=$(commander::runcmd -c fgbio -a cmdchk)
+	[[ $version -eq 1 ]] || params="--sort-order=Unsorted"
+
+	local m i o slice odir x=0
 	declare -a tdirs tomerge cmd1 cmd2 cmd3
-	for m in "${_mapper_clipmateoverlaps[@]}"; do
-		declare -n _bams_clipmateoverlaps=$m
+	for m in "${_mapper_clip[@]}"; do
+		declare -n _bams_clip=$m
 		odir="$outdir/$m"
 		mkdir -p "$odir"
 
-		for i in "${!_bams_clipmateoverlaps[@]}"; do
+		x=$(samtools view -F 4 "${_bams_clip[0]}" | head -10000 | cat <(samtools view -H "${_bams_clip[0]}") - | samtools view -c -f 1)
+		[[ $x -gt 0 ]] && params+=" --read-two-five-prime=${r25:-0} --read-two-three-prime=${r23:-0}"
+
+		for i in "${!_bams_clip[@]}"; do
 			tomerge=()
 
 			while read -r slice; do
-				# fgbio clips half the overlap from both reads, thus does not produce unmapped reads
+				# fgbio can clip half the overlap from both reads, thus does not produce unmapped reads and does fixmate after clipping and indexing
+
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fgbio)")
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					samtools sort
+						-@ $mthreads
+						-n
+						-u
+						-T "${tdirs[-1]}/$(basename "${slice%.*}")"
+						"$slice"
+				CMD
 					MALLOC_ARENA_MAX=4 fgbio
 						-Xmx${jmem}m
 						-XX:ParallelGCThreads=$jgct
 						-XX:ConcGCThreads=$jcgct
 						-Djava.io.tmpdir="$tmpdir"
-					ClipBam
-						--clipping-mode=Soft
-						--tmp-dir="${tdirs[-1]}"
+						--async-io=true
 						--log-level=Warning
 						--sam-validation-stringency=SILENT
-						--clip-overlapping-reads=true
-						-i "$slice"
-						-o "$slice.mateclipped"
+						--tmp-dir="${tdirs[-1]}"
+					ClipBam
+						--clipping-mode=$mode
+						--read-one-five-prime=${r15:-0}
+						--read-one-three-prime=${r13:-0}
+						$params
+						--clip-overlapping-reads=false
+						-r "$genome"
+						-i "/dev/stdin"
+						-o "/dev/stdout"
+				CMD
+					samtools sort
+						-@ $mthreads
+						-O BAM
+						-T "${tdirs[-1]}/$(basename "${slice%.*}").clipped"
+						> "$slice.clipped"
 				CMD
 
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					mv "$slice.mateclipped" "$slice"
+					mv "$slice.clipped" "$slice"
 				CMD
 					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 				CMD
 
 				tomerge+=("$slice")
-			done < "${_bamslices_clipmateoverlaps[${_bams_clipmateoverlaps[$i]}]}"
+			done < "${_bamslices_clip[${_bams_clip[$i]}]}"
 
-			o="$odir/$(basename "${_bams_clipmateoverlaps[$i]}")"
-			o="${o%.*}.mateclipped.bam"
+			o="$odir/$(basename "${_bams_clip[$i]}")"
+			o="${o%.*}.clipped.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
 			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
@@ -503,8 +580,8 @@ function alignment::clipmateoverlaps_alt(){
 					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 
-			_bamslices_clipmateoverlaps["$o"]="${_bamslices_clipmateoverlaps[${_bams_clipmateoverlaps[$i]}]}"
-			_bams_clipmateoverlaps[$i]="$o"
+			_bamslices_clip["$o"]="${_bamslices_clip[${_bams_clip[$i]}]}"
+			_bams_clip[$i]="$o"
 		done
 	done
 
@@ -680,7 +757,7 @@ function alignment::reorder(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	local m i o slice odir
-	declare -a tomerge cmd1 cmd2 cmd3
+	declare -a tdirs tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_reorder[@]}"; do
 		declare -n _bams_reorder=$m
 		odir="$outdir/$m"
@@ -690,6 +767,8 @@ function alignment::reorder(){
 			tomerge=()
 
 			while read -r slice; do
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.reorder)")
+
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					MALLOC_ARENA_MAX=4 picard
 						-Xmx${jmem}m
@@ -700,6 +779,7 @@ function alignment::reorder(){
 						I="$slice"
 						O="$slice.ordered"
 						SD="$genome"
+						TMP_DIR="${tdirs[-1]}"
 						VALIDATION_STRINGENCY=SILENT
 						VERBOSITY=WARNING
 				CMD
@@ -810,7 +890,7 @@ function alignment::addreadgroup(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	local m i o rgprefix slice odir
-	declare -a tomerge cmd1 cmd2 cmd3
+	declare -a tdirs tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_addreadgroup[@]}"; do
 		declare -n _bams_addreadgroup=$m
 		odir="$outdir/$m"
@@ -827,6 +907,8 @@ function alignment::addreadgroup(){
 			o="$(basename "${_bams_addreadgroup[$i]}")"
 			o="${o%.*}"
 			while read -r slice; do
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.addreadgroup)")
+
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					MALLOC_ARENA_MAX=4 picard
 						-Xmx${jmem}m
@@ -841,6 +923,7 @@ function alignment::addreadgroup(){
 						RGPL=illumina
 						RGPU=${rgprefix}unit
 						RGSM=${rgprefix}
+						TMP_DIR="${tdirs[-1]}"
 						VALIDATION_STRINGENCY=SILENT
 						VERBOSITY=WARNING
 				CMD
@@ -1060,6 +1143,7 @@ function alignment::soft2hardclip(){
 
 			while read -r slice; do
 				# --upgrade-clipping=true updates softclipped sites to hard clipped ones (or vice versa) prior to do any other (optional) operation
+
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fgbio)")
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					MALLOC_ARENA_MAX=4 fgbio
@@ -1067,12 +1151,13 @@ function alignment::soft2hardclip(){
 						-XX:ParallelGCThreads=$jgct
 						-XX:ConcGCThreads=$jcgct
 						-Djava.io.tmpdir="$tmpdir"
+						--async-io=true
+						--log-level=Warning
+						--sam-validation-stringency=SILENT
+						--tmp-dir="${tdirs[-1]}"
 					ClipBam
 						--clipping-mode=Hard
 						--upgrade-clipping=true
-						--tmp-dir="${tdirs[-1]}"
-						--log-level=Warning
-						--sam-validation-stringency=SILENT
 						-i "$slice"
 						-o "$slice.hardclipped"
 				CMD
