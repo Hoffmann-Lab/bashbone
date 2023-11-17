@@ -153,7 +153,7 @@ function peaks::macs_idr(){
 
 			toidr=()
 			for f in "$tf" "$rf" "$pf"; do
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				toidr+=("$odir/$o.narrowPeak")
 			done
 
@@ -183,9 +183,9 @@ function peaks::macs_idr(){
 			pff="${_bams_macs[$x]}"
 			nff="${_bams_macs[$((--x))]}" # 11
 
-			toidr=( "$odir/$(echo -e "$(basename "${nf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nrf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nff%.*}")\t$(basename "${pff%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+			toidr=( "$odir/$(echo -e "$(basename "$nf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nrf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
 
 			peaks::_idr \
 				-1 cmd1 \
@@ -300,7 +300,7 @@ function peaks::seacr_idr(){
 
 			toidr=()
 			for f in "$tf" "$rf" "$pf"; do
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				toidr+=("$odir/$o.narrowPeak")
 			done
 
@@ -322,9 +322,9 @@ function peaks::seacr_idr(){
 			pff="${_bams_seacr[$x]}"
 			nff="${_bams_seacr[$((--x))]}"
 
-			toidr=( "$odir/$(echo -e "$(basename "${nf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nrf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nff%.*}")\t$(basename "${pff%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+			toidr=( "$odir/$(echo -e "$(basename "$nf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nrf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
 
 			peaks::_idr \
 				-1 cmd1 \
@@ -439,7 +439,7 @@ function peaks::gopeaks_idr(){
 
 			toidr=()
 			for f in "$tf" "$rf" "$pf"; do
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				toidr+=("$odir/$o.narrowPeak")
 			done
 
@@ -461,9 +461,9 @@ function peaks::gopeaks_idr(){
 			pff="${_bams_gopeaks[$x]}"
 			nff="${_bams_gopeaks[$((--x))]}"
 
-			toidr=( "$odir/$(echo -e "$(basename "${nf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nrf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nff%.*}")\t$(basename "${pff%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+			toidr=( "$odir/$(echo -e "$(basename "$nf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nrf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
 
 			peaks::_idr \
 				-1 cmd1 \
@@ -585,7 +585,7 @@ function peaks::gem_idr(){
 
 			toidr=()
 			for f in "$tf" "$rf" "$pf"; do
-				o=$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')
+				o=$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')
 				toidr+=("$odir/$o.narrowPeak")
 			done
 
@@ -607,9 +607,9 @@ function peaks::gem_idr(){
 			pff="${_bams_gem[$x]}"
 			nff="${_bams_gem[$((x-1))]}"
 
-			toidr=( "$odir/$(echo -e "$(basename "${nf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nrf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nff%.*}")\t$(basename "${pff%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+			toidr=( "$odir/$(echo -e "$(basename "$nf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nrf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
 
 			peaks::_idr \
 				-1 cmd1 \
@@ -723,7 +723,7 @@ function peaks::matk_idr(){
 
 			toidr=()
 			for f in "$tf" "$rf" "$pf"; do
-				o=$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')
+				o=$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')
 				toidr+=("$odir/$o.narrowPeak")
 			done
 
@@ -745,9 +745,9 @@ function peaks::matk_idr(){
 			pff="${_bams_matk[$x]}"
 			nff="${_bams_matk[$((x-1))]}"
 
-			toidr=( "$odir/$(echo -e "$(basename "${nf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nrf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nff%.*}")\t$(basename "${pff%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+			toidr=( "$odir/$(echo -e "$(basename "$nf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nrf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
 
 			peaks::_idr \
 				-1 cmd1 \
@@ -857,7 +857,7 @@ function peaks::peakachu_idr(){
 
 			toidr=()
 			for f in "$tf" "$rf" "$pf"; do
-				o=$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')
+				o=$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')
 				toidr+=("$odir/$o.narrowPeak")
 			done
 
@@ -879,9 +879,9 @@ function peaks::peakachu_idr(){
 			pff="${_bams_peakachu[$x]}"
 			nff="${_bams_peakachu[$((--x))]}"
 
-			toidr=( "$odir/$(echo -e "$(basename "${nf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nrf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nff%.*}")\t$(basename "${pff%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+			toidr=( "$odir/$(echo -e "$(basename "$nf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nrf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
 
 			peaks::_idr \
 				-1 cmd1 \
@@ -983,7 +983,7 @@ function peaks::genrich_idr(){
 
 			toidr=()
 			for f in "$tf" "$rf" "$pf"; do
-				o=$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')
+				o=$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')
 				toidr+=("$odir/$o.narrowPeak")
 			done
 
@@ -1005,9 +1005,9 @@ function peaks::genrich_idr(){
 			pff="${_bams_genrich[$x]}"
 			nff="${_bams_genrich[$((--x))]}"
 
-			toidr=( "$odir/$(echo -e "$(basename "${nf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nrf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nff%.*}")\t$(basename "${pff%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+			toidr=( "$odir/$(echo -e "$(basename "$nf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nrf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
 
 			peaks::_idr \
 				-1 cmd1 \
@@ -1105,7 +1105,7 @@ function peaks::m6aviewer_idr(){
 
 			toidr=()
 			for f in "$tf" "$rf" "$pf"; do
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				toidr+=("$odir/$o.narrowPeak")
 			done
 
@@ -1127,9 +1127,9 @@ function peaks::m6aviewer_idr(){
 			pff="${_bams_m6aviewer[$x]}"
 			nff="${_bams_m6aviewer[$((--x))]}"
 
-			toidr=( "$odir/$(echo -e "$(basename "${nf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nrf%.*}")\t$(basename "${pf%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
-			toidr+=( "$odir/$(echo -e "$(basename "${nff%.*}")\t$(basename "${pff%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2.narrowPeak/')" )
+			toidr=( "$odir/$(echo -e "$(basename "$nf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nrf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
 
 			peaks::_idr \
 				-1 cmd1 \
