@@ -404,7 +404,7 @@ function expression::deseq(){
 							find -L "$odir/$c-vs-$t"
 								-type f
 								-name "deseq*.tsv" -and -not -name "*annotated*"
- 								-exec annotate.pl "${gtfinfo:=0}" "$gtf" $feature "{}" \;
+ 								-exec annotate.pl "${gtfinfo:=0}" "$gtf" $feature "{}" "$odir/$c-vs-$t/experiments.tpm" \;
 						CMD
 
 						commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD
