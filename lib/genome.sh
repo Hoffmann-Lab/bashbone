@@ -49,6 +49,7 @@ function genome::mkdict(){
 				CreateSequenceDictionary
 				R="$genome"
 				O="$dict"
+				TMP_DIR="$tmpdir"
 				VERBOSITY=WARNING
 		CMD
 
@@ -186,7 +187,7 @@ function genome::mkgodb(){
 			suppressMessages(library(AnnotationForge));
 
 			df <- read.table(gofile, sep="\t", stringsAsFactors=F, check.names=F, quote="", header=F, na.strings="", col.names=c("GID","GO","ONTOLOGY","DESCRIPTION"));
-			df <- unique(df[!is.na(df$GO) & !is.na(df$ONTOLOGY),c(1,2)]);
+			df <- unique(df[!is.na(df$GO) & !is.na(df$ONTOLOGY) & grepl("^GO:[0-9]+$",df$GO),c(1,2)]);
 			df$EVIDENCE <- "IEA";
 
 			makeOrgPackage(
