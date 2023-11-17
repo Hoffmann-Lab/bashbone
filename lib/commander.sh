@@ -47,12 +47,12 @@ function commander::warn(){
 }
 
 function commander::printerr(){
-	[[ $1 ]] && echo ":ERROR: $*" 1>&2
+	[[ $1 ]] && echo ":ERROR: $*" >&2
 	local fd
 	declare -a mapdata
 	for fd in "${COMMANDER[@]}"; do
 		mapfile -u $fd -t mapdata
-		printf ':ERROR: %s\n' "${mapdata[@]}" 1>&2
+		printf ':ERROR: %s\n' "${mapdata[@]}" >&2
 	done
 	COMMANDER=()
 
@@ -223,9 +223,10 @@ function commander::runcmd(){
 
 	# attention: parallel sources bashrc which in worst case modifies PATH so that bashbone may not serve its binaries first
 	# solution: use a fake shell via PARALLEL_SHELL to prevent sourcing bashrc
+	# .. and do not exec bash "$@" which will source bashrc
 	cat <<- 'EOF' > "$tmpdir/shell.$jobname"
 		#!/usr/bin/env bash
-		exec bash "$@"
+		bash "$@"
 	EOF
 	chmod 755 "$tmpdir/shell.$jobname"
 
