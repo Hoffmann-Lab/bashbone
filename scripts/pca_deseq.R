@@ -76,7 +76,7 @@ for (method in c("log","vsd","rld")){
 		for (i in 1:3){
 			ids = rownames(loadings[order(abs(loadings[,i]), decreasing = TRUE),])
 			ids = head(ids,n=max(1,length(ids)*0.05)) # variables that drive variation in PC1
-			sink(file.path(outdir,paste("pca_pc",i,"_",method,"_top",n,,".variables",sep="")))
+			sink(file.path(outdir,paste("pca_pc",i,"_",method,"_top",n,".variables",sep="")))
 			lapply(ids, cat, "\n")
 			sink()
 		}
@@ -84,7 +84,7 @@ for (method in c("log","vsd","rld")){
 		percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
 		data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = experiments$replicate, condition = experiments$condition, sample = experiments$sample)
 		write.table(data.frame(id=rownames(data),data), row.names = F,
-			file=file.path(outdir,paste("pca_12_",method,"_top",n,,".tsv",sep="")), quote=F, sep="\t"
+			file=file.path(outdir,paste("pca_12_",method,"_top",n,".tsv",sep="")), quote=F, sep="\t"
 		)
 
 		suppressMessages({
@@ -98,7 +98,7 @@ for (method in c("log","vsd","rld")){
 				# geom_text_repel() +
 				xlab(paste0("PC1: ",percentVar[1], "% variance")) +
 				ylab(paste0("PC2: ",percentVar[2], "% variance"))
-			suppressMessages(ggsave(file.path(outdir,paste("pca_12_",method,"_top",n,,".pdf",sep=""))))
+			suppressMessages(ggsave(file.path(outdir,paste("pca_12_",method,"_top",n,".pdf",sep=""))))
 			# stat_ellipse() +
 
 			ggplot(data, aes(PC1, PC3, color = condition, group = condition, shape = replicate, label=sample)) +
@@ -111,7 +111,7 @@ for (method in c("log","vsd","rld")){
 				# geom_text_repel() +
 				xlab(paste0("PC1: ",percentVar[1], "% variance")) +
 				ylab(paste0("PC3: ",percentVar[3], "% variance"))
-			suppressMessages(ggsave(file.path(outdir,paste("pca_13_",method,"_top",n,,".pdf",sep=""))))
+			suppressMessages(ggsave(file.path(outdir,paste("pca_13_",method,"_top",n,".pdf",sep=""))))
 			# stat_ellipse() +
 
 			ggplot(data, aes(PC2, PC3, color = condition, group = condition, shape = replicate, label=sample)) +
@@ -124,7 +124,7 @@ for (method in c("log","vsd","rld")){
 				# geom_text_repel() +
 				xlab(paste0("PC2: ",percentVar[2], "% variance")) +
 				ylab(paste0("PC3: ",percentVar[3], "% variance"))
-			suppressMessages(ggsave(file.path(outdir,paste("pca_23_",method,"_top",n,,".pdf",sep=""))))
+			suppressMessages(ggsave(file.path(outdir,paste("pca_23_",method,"_top",n,".pdf",sep=""))))
 			# stat_ellipse() +
 		})
 	}
