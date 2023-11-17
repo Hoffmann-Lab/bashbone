@@ -180,7 +180,7 @@ function peaks::macs(){
 	if ! $ripseq && $pointy; then
 		# according to cut&tag benchmark dont use local background at all
 		# https://doi.org/10.1101/2022.03.30.486382
-		$strict && params+=' --nolambda -q 0.00001' || params+=' --nolambda -q 0.001'
+		$strict && params+=' --nolambda -q 0.00001' || params+=' --nolambda -q 0.01'
 	else
 		$strict && params+=' -q 0.01' || params+=' -q 0.1' # -p 0.01 is encode setting for downstream IDR, but precision will go down massively
 	fi
@@ -243,7 +243,7 @@ function peaks::macs(){
 
 			if [[ ${_nidx_macs[$i]} ]]; then
 				nf="${_bams_macs[${_nidx_macs[$i]}]}"
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				mkdir -p "$odir/$o"
 
 				# encode replaces read name by static N and score by max value 1000 to spare disk space
@@ -489,7 +489,7 @@ function peaks::seacr(){
 
 			if [[ ${_nidx_seacr[$i]} ]]; then
 				nf="${_bams_seacr[${_nidx_seacr[$i]}]}"
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 
 				# commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				# 	samtools view -u -e 'rname!~"^chrM" && rname!="MT"' "$nf"
@@ -619,7 +619,7 @@ function peaks::gopeaks(){
 		_tidx_gopeaks=tidx_gopeaks
 	fi
 
-	local x=$(samtools view -F 4 "${_bams_gem[0]}" | head -10000 | cat <(samtools view -H "${_bams_gem[0]}") - | samtools view -c -f 1)
+	local x=$(samtools view -F 4 "${_bams_gopeaks[0]}" | head -10000 | cat <(samtools view -H "${_bams_gopeaks[0]}") - | samtools view -c -f 1)
 	[[ $x -eq 0 ]] && commander::warn "peak calling gopeaks not applied due to single-end data" && return 0
 
 	commander::printinfo "peak calling gopeaks"
@@ -667,7 +667,7 @@ function peaks::gopeaks(){
 
 			if [[ ${_nidx_gopeaks[$i]} ]]; then
 				nf="${_bams_gopeaks[${_nidx_gopeaks[$i]}]}"
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				nf="-c '$nf'"
 			else
 				unset nf
@@ -892,7 +892,7 @@ function peaks::gem(){
 
 			if [[ ${_nidx_gem[$i]} ]]; then
 				nf="${_bams_gem[${_nidx_gem[$i]}]}"
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				nf="--ctrl '$nf'"
 			else
 				unset nf
@@ -1061,7 +1061,7 @@ function peaks::matk(){
 		for i in "${!_tidx_matk[@]}"; do
 			nf="${_bams_matk[${_nidx_matk[$i]}]}"
 			f="${_bams_matk[${_tidx_matk[$i]}]}"
-			o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+			o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 
 			readsbed="$(find -L "$mdir/$o" -maxdepth 1 -name "$(basename "${f%.*}").bed.gz" -print -quit | grep .)"
 			mkdir -p "$odir/$o"
@@ -1217,7 +1217,7 @@ function peaks::peakachu(){
 
 				if [[ ${_nidx_peakachu[$i]} ]]; then
 					nf="${_bams_peakachu[${_nidx_peakachu[$i]}]}"
-					o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+					o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 					nf="--ctr_libs '$nf'"
 				else
 					unset nf
@@ -1276,7 +1276,7 @@ function peaks::peakachu(){
 				done
 				a="${_bams_peakachu[${_nidx_peakachu[0]}]}"
 				b="${_bams_peakachu[${_tidx_peakachu[0]}]}"
-				o="$(echo -e "$(basename "${a%.*}")\t$(basename "${b%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$a")\t$(basename "$b")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 			else
 				unset nf
 				o="$(basename "${_bams_peakachu[${_tidx_peakachu[0]}]}")"
@@ -1302,7 +1302,7 @@ function peaks::peakachu(){
 			# NF-9 is either base_mean or fold_change if ctr_libs
 			if [[ $nf ]]; then
 				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
-					awk -v OFS='\t' !/^replicon/ && \$(NF-9)!="inf"{print \$1,\$3,\$4,".",0,".",\$(NF-9),-1,-1,-1}' "$odir/$o/peak_tables/"*.csv
+					awk -v OFS='\t' '!/^replicon/ && \$(NF-9)!="inf"{print \$1,\$3,\$4,".",0,".",\$(NF-9),-1,-1,-1}' "$odir/$o/peak_tables/"*.csv
 				CMD
 					sort -k1,1 -k2,2n -k3,3n
 				CMD
@@ -1312,7 +1312,7 @@ function peaks::peakachu(){
 				CMD
 			else
 				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
-					awk -v OFS='\t' !/^replicon/{print \$1,\$3,\$4,".",0,".",-1,-1,-1,-1}' "$odir/$o/peak_tables/"*.csv
+					awk -v OFS='\t' '!/^replicon/{print \$1,\$3,\$4,".",0,".",-1,-1,-1,-1}' "$odir/$o/peak_tables/"*.csv
 				CMD
 					sort -k1,1 -k2,2n -k3,3n
 				CMD
@@ -1427,7 +1427,7 @@ function peaks::genrich(){
 
 				if [[ ${_nidx_genrich[$i]} ]]; then
 					nf="${_bams_genrich[${_nidx_genrich[$i]}]}"
-					o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+					o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 					b="$(basename "${nf%.*}")"
 
 					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
@@ -1464,7 +1464,7 @@ function peaks::genrich(){
 				nf="${nf:0:-1}"
 				a="${_bams_genrich[${_nidx_genrich[0]}]}"
 				b="${_bams_genrich[${_tidx_genrich[0]}]}"
-				o="$(echo -e "$(basename "${a%.*}")\t$(basename "${b%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$a")\t$(basename "$b")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 			else
 				unset nf
 				o="$(basename "${_bams_genrich[${_tidx_genrich[0]}]}")"
@@ -1594,14 +1594,14 @@ function peaks::m6aviewer(){
 					versus
 					$f
 				EOF
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak"
 			else
 				commander::printinfo {COMMANDER[0]}<<- EOF
 					load
 					$f
 				EOF
 				o="$(basename "$f")"
-				o="${o%.*}"
+				o="${o%.*}.narrowPeak"
 			fi
 
 			commander::makecmd -a cmd2 -s '|' -o "$odir/$o" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
