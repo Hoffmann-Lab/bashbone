@@ -13,7 +13,7 @@ function helper::pgzip(){
 		return 1
 	}
 
-	local OPTIND arg threads=1 f=/dev/stdin o tool="pigz -p"
+	local OPTIND arg threads=1 f o tool="pigz -p"
 	while getopts 'f:t:o:b' arg; do
 		case $arg in
 			f) f="$OPTARG";;
@@ -24,6 +24,7 @@ function helper::pgzip(){
 		esac
 	done
 	[[ ! $f && ! $o ]] && _usage
+	[[ ! $f ]] && f=/dev/stdin
 	[[ ! $o ]] && o="$f.gz"
 
 	$tool $threads -k -c "$f" | tee -i "$o" | gztool -v 0 -f -i -x -C -I "${o%.*}.gzi"
