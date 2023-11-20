@@ -680,7 +680,7 @@ function quantify::profiles(){
 			toprofile+=("$odir/transcripts.bed")
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.computematrix)")
-			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 				n=\$(wc -l < "$odir/transcripts.bed");
 				t=$threads;
 			CMD
@@ -698,9 +698,15 @@ function quantify::profiles(){
 					--skipZeros
 					--missingDataAsZero
 					-o "{}.matrix.gz" 2> >(sed -un '/^Skipping/!p' >&2) | cat;
-				computeMatrixOperations rbind -m "${tdirs[-1]}"/*.matrix.gz -o "$odir/tss.matrix.gz"
 			CMD
-			# computeMatrixOperations sort -m "${tdirs[-1]}/tss.matrix.gz" -R "$odir/transcripts.bed" -o "$odir/tss.matrix.gz"
+				pigz -p 1 -cd "${tdirs[-1]}"/*.matrix.gz | grep -v '^@' | helper::pgzip -t $threads -o "${tdirs[-1]}/data.gz";
+				n=\$(gztool -l "${tdirs[-1]}/data.gz" |& sed -nE '/Number of lines/{s/.*:\s+([0-9]+).*/\1/p}');
+				pigz -p 1 -cd "${tdirs[-1]}"/*.matrix.gz | head -1 | sed -E 's/"group_boundaries":\[[0-9,]+\]/"group_boundaries":[0,'\$n']/' | pigz -p 1 -kc > "$odir/tss.matrix.gz";
+				cat "${tdirs[-1]}/data.gz" >> "$odir/tss.matrix.gz";
+			CMD
+			# extremely slow and memory hungry: computeMatrixOperations rbind -m "${tdirs[-1]}"/*.matrix.gz -o "$odir/tss.matrix.gz"
+			# not necessary when using deeptools plotHeatmap: computeMatrixOperations sort -m "${tdirs[-1]}/tss.matrix.gz" -R "$odir/transcripts.bed" -o "$odir/tss.matrix.gz"
+			# use unbuffered sed to avoid "skipping <id> due to being absent in the computeMatrix output" warnings
 
 			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 				plotHeatmap
@@ -711,6 +717,7 @@ function quantify::profiles(){
 					--refPointLabel TSS
 					--samplesLabel $(basename -a "${pileups[@]/%.$e.*/}" | xargs -I {} printf "'%s' " {})
 			CMD
+			# --outFileNameMatrix "$odir/tss.heatmap.matrix.gz"
 		fi
 
 		[[ $bed ]] && toprofile+=("$bed")
@@ -736,7 +743,7 @@ function quantify::profiles(){
 			# 		-o "$odir/transcripts.matrix.gz"
 			# CMD
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.computematrix)")
-			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 				n=\$(wc -l < "$f");
 				t=$threads;
 			CMD
@@ -755,17 +762,20 @@ function quantify::profiles(){
 					--skipZeros
 					--missingDataAsZero
 					-o "{}.matrix.gz" 2> >(sed -un '/^Skipping/!p' >&2) | cat;
-				computeMatrixOperations rbind -m "${tdirs[-1]}"/*.matrix.gz -o "$odir/$b.matrix.gz"
 			CMD
-			# computeMatrixOperations sort -m "${tdirs[-1]}/transcripts.matrix.gz" -R "$odir/transcripts.bed" -o "$odir/transcripts.matrix.gz"
-			# -> not necessary when using deeptools plotHeatmap tool
-			# use unbuffered sed to avoid "skipping <id> due to being absent in the computeMatrix output" warnings
+				pigz -p 1 -cd "${tdirs[-1]}"/*.matrix.gz | grep -v '^@' | helper::pgzip -t $threads -o "${tdirs[-1]}/data.gz";
+				n=\$(gztool -l "${tdirs[-1]}/data.gz" |& sed -nE '/Number of lines/{s/.*:\s+([0-9]+).*/\1/p}');
+				pigz -p 1 -cd "${tdirs[-1]}"/*.matrix.gz | head -1 | sed -E 's/"group_boundaries":\[[0-9,]+\]/"group_boundaries":[0,'\$n']/' | pigz -p 1 -kc > "$odir/transcripts.matrix.gz";
+				cat "${tdirs[-1]}/data.gz" >> "$odir/transcripts.matrix.gz";
+			CMD
 
-			[[ ${#pileups[@]} -gt 1 ]] && e="$(echo -e "${pileups[0]}\t${pileups[1]}" | sed -E 's/(.+)\t.*\1/\t\1/' | cut -f 2)" || e=${pileups[0]##*.}
+			[[ ${#pileups[@]} -gt 1 ]] && e="$(echo -e "${pileups[0]}\t${pileups[1]}" | sed -E 's/(.+)\t.*\1/\t\1/' | cut -f 2)" || e=".pileup.tpm.bw"
+			# e=${pileups[0]##*.}
 
 			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 				plotProfile
 					-m "$odir/$b.matrix.gz"
+					--outFileNameData "$odir/$b.profile.tsv"
 					-o "$odir/$b.profile.pdf"
 					--plotFileFormat pdf
 					--samplesLabel $(basename -a "${pileups[@]/%.$e.*/}" | xargs -I {} printf "'%s' " {})
@@ -791,6 +801,7 @@ function quantify::profiles(){
 					--whatToPlot heatmap
 					--colorMap RdBu_r
 					-o "$odir/coverage.correlation.pearson.pdf"
+					--outFileCorMatrix "$odir/coverage.correlation.pearson.tsv"
 					--plotFileFormat pdf
 					--labels $(basename -a "${coverages[@]/%.$e.*/}" | xargs -I {} printf "'%s' " {})
 			CMD
@@ -805,6 +816,7 @@ function quantify::profiles(){
 		commander::runcmd -v -b -i $threads -a cmd1
 		commander::runcmd -c deeptools -v -b -i 1 -a cmd2
 		commander::runcmd -c deeptools -v -b -i $threads -a cmd3
+		# plotting may heavily consume memory!!
 	fi
 
 	return 0
