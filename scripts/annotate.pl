@@ -5,7 +5,9 @@ use warnings;
 use feature ":5.10";
 
 if ($#ARGV < 3){
-	say "usage: annotate.pl <gtf.descr|0> <gtf|0> <feature> <bed|deseq.tsv|heatmap.ps> [<bed|deseq.tsv|heatmap.ps> ..] [tpm]";
+	say "usage: annotate.pl <gtf.descr|0> <gtf|0> <feature> <bed|deseq.tsv|heatmap.ps> [<bed|deseq.tsv|heatmap.ps> ..]";
+	say "or"
+	say "usage: annotate.pl <gtf.descr|0> <gtf|0> <feature> <deseq.tsv> [tpm]";
 	say "0 or gtf.descr => 4 tab seperated columns: geneID geneName biotype description";
 	say "0 or gtf => parsed for gene_id gene_name gene_biotype";
 	say "feature => e.g. exon -> gtf parsed for exon_id exon_name exon_biotype";
