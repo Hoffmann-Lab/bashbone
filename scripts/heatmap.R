@@ -37,7 +37,7 @@ cluster = as.logical(args[1])
 w = as.integer(args[2])
 h = as.integer(args[3])
 experiments = read.table(args[4], header = T, sep = ',', stringsAsFactors=F, check.names=F, quote="")
-colnames(experiments)[1:4] = c("sample","countfile","condition")
+colnames(experiments)[1:3] = c("sample","countfile","condition")
 #experiments = data.frame(condition = df$condition, sample = df$sample)
 io = args[5]
 input = read.table(io, header = T, sep = '\t', stringsAsFactors=F, check.names=F, quote="")
