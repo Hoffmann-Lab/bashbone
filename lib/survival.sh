@@ -4,7 +4,7 @@
 function survival::gettcga(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of (requiered)
@@ -28,6 +28,7 @@ function survival::gettcga(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 
 	commander::printinfo "downloading tcga datasets"
@@ -156,7 +157,7 @@ function survival::gettcga(){
 function survival::ssgsea(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-f <counts>    | path to tsv or gct
@@ -187,6 +188,7 @@ function survival::ssgsea(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "performing ssgsea"
