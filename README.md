@@ -168,6 +168,7 @@ myfun || echo "failed with code $?"
 ```
 
 ## Quick start
+[&#x25B2; back to top](#bashbone)
 
 To get all third-party tools set-upped and subsequently all biobash bashbone functions to work properly, **see also**
 
@@ -744,18 +745,21 @@ enrichment::go -t $threads -r mapper -c comparisons -l coexpressions -g $go -i r
 | BWA-meth      | <https://github.com/brentp/bwa-meth>                                | arXiv:1401.1129 |
 | BCFtools      | <http://www.htslib.org/doc/bcftools.html>                           | 10.1093/bioinformatics/btr509 |
 | BEDTools      | <https://bedtools.readthedocs.io>                                   | 10.1093/bioinformatics/btq033 |
-| gztool        | <https://github.com/circulosmeos/gztool>                             | NA |
+| gztool        | <https://github.com/circulosmeos/gztool>                            | NA |
+| cgpBigWig     | <https://github.com/cancerit/cgpBigWig>                             | NA |
 | clusterProfiler | <https://guangchuangyu.github.io/software/clusterProfiler>        | 10.1089/omi.2011.0118 |
 | Cutadapt      | <https://cutadapt.readthedocs.io/en/stable>                         | 10.14806/ej.17.1.200 |
+| DANPOS3       | <https://github.com/sklasfeld/DANPOS3>                              | 10.1101/gr.142067.112 |
+| deepTools2    | <https://deeptools.readthedocs.io/en/latest/index.html>             | 10.1093/nar/gkw257 |
 | DESeq2        | <https://bioconductor.org/packages/release/bioc/html/DESeq2.html>   | 10.1186/s13059-014-0550-8 <br> 10.1093/biostatistics/kxw041|
 | DEXSeq        | <https://bioconductor.org/packages/release/bioc/html/DEXSeq.html>   | 10.1101/gr.133744.111 |
 | DIEGO         | <http://www.bioinf.uni-leipzig.de/Software/DIEGO>                   | 10.1093/bioinformatics/btx690 |
 | DGCA          | <https://github.com/andymckenzie/DGCA>                              | 10.1186/s12918-016-0349-1 |
 | fastqc        | <https://www.bioinformatics.babraham.ac.uk/projects/fastqc>         | NA |
-| featureCounts | <http://subread.sourceforge.net>                                    | 10.1093/bioinformatics/btt656  |
-| fgbio         | <http://fulcrumgenomics.github.io/fgbio/>                           | NA  |
+| featureCounts | <http://subread.sourceforge.net>                                    | 10.1093/bioinformatics/btt656 |
+| fgbio         | <http://fulcrumgenomics.github.io/fgbio/>                           | NA |
 | freebayes     | <https://github.com/ekg/freebayes>                                  | arXiv:1207.3907 |
-| GATK          | <https://github.com/broadinstitute/gatk>                            | 10.1101/gr.107524.110 <br> 10.1038/ng.806 |
+| GATK4         | <https://github.com/broadinstitute/gatk>                            | 10.1101/gr.107524.110 <br> 10.1038/ng.806 |
 | GEM           | <https://groups.csail.mit.edu/cgs/gem>                              | 10.1371/journal.pcbi.1002638 |
 | GNU Parallel  | <https://www.gnu.org/software/parallel/>                            | 10.5281/zenodo.1146014 |
 | GoPeaks       | <https://github.com/maxsonBraunLab/gopeaks>                         | 10.1186/s13059-022-02707-w |
@@ -765,6 +769,7 @@ enrichment::go -t $threads -r mapper -c comparisons -l coexpressions -g $go -i r
 | IDR           | <https://github.com/nboley/idr>                                     | 10.1214/11-AOAS466 |
 | IGV           | <http://software.broadinstitute.org/software/igv>                   | 10.1038/nbt.1754 |
 | Intervene     | <https://github.com/asntech/intervene>                              | 10.1186/s12859-017-1708-7 |
+| kent/UCSC utilities | <https://hgdownload.soe.ucsc.edu/downloads.html#utilities_downloads> | 10.1093/bioinformatics/btq351 |
 | khmer         | <https://khmer.readthedocs.io>                                      | 10.12688/f1000research.6924.1 |
 | m6aViewer     | <http://dna2.leeds.ac.uk/m6a/>                                      | 10.1261/rna.058206.116 |
 | Macs2         | <https://github.com/macs3-project/MACS>                             | 10.1186/gb-2008-9-9-r137 |
@@ -774,12 +779,13 @@ enrichment::go -t $threads -r mapper -c comparisons -l coexpressions -g $go -i r
 | PEAKachu      | <https://github.com/tbischler/PEAKachu>                             | NA |
 | Picard        | <http://broadinstitute.github.io/picard>                            | NA |
 | Platypus      | <https://rahmanteamdevelopment.github.io/Platypus>                  | 10.1038/ng.3036 |
-| pugz          | <https://github.com/Piezoid/pugz>                                   | 10.1109/IPDPSW.2019.00042 |  
+| pugz          | <https://github.com/Piezoid/pugz>                                   | 10.1109/IPDPSW.2019.00042 |
+| rapidgzip     | <https://github.com/mxmlnkn/rapidgzip>                              | 10.1145/3588195.3592992 |
 | RAxML         | <https://cme.h-its.org/exelixis/web/software/raxml/index.html>      | 10.1093/bioinformatics/btl446 |
 | Rcorrector    | <https://github.com/mourisl/Rcorrector>                             | 10.1186/s13742-015-0089-y |
 | RSeQC         | <http://rseqc.sourceforge.net>                                      | 10.1093/bioinformatics/bts356 |
 | REVIGO        | <https://code.google.com/archive/p/revigo-standalone>               | 10.1371/journal.pone.0021800 |
-| RRVGO         | <https://ssayols.github.io/rrvgo>                                   | NA |
+| RRVGO         | <https://ssayols.github.io/rrvgo>                                   | 10.17912/micropub.biology.000811 |
 | SAMtools      | <http://www.htslib.org/doc/samtools.html>                           | 10.1093/bioinformatics/btp352 |
 | SEACR         | <https://github.com/FredHutch/SEACR>                                | 10.1186/s13072-019-0287-4 |
 | segemehl      | <http://www.bioinf.uni-leipzig.de/Software/segemehl>                | 10.1186/gb-2014-15-2-r34 <br> 10.1371/journal.pcbi.1000502 |
