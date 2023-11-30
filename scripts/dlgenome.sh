@@ -303,7 +303,6 @@ dlgenome::_go.msigdb(){
 		' -- -terms="$outdir/tmp/gmt.terms.parsed" -go="$outdir/tmp/go.terms.orig" -info="$out.info" "$gmt" >> "$out.go"
 	done
 
-	cp "$out.go" "$out.go+"
 	while read -r collection gmt; do
 		echo ":INFO: working on $gmt"
 		wget -O - -c -q --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping "https://data.broadinstitute.org/gsea-msigdb/msigdb/release/$version/$gmt" | perl -F'\t' -slanE '
@@ -322,7 +321,7 @@ dlgenome::_go.msigdb(){
 				next unless $i;
 				say join"\t",($i,$F[0],$collection,lc($F[0]=~s/_+/ /gr));
 			}
-		' -- -info="$out.info" -collection="$collection" >> "$out.go+"
+		' -- -info="$out.info" -collection="$collection" >> "$out.go"
 	done < <(curl -s "https://www.gsea-msigdb.org/gsea/msigdb/$msig/collections.jsp" | grep -e "name=" -e symbols.gmt | grep -B 1 symbols.gmt | grep -v -Fx -- '--' | sed -E 's@.*/([^/]+symbols\.gmt).*@\1@;s@.*>([^>]+)<[^<]+$@\1@' | paste - - | grep -vF -e All -e .all. -e .go. | perl -F'\t' -lane '$F[0]=~s/\s+subset\s+of\s+\S+//; $F[0]=~s/^[^:]:\s+//; $F[0]=~s/\W+/_/g; print join"\t",@F')
 
 	cat <<-EOF > "$out.go.README"
