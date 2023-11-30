@@ -4,7 +4,7 @@
 function preprocess::dedup(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -32,6 +32,7 @@ function preprocess::dedup(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "umi based de-duplication"
@@ -97,7 +98,7 @@ function preprocess::dedup(){
 function preprocess::fastqc(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -127,6 +128,7 @@ function preprocess::fastqc(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "calculating qualities"
@@ -202,7 +204,7 @@ function preprocess::fastqc(){
 function preprocess::rmpolynt(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -228,6 +230,7 @@ function preprocess::rmpolynt(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "clipping poly mono- and di-nucleotide ends"
@@ -262,7 +265,7 @@ function preprocess::rmpolynt(){
 function preprocess::cutadapt(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-a <adapter1> | array of
@@ -292,6 +295,7 @@ function preprocess::cutadapt(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "adapter clipping"
@@ -362,7 +366,7 @@ function preprocess::cutadapt(){
 function preprocess::trimmomatic(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-b <rrbs>     | true/false if true does not trim read starts
@@ -390,6 +394,7 @@ function preprocess::trimmomatic(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "trimming"
@@ -520,7 +525,7 @@ function preprocess::trimmomatic(){
 function preprocess::rcorrector(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -544,6 +549,7 @@ function preprocess::rcorrector(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "correcting read errors"
@@ -631,7 +637,7 @@ function preprocess::rcorrector(){
 function preprocess::sortmerna_new(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -655,6 +661,7 @@ function preprocess::sortmerna_new(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "filtering rRNA fragments"
@@ -790,7 +797,7 @@ function preprocess::sortmerna_new(){
 function preprocess::sortmerna(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -814,6 +821,7 @@ function preprocess::sortmerna(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "filtering rRNA fragments"
@@ -926,7 +934,7 @@ function preprocess::sortmerna(){
 function preprocess::add4stats(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-r <qualdirs>  | array of
 			-a <path>      | to add
 			-1 <fastq1>    | array of
@@ -946,6 +954,7 @@ function preprocess::add4stats(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 	local f i=${#_qdirs_add4stats[@]}
@@ -963,7 +972,7 @@ function preprocess::add4stats(){
 function preprocess::qcstats(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-f <force>    | true/false rerun fastqc
@@ -991,6 +1000,7 @@ function preprocess::qcstats(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	declare -a cmdqc
