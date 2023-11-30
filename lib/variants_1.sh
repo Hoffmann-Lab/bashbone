@@ -4,7 +4,7 @@
 function variants::vcfnorm(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -30,6 +30,7 @@ function variants::vcfnorm(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "normalizing vcf files"
@@ -111,7 +112,7 @@ function variants::panelofnormals(){
 	# other somewhat random but systematic artifacts of sequencing.
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -141,6 +142,7 @@ function variants::panelofnormals(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "calling panel of normals"
@@ -233,7 +235,7 @@ function variants::panelofnormals(){
 function variants::makepondb(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -259,6 +261,7 @@ function variants::makepondb(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "creating panel of normals database"
@@ -376,7 +379,7 @@ function variants::makepondb(){
 function variants::tree(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -404,6 +407,7 @@ function variants::tree(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "reconstructing genotype tree"
