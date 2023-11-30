@@ -4,7 +4,7 @@
 function configure::instances_by_threads(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-i <instances> | number of targeted
 			-t <threads>   | per instance targeted
 			-T <threads>   | available
@@ -40,7 +40,7 @@ function configure::instances_by_threads(){
 function configure::memory_by_instances(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-i <instances> | number of targeted
 			-T <threads>   | available
 			-M <memory>    | available
@@ -77,7 +77,7 @@ function configure::memory_by_instances(){
 function configure::instances_by_memory(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-T <threads> | available
 			-m <memory>  | per instance targeted
 			-M <memory>  | available
@@ -116,7 +116,7 @@ function configure::instances_by_memory(){
 function configure::jvm(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-i <instances> | number of targeted
 			-t <threads>   | per instance targeted
 			-T <threads>   | available
