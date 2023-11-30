@@ -8,7 +8,7 @@ function cluster::wgcna_deseq(){
 function cluster::coexpression_deseq(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -50,6 +50,7 @@ function cluster::coexpression_deseq(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 	[[ $biotype && ! $gtf ]] && _usage
 
@@ -250,7 +251,7 @@ function cluster::wgcna(){
 function cluster::coexpression(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -286,6 +287,7 @@ function cluster::coexpression(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage && return 1
 	[[ $biotype && ! $gtf ]] && _usage && return 1
 
