@@ -4,11 +4,11 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - _libgcc_mutex=0.1
-  - _openmp_mutex=4.5
-  - libgcc-ng=12.1.0
-  - libgomp=12.1.0
-  - libstdcxx-ng=12.1.0
-  - libzlib=1.2.11
-  - sortmerna=2.1b
-  - zlib=1.2.11
+  - _libgcc_mutex==0.1
+  - _openmp_mutex==4.5
+  - libgcc-ng==12.1.0
+  - libgomp==12.1.0
+  - libstdcxx-ng==12.1.0
+  - libzlib==1.2.11
+  - sortmerna==2.1b
+  - zlib==1.2.11

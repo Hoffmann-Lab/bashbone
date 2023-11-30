@@ -4,25 +4,25 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - _libgcc_mutex=0.1
-  - _openmp_mutex=4.5
-  - bzip2=1.0.8
-  - c-ares=1.18.1
-  - htslib=1.14
-  - keyutils=1.6.1
-  - krb5=1.19.3
-  - libcurl=7.82.0
-  - libdeflate=1.10
-  - libedit=3.1.20191231
-  - libev=4.33
-  - libgcc-ng=11.2.0
-  - libgomp=11.2.0
-  - libnghttp2=1.47.0
-  - libssh2=1.10.0
-  - libstdcxx-ng=11.2.0
-  - libzlib=1.2.11
-  - methyldackel=0.6.1
-  - ncurses=6.3
-  - openssl=1.1.1n
-  - xz=5.2.5
-  - zlib=1.2.11
+  - _libgcc_mutex==0.1
+  - _openmp_mutex==4.5
+  - bzip2==1.0.8
+  - c-ares==1.18.1
+  - htslib==1.14
+  - keyutils==1.6.1
+  - krb5==1.19.3
+  - libcurl==7.82.0
+  - libdeflate==1.10
+  - libedit==3.1.20191231
+  - libev==4.33
+  - libgcc-ng==11.2.0
+  - libgomp==11.2.0
+  - libnghttp2==1.47.0
+  - libssh2==1.10.0
+  - libstdcxx-ng==11.2.0
+  - libzlib==1.2.11
+  - methyldackel==0.6.1
+  - ncurses==6.3
+  - openssl==1.1.1n
+  - xz==5.2.5
+  - zlib==1.2.11
