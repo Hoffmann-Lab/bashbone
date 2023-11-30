@@ -4,7 +4,7 @@
 function genome::mkdict(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-5 <skip>     | true/false md5sums, indexing respectively
@@ -27,6 +27,7 @@ function genome::mkdict(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 
 	commander::printinfo "creating genome dictionary"
@@ -84,7 +85,7 @@ function genome::mkdict(){
 function genome::indexgtf(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-5 <skip>     | true/false md5sums, indexing respectively
@@ -107,6 +108,7 @@ function genome::indexgtf(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 
 	commander::printinfo "indexing gtf"
@@ -139,7 +141,7 @@ function genome::indexgtf(){
 function genome::mkgodb(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -163,6 +165,7 @@ function genome::mkgodb(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 
 	commander::printinfo "creating genome go orgdb"
@@ -223,7 +226,7 @@ function genome::mkgodb(){
 function genome::view(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-m <memory>   | amount of
 			-i <genome>   | path to indexed fasta or igv .genome file
 			-g <gtf>      | path to fasta matching, indexed gtf file
@@ -265,6 +268,7 @@ function genome::view(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 	[[ ! $gtf && ${#_ids_view[@]} -gt 0 ]] && _usage
 
