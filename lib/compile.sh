@@ -31,6 +31,7 @@ function compile::_parse(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 
 	return 0
@@ -151,15 +152,37 @@ function compile::conda_tools(){
 	declare -A envs
 	compile::_parse -r insdir -s threads -c upgrade -f cfg "$@"
 	$upgrade && commander::printinfo "validating conda environments" || commander::printinfo "installing conda environments"
+
+	local tmpdir="$insdir/tmp"
+	mkdir -p "$tmpdir" "$insdir/config"
+	declare -a cmdchk
+
 	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
-	while read -r tool; do
-		envs[$tool]=true
+	while read -r n; do
+		commander::makecmd -a cmdchk -s '|' -o "$tmpdir/$n.yaml" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- 'CMD'
+			mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c $([[ $n == "bashbone" ]] && echo r || echo defaults)
+		CMD
+			grep -vi -e '^prefix:' -e certifi
+		CMD
+			grep -vE -- '-\s+idr='
+		CMD
+			sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/'
+		CMD
+			sed -n '/variables:/,$!p'
+		CMD
+		envs[$n]=true
 	done < <(mamba info -e | awk -v prefix="^$insdir" '$NF ~ prefix {print $1}')
+	commander::runcmd -i $threads -a cmdchk
 
 	# setup commonly used tools in bashbone source
 	# new: use own bashbone environment to be able to (re)create it from yaml because conda env update -n base --file base.yaml has conflicts
 	n=bashbone
-	$upgrade && ${envs[$n]:=false} || {
+	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+		$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	else
+		$upgrade && ${envs[$n]:=false}
+
+	fi || {
 		doclean=true
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
@@ -176,7 +199,7 @@ function compile::conda_tools(){
 				glib pkg-config make automake cmake \
 				bzip2 pbzip2 \
 				git wget curl ghostscript dos2unix \
-				sra-tools entrez-direct ucsc-bedgraphtobigwig \
+				sra-tools entrez-direct cgpbigwig \
 				datamash samtools bedtools ucsc-facount khmer \
 				htslib htseq bcftools vcflib vt vcftools \
 				perl perl-app-cpanminus perl-list-moreutils perl-try-tiny perl-xml-parser perl-dbi perl-db-file "perl-bioperl>=1.7" perl-bio-eutilities \
@@ -186,12 +209,15 @@ function compile::conda_tools(){
 				bioconductor-biomart bioconductor-biocparallel bioconductor-genefilter bioconductor-deseq2 bioconductor-dexseq bioconductor-clusterprofiler bioconductor-tcgautils r-r.utils \
 				r-survminer bioconductor-impute bioconductor-preprocesscore bioconductor-go.db bioconductor-annotationdbi bioconductor-annotationforge bioconductor-enrichplot bioconductor-rrvgo \
 				r-reshape2 r-wgcna r-dplyr r-tidyverse r-ggpubr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-treemap r-data.table r-ggridges r-ashr r-dendextend
-			# "libfuse<3" libarchive for fuse-archive
 		fi
 
-		local tmpdir="$insdir/tmp"
-		mkdir -p "$tmpdir" "$insdir/config"
 		echo "rm -rf '$tmpdir'" >> "$BASHBONE_CLEANUP"
+
+		# # python stuff
+		declare -a cmd1
+		commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+			python -m pip install rapidgzip
+		CMD
 
 		# perl stuff
 		declare -a cmd1
@@ -262,7 +288,7 @@ function compile::conda_tools(){
 		commander::runcmd -c bashbone -i 1 -a cmd2
 
 		mkdir -p "$insdir/config"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c r | grep -vi -e "^prefix:" -e certifi | grep -vE -- '-\s+idr=' | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c r | grep -vi -e "^prefix:" -e certifi | grep -vE -- '-\s+idr=' | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
 	}
 
 	# better do not predefine python version. if tool recipe depends on earlier version, conda installs an older or the oldest version (freebayes)
@@ -270,7 +296,11 @@ function compile::conda_tools(){
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
 		[[ $tool == "bwa" ]] && tool+=" bwa-mem2"
-		$upgrade && ${envs[$n]:=false} || {
+		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+			$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+		else
+			$upgrade && ${envs[$n]:=false}
+		fi || {
 			doclean=true
 
 			commander::printinfo "setup conda $n env"
@@ -282,9 +312,9 @@ function compile::conda_tools(){
 			fi
 
 			mkdir -p "$insdir/config"
-			mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+			mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
 
-			for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+			for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
 				mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 			done
 		}
@@ -303,7 +333,11 @@ function compile::conda_tools(){
 	tool=star-fusion
 	n=${tool/=*/}
 	n=${n//[^[:alpha:]]/}
-	$upgrade && ${envs[$n]:=false} || {
+	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+		$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	else
+		$upgrade && ${envs[$n]:=false}
+	fi || {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
@@ -318,9 +352,9 @@ function compile::conda_tools(){
 		fi
 
 		mkdir -p "$insdir/config"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
 
-		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
 			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
@@ -329,7 +363,11 @@ function compile::conda_tools(){
 	tool="sortmerna<3"
 	n=${tool/=*/}
 	n=${n//[^[:alpha:]]/}
-	$upgrade && ${envs[$n]:=false} || {
+	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+		$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	else
+		$upgrade && ${envs[$n]:=false}
+	fi || {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
@@ -369,9 +407,9 @@ function compile::conda_tools(){
 		commander::runcmd -c sortmerna -i $threads -a cmdidx
 
 		mkdir -p "$insdir/config"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
 
-		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
 			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
@@ -380,7 +418,11 @@ function compile::conda_tools(){
 	tool=arriba
 	n=${tool/=*/}
 	n=${n//[^[:alpha:]]/}
-	$upgrade && ${envs[$n]:=false} || {
+	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+		$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	else
+		$upgrade && ${envs[$n]:=false}
+	fi || {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
@@ -392,9 +434,9 @@ function compile::conda_tools(){
 		fi
 
 		mkdir -p "$insdir/config"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
 
-		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
 			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
@@ -402,7 +444,11 @@ function compile::conda_tools(){
 	tool=bwameth
 	n=${tool/=*/}
 	n=${n//[^[:alpha:]]/}
-	$upgrade && ${envs[$n]:=false} || {
+	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+		$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	else
+		$upgrade && ${envs[$n]:=false}
+	fi || {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
@@ -424,9 +470,9 @@ function compile::conda_tools(){
 		# squeeze in score parameter to control bwa minoutscore
 
 		mkdir -p "$insdir/config"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
 
-		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
 			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
@@ -434,7 +480,11 @@ function compile::conda_tools(){
 	tool=vardict
 	n=${tool/=*/}
 	n=${n//[^[:alpha:]]/}
-	$upgrade && ${envs[$n]:=false} || {
+	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+		$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	else
+		$upgrade && ${envs[$n]:=false}
+	fi || {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
@@ -446,9 +496,9 @@ function compile::conda_tools(){
 		fi
 
 		mkdir -p "$insdir/config"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
 
-		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
 			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
@@ -456,7 +506,11 @@ function compile::conda_tools(){
 	tool=snpeff
 	n=${tool/=*/}
 	n=${n//[^[:alpha:]]/}
-	$upgrade && ${envs[$n]:=false} || {
+	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+		$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	else
+		$upgrade && ${envs[$n]:=false}
+	fi || {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
@@ -468,16 +522,20 @@ function compile::conda_tools(){
 		fi
 
 		mkdir -p "$insdir/config"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
 
-		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
 			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
 
 	tool=platypus-variant
 	n=platypus
-	$upgrade && ${envs[$n]:=false} || {
+	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+		$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	else
+		$upgrade && ${envs[$n]:=false}
+	fi || {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
@@ -489,9 +547,9 @@ function compile::conda_tools(){
 		fi
 
 		mkdir -p "$insdir/config"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
 
-		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
 			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
@@ -499,7 +557,11 @@ function compile::conda_tools(){
 	tool=danpos
 	n=${tool/=*/}
 	n=${n//[^[:alpha:]]/}
-	$upgrade && ${envs[$n]:=false} || {
+	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+		$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	else
+		$upgrade && ${envs[$n]:=false}
+	fi || {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
@@ -530,13 +592,13 @@ function compile::conda_tools(){
 			mamba env create -n $n --force --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
-			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults ucsc-wigtobigwig ucsc-bigwigtobedgraph ucsc-bedgraphtobigwig samtools scipy "r-base>=4" $(awk '!/^\s*#/{print $1}' "$insdir/latest/danpos/requirements.txt")
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults ucsc-wigtobigwig samtools scipy "r-base>=4" $(awk '!/^\s*#/{print $1}' "$insdir/latest/danpos/requirements.txt")
 		fi
 
 		mkdir -p "$insdir/config"
-		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed 's/- r-base=.*/- r-base>=4/' > "$insdir/config/$n.yaml"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
 
-		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff; do
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
 			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
 	}
