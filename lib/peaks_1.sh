@@ -4,7 +4,7 @@
 function peaks::_bed2narrowpeak(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-1 <cmds1>    | array of. run with conda env macs
 			-2 <cmds2>    | array of
 			-i <file>     | treatment bed file
@@ -30,6 +30,7 @@ function peaks::_bed2narrowpeak(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 7 ]] && _usage
 
 	# unless summit: refinepeak
@@ -100,7 +101,7 @@ function peaks::_bed2narrowpeak(){
 function peaks::macs(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -142,6 +143,7 @@ function peaks::macs(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 	[[ $_nidx_macs ]] && [[ ! $_tidx_macs ]] && _usage
 
@@ -180,15 +182,16 @@ function peaks::macs(){
 	if ! $ripseq && $pointy; then
 		# according to cut&tag benchmark dont use local background at all
 		# https://doi.org/10.1101/2022.03.30.486382
-		$strict && params+=' --nolambda -q 0.00001' || params+=' --nolambda -q 0.001'
+		$strict && params+=' --nolambda -q 0.00001' || params+=' --nolambda -q 0.01'
 	else
 		$strict && params+=' -q 0.01' || params+=' -q 0.1' # -p 0.01 is encode setting for downstream IDR, but precision will go down massively
 	fi
 	if $broad; then
-		params+=' --broad' #" --broad-cutoff $cutoff"
+		params+=' --min-length 150 --broad' #" --broad-cutoff $cutoff"
 		# --broad option uses final threshold of q<0.1 and increases the maximum distance between significant sites by a factor of 4
 		# in case of missing control, dont use local background to not miss broad peaks due to gapped peaks in local vicinity
 		# https://github.com/macs3-project/MACS/issues/467
+		# -> parameter still necessary if --max-gap defined manually?
 		[[ $_nidx_macs ]] || $pointy || params+=' --nolambda'
 		broad="broadPeak"
 		mult=4
@@ -204,11 +207,11 @@ function peaks::macs(){
 	# use options --max-gap and --min-length. minlength should be ~500 for broad peaks..
 	if $ripseq; then
 		if $pointy; then
-			params+=" --max-gap $((fragmentsize/4*mult))"
+			params+=" --max-gap $((fragmentsize/4))"
 			params2="$params --nomodel --shift -$((fragmentsize/4)) --extsize $((fragmentsize/2))"
 		else
 			# works also for atac seq: shift -75 (encode) to -100 and extsize 150 (encode) to 200
-			params+=" --max-gap $((fragmentsize/2*mult))"
+			params+=" --max-gap $((fragmentsize/2))"
 			params2="$params --nomodel --shift -$((fragmentsize/2)) --extsize $fragmentsize"
 		fi
 	else
@@ -243,7 +246,7 @@ function peaks::macs(){
 
 			if [[ ${_nidx_macs[$i]} ]]; then
 				nf="${_bams_macs[${_nidx_macs[$i]}]}"
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				mkdir -p "$odir/$o"
 
 				# encode replaces read name by static N and score by max value 1000 to spare disk space
@@ -401,7 +404,7 @@ function peaks::macs(){
 function peaks::seacr(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -439,6 +442,7 @@ function peaks::seacr(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	if [[ $macsdir ]]; then
 		[[ $mandatory -lt 3 ]] && _usage
 	else
@@ -489,7 +493,7 @@ function peaks::seacr(){
 
 			if [[ ${_nidx_seacr[$i]} ]]; then
 				nf="${_bams_seacr[${_nidx_seacr[$i]}]}"
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 
 				# commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				# 	samtools view -u -e 'rname!~"^chrM" && rname!="MT"' "$nf"
@@ -566,7 +570,7 @@ function peaks::seacr(){
 function peaks::gopeaks(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-m <memory>     | amount of. required unless macs directory is given by -c
@@ -606,6 +610,7 @@ function peaks::gopeaks(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	if [[ $macsdir ]]; then
 		[[ $mandatory -lt 3 ]] && _usage
 	else
@@ -619,7 +624,7 @@ function peaks::gopeaks(){
 		_tidx_gopeaks=tidx_gopeaks
 	fi
 
-	local x=$(samtools view -F 4 "${_bams_gem[0]}" | head -10000 | cat <(samtools view -H "${_bams_gem[0]}") - | samtools view -c -f 1)
+	local x=$(samtools view -F 4 "${_bams_gopeaks[0]}" | head -10000 | cat <(samtools view -H "${_bams_gopeaks[0]}") - | samtools view -c -f 1)
 	[[ $x -eq 0 ]] && commander::warn "peak calling gopeaks not applied due to single-end data" && return 0
 
 	commander::printinfo "peak calling gopeaks"
@@ -646,12 +651,13 @@ function peaks::gopeaks(){
 
 	local params
 	$strict && params="-p 0.05" || params="-p 0.1"
-	$broad && params+=" --broad -m 3000" || params+=" -m 1000"
+	$broad && params+=" -m $((fragmentsize/2*4))" || params+=" -w 50 -t $((fragmentsize/4)) -l $((fragmentsize/8)) -m $((fragmentsize/2))"
 	# $pointy && params+=" -w $((fragmentsize/2))" || params="-w $fragmentsize"
-	# -t  --step       Bin size for coverage bins. Default: 100
+	# --broad          Run GoPeaks on broad marks (--step 5000 & --slide 1000) <- for extream broad marks like h3k27me3
+	# -t  --step       Bin size for coverage bins. Default: 100 <- for standard histone chip signal detection
 	# -l  --slide      Slide size for coverage bins. Default: 50
 	# -w  --minwidth   Minimum width (bp) of a peak. Default: 150
-	# broad: -t * 50 (5000) , -l * 20 (1000) -> pointy: -t 50 -l 10 ?
+	# -m  --mdist      Merge peaks within <mdist> base pairs. Default: 1000
 
     # according to dev: memory requirement is ~17X per GB bam input
     # du -b file | awk '{print $1/1024/1024/1024}'
@@ -667,7 +673,7 @@ function peaks::gopeaks(){
 
 			if [[ ${_nidx_gopeaks[$i]} ]]; then
 				nf="${_bams_gopeaks[${_nidx_gopeaks[$i]}]}"
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				nf="-c '$nf'"
 			else
 				unset nf
@@ -716,7 +722,7 @@ function peaks::gopeaks(){
 function peaks::gem(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -760,6 +766,7 @@ function peaks::gem(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	if [[ $macsdir ]]; then
 		[[ $mandatory -lt 5 ]] && _usage
 	else
@@ -892,7 +899,7 @@ function peaks::gem(){
 
 			if [[ ${_nidx_gem[$i]} ]]; then
 				nf="${_bams_gem[${_nidx_gem[$i]}]}"
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 				nf="--ctrl '$nf'"
 			else
 				unset nf
@@ -977,7 +984,7 @@ function peaks::gem(){
 function peaks::matk(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-c <macsdir>    | base directory where to find "macs" sub-directory according to used mappers (see -r) i.e. <macsdir>/<mapper>/macs
@@ -1013,6 +1020,7 @@ function peaks::matk(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	if [[ $macsdir ]]; then
 		[[ $mandatory -lt 5 ]] && _usage
 	else
@@ -1061,7 +1069,7 @@ function peaks::matk(){
 		for i in "${!_tidx_matk[@]}"; do
 			nf="${_bams_matk[${_nidx_matk[$i]}]}"
 			f="${_bams_matk[${_tidx_matk[$i]}]}"
-			o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+			o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 
 			readsbed="$(find -L "$mdir/$o" -maxdepth 1 -name "$(basename "${f%.*}").bed.gz" -print -quit | grep .)"
 			mkdir -p "$odir/$o"
@@ -1123,7 +1131,7 @@ function peaks::matk(){
 function peaks::peakachu(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-c <macsdir>    | base directory where to find "macs" sub-directory according to used mappers (see -r) i.e. <macsdir>/<mapper>/macs
@@ -1163,6 +1171,7 @@ function peaks::peakachu(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	if [[ $macsdir ]]; then
 		[[ $mandatory -lt 4 ]] && _usage
 	else
@@ -1217,7 +1226,7 @@ function peaks::peakachu(){
 
 				if [[ ${_nidx_peakachu[$i]} ]]; then
 					nf="${_bams_peakachu[${_nidx_peakachu[$i]}]}"
-					o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+					o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 					nf="--ctr_libs '$nf'"
 				else
 					unset nf
@@ -1276,7 +1285,7 @@ function peaks::peakachu(){
 				done
 				a="${_bams_peakachu[${_nidx_peakachu[0]}]}"
 				b="${_bams_peakachu[${_tidx_peakachu[0]}]}"
-				o="$(echo -e "$(basename "${a%.*}")\t$(basename "${b%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$a")\t$(basename "$b")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 			else
 				unset nf
 				o="$(basename "${_bams_peakachu[${_tidx_peakachu[0]}]}")"
@@ -1302,7 +1311,7 @@ function peaks::peakachu(){
 			# NF-9 is either base_mean or fold_change if ctr_libs
 			if [[ $nf ]]; then
 				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
-					awk -v OFS='\t' !/^replicon/ && \$(NF-9)!="inf"{print \$1,\$3,\$4,".",0,".",\$(NF-9),-1,-1,-1}' "$odir/$o/peak_tables/"*.csv
+					awk -v OFS='\t' '!/^replicon/ && \$(NF-9)!="inf"{print \$1,\$3,\$4,".",0,".",\$(NF-9),-1,-1,-1}' "$odir/$o/peak_tables/"*.csv
 				CMD
 					sort -k1,1 -k2,2n -k3,3n
 				CMD
@@ -1312,7 +1321,7 @@ function peaks::peakachu(){
 				CMD
 			else
 				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
-					awk -v OFS='\t' !/^replicon/{print \$1,\$3,\$4,".",0,".",-1,-1,-1,-1}' "$odir/$o/peak_tables/"*.csv
+					awk -v OFS='\t' '!/^replicon/{print \$1,\$3,\$4,".",0,".",-1,-1,-1,-1}' "$odir/$o/peak_tables/"*.csv
 				CMD
 					sort -k1,1 -k2,2n -k3,3n
 				CMD
@@ -1342,7 +1351,7 @@ function peaks::peakachu(){
 function peaks::genrich(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-f <size>       | assumed mean fragment
@@ -1353,15 +1362,16 @@ function peaks::genrich(){
 			-o <outdir>     | path to
 			-q <ripseq>     | true/false
 			-z <strict>     | true/false peak filters
+			-w <broad>      | true/false peak detection
 			-y <pointy>     | true/false call only pointy peaks
 			-P              | run pair-wise i.e. ignores replicates
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false genome fragmentsize threads outdir tmpdir="${TMPDIR:-/tmp}" strict=false ripseq=false pairwise=false pointy=false
+	local OPTIND arg mandatory skip=false skipmd5=false genome fragmentsize threads outdir tmpdir="${TMPDIR:-/tmp}" strict=false ripseq=false pairwise=false pointy=false broad=false
 	declare -n _mapper_genrich _nidx_genrich _tidx_genrich
-	while getopts 'S:s:f:t:r:a:i:o:q:z:y:P' arg; do
+	while getopts 'S:s:f:t:r:a:i:o:q:z:y:w:P' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -1373,11 +1383,13 @@ function peaks::genrich(){
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			q)	ripseq=$OPTARG;;
 			z)	strict=$OPTARG;;
+			w)	broad=$OPTARG;;
 			y)	pointy=$OPTARG;;
 			P)	pairwise=true;;
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 	[[ $_nidx_genrich ]] && [[ ! $_tidx_genrich ]] && _usage
 
@@ -1396,19 +1408,19 @@ function peaks::genrich(){
 	# todo in case of RIP-seq prevent downsampling if #secondaries exceed 10 by manipulating sam? test it!
 	if $pairwise || [[ ${#_tidx_genrich[@]} -eq 1 ]]; then
 		if $ripseq; then
-			params="-j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))"
+			params="-l 50 -j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))"
 			params+=' -a 0'
 		else
-			params="-g $((fragmentsize/2))"
+			$broad && params="-l 150 -g $((fragmentsize/2*4))" || params="-l 50 -g $((fragmentsize/2))"
 			$pointy && params+=' -a 200' || params+=' -a 100'
 		fi
 		$strict && params+=' -p 0.01' || params+=' -p 0.05'
 	else
 		if $ripseq; then
-			params="-j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))"
+			params="-l 50 -j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))"
 			params+=' -a 100'
 		else
-			params="-g $((fragmentsize/2))"
+			$broad && params="-l 150 -g $((fragmentsize/2*4))" || params="-l 50 -g $((fragmentsize/2))"
 			$pointy && params+=' -a 400' || params+=' -a 200'
 		fi
 		$strict && params+=' -q 0.01' || params+=' -q 0.1'
@@ -1427,7 +1439,7 @@ function peaks::genrich(){
 
 				if [[ ${_nidx_genrich[$i]} ]]; then
 					nf="${_bams_genrich[${_nidx_genrich[$i]}]}"
-					o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+					o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 					b="$(basename "${nf%.*}")"
 
 					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
@@ -1464,7 +1476,7 @@ function peaks::genrich(){
 				nf="${nf:0:-1}"
 				a="${_bams_genrich[${_nidx_genrich[0]}]}"
 				b="${_bams_genrich[${_tidx_genrich[0]}]}"
-				o="$(echo -e "$(basename "${a%.*}")\t$(basename "${b%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				o="$(echo -e "$(basename "$a")\t$(basename "$b")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
 			else
 				unset nf
 				o="$(basename "${_bams_genrich[${_tidx_genrich[0]}]}")"
@@ -1492,7 +1504,6 @@ function peaks::genrich(){
 				$f
 				$nf
 				$params
-				-l 50
 				-y
 				-v
 				-o "$odir/$o/$o.narrowPeak"
@@ -1521,7 +1532,7 @@ function peaks::genrich(){
 function peaks::m6aviewer(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -1553,6 +1564,7 @@ function peaks::m6aviewer(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 	[[ $_nidx_m6aviewer ]] && [[ ! $_tidx_m6aviewer ]] && _usage
 
@@ -1594,14 +1606,14 @@ function peaks::m6aviewer(){
 					versus
 					$f
 				EOF
-				o="$(echo -e "$(basename "${nf%.*}")\t$(basename "${f%.*}")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak"
 			else
 				commander::printinfo {COMMANDER[0]}<<- EOF
 					load
 					$f
 				EOF
 				o="$(basename "$f")"
-				o="${o%.*}"
+				o="${o%.*}.narrowPeak"
 			fi
 
 			commander::makecmd -a cmd2 -s '|' -o "$odir/$o" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'

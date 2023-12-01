@@ -4,10 +4,10 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - _libgcc_mutex=0.1
-  - _openmp_mutex=4.5
-  - libgcc-ng=12.1.0
-  - libgomp=12.1.0
-  - libzlib=1.2.12
-  - subread=2.0.1
-  - zlib=1.2.12
+  - _libgcc_mutex==0.1
+  - _openmp_mutex==4.5
+  - libgcc-ng==12.1.0
+  - libgomp==12.1.0
+  - libzlib==1.2.12
+  - subread==2.0.1
+  - zlib==1.2.12

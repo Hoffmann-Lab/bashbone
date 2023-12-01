@@ -4,7 +4,7 @@
 function bisulfite::mspicut(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -32,6 +32,7 @@ function bisulfite::mspicut(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "selecting msp1 cut reads"
@@ -87,7 +88,7 @@ function bisulfite::mspicut(){
 function bisulfite::segemehl(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-5 <skip>       | true/false md5sums, indexing respectively
@@ -133,6 +134,7 @@ function bisulfite::segemehl(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 7 ]] && _usage
 
 	commander::printinfo "bisufite mapping segemehl"
@@ -217,7 +219,7 @@ function bisulfite::segemehl(){
 function bisulfite::bwa(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-5 <skip>       | true/false md5sums, indexing respectively
@@ -255,6 +257,7 @@ function bisulfite::bwa(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "bisufite mapping bwa"
@@ -348,7 +351,7 @@ function bisulfite::haarz(){
 function bisulfite::mecall(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -376,6 +379,7 @@ function bisulfite::mecall(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "methylation calling haarz"
@@ -453,7 +457,7 @@ function bisulfite::mecall(){
 function bisulfite::methyldackel(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -479,6 +483,7 @@ function bisulfite::methyldackel(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "methylation calling methyldackel"
@@ -550,7 +555,7 @@ function bisulfite::methyldackel(){
 function bisulfite::metilene(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -585,6 +590,7 @@ function bisulfite::metilene(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 	[[ $tools ]] || tools=("") # for backwards compatibility
 
@@ -657,7 +663,7 @@ function bisulfite::metilene(){
 function bisulfite::_metilene(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-1 <cmds1>     | array of
 			-2 <cmds2>     | array of
 			-t <threads>   | number of
@@ -691,6 +697,7 @@ function bisulfite::_metilene(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 7 ]] && _usage
 
 	local params=''
@@ -722,7 +729,7 @@ function bisulfite::_metilene(){
 function bisulfite::join(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -753,6 +760,7 @@ function bisulfite::join(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 	[[ $tools ]] || tools=("") # for backwards compatibility
 

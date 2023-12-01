@@ -152,7 +152,7 @@ if (nrow(MEcor)>0 && type == "Cluster"){
 	molt <- reshape2::melt(foo, id.vars = c("type", "id", "me_corr"), measure.vars = foo.colnames)
 	ggplot(molt, aes(x = variable, y = value, group = id, color = me_corr)) +
 		theme_bw() +
-		theme(axis.text.x = element_text(angle = 90, hjust = 1, size = rel(min(1,15/ncol(df))))) +
+		theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = rel(min(1,10/ncol(df))))) +
 		labs(x = "", y = labeldatatype, color = "Abs. Correlation", linetype = "") +
 		geom_line(alpha=0.3) +
 		stat_summary(aes(group = 1, linetype = ''), fun.y = 'median', geom = 'line', size = 0.8, show.legend = TRUE, colour = 'green') +
@@ -167,7 +167,7 @@ if (nrow(MEcor)>0 && type == "Cluster"){
 		molt <- reshape2::melt(df, id.vars = c("type", "id"), measure.vars = foo.colnames)
 		ggplot(molt, aes(x = variable, y = value, group = id)) +
 			theme_bw() +
-			theme(axis.text.x = element_text(angle = 90, hjust = 1, size = rel(min(1,15/ncol(df))))) +
+			theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = rel(min(1,10/ncol(df))))) +
 			labs(x = "", y = labeldatatype, color = "Mean FC", linetype = "") +
 			geom_line(alpha=0.3) +
 			stat_summary(aes(group = 1, linetype = ''), fun.y = 'median', geom = 'line', size = 0.8, show.legend = TRUE, colour = 'green') +
@@ -186,7 +186,7 @@ if (nrow(MEcor)>0 && type == "Cluster"){
 		molt <- reshape2::melt(foo, id.vars = c("type", "id", "mean_pw_ch"), measure.vars = foo.colnames)
 		ggplot(molt, aes(x = variable, y = value, group = id, color = mean_pw_ch)) +
 			theme_bw() +
-			theme(axis.text.x = element_text(angle = 90, hjust = 1, size = rel(min(1,15/ncol(df))))) +
+			theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = rel(min(1,10/ncol(df))))) +
 			labs(x = "", y = labeldatatype, color = "Mean FC", linetype = "") +
 			geom_line(alpha=0.3) +
 			stat_summary(aes(group = 1, linetype = ''), fun.y = 'median', geom = 'line', size = 0.8, show.legend = TRUE, colour = 'green') +

@@ -4,7 +4,7 @@
 function test::test(){
 		function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-h | help
 		EOF
 		return 1
@@ -26,14 +26,14 @@ function test::test(){
 
 function test::start(){
 	echo test::start under $BASHPID >&2
-	# cat <(test::inner; echo mut not show test::start >&2)
-	test::inner
+	cat <(test::inner; echo mut not show test::start >&2)
+	# test::inner
 	echo mut not show test::start >&2
 }
 
 function test::inner(){
 	echo test::inner under $BASHPID >&2
-	cat <(test::error; echo mut not show test::inner >&2)
+	# cat <(test::error; echo mut not show test::inner >&2)
 	test::error
 	echo mut not show test::inner >&2
 }
@@ -42,9 +42,12 @@ function test::error(){
 	echo test::error under $BASHPID >&2
 	# cat sdfdsfdf
 	# (cat sdfdsfdf; echo mut not show test::error >&2)
-	# x=$(cat sdfdsfdf; echo mut not show test::error >&2)
-	cat <(cat sdfdsfdf; echo mut not show test::error >&2)
+	x=$(cat sdfdsfdf; echo mut not show test::error >&2)
+	# cat <(cat sdfdsfdf; echo mut not show test::error >&2)
 	# { cat sdfdsfdf; echo mut not show test::error >&2; } &
 	# wait $!
+	# dont capture tests! # if [[ $(cat sdfdsfdf) == foo ]]; then echo mut not show test::error >&2; fi
+	# for i in $(cat sdfdsfdf; exit 1); do sleep 10; echo mut not show test::error loop >&2; done
+	sleep 10
 	echo mut not show test::error >&2
 }

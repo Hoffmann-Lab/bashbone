@@ -16,10 +16,10 @@ usage(){
 		$(basename $0) downloads most recent human or mouse genome and annotation including gene ontology and optionally dbSNP
 
 		VERSION
-		0.6.0
+		0.6.1
 
 		SYNOPSIS
-		$(basename $0) -v -r [hg19|hg38|mm10] -g -a -d -s -n
+		$(basename $0) -r [hg19|hg38|mm10] -g -a -d -s -n
 
 		INPUT OPTIONS
 		-h | --help               : prints this message
@@ -30,7 +30,7 @@ usage(){
 		-c | --ctat               : switch to CTAT genome and indices (~30GB)
 		-a | --annotation         : download Ensembl gtf
 		-d | --descriptions       : download Ensembl gene description and Ensembl gene ontology information (requires R in PATH)
-		-m | --msigdb             : download Ensembl gene description and MSigDB gene ontology information (requires R in PATH)
+		-m | --msigdb             : download Ensembl gene description, MSigDB gene ontology information and other collections (requires R in PATH)
 		-e | --enrichr            : download Ensembl gene description and Enrichr human gene ontology information (requires R in PATH)
 		-s | --dbsnp              : download Ensembl dbSNP
 		-n | --ncbi               : switch to NCBI dbSNP
@@ -302,6 +302,27 @@ dlgenome::_go.msigdb(){
 			}
 		' -- -terms="$outdir/tmp/gmt.terms.parsed" -go="$outdir/tmp/go.terms.orig" -info="$out.info" "$gmt" >> "$out.go"
 	done
+
+	while read -r collection gmt; do
+		echo ":INFO: working on $gmt"
+		wget -O - -c -q --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping "https://data.broadinstitute.org/gsea-msigdb/msigdb/release/$version/$gmt" | perl -F'\t' -slanE '
+			BEGIN{
+				open F,"<$info" or die $!;
+				while(<F>){
+					chomp;
+					@F=split/\t/;
+					$F[1]=$F[0] unless $F[1];
+					$g2i{$F[1]}=$F[0];
+				}
+				close F;
+			}
+			for (@F[2..$#F]){
+				$i=$g2i{$_};
+				next unless $i;
+				say join"\t",($i,$F[0],$collection,lc($F[0]=~s/_+/ /gr));
+			}
+		' -- -info="$out.info" -collection="$collection" >> "$out.go"
+	done < <(curl -s "https://www.gsea-msigdb.org/gsea/msigdb/$msig/collections.jsp" | grep -e "name=" -e symbols.gmt | grep -B 1 symbols.gmt | grep -v -Fx -- '--' | sed -E 's@.*/([^/]+symbols\.gmt).*@\1@;s@.*>([^>]+)<[^<]+$@\1@' | paste - - | grep -vF -e All -e .all. -e .go. | perl -F'\t' -lane '$F[0]=~s/\s+subset\s+of\s+\S+//; $F[0]=~s/^[^:]:\s+//; $F[0]=~s/\W+/_/g; print join"\t",@F')
 
 	cat <<-EOF > "$out.go.README"
 		$(date)

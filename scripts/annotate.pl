@@ -5,7 +5,9 @@ use warnings;
 use feature ":5.10";
 
 if ($#ARGV < 3){
-	say "usage: annotate.pl [gtf.descr|0] [gtf|0] [feature] [bed|deseq.tsv|heatmap.ps| ..]";
+	say "usage: annotate.pl <gtf.descr|0> <gtf|0> <feature> <bed|deseq.tsv|heatmap.ps> [<bed|deseq.tsv|heatmap.ps> ..]";
+	say "or"
+	say "usage: annotate.pl <gtf.descr|0> <gtf|0> <feature> <deseq.tsv> [tpm]";
 	say "0 or gtf.descr => 4 tab seperated columns: geneID geneName biotype description";
 	say "0 or gtf => parsed for gene_id gene_name gene_biotype";
 	say "feature => e.g. exon -> gtf parsed for exon_id exon_name exon_biotype";
@@ -52,7 +54,20 @@ if ($ARGV[1]){
 	close I;
 }
 
-for (3..$#ARGV){
+my $files = $#ARGV == 3 ? 3 : $#ARGV-1;
+my %tpm;
+if ($files < $#ARGV){
+	open I,"<$ARGV[-1]" or die $!;
+	while(<I>){
+		chomp;
+		my @l=split/\t/;
+		$tpm{$l[0]} = join"\t",@l[1..$#l];
+	}
+	close I;
+	$tpm{NA}=$tpm{id}=~s/\S+/NA/gr;
+}
+
+for (3..$files){
 	my $f=$ARGV[$_];
 	my @o=split/\./,$f;
 	my $e=$o[-1];
@@ -73,7 +88,11 @@ for (3..$#ARGV){
 				next;
 			} elsif(/log2FoldChange/){
 				$deseq=1;
-				say O join"\t",(@l,"name","biotype","description");
+				if ($files < $#ARGV){
+					say O join"\t",(@l,"name","biotype","description",$tpm{id});
+				} else {
+					say O join"\t",(@l,"name","biotype","description");
+				}
 				next;
 			} # else: not next!
 		}
@@ -89,6 +108,11 @@ for (3..$#ARGV){
 			my $n = $m{$l[0]};
 			$n = $m{(split/\@/,$l[0])[-1]} unless $n;
 			$n = join"\t",('NA','NA','NA') unless $n;
+			if ($files < $#ARGV){
+				my $t = $tpm{$l[0]};
+				$t = $tpm{NA} unless $t;
+				$n .= "\t$t";
+			}
 			say O join"\t",(@l,$n);
 		} else {
 			my $n = $m{$l[3]};

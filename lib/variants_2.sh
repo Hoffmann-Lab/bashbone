@@ -4,7 +4,7 @@
 function variants::haplotypecaller(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -38,6 +38,7 @@ function variants::haplotypecaller(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 
 	if [[ ! $dbsnp ]]; then
@@ -260,7 +261,7 @@ function variants::mutect(){
 
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -297,6 +298,7 @@ function variants::mutect(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 8 ]] && _usage
 
 	commander::printinfo "calling variants mutect"
@@ -562,7 +564,7 @@ function variants::mutect(){
 function variants::bcftools(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -594,6 +596,7 @@ function variants::bcftools(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calling variants bcftools"
@@ -626,7 +629,7 @@ function variants::bcftools(){
 		-a ${#threads}
 		-n l/$threads
 		--additional-suffix=.bed
-		--filter='bedtools merge -d 1 -i - > \$(dirname \$FILE)/\$(basename \$FILE | sed "s/^x0*/slice./")'
+		--filter='bedtools merge -d 1 -i - > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
 		"${tdirs[0]}/tmp" "${tdirs[0]}/x"
 	CMD
 
@@ -807,7 +810,7 @@ function variants::bcftools(){
 function variants::freebayes(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -839,6 +842,7 @@ function variants::freebayes(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calling variants freebayes"
@@ -872,7 +876,7 @@ function variants::freebayes(){
 		-a ${#threads}
 		-n l/$threads
 		--additional-suffix=.bed
-		--filter='bedtools merge -d 1 -i - > \$(dirname \$FILE)/\$(basename \$FILE | sed "s/^x0*/slice./")'
+		--filter='bedtools merge -d 1 -i - > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
 		"${tdirs[0]}/tmp" "${tdirs[0]}/x"
 	CMD
 
@@ -1024,7 +1028,7 @@ function variants::freebayes(){
 function variants::varscan(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -1058,6 +1062,7 @@ function variants::varscan(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calling variants varscan"
@@ -1093,7 +1098,7 @@ function variants::varscan(){
 		-a ${#minstances}
 		-n l/$minstances
 		--additional-suffix=.bed
-		--filter='bedtools merge -d 1 -i - > \$(dirname \$FILE)/\$(basename \$FILE | sed "s/^x0*/slice./")'
+		--filter='bedtools merge -d 1 -i - > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
 		"${tdirs[0]}/tmp" "${tdirs[0]}/x"
 	CMD
 
@@ -1294,7 +1299,7 @@ function variants::varscan(){
 function variants::vardict(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -1328,6 +1333,7 @@ function variants::vardict(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calling variants vardict"
@@ -1371,7 +1377,7 @@ function variants::vardict(){
 		-a ${#minstances}
 		-n l/$minstances
 		--additional-suffix=.bed
-		--filter='cat > \$(dirname \$FILE)/\$(basename \$FILE | sed "s/^x0*/slice./")'
+		--filter='cat > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
 		"${tdirs[0]}/tmp" "${tdirs[0]}/x"
 	CMD
 
@@ -1569,7 +1575,7 @@ function variants::vardict_threads(){
 	# memory footprint raises with multiple threads
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -1601,6 +1607,7 @@ function variants::vardict_threads(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calling variants vardict"
@@ -1801,7 +1808,7 @@ function variants::vardict_threads(){
 function variants::platypus(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -1833,6 +1840,7 @@ function variants::platypus(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "calling variants platypus"

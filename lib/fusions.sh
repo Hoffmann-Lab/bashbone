@@ -49,7 +49,7 @@
 function fusions::starfusion(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>     | true/false return
 			-s <softskip>     | true/false only print commands
 			-5 <skip>         | true/false md5sums, indexing respectively
@@ -77,6 +77,7 @@ function fusions::starfusion(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 	commander::printinfo "detecting gene fusions star-fusion"
 
@@ -205,7 +206,7 @@ function fusions::starfusion(){
 function fusions::arriba(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>      | true/false return
 			-s <softskip>      | true/false only print commands
 			-5 <skip>          | true/false md5sums, indexing respectively
@@ -239,6 +240,7 @@ function fusions::arriba(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 	commander::printinfo "detecting gene fusions arriba"
 
@@ -410,7 +412,7 @@ function fusions::arriba(){
 function fusions::join(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -434,6 +436,7 @@ function fusions::join(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 

@@ -4,7 +4,7 @@
 function helper::pgzip(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-f <infile>  | path to. else stdin
 			-o <outfile> | path to
 			-t <threads> | number of
@@ -13,7 +13,7 @@ function helper::pgzip(){
 		return 1
 	}
 
-	local OPTIND arg threads=1 f=/dev/stdin o tool="pigz -p"
+	local OPTIND arg threads=1 f o tool="pigz -p"
 	while getopts 'f:t:o:b' arg; do
 		case $arg in
 			f) f="$OPTARG";;
@@ -23,7 +23,8 @@ function helper::pgzip(){
 			*) _usage;;
 		esac
 	done
-	[[ ! $f && ! $o ]] && _usage
+	[[ ! $f && ! $o ]] && { _usage || return 0; }
+	[[ ! $f ]] && f=/dev/stdin
 	[[ ! $o ]] && o="$f.gz"
 
 	$tool $threads -k -c "$f" | tee -i "$o" | gztool -v 0 -f -i -x -C -I "${o%.*}.gzi"
@@ -34,7 +35,7 @@ function helper::pgzip(){
 function helper::sort(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-f <infile>    | path to. else stdin
 			-o <outfile>   | path to. else stdout
 			-t <threads>   | number of
@@ -67,7 +68,7 @@ function helper::sort(){
 function helper::vcfsort(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-f <infile>    | path to. else stdin
 			-o <outfile>   | path to. else stdout
 			-t <threads>   | number of
@@ -104,11 +105,11 @@ function helper::vcfsort(){
 function helper::makecatcmd(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-c <var>  | cmd
 			-f <file> | to ascii
 			example:
-			${FUNCNAME[1]} -c cmd -f [txt|bz2|gz]
+			${FUNCNAME[-2]} -c cmd -f [txt|bz2|gz]
 		EOF
 		return 1
 	}
@@ -122,6 +123,7 @@ function helper::makecatcmd(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 
 	_makecatcmd=$({ readlink -e "$f" | file -b --mime-type -f - | grep -oF -e 'gzip' -e 'bzip2' || echo cat; } | sed '/cat/!{s/gzip/pigz -p 1/; s/$/ -cd/}')
@@ -132,13 +134,13 @@ function helper::makecatcmd(){
 function helper::basename(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-f <file> | path to
 			-o <var>  | basename
 			-e <var>  | extension
 
 			example:
-			${FUNCNAME[1]} -f foo.txt.gz -o base -e ex
+			${FUNCNAME[-2]} -f foo.txt.gz -o base -e ex
 		EOF
 		return 1
 	}
@@ -153,6 +155,7 @@ function helper::basename(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 	if readlink -e "$f" | file -b --mime-type -f - | grep -qF -e 'gzip' -e 'bzip2'; then
@@ -169,7 +172,7 @@ function helper::basename(){
 function helper::ps2pdf(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-f <file> | to ps
 		EOF
 		return 1
@@ -182,6 +185,7 @@ function helper::ps2pdf(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 1 ]] && _usage
 
 	ps2pdf -g$(grep -m 1 -F BoundingBox "$f" | sed -E 's/.+\s+([0-9]+)\s+([0-9]+)$/\10x\20/') "$f" "${f%.*}.pdf"
@@ -196,7 +200,7 @@ function helper::join(){
 function helper::multijoin(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-s <separator> | i/o character - default: tab
 			-h <header>    | string of
 			-e <empty>     | cell character - default: 0
@@ -204,7 +208,7 @@ function helper::multijoin(){
 			-f <files>     | ALWAYS LAST OPTION
 			                 tab-separated, to join by unique id in first column
 			example:
-			${FUNCNAME[1]} -f <path> <path> [<path> ..]
+			${FUNCNAME[-2]} -f <path> <path> [<path> ..]
 		EOF
 		return 1
 	}
@@ -248,7 +252,7 @@ function helper::multijoin(){
 function helper::ishash(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-v <var> | variable
 		EOF
 		return 1
@@ -272,7 +276,7 @@ function helper::ishash(){
 function helper::isarray(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-v <var> | variable
 		EOF
 		return 1
@@ -297,7 +301,7 @@ function helper::isarray(){
 function helper::addmemberfunctions(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-v <var> | variable
 		EOF
 		return 1

@@ -420,8 +420,12 @@ get_table = function(dds){
 
 	# ddsr = results(dds, contrast=c("condition",treat[i],ctr[i]), alpha = 0.05, parallel = TRUE, BPPARAM = BPPARAM) # alpha (default: 0.1) should be set to FDR cutoff
 	# shrinkage can be used for data visualization and ranking of RNA-Seq data (remove high LFCs from lowly expressed genes with high variability among samples and estimate moderate FCs more close to reality) if DESeq() was executed with betaPrior=FALSE, which is the default since v1.16
+	# 'apeglm' and 'ashr' outperform the original 'normal' shrinkage estimator. but ‘apeglm’ requires use of ‘coef’ i.e. a name or index from resultsNames(dds)
+	# for ashr, if res is provided, then coef and contrast are ignored
+	# ashr may be a little less aggressive than apeglm
+	# use shrunken data for GSEA
 	suppressMessages({
-		ddsrshrunkf <- lfcShrink(dds, contrast=c("condition",treat[i],ctr[i]), res=ddsr, type="ashr", parallel = TRUE, BPPARAM = BPPARAM) # 'apeglm' and 'ashr' outperform the original 'normal' shrinkage estimator. but ‘apeglm’ requires use of ‘coef’ i.e. a name from resultsNames
+		ddsrshrunkf <- lfcShrink(dds, contrast=c("condition",treat[i],ctr[i]), res=ddsr, type="ashr", parallel = TRUE, BPPARAM = BPPARAM)
 		ddsrshrunk = ddsrshrunkf
 	})
 
@@ -617,6 +621,24 @@ get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 					file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
 				)
 
+				suppressMessages({
+					ddsrshrunkf <- lfcShrink(dds, coef=paste0(fac,makename(term),".condition",makename(treat)), res=ddsr, type="ashr", parallel = TRUE, BPPARAM = BPPARAM)
+					ddsrshrunk = ddsrshrunkf
+				})
+
+				ddsrshrunk = ddsrshrunk[order(abs(ddsrshrunk$log2FoldChange),decreasing=T) , ]
+				write.table(data.frame(id=rownames(ddsrshrunk),ddsrshrunk), row.names = F,
+					file=file.path(odir,"deseq.full.fcshrunk.tsv"), quote=F, sep="\t"
+				)
+
+				ddsrshrunk = ddsrshrunk[!is.na(ddsrshrunk$log2FoldChange) , ]
+				ddsrshrunk = ddsrshrunk[!is.na(ddsrshrunk$padj) , ]
+				ddsrshrunk = ddsrshrunk[ddsrshrunk$baseMean > 0 , ]
+				ddsrshrunk = ddsrshrunk[ddsrshrunk$padj <= 0.05 , ]
+				write.table(data.frame(id=rownames(ddsrshrunk),ddsrshrunk), row.names = F,
+					file=file.path(odir,"deseq.fcshrunk.tsv"), quote=F, sep="\t"
+				)
+
 				ddsr = ddsr[!is.na(ddsr$log2FoldChange) , ]
 				ddsr = ddsr[!is.na(ddsr$padj) , ]
 				ddsr = ddsr[ddsr$baseMean > 0 , ]
@@ -677,6 +699,7 @@ for (ctr in names(toplus)){
 				}
 				odir = file.path(outdir,paste0(ctr,"-vs-",treats[i]),"extra_effects",paste0(ctr,"-vs-",treats[j]))
 				dir.create(odir, recursive = T, showWarnings = F)
+				save(dds, file = file.path(odir,"dds.RData"))
 
 				cat(paste("calculating extra effects of ",ctr," vs ",treats[j]," on top of ",ctr," vs ",treats[i],"\n",sep=""))
 				ddsr = results(dds, contrast=list(paste0("condition_",makename(treats[i]),"_vs_",makename(ctr)),paste0("condition_",makename(treats[j]),"_vs_",makename(ctr))), parallel = TRUE, BPPARAM = BPPARAM)
@@ -685,6 +708,24 @@ for (ctr in names(toplus)){
 				ddsr = ddsr[order(abs(ddsr$log2FoldChange),decreasing=T) , ]
 				write.table(data.frame(id=rownames(ddsr),ddsr), row.names = F,
 					file=file.path(odir,"deseq.full.tsv"), quote=F, sep="\t"
+				)
+
+				suppressMessages({
+					ddsrshrunkf <- lfcShrink(dds, contrast=list(paste0("condition_",makename(treats[i]),"_vs_",makename(ctr)),paste0("condition_",makename(treats[j]),"_vs_",makename(ctr))), res=ddsr, type="ashr", parallel = TRUE, BPPARAM = BPPARAM)
+					ddsrshrunk = ddsrshrunkf
+				})
+
+				ddsrshrunk = ddsrshrunk[order(abs(ddsrshrunk$log2FoldChange),decreasing=T) , ]
+				write.table(data.frame(id=rownames(ddsrshrunk),ddsrshrunk), row.names = F,
+					file=file.path(odir,"deseq.full.fcshrunk.tsv"), quote=F, sep="\t"
+				)
+
+				ddsrshrunk = ddsrshrunk[!is.na(ddsrshrunk$log2FoldChange) , ]
+				ddsrshrunk = ddsrshrunk[!is.na(ddsrshrunk$padj) , ]
+				ddsrshrunk = ddsrshrunk[ddsrshrunk$baseMean > 0 , ]
+				ddsrshrunk = ddsrshrunk[ddsrshrunk$padj <= 0.05 , ]
+				write.table(data.frame(id=rownames(ddsrshrunk),ddsrshrunk), row.names = F,
+					file=file.path(odir,"deseq.fcshrunk.tsv"), quote=F, sep="\t"
 				)
 
 				ddsr = ddsr[!is.na(ddsr$log2FoldChange) , ]
