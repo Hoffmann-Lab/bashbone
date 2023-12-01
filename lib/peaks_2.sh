@@ -8,7 +8,7 @@
 function peaks::_idr(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-1 <cmds1>    | array of
 			-2 <cmds2>    | array of
 			-t <file>     | normal vs treatment peaks path to
@@ -32,6 +32,7 @@ function peaks::_idr(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 	[[ "$y" == "narrowPeak" || "$y" == "bed" ]] || _usage
 
@@ -81,7 +82,7 @@ function peaks::_idr(){
 function peaks::macs_idr(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -131,6 +132,7 @@ function peaks::macs_idr(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 10 ]] && _usage
 
 	local m i f o odir nf tf rf pf nrf pff nff x
@@ -228,7 +230,7 @@ function peaks::macs_idr(){
 function peaks::seacr_idr(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-m <memory>     | amount of. required if -c true
@@ -274,6 +276,7 @@ function peaks::seacr_idr(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	if [[ $macsdir ]]; then
 		[[ $mandatory -lt 7 ]] && _usage
 	else
@@ -365,7 +368,7 @@ function peaks::seacr_idr(){
 function peaks::gopeaks_idr(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-m <memory>     | amount of. required if -c true
@@ -413,6 +416,7 @@ function peaks::gopeaks_idr(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	if [[ $macsdir ]]; then
 		[[ $mandatory -lt 7 ]] && _usage
 	else
@@ -505,7 +509,7 @@ function peaks::gopeaks_idr(){
 function peaks::gem_idr(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -557,6 +561,7 @@ function peaks::gem_idr(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	if [[ $macsdir ]]; then
 		[[ $mandatory -lt 9 ]] && _usage
 	else
@@ -653,7 +658,7 @@ function peaks::gem_idr(){
 function peaks::matk_idr(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-c <macsdir>    | base directory where to find "macs" sub-directory according to used mappers (see -r) i.e. <macsdir>/<mapper>/macs
@@ -697,6 +702,7 @@ function peaks::matk_idr(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	if [[ $macsdir ]]; then
 		[[ $mandatory -lt 7 ]] && _usage
 	else
@@ -787,7 +793,7 @@ function peaks::matk_idr(){
 function peaks::peakachu_idr(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -831,6 +837,7 @@ function peaks::peakachu_idr(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	if [[ $macsdir ]]; then
 		[[ $mandatory -lt 8 ]] && _usage
 	else
@@ -923,7 +930,7 @@ function peaks::peakachu_idr(){
 function peaks::genrich_idr(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-f <size>       | assumed mean fragment
@@ -961,6 +968,7 @@ function peaks::genrich_idr(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 8 ]] && _usage
 
 	local m i f b o odir nf tf rf pf nrf pff nff x
@@ -1046,7 +1054,7 @@ function peaks::genrich_idr(){
 function peaks::m6aviewer_idr(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -1084,6 +1092,7 @@ function peaks::m6aviewer_idr(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 9 ]] && _usage
 
 	local m i f o odir nf tf rf pf nrf pff nff x
