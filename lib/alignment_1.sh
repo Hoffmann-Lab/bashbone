@@ -4,7 +4,7 @@
 function alignment::segemehl(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} alignes pre-processed read data in fastq(.gz) format utilizing the mapping software segemehl
+			${FUNCNAME[-2]} alignes pre-processed read data in fastq(.gz) format utilizing the mapping software segemehl
 
 			-S <hardskip>   | optional. default: false
 			                | [true|false] do nothing and return
@@ -40,7 +40,7 @@ function alignment::segemehl(){
 			example:
 			    declare -a fastq1=(/path/to/1.fq.gz /path/to/2.fq.gz ..)
 			    declare -a mapper=()
-			    ${FUNCNAME[1]} -5 true -t 16 -r mapper -g /path/to/genome.fa -x /path/to/genome.segemehl.idx -o /path/to/outdir -1 fastq1
+			    ${FUNCNAME[-2]} -5 true -t 16 -r mapper -g /path/to/genome.fa -x /path/to/genome.segemehl.idx -o /path/to/outdir -1 fastq1
 
 			access bam paths directly:
 			    printf '%s\n' "\${segemehl[@]}" # /path/to/outdir/segemehl/1.bam /path/to/outdir/segemehl/2.bam ..
@@ -171,7 +171,7 @@ function alignment::segemehl(){
 function alignment::star(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} alignes pre-processed read data in fastq(.gz) format utilizing the mapping software STAR
+			${FUNCNAME[-2]} alignes pre-processed read data in fastq(.gz) format utilizing the mapping software STAR
 
 			-S <hardskip>     | optional. default: false
 			                  | [true|false] do nothing and return
@@ -210,7 +210,7 @@ function alignment::star(){
 			example:
 			    declare -a fastq1=(/path/to/1.fq.gz /path/to/2.fq.gz ..)
 			    declare -a mapper=()
-			    ${FUNCNAME[1]} -5 true -t 16 -r mapper -g /path/to/genome.fa -x /path/to/genome.star.idx/ -o /path/to/outdir -1 fastq1
+			    ${FUNCNAME[-2]} -5 true -t 16 -r mapper -g /path/to/genome.fa -x /path/to/genome.star.idx/ -o /path/to/outdir -1 fastq1
 
 			access bam paths directly:
 			    printf '%s\n' "\${star[@]}" # /path/to/outdir/star/1.bam /path/to/outdir/star/2.bam ..
@@ -392,7 +392,7 @@ function alignment::star(){
 function alignment::bwa(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} alignes pre-processed read data in fastq(.gz) format utilizing the mapping software BWA
+			${FUNCNAME[-2]} alignes pre-processed read data in fastq(.gz) format utilizing the mapping software BWA
 
 			-S <hardskip>  | optional. default: false
 			               | [true|false] do nothing and return
@@ -427,7 +427,7 @@ function alignment::bwa(){
 			example:
 			    declare -a fastq1=(/path/to/1.fq.gz /path/to/2.fq.gz ..)
 			    declare -a mapper=()
-			    ${FUNCNAME[1]} -5 true -t 16 -r mapper -g /path/to/genome.fa -x /path/to/genome.bwa.idx/bwa -o /path/to/outdir -1 fastq1
+			    ${FUNCNAME[-2]} -5 true -t 16 -r mapper -g /path/to/genome.fa -x /path/to/genome.bwa.idx/bwa -o /path/to/outdir -1 fastq1
 
 			access bam paths directly:
 			    printf '%s\n' "\${bwa[@]}" # /path/to/outdir/bwa/1.bam /path/to/outdir/bwa/2.bam ..
@@ -614,7 +614,7 @@ function alignment::bwa(){
 function alignment::postprocess(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} (converts sam to bam and) either filteres alignments for uniqueness (and properly aligned mate pairs), sorts by coordinate or index them
+			${FUNCNAME[-2]} (converts sam to bam and) either filteres alignments for uniqueness (and properly aligned mate pairs), sorts by coordinate or index them
 
 			-S <hardskip>    | optional. default: false
 			                 | [true|false] do nothing and return
@@ -636,7 +636,7 @@ function alignment::postprocess(){
 			example:
 			    mapper=(segemehl star)
 			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
-			    ${FUNCNAME[1]} -t 16 -r mapper -j uniqify -o /path/to/outdir
+			    ${FUNCNAME[-2]} -t 16 -r mapper -j uniqify -o /path/to/outdir
 
 			access bam paths directly:
 			    printf '%s\n' "\${segemehl[@]}" # /path/to/outdir/segemehl/1.unique.bam /path/to/outdir/segemehl/2.unique.bam ..
@@ -763,7 +763,7 @@ function alignment::postprocess(){
 function alignment::_uniqify(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} crafts command to (convert SAM to BAM and) filter alignments for uniqueness (and properly aligned mate pairs)
+			${FUNCNAME[-2]} crafts command to (convert SAM to BAM and) filter alignments for uniqueness (and properly aligned mate pairs)
 
 			-1 <cmds1>     | mandatory
 			               | first array to store commands
@@ -783,7 +783,7 @@ function alignment::_uniqify(){
 			example:
 			    declare -a cmds1 cmds2
 			    declare outfile=""
-			    ${FUNCNAME[1]} -1 cmds1 -2 cmds2 -t 16 -i /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -r outfile
+			    ${FUNCNAME[-2]} -1 cmds1 -2 cmds2 -t 16 -i /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -r outfile
 
 			create uniqified bam:
 			    commander::printcmd -a cmds1 # samtools [..] /path/to/alignment.[sam|bam] > /path/to/alignment.unique.bam
@@ -894,7 +894,7 @@ function alignment::_uniqify(){
 function alignment::_blacklist(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} crafts command to filter out alignments in blacklisted regions
+			${FUNCNAME[-2]} crafts command to filter out alignments in blacklisted regions
 
 			-1 <cmds1>     | mandatory
 			               | first array to store commands
@@ -918,7 +918,7 @@ function alignment::_blacklist(){
 			example:
 			    declare -a cmds1 cmds2
 			    declare outfile=""
-			    ${FUNCNAME[1]} -1 cmds1 -2 cmds2 -t 16 -b /path/to/blacklist.bed -f /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -p /path/to/tmpdir -r outfile
+			    ${FUNCNAME[-2]} -1 cmds1 -2 cmds2 -t 16 -b /path/to/blacklist.bed -f /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -p /path/to/tmpdir -r outfile
 
 			create blacklisted bam:
 			    commander::printcmd -a cmds1 # samtools [..] /path/to/alignment.[sam|bam] > /path/to/alignment.blacklisted.bam
@@ -1028,7 +1028,7 @@ function alignment::_blacklist(){
 function alignment::_sizeselect(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} crafts command to filter properly aligned mate pairs by fragment size
+			${FUNCNAME[-2]} crafts command to filter properly aligned mate pairs by fragment size
 
 			-1 <cmds1>     | mandatory
 			               | first array to store commands
@@ -1054,7 +1054,7 @@ function alignment::_sizeselect(){
 			example:
 			    declare -a cmds1 cmds2
 			    declare outfile=""
-			    ${FUNCNAME[1]} -1 cmds1 -2 cmds2 -t 16 -m 50 -x 1000 -f /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -p /path/to/tmpdir -r outfile
+			    ${FUNCNAME[-2]} -1 cmds1 -2 cmds2 -t 16 -m 50 -x 1000 -f /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -p /path/to/tmpdir -r outfile
 
 			create sizeselected bam:
 			    commander::printcmd -a cmds1 # samtools [..] /path/to/alignment.[sam|bam] > /path/to/alignment.sizeselected.bam
@@ -1155,7 +1155,7 @@ function alignment::_sizeselect(){
 function alignment::_sort(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} crafts command to sort an alignment file by coordinate
+			${FUNCNAME[-2]} crafts command to sort an alignment file by coordinate
 
 			-1 <cmds>      | mandatory
 			               | array to append commands to
@@ -1175,7 +1175,7 @@ function alignment::_sort(){
 			example:
 			    declare -a cmds
 			    declare outfile=""
-			    ${FUNCNAME[1]} -1 cmds -t 16 -i /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -p /path/to/tmpdir -r outfile
+			    ${FUNCNAME[-2]} -1 cmds -t 16 -i /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -p /path/to/tmpdir -r outfile
 
 			create sorted bam:
 			    commander::printcmd -a cmds # samtools [..] /path/to/alignment.[sam|bam] > /path/to/alignment.sorted.bam
@@ -1224,7 +1224,7 @@ function alignment::_sort(){
 function alignment::_index(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} crafts command to index a coordinate sorted alignment file
+			${FUNCNAME[-2]} crafts command to index a coordinate sorted alignment file
 
 			-1 <cmds>      | mandatory
 			               | array to append commands to
@@ -1242,7 +1242,7 @@ function alignment::_index(){
 			example:
 			    declare -a cmds
 			    declare idxfile=""
-			    ${FUNCNAME[1]} -1 cmds -t 16 -i /path/to/alignment.bam -r idxfile
+			    ${FUNCNAME[-2]} -1 cmds -t 16 -i /path/to/alignment.bam -r idxfile
 
 			create bam index:
 			    commander::printcmd -a cmds # samtools [..] /path/to/alignment.sorted.bam /path/to/alignment.sorted.bai
@@ -1289,7 +1289,7 @@ function alignment::_index(){
 function alignment::tobed(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} converts alignments from BAM to BED format splitting N cigar strings and thus decoupling mate pairs
+			${FUNCNAME[-2]} converts alignments from BAM to BED format splitting N cigar strings and thus decoupling mate pairs
 
 			-S <hardskip>  | optional. default: false
 			               | [true|false] do nothing and return
@@ -1306,7 +1306,7 @@ function alignment::tobed(){
 			example:
 			    mapper=(segemehl star)
 			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
-			    ${FUNCNAME[1]} -t 16 -r mapper
+			    ${FUNCNAME[-2]} -t 16 -r mapper
 
 			access bed paths directly:
 			    printf '%s.bed.gz\n' "\${segemehl[@]%.*}" # /path/to/outdir/segemehl/1.bed.gz /path/to/outdir/segemehl/2.bed.gz ..
@@ -1334,6 +1334,7 @@ function alignment::tobed(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 
 	declare -n _bams_tobed="${_mapper_tobed[0]}"
@@ -1367,7 +1368,7 @@ function alignment::tobed(){
 function alignment::inferstrandness(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} infers library strandness from alignment files in BAM format given a reference annotation
+			${FUNCNAME[-2]} infers library strandness from alignment files in BAM format given a reference annotation
 
 			-S <hardskip>   | optional. default: false
 			                | [true|false] do nothing and return
@@ -1392,7 +1393,7 @@ function alignment::inferstrandness(){
 			    mapper=(segemehl star)
 			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
 			    declare -A strandness
-			    ${FUNCNAME[1]} -t 16 -r mapper -x strandness -x 2
+			    ${FUNCNAME[-2]} -t 16 -r mapper -x strandness -x 2
 
 			access strandness directly:
 			    for file in "\${segemehl[@]}"; do
@@ -1528,7 +1529,7 @@ function alignment::inferstrandness(){
 function alignment::add4stats(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} appends current paths of postprocessed alignmet files to collection data structures
+			${FUNCNAME[-2]} appends current paths of postprocessed alignmet files to collection data structures
 
 			-r <mapper>   | mandatory
 			              | array of array names which contain alignment paths
@@ -1539,9 +1540,9 @@ function alignment::add4stats(){
 			example:
 			    mapper=(segemehl star)
 			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
-			    ${FUNCNAME[1]} -r mapper
+			    ${FUNCNAME[-2]} -r mapper
 			    [segemehl|star]=(/path/to/[segemehl|star]/1.uniq.bam /path/to/[segemehl|star]/2.uniq.bam ..)
-			    ${FUNCNAME[1]} -r mapper
+			    ${FUNCNAME[-2]} -r mapper
 
 			access collection
 			    echo "\${segemehl0[@]}" # /path/to/segemehl/1.bam /path/to/segemehl/1.unique.bam ..
@@ -1596,7 +1597,7 @@ function alignment::add4stats(){
 function alignment::bamqc(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} summarizes numbers of primary, secondary and supplementary mapped reads from alignment files
+			${FUNCNAME[-2]} summarizes numbers of primary, secondary and supplementary mapped reads from alignment files
 
 			-S <hardskip> | optional. default: false
 			              | [true|false] do nothing and return
@@ -1611,7 +1612,7 @@ function alignment::bamqc(){
 			example:
 			    mapper=(segemehl star)
 			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
-			    ${FUNCNAME[1]} -t 16 -r mapper
+			    ${FUNCNAME[-2]} -t 16 -r mapper
 
 			access summaries directly:
 			    ls "\${segemehl[@]/%.*/.flagstat}" # /path/to/outdir/segemehl/1.flagstat /path/to/outdir/segemehl/2.flagstat ..
@@ -1675,7 +1676,7 @@ function alignment::bamqc(){
 function alignment::bulkindex(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} index alignment files from collections generated via alignment::add4stats
+			${FUNCNAME[-2]} index alignment files from collections generated via alignment::add4stats
 
 			-S <hardskip>  | optional. default: false
 			               | [true|false] do nothing and return
@@ -1695,7 +1696,7 @@ function alignment::bulkindex(){
 			    alignment::add4stats -r mapper
 			    [segemehl|star]=(/path/to/[segemehl|star]/1.sorted.uniq.bam /path/to/[segemehl|star]/2.sorted.uniq.bam ..)
 			    alignment::add4stats -r mapper
-			    ${FUNCNAME[1]} -t 16 -r mapper
+			    ${FUNCNAME[-2]} -t 16 -r mapper
 		EOF
 		return 1
 	}
@@ -1740,7 +1741,7 @@ function alignment::bulkindex(){
 function alignment::qcstats(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} generates bar plots from read count summaries of alignment files stored in collection data structures prior generated by alignment::add4stats.
+			${FUNCNAME[-2]} generates bar plots from read count summaries of alignment files stored in collection data structures prior generated by alignment::add4stats.
 			if non existing or forced, summaries will be generated first (see also alignment::bamqc).
 
 			-S <hardskip> | optional. default: false
