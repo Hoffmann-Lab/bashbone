@@ -4,7 +4,7 @@
 function alignment::mkreplicates(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -36,6 +36,7 @@ function alignment::mkreplicates(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 7 ]] && _usage
 
 	local ithreads1 ithreads2 instances1 instances2
@@ -219,7 +220,7 @@ function alignment::mkreplicates(){
 function alignment::strandsplit(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands. use with -d
 			-t <threads>    | number of
@@ -245,6 +246,7 @@ function alignment::strandsplit(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 
 	commander::printinfo "splitting alignments according to strandness"
@@ -353,7 +355,7 @@ function alignment::strandsplit(){
 function alignment::downsample(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands. use with -d
 			-t <threads>    | number of
@@ -377,15 +379,15 @@ function alignment::downsample(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 	[[ $merged && ! $outdir ]] && _usage
 
 	commander::printinfo "downsampling alignments to smallest"
 
 	declare -n _bams_downsample="${_mapper_downsample[0]}"
-	local ithreads instances=$((${#_mapper_downsample[@]}*${#_bams_downsample[@]}))
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
-
+	# local ithreads instances=$((${#_mapper_downsample[@]}*${#_bams_downsample[@]}))
+	# read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
 	declare -a cmd1 cmd2 cmd3 tomerge
 	local m i n f min odir
@@ -408,11 +410,11 @@ function alignment::downsample(){
 				CMD
 			else
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					samtools view -b --subsample-seed 1234 -s $(echo $n | awk -v min=$min '{print min/$1}') "$f" > "$o"
+					samtools view -@ $threads -b --subsample-seed 1234 -s $(echo $n | awk -v min=$min '{print min/$1}') "$f" > "$o"
 				CMD
 			fi
 			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-				samtools index -@ $ithreads "$o" "${o%.*}.bai"
+				samtools index -@ $threads "$o" "${o%.*}.bai"
 			CMD
 		done < <(
 			for i in "${!_bams_downsample[@]}"; do
@@ -434,8 +436,8 @@ function alignment::downsample(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -i $threads -a cmd1
-		commander::runcmd -v -b -i $instances -a cmd2
+		commander::runcmd -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i 1 -a cmd2
 		commander::runcmd -v -b -i 1 -a cmd3
 	fi
 
