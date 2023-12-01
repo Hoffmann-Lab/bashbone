@@ -4,7 +4,7 @@
 function alignment::slice(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -30,6 +30,7 @@ function alignment::slice(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	commander::printinfo "slicing alignments"
@@ -135,7 +136,7 @@ function alignment::slice(){
 function alignment::rmduplicates(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-k             | keep marked duplicates in bam
@@ -170,6 +171,7 @@ function alignment::rmduplicates(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "removing duplicates"
@@ -453,7 +455,7 @@ function alignment::clip(){
 	# does not handle secondary and supplementary alignments
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -490,6 +492,7 @@ function alignment::clip(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 	[[ $r15 ]] || [[ $r13 ]] || _usage
 
@@ -605,7 +608,7 @@ function alignment::clipmateoverlaps(){
 	# default poolsize of 1Mio will consume ~1.5gb memory
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -634,6 +637,7 @@ function alignment::clipmateoverlaps(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "clipping ends of overlapping mate pairs"
@@ -715,7 +719,7 @@ function alignment::clipmateoverlaps(){
 function alignment::reorder(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -746,6 +750,7 @@ function alignment::reorder(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 7 ]] && _usage
 
 	commander::printinfo "reordering alignments"
@@ -829,7 +834,7 @@ function alignment::reorder(){
 function alignment::addreadgroup(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -864,6 +869,7 @@ function alignment::addreadgroup(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
 	if [[ ! $_nidx_addreadgroup ]]; then
@@ -968,7 +974,7 @@ function alignment::addreadgroup(){
 function alignment::splitncigar(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -999,6 +1005,7 @@ function alignment::splitncigar(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "splitting N-cigar alignments"
@@ -1091,7 +1098,7 @@ function alignment::soft2hardclip(){
 	# does not handle secondary and supplementary alignments
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -1120,6 +1127,7 @@ function alignment::soft2hardclip(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "convertig soft clipped based to hard clipped bases"
@@ -1206,7 +1214,7 @@ function alignment::soft2hardclip(){
 function alignment::leftalign(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -1237,6 +1245,7 @@ function alignment::leftalign(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "leftaligning alignments"
@@ -1333,7 +1342,7 @@ function alignment::leftalign(){
 function alignment::bqsr(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
@@ -1366,6 +1375,7 @@ function alignment::bqsr(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 
 	if [[ ! $dbsnp ]]; then
