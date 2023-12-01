@@ -59,27 +59,33 @@ function commander::printerr(){
 	return 0
 }
 
+function commander::make(){
+	commander::makecmd "$@"
+}
+
 function commander::makecmd(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-a <cmds>          | array of
 			-v <variable>      | env variable to pass to command
-			-s <separator>     | string for (default: |)
+			-s <separator>     | string for
+			-m                 | allow multi line support in case of active bashbone legacy mode, which inerts line breaks
 			-o <outfile>       | stdout redirection to
+			-O <outfile>       | stdout appended to
 			-c <cmd|{fd[0]}..> | ALWAYS LAST OPTION
 			                     command line string(s) and or here-doc or
 			                     file descriptor array COMMANDER
 
 			example 1:
-			${FUNCNAME[1]} -a cmds -c perl -le \''print "foo"'\'
+			${FUNCNAME[-2]} -a cmds -c perl -le \''print "foo"'\'
 
 			example 2:
 			x=1
-			${FUNCNAME[1]} -a cmds -v x -c echo '\$x'
+			${FUNCNAME[-2]} -a cmds -v x -c echo '\$x'
 
 			example 3:
-			${FUNCNAME[1]} -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+			${FUNCNAME[-2]} -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 			    perl -sl - -y=\$x <<< '
 			        print "\$x";
 			        print "\\\$y";
@@ -90,7 +96,7 @@ function commander::makecmd(){
 
 			example 4:
 			x=1
-			${FUNCNAME[1]} -v x -a cmds -c <<-'CMD'
+			${FUNCNAME[-2]} -v x -a cmds -c <<-'CMD'
 			    perl -sl - -y=\$x <<< '
 			        print "\$x";
 			        print "\$y";
@@ -100,30 +106,36 @@ function commander::makecmd(){
 		return 1
 	}
 
-	local OPTIND arg mandatory sep='|' suffix vars
+	local OPTIND arg mandatory sep='' suffix vars='' multiline
+	# declare -a vars
 	declare -n _cmds_makecmd # be very careful with circular name reference
-	while getopts 'v:a:o:s:c' arg; do
+	while getopts 'v:a:o:O:s:mc' arg; do
 		case $arg in
-			v)	# declare -n _var_makecmd=$OPTARG
-				# vars+="$OPTARG=$(printf '%q;' "$_var_makecmd") " # to use multi-line variable assignemnts for job shell use '%q\n'
-				vars+="$(declare -p $OPTARG); "
-			;;
+			v)	vars+="$(declare -p $OPTARG)"$'\n';;
 			a)	((++mandatory)); _cmds_makecmd=$OPTARG;;
 			s)	sep=$(echo -e "$OPTARG");; # echo -e here to make e.g. '\t' but not '\n' possible
+			m)	multiline=true;;
 			o)	suffix=" > '$OPTARG'";;
+			O)	suffix=" >> '$OPTARG'";;
 			c)	((++mandatory)); shift $((OPTIND-1)); break;; # do not use getopts c: which requires shift OPTIND-2 and to implement :) case with shift OPTIND-1 if OPTARG=="c" and return 1 if OPTARG!="c"
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
+	[[ ! $multiline ]] && ${BASHBONE_LEGACY:-false} && multiline=false
 
 	local fd tmp
 	declare -a mapdata cmd_makecmd # be very careful with references name space
 
 	if [[ $COMMANDER ]]; then # interactive case
 		for fd in "${COMMANDER[@]}"; do
-			mapfile -u $fd -t mapdata
-			cmd_makecmd+=("${mapdata[*]}") # * instead of @ to concatenate a non-splitted sentence instead of single non-splitted words
+			if $multiline; then
+				cmd_makecmd+=("$(< /dev/fd/$fd)")
+			else
+				mapfile -u $fd -t mapdata
+				cmd_makecmd+=("${mapdata[*]}") # * instead of @ to concatenate a non-splitted sentence instead of single non-splitted words
+			fi
 			exec {fd}>&- # just to be safe. closing fd not necessary since heredoc is read only and handles closure after last EOF
 		done
 		tmp="${cmd_makecmd[*]/#/$sep }" # concatenate CMD* with separator. do not use $(echo -e ${tmp/#$sep /}) here
@@ -131,8 +143,12 @@ function commander::makecmd(){
 	else
 		# necessary check for interactive case
 		[[ -t 0 ]] || {
-			mapfile -t mapdata /dev/stdin
-			tmp="${mapdata[*]}"
+			if $multiline; then
+				tmp="$(< /dev/stdin)"
+			else
+				mapfile -t mapdata /dev/stdin
+				tmp="${mapdata[*]}"
+			fi
 		}
 	fi
 	COMMANDER=()
@@ -142,36 +158,54 @@ function commander::makecmd(){
 	else
 		_cmds_makecmd+=("$vars$tmp$suffix")
 	fi
+
 	return 0
 }
 
 function commander::printcmd(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-a <cmds> | array of
+			-m        | allow multi line support in case of active bashbone legacy mode, which inerts line breaks
 		EOF
 		return 1
 	}
 
-	local OPTIND arg
+	local OPTIND arg mandatory multiline
 	declare -n _cmds_printcmd # be very careful with circular name reference
-	while getopts 'a:' arg; do
+	while getopts 'a:m' arg; do
 		case $arg in
-			a)	_cmds_printcmd=$OPTARG
-				[[ "${#_cmds_printcmd[@]}" -gt 0 ]] && printf ':CMD: %s\n' "${_cmds_printcmd[@]}"
-				return 0;;
+			a)	((++mandatory)); _cmds_printcmd=$OPTARG;;
+			m)	multiline=true;;
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
+	[[ $mandatory -lt 1 ]] && _usage
+	[[ ! $multiline ]] && ${BASHBONE_LEGACY:-false} && multiline=false
 
-	_usage
+	if $multiline; then
+		for i in $(seq 0 $((${#_cmds_printcmd[@]}-1))); do
+			echo ":CMD$((i+1)): start"
+			printf '%s\n' "${_cmds_printcmd[$i]}"
+			echo ":CMD$((i+1)): end"
+		done
+	else
+		 [[ "${#_cmds_printcmd[@]}" -gt 0 ]] && printf ':CMD: %s\n' "${_cmds_printcmd[@]}"
+	fi
+
+	return 0
+}
+
+function commander::run(){
+	commander::runcmd "$@"
 }
 
 function commander::runcmd(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-v             | verbose on
 			-b             | benchmark on
 			-c <env>       | run with conda
@@ -183,9 +217,9 @@ function commander::runcmd(){
 			-r             | optional. override existing logs
 			-a <cmds>      | array of
 			example:
-			${FUNCNAME[1]} -v -b -i 2 -a cmd
+			${FUNCNAME[-2]} -v -b -i 2 -a cmd
 			example2:
-			${FUNCNAME[1]} -i 2 -n current -o ~/jobs -r -a cmd
+			${FUNCNAME[-2]} -i 2 -n current -o ~/jobs -r -a cmd
 		EOF
 		return 1
 	}
@@ -199,7 +233,7 @@ function commander::runcmd(){
 			v)	verbose=true;;
 			b)	benchmark=true;;
 			c)	cenv=$OPTARG;;
-			a)	mandatory=1; _cmds_runcmd=$OPTARG;;
+			a)	((++mandatory)); _cmds_runcmd=$OPTARG;;
 			s)	IFS=":" read -r startid stopid <<< "$OPTARG";;
 			r)	override=true;;
 			o)	logdir="$OPTARG"; mkdir -p "$logdir"; logdir="$(realpath -s "$logdir")";;
@@ -207,7 +241,8 @@ function commander::runcmd(){
 			*)	_usage;;
 		esac
 	done
-	[[ ! $mandatory ]] && _usage
+	[[ $# -eq 0 ]] && { _usage || return 0; }
+	[[ $mandatory -lt 1 ]] && _usage
 	[[ $_cmds_runcmd ]] || return 0
 	"${BASHBONE_HOOKCMD:-:}" _cmds_runcmd
 
@@ -242,11 +277,10 @@ function commander::runcmd(){
 	((startid--))
 	((stopid--))
 	for i in $(seq $startid $stopid); do
-		id=$((i+1));
+		id=$((i+1))
 		sh="$tmpdir/job.$jobname.$id.sh"
 		log="$tmpdir/job.$jobname.$id.log"
 		$override && rm -f "$log" "$ex"
-
 		echo '#!/usr/bin/env bash' > "$sh"
 		echo "exit::$jobname.$id(){" >> "$sh"
 		echo "    echo \"$jobname.$id (\$((\$(ps -o ppid= -p \$\$ 2> /dev/null)))) exited with exit code \$1\" >> '$ex'" >> "$sh"
@@ -257,12 +291,11 @@ function commander::runcmd(){
 		else
 			echo "source '$BASHBONE_DIR/activate.sh' -s '$BASHBONE_EXTENSIONDIR' -c false -r false -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 		fi
-		$verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
+		$verbose && echo "echo :CMD$id: $(printf '%s\n' "${_cmds_runcmd[$i]}" | base64 -w 0)" >> "$sh"
 		echo "exec 1> >(trap '' INT TERM; exec tee -a '$log')" >> "$sh"
-		echo "exec 2> >(trap '' INT TERM; exec tee -a '$log' >&2)" >> "$sh"
+		echo "exec 2> >(trap '' INT TERM; exec tee -a '$log' | sed -u 's/^/:STDERR:/')" >> "$sh"
 		printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 		echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
-
 		scripts+=("$(realpath -se "$sh")") # necessary for runstat
 	done
 
@@ -283,7 +316,7 @@ function commander::runcmd(){
 		# workaround: use full path, which, env or $(command -v time) <- prefer env to use env bash too
 	else
 		printf '%q\n' "${scripts[@]}" | PARALLEL_SHELL="$tmpdir/shell.$jobname" parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P "$tmpdir/instances.$jobname" -I {} bash {}
-	fi
+	fi | stdbuf -o L awk '/^:CMD[0-9]*:/{print $1" start"; while(("echo "$2" | base64 -d" | getline l)){print l} print $1" end"; next} /^:STDERR:/{sub(/^:STDERR:/, "", $0); print > "/dev/stderr"; next} {print}'
 
 	return 0
 }
@@ -291,7 +324,7 @@ function commander::runcmd(){
 function commander::runalter_xargs(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-i <instances> | number of parallel
 			-p <id|name>   | xargs process id or job name
 		EOF
@@ -306,6 +339,7 @@ function commander::runalter_xargs(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 
 	BASHBONE_ERROR="no such job name: $pid"
@@ -337,7 +371,7 @@ function commander::runalter_xargs(){
 function commander::runalter(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-i <instances> | number of parallel
 			-p <id|name>   | gnu parallel process id or job name
 		EOF
@@ -352,6 +386,7 @@ function commander::runalter(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 
 	BASHBONE_ERROR="no such job name: $pid"
@@ -367,7 +402,7 @@ function commander::runalter(){
 function commander::runstat(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-p <id|name>   | gnu parallel process id or job name
 			-u <name>      | user
 		EOF
@@ -403,10 +438,14 @@ function commander::runstat(){
 	return 0
 }
 
+function commander::qsub(){
+	commander::qsubcmd "$@"
+}
+
 function commander::qsubcmd(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-v             | verbose on
 			-w             | do wait for jobs and receive a non-null exit code if a single job fails
 			-b             | benchmark on if do wait
@@ -423,7 +462,7 @@ function commander::qsubcmd(){
 			-d <jobid|name>| depends on and start after
 			-a <cmds>      | array of
 			example:
-			${FUNCNAME[1]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c base -p threads -t 4 -i 2 -w -o ~/logs -a cmd
+			${FUNCNAME[-2]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c base -p threads -t 4 -i 2 -w -o ~/logs -a cmd
 		EOF
 		return 1
 	}
@@ -451,6 +490,7 @@ function commander::qsubcmd(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
 	[[ $_cmds_qsubcmd ]] || return 0
 	"${BASHBONE_HOOKCMD:-:}" _cmds_runcmd
@@ -510,7 +550,7 @@ function commander::qsubcmd(){
 		else
 			echo "source '$BASHBONE_DIR/activate.sh' -s '$BASHBONE_EXTENSIONDIR' -c false -r true -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 		fi
-		$verbose && echo 'tail -2 "$0" | head -1 | paste -d " " <(echo ":CMD:") -' >> "$sh"
+		$verbose && echo "echo :CMD$id: $(printf '%s\n' "${_cmds_qsubcmd[$i]}" | base64 -w 0)" >> "$sh"
 		printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
 		echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 		chmod 755 "$sh"
@@ -518,7 +558,7 @@ function commander::qsubcmd(){
 
 	if [[ "$dowait" == "y" ]]; then
 		local l jobid
-		tail -q -f "${logs[@]}" &
+		{ stdbuf -o L tail -q -f "${logs[@]}" | stdbuf -o L awk '/^\s*:CMD[0-9]*:/{print $1" start"; while(("echo "$2" | base64 -d" | getline l)){print l} print $1" end"; next}{print}'; } &
 		echo "{ env kill -TERM $!; wait $!; } &> /dev/null" >> "$BASHBONE_CLEANUP"
 		while read -r l; do
 			if [[ ! $jobid ]]; then
@@ -530,11 +570,15 @@ function commander::qsubcmd(){
 
 		# use command/env qstat in case someone like me makes use of an alias :)
 		# wait until accounting record is written to epilog after jobs post-processing metrics collection
-		while command qstat -j $jobid &> /dev/null; do
+		# while commandqstat -j $jobid &> /dev/null not enought
+		while ! qacct -j $jobid &> /dev/null; do
 			sleep 1
 		done
+
 		touch "$ex" #nfs requirend to make file visible in current shell on current node
 		ex=$(awk '{print $NF}' "$ex" | sort -rg | head -1)
+		# ex=$(qacct -j $jobid | grep -F exit_status | awk '{print $NF}' "$ex" | sort -rg | head -1)
+
 		if $benchmark; then
 			qacct -j $jobid | perl -M'List::Util qw(min max)' -lanE 'if($F[0] eq "start_time"){$d=join(" ",@F[1..$#F]); $d=`date -d "$d" +%s`; $sta=min($d,$sta?$sta:$d)} if($F[0] eq "end_time"){$d=join(" ",@F[1..$#F]); $d=`date -d "$d" +%s`; $sto=max($d,$sto?$sto:$d)} END{$s=$sto-$sta; if($s>3600){$d=3600}else{$d=60}; $hm=sprintf("%.0d",$s/$d); $hm=0 unless $hm; $ms=sprintf("%05.2f",($s/$d-$hm)*60); say ":BENCHMARK: runtime $hm:$ms [hours:]minutes:seconds"}'
 			printf ":BENCHMARK: memory %s\n" $(qacct -j $jobid | sed -nE 's/^ru_maxrss\s+([0-9.]+)\s*(.*)$/\1 \2/p' | sort -gr | head -1)
@@ -550,7 +594,7 @@ function commander::qsubcmd(){
 function commander::qalter(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-i <instances> | number of parallel
 			-l <complex>   | sge digestable list of consumables as key="value" pairs (see qconf -sc or qconf -mc)
 			-p <id|name>   | xargs process id or job name
@@ -578,7 +622,7 @@ function commander::qalter(){
 function commander::qstat(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-p <id|name>   | job id or job name
 			-u <name>      | user
 		EOF
