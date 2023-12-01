@@ -4,7 +4,7 @@
 function expression::diego(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-5 <skip>       | true/false md5sums, gtf prep respectively
@@ -42,6 +42,7 @@ function expression::diego(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 	$exonmode && [[ ${#_strandness_diego[@]} -eq 0 ]] && _usage
 	$exonmode && [[ ! $countsdir ]] && _usage
@@ -223,7 +224,7 @@ function expression::diego(){
 function expression::deseq(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -253,6 +254,7 @@ function expression::deseq(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "principal component and differential expression analyses"
@@ -491,7 +493,7 @@ function expression::deseq(){
 function expression::_deseq(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-1 <cmds1>   | array of
 			-2 <cmds2>   | array of
 			-t <threads> | number of
@@ -520,6 +522,7 @@ function expression::_deseq(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::makecmd -a _cmds1_deseq -s ';' -c {COMMANDER[0]}<<- CMD
@@ -559,7 +562,7 @@ function expression::_deseq(){
 function expression::join_deseq(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -592,6 +595,7 @@ function expression::join_deseq(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 
 	commander::printinfo "joining tpm, vsc, zscores and heatmaps"
@@ -764,7 +768,7 @@ function expression::join_deseq(){
 function expression::join(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -792,6 +796,7 @@ function expression::join(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "joining htsc, zscores"
