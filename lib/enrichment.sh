@@ -4,7 +4,7 @@
 function enrichment::_ora(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-1 <cmds1>    | array of
 			-d <title>    | prefix for plots. in case of GO may be domain
 			-g <gmtfile>  | path to
@@ -40,6 +40,7 @@ function enrichment::_ora(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
 	if [[ -s "$gmtfile" && $(awk 'NF>1' "$gmtfile" | head -1 | cut -f 2) =~ GO:[0-9]+ ]]; then
@@ -162,7 +163,7 @@ function enrichment::_ora(){
 function enrichment::_gsea(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-1 <cmds1>    | array of
 			-d <title>    | prefix for plots. in case of GO may be domain
 			-g <gmtfile>  | path to
@@ -193,6 +194,7 @@ function enrichment::_gsea(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
 	if [[ -s "$gmtfile" && $(awk 'NF>1' "$gmtfile" | head -1 | cut -f 2) =~ GO:[0-9]+ ]]; then
@@ -317,7 +319,7 @@ function enrichment::_gsea(){
 function enrichment::_reducego(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-1 <cmds1>    | array of
 			-g <oRgdb>    | path to R library directory containing custom/"my" oRgdb (org.My.eg.db) - see genome::mkgodb
 			-d <domain>   | biological_process or cellular_component or molecular_function
@@ -339,6 +341,7 @@ function enrichment::_reducego(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
 	# sum up counts of clustered terms?
@@ -410,7 +413,7 @@ function enrichment::_reducego(){
 function enrichment::_revigo(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-1 <cmds1>    | array of
 			-2 <cmds2>    | array of
 			-d <domain>   | biological_process or cellular_component or molecular_function
@@ -432,6 +435,7 @@ function enrichment::_revigo(){
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
 	# for pvalue instead of padj do revigo <(awk 'NR>1 && \$3<=0.05' $odir/gsea.tsv) --stdout
@@ -527,14 +531,10 @@ function enrichment::_revigo(){
 	return 0
 }
 
-function enrichment::test(){
-	enrichment::go "$@"
-}
-
 function enrichment::go(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -569,6 +569,7 @@ function enrichment::go(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 
 	commander::printinfo "calculating go enrichment"
