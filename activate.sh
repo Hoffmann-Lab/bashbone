@@ -13,8 +13,9 @@ export BASHBONE_VERSION=$(source "$BASHBONE_DIR/lib/version.sh"; echo $version)
 export BASHBONE_TOOLSDIR="${BASHBONE_TOOLSDIR:-$(dirname "$BASHBONE_DIR")}" # export to not override if previously defined
 export BASHBONE_EXTENSIONDIR="${BASHBONE_EXTENSIONDIR:-$BASHBONE_DIR}" # directory of sh files to be sourced (functions will be wrapped) after bashbone
 export BASHBONE_CONDA=false
+export BASHBONE_LEGACY=false
 
-while getopts 'i:p:c:x:s:r:ah' arg; do
+while getopts 'i:p:c:x:s:r:lah' arg; do
 	case $arg in
 		i)	BASHBONE_TOOLSDIR="$OPTARG";;
 		p)	TMPDIR="$OPTARG";;
@@ -22,6 +23,7 @@ while getopts 'i:p:c:x:s:r:ah' arg; do
 		x)	BASHBONE_EXITFUN="$OPTARG";;
 		s)	BASHBONE_EXTENSIONDIR="$OPTARG";;
 		r)	BASHBONE_SETSID=${BASHBONE_SETSID:-$OPTARG}; BASHBONE_REEXEC=$BASHBONE_SETSID;; # use exported state upon restart to not recurse
+		l)	BASHBONE_LEGACY=true;;
 		a)	shift $((OPTIND-1)); break;;
 		h)	cat <<- 'EOF'
 				This is bashbone activation script.
@@ -30,6 +32,7 @@ while getopts 'i:p:c:x:s:r:ah' arg; do
 
 				Usage:
 				-h              | this help
+				-l              | legacy mode: commander inerts line breaks, thus crafts one-liners from makecmd here-documents
 				-i <path>       | to installation root <path>/latest
 				                  default: inferred from script location
 				                  hint: run activation from source code, indeed enables basic functions, but will fail on executing tools
@@ -114,7 +117,7 @@ function _bashbone_reset(){
 	# trap "" INT ERR
 	trap "" INT
 	trap - RETURN
-	# when in PROMT_COMMAND: in case cleanup was already triggered by ERR, use atomic mkdir which will block if lock dir exists or if tmpdir already removed
+	# when in PROMPT_COMMAND: in case cleanup was already triggered by ERR, use atomic mkdir which will block if lock dir exists or if tmpdir already removed
 	mkdir "$BASHBONE_TMPDIR/.lock4" &> /dev/null && {
 		find -L "$BASHBONE_TMPDIR" -type f -name "cleanup.*.sh" -exec bash -c 'tac "$1" | bash || true; rm -f "$1"' bash {} \;
 		"${BASHBONE_EXITFUN:-:}" $1
@@ -180,49 +183,38 @@ function _bashbone_on_error(){
 	[[ $1 -eq 141 ]] && return 0
 
 	trap "" INT
-	# if [[ $1 -eq 130 ]]; then
-	# 	_bashbone_trace(){ :; }
-	# 	_bashbone_trace_interactive(){ :; }
-	# fi
+
 	if [[ $- =~ i ]]; then
-		if [[ $BASHPID -ne $BASHBONE_BPID ]]; then
-			# error happens within within <() () or $() constructs
-			# process substitutions and async subshells need LINENO passthough vie ERR trap for proper tracing
-			if [[ $BASH_VERSINFO -eq 4 ]]; then
-				# only recent subshell (if not further stacked in command_not_found subshell) and PGID shell can trace without wrong line numbers
-				# tracing must be done within <() () or $() constructs
-				mkdir "$BASHBONE_TMPDIR/.lock1" &> /dev/null && _bashbone_trace_interactive $1 $2
-			else
-				# not bashbone_pgid here ! when interactive, a subshell gets new pgid i.e (ps -o pgid= $BASHPID)
-				# different to cat <(ps -o pgid= $BASHPID) or echo $(ps -o pgid= $BASHPID)
-				if [[ $BASHBONE_PID -ne $$ ]]; then
-					# tracing must NOT be done within <() or $() constructs
-					# trigger trap to trigger error->return->cleanup via under parent PID
-					# do not use INT here, when interactive, INT is not trapped in cat <(bashbone_function) commands
-					env kill -ABRT $BASHBONE_BPID
-					exit 143
-				fi
-			fi
+		# echo ERRRRRROR1 $BASHBONE_PGID $BASHBONE_PID $BASHBONE_BPID $BASHPID ${FUNCNAME[*]/_bashbone_wrapper/} $1 $2 #$LINENO LLL ${BASH_LINENO[*]} >&2
+		if [[ $BASHBONE_PID -eq $BASHBONE_BPID ]]; then
+			_bashbone_trace_interactive $1 $2
+			mkdir "$BASHBONE_TMPDIR/.lock3" &> /dev/null && [[ -e "$BASHBONE_TMPDIR/trace" ]] && awk '!a[$0]{a[$0]=1;print}' "$BASHBONE_TMPDIR/trace" >&2
+			# spawn suicide job with new PGID, which cleans up
+			# this allows calling functions interactively via process substitution, where PROMPT_COMMAND is not set to perform cleanup and reset under PGID e.g. cat <(fun)
+			# send int in case of error in for loop header
+			set -m
+			{ env kill -TERM -- -$BASHBONE_PGID; sleep 0.1; env kill -INT -- -$BASHBONE_PGID; _bashbone_reset 143; } &
+			set +m
+			wait $!
+			# _bashbone_reset to trigger cleanup when in a loop
+			_bashbone_reset 143
 		else
-			# use atomic mkdir to block other subshells error trace upon killing process group
-			mkdir "$BASHBONE_TMPDIR/.lock2" &> /dev/null && _bashbone_trace_interactive $1 $2
+			if [[ $BASHBONE_BPID -eq $BASHPID ]]; then
+				mkdir "$BASHBONE_TMPDIR/.lock1" &> /dev/null && _bashbone_trace_interactive $1 $2 "$BASHBONE_TMPDIR/trace"
+			else
+				mkdir "$BASHBONE_TMPDIR/.lock2" &> /dev/null && _bashbone_trace_interactive $1 $2 "$BASHBONE_TMPDIR/trace"
+			fi
+			# do not use INT here, when interactive, INT not trapped in cat <(bashbone_function) commands
+			env kill -ABRT $BASHBONE_BPID
 		fi
 	else
-		# [[ $1 -eq 143 ]] && _bashbone_trace(){ :; }
-		mkdir "$BASHBONE_TMPDIR/.lock2" &> /dev/null && _bashbone_trace $1
-	fi
-
-	# spawn suicide job with new PGID, which cleans up
-	# this allows calling functions interactively via process substitution, where PROMPT_COMMAND is not set to perform cleanup and reset under PGID e.g. cat <(fun)
-	# _bashbone_reset uses $BASHBONE_TMPDIR/.lock4 in case error happens. when interactive, e.g. in a loop, cleanup starts
-	# also prompt_command tries to cleanup again, necessary if no error occurs
-	mkdir "$BASHBONE_TMPDIR/.lock3" &> /dev/null && {
+		mkdir "$BASHBONE_TMPDIR/.lock3" &> /dev/null && _bashbone_trace $1
 		set -m
 		{ env kill -TERM -- -$BASHBONE_PGID; _bashbone_reset 143; } &
 		set +m
 		wait $!
-		# _bashbone_reset 143 # dont! unless in prompt-command
-	}
+	fi
+
 	return 143
 }
 
@@ -243,14 +235,13 @@ function _bashbone_trace(){
 			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main}) @ line $line: $cmd" >&2
 		fi
 	done
-	echo ":ERROR: exit code 143" >&2
+	# echo ":ERROR: exit code 143" >&2
 	return 0
 }
 
 function _bashbone_trace_interactive(){
-	local error=$1 line=$2 l fun f src frame last=$((${#BASH_LINENO[@]}-2)) cmd sum add=0
+	local error=$1 line=$2 l fun f src frame last=$((${#BASH_LINENO[@]}-2)) o="${3:-/dev/stderr}" cmd sum add=0
 	[[ $BASH_VERSINFO -eq 4 ]] && add=1 && ((++line))
-
 	for frame in $(seq 1 $last); do
 		fun=${FUNCNAME[$((frame+1))]}
 		[[ "$fun" == "_bashbone_wrapper" || "$fun" == "command_not_found_handle" ]] && continue
@@ -258,19 +249,20 @@ function _bashbone_trace_interactive(){
 
 		# in first iteration unless function is command_not_found_handle, line should be set to correct LINENO passed via ERR trap
 		[[ $frame -gt 1 || $((line+add)) -eq 1 ]] && line=$((${BASH_LINENO[$frame]}+add))
-		# [[ $line -eq 1 ]] && continue
+		[[ $line -eq 1 ]] && continue
+
+		if [[ $fun && "$fun" != "main" ]]; then
+			read -r f l src < <(declare -F "$fun")
+			l=$((line+l-1))
+		fi
 		if [[ $line -eq 1 ]]; then
-			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main})" >&2
+			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main} @ line $l)" >> "$o"
 		else
-			if [[ $fun && "$fun" != "main" ]]; then
-				read -r f l src < <(declare -F "$fun")
-				((line+=l-1))
-			fi
-			cmd=$(awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
-			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main}) @ line $line: $cmd" >&2
+			cmd=$(awk -v l=$l '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main}) @ line $l: $cmd" >> "$o"
 		fi
 	done
-	echo ":ERROR: exit code 143" >&2
+	# echo ":ERROR: exit code 143" >&2
 	return 0
 }
 
@@ -279,8 +271,12 @@ function _bashbone_trace_interactive(){
 function _bashbone_wrapper(){
 	local BASHBONE_FUNCNAME=$1
 	shift
+	local legacy=$1
+	shift
 
 	if ${BASHBONE_SET_ENV:-true}; then
+		[[ "$BASHBONE_FUNCNAME" == commander::* ]] && local BASHBONE_LEGACY=$BASHBONE_LEGACY || local BASHBONE_LEGACY=$legacy
+
 		mapfile -t BASHBONE_BAK_SHOPT < <(shopt | awk '$2=="off"{print "shopt -u "$1}'; shopt | awk '$2=="on"{print "shopt -s "$1}')
 		BASHBONE_BAK_TRAPS=$(trap -p)
 		mapfile -t BASHBONE_BAK_SET < <(printf "%s" $- | sed 's/[isc]//g' | sed -E 's/(.)/set -\1\n/g')
@@ -361,8 +357,8 @@ function _bashbone_wrapper(){
 
 # ensure expand_aliases shopt is enabled and BASHBONE_DIR to be absolute so is $f and $BASH_SOURCE
 
-while read -r f; do
-	alias $f="_bashbone_wrapper $f"
+while read -r f l; do
+	alias $f="_bashbone_wrapper $f $l"
 done < <(
 	shopt -s extdebug
 	while read -r f; do
@@ -370,9 +366,11 @@ done < <(
 	done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh")
 	for f in $(declare -F | awk '{print $3}'); do
 		read -r f l s < <(declare -F $f)
-		[[ "$s" == "$BASHBONE_DIR/lib/"* || "$s" == "$BASHBONE_EXTENSIONDIR/lib/"* ]] && echo $f
+		[[ "$s" == "$BASHBONE_DIR/lib/"* ]] && echo $f true
+		[[ "$s" == "$BASHBONE_EXTENSIONDIR/lib/"* ]] && echo $f false
 	done
 )
+
 while read -r f; do
 	source "$f"
 done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh")
@@ -388,6 +386,7 @@ function bashbone(){
 
 			Usage:
 			-h | this help
+			-l | enable or disable legacy mode
 			-r | open readme
 			-c | activate bashbone conda environment or deactivate conda
 			-s | list bashbone scripts
@@ -400,9 +399,11 @@ function bashbone(){
 	}
 
 	local OPTIND arg f l s
-	while getopts 'hrcsfdex' arg; do
+	while getopts 'hlrcsfdex' arg; do
 		case $arg in
 		h)	_usage
+			;;
+		l)	${BASHBONE_LEGACY_GLOBAL:-false} && BASHBONE_LEGACY_GLOBAL=false || BASHBONE_LEGACY_GLOBAL=true
 			;;
 		r)	if mdless -h &> /dev/null; then
 				# or mdless -P <file> | less
