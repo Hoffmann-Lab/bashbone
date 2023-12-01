@@ -4,7 +4,7 @@
 function quantify::featurecounts(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
@@ -34,6 +34,7 @@ function quantify::featurecounts(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
 	commander::printinfo "quantifying reads"
@@ -105,7 +106,7 @@ function quantify::normalize(){
 function quantify::tpm(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -133,6 +134,7 @@ function quantify::tpm(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	declare -n _bams_tpm=${_mapper_tpm[0]}
@@ -197,6 +199,8 @@ function quantify::bamcoverage(){
 	# or
 	# featureCounts from SAF formatted bins, which allows also fractional counts (slow for very small windows)
 
+	# bamCoverage merges bins of equal counts up to a length of 5000000 likewise kent tools/ ucsc bigWigToBedGraph does
+	# -> use cgpbigwig: bwcat tool!
 	# bamCoverage                      featureCounts
 	# ...                              ...
 	# chrY  26672600  26672800  3      chrY  26672600  26672800  3
@@ -213,14 +217,15 @@ function quantify::bamcoverage(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			description:
-			assign reads to bins or bed/bed-like file given features and write counts plus TPM/BPM normalized to bedGraph and bigWig files
+			assign reads to bins or bed/bed-like file given features and write counts plus TPM/BPM normalized to bigWig files
 			- all reads are counted! including:
 			- singletons, duplicated, multi-mapped, bad-quality, cross-chromosome, circular and highly mismatched ones
 			in case of ATAC data with the intention to quantify mono-nucleosome positions
 			- reads will be centered
 			- when give, nucleosome free regions will be subtracted
+			to maintain orignal/unmerged bins/windows when convertig bigWig to BedGraph, utilize cgpBigWig bwcat
 
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip>     | true/false return
 			-s <softskip>     | true/false only print commands
 			-t <threads>      | number of
@@ -279,6 +284,7 @@ function quantify::bamcoverage(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 	[[ $_nidx_bam2bedg ]] && [[ ! $_midx_bam2bedg ]] && _usage
 
@@ -322,7 +328,7 @@ function quantify::bamcoverage(){
 					# howto save memory or speedup: Split!the!data!by!chromosomes!and!run!a!subset!of!chromosomes!each!time
 
 					mkdir -p "${tdirs[-1]}/counts" "${tdirs[-1]}/tpm"
-					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 						ln -sn "$(realpath -se "$f")" "${tdirs[-1]}/counts/nucleosome.bam"; ln -sn "$(realpath -se "${f%.*}.bai")" "${tdirs[-1]}/counts/nucleosome.bai"
 					CMD
 						ln -sn "$(realpath -se "$n")" "${tdirs[-1]}/counts/background.bam"; ln -sn "$(realpath -se "${n%.*}.bai")" "${tdirs[-1]}/counts/background.bai"
@@ -339,8 +345,10 @@ function quantify::bamcoverage(){
 							-j 0
 							$params
 					CMD
+						wigToBigWig "${tdirs[-1]}/counts/pooled/nucleosome.bgsub.smooth.wig" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.counts.bw"
+					CMD
 
-					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 						ln -sn "$(realpath -se "$f")" "${tdirs[-1]}/tpm/nucleosome.bam"; ln -sn "$(realpath -se "${f%.*}.bai")" "${tdirs[-1]}/tpm/nucleosome.bai"
 					CMD
 						ln -sn "$(realpath -se "$n")" "${tdirs[-1]}/tpm/background.bam"; ln -sn "$(realpath -se "${n%.*}.bai")" "${tdirs[-1]}/tpm/background.bai"
@@ -358,67 +366,74 @@ function quantify::bamcoverage(){
 							-j 0
 							$params
 					CMD
-
-					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						wigToBigWig "${tdirs[-1]}/counts/pooled/nucleosome.bgsub.smooth.wig" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.counts.bw"
-					CMD
-						bigWigToBedGraph "$odir/$o.$e.counts.bw" "$odir/$o.$e.counts.bed"
-					CMD
-					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 						wigToBigWig "${tdirs[-1]}/tpm/pooled/nucleosome.bgsub.smooth.wig" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.tpm.bw"
 					CMD
-						bigWigToBedGraph "$odir/$o.$e.tpm.bw" "$odir/$o.$e.tpm.bed"
-					CMD
+
+					# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					# 	wigToBigWig "${tdirs[-1]}/counts/pooled/nucleosome.bgsub.smooth.wig" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.counts.bw"
+					# CMD
+					# 	bigWigToBedGraph "$odir/$o.$e.counts.bw" "$odir/$o.$e.counts.bed"
+					# CMD
+					# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					# 	wigToBigWig "${tdirs[-1]}/tpm/pooled/nucleosome.bgsub.smooth.wig" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.tpm.bw"
+					# CMD
+					# 	bigWigToBedGraph "$odir/$o.$e.tpm.bw" "$odir/$o.$e.tpm.bed"
+					# CMD
 				else
-					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-						rm -f "$odir/$o.$e.counts.bed"
-					CMD
-						mapfile -t chr < <(cut -f 1 "${tdirs[-1]}/chr.sizes")
-					CMD
-						for r in "\${chr[@]}"; do
-							bamCoverage
-								-r \$r
-								-b "$f"
-								-bs $windowsize
-								-p $threads
-								--maxFragmentLength 200000
-								--normalizeUsing None
-								--outFileFormat bedgraph
-								--extendReads ${fragmentsize:-200}
-								--centerReads
-								-o "${tdirs[-1]}/$e.counts.bed";
-							cat "${tdirs[-1]}/$e.counts.bed" >> "$odir/$o.$e.counts.bed";
-						done
-					CMD
-
-					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-						rm -f "$odir/$o.$e.tpm.bed"
-					CMD
-						mapfile -t chr < <(cut -f 1 "${tdirs[-1]}/chr.sizes")
-					CMD
-						for r in "\${chr[@]}"; do
-							bamCoverage
-								-r \$r
-								-b "$f"
-								-bs $windowsize
-								-p $threads
-								--maxFragmentLength 200000
-								--exactScaling
-								--normalizeUsing CPM
-								--outFileFormat bedgraph
-								--extendReads ${fragmentsize:-200}
-								--centerReads
-								-o "${tdirs[-1]}/$e.tpm.bed";
-							cat "${tdirs[-1]}/$e.tpm.bed" >> "$odir/$o.$e.tpm.bed";
-						done
+					# to ensure compatibility with ucsc tools, that require chromosome order to be sorted lexicographical
+					# -> better use cgpbigwig and direct bigwig output
+					# commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					# 	rm -f "$odir/$o.$e.counts.bed"
+					# CMD
+					# 	mapfile -t chr < <(cut -f 1 "${tdirs[-1]}/chr.sizes")
+					# CMD
+					# 	for r in "\${chr[@]}"; do
+					# 		bamCoverage
+					# 			-r \$r
+					# 			-b "$f"
+					# 			-bs 1
+					# 			-p $threads
+					# 			--maxFragmentLength 200000
+					# 			--normalizeUsing None
+					# 			--outFileFormat bedgraph
+					# 			--extendReads ${fragmentsize:-200}
+					# 			--centerReads
+					# 			-o "${tdirs[-1]}/$e.counts.bed";
+					# 		cat "${tdirs[-1]}/$e.counts.bed" >> "$odir/$o.$e.counts.bed";
+					# 	done
+					# CMD
+					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
+						bamCoverage
+							-b "$f"
+							-bs 1
+							-p $threads
+							--maxFragmentLength 200000
+							--normalizeUsing None
+							--extendReads ${fragmentsize:-200}
+							--centerReads
+							-o "$odir/$o.$e.counts.bw"
 					CMD
 
-					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-						bedGraphToBigWig "$odir/$o.$e.counts.bed" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.counts.bw"
+					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
+						bamCoverage
+							-b "$f"
+							-bs 1
+							-p $threads
+							--maxFragmentLength 200000
+							--exactScaling
+							--normalizeUsing CPM
+							--outFileFormat bedgraph
+							--extendReads ${fragmentsize:-200}
+							--centerReads
+							-o "$odir/$o.$e.tpm.bw"
 					CMD
-					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-						bedGraphToBigWig "$odir/$o.$e.tpm.bed" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.tpm.bw"
-					CMD
+
+					# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+					# 	bedGraphToBigWig "$odir/$o.$e.counts.bed" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.counts.bw"
+					# CMD
+					# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+					# 	bedGraphToBigWig "$odir/$o.$e.tpm.bed" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.tpm.bw"
+					# CMD
 				fi
 			done
 		done
@@ -427,12 +442,12 @@ function quantify::bamcoverage(){
 			commander::printcmd -a cmd1
 			commander::printcmd -a cmd2
 			commander::printcmd -a cmd3
-			commander::printcmd -a cmd4
+			# commander::printcmd -a cmd4
 		else
 			commander::runcmd -v -b -i 1 -a cmd1
 			commander::runcmd -c danpos -v -b -i $minstances -a cmd2
 			commander::runcmd -c deeptools -v -b -i 1 -a cmd3
-			commander::runcmd -c danpos -v -b -i $threads -a cmd4
+			# commander::runcmd -c danpos -v -b -i $threads -a cmd4
 		fi
 
 		return 0
@@ -459,11 +474,13 @@ function quantify::bamcoverage(){
 		declare -n _bams_bam2bedg=$m
 		for f in "${_bams_bam2bedg[@]}"; do
 			o="$(basename "${f%.*}")"
-			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bam2bedg)")
+			# tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bam2bedg)")
 			odir="$outdir/$m"
 			[[ $outdir ]] || odir="$(dirname "$f")"
 			mkdir -p "$odir"
 			if [[ $bed || $windowsize -gt 1 ]]; then
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bam2bedg)")
+
 				if [[ $bed ]]; then
 					commander::makecmd -a cmd1 -s ' ' -o "${tdirs[-1]}/regions.saf" -c {COMMANDER[0]}<<- CMD {COMMANDER[2]}<<- 'CMD'
 						samtools view -H "$f" | sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}' | helper::sort -t $threads -k1,1 > "${tdirs[-1]}/chr.sizes";
@@ -494,7 +511,7 @@ function quantify::bamcoverage(){
 					fi
 				fi
 
-				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.$e.tpm.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
+				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
 					featureCounts
 						$params
 						-Q 0
@@ -510,7 +527,7 @@ function quantify::bamcoverage(){
 						-o /dev/stdout
 						"$f"
 				CMD
-					tee -ia >(awk -v OFS='\t' 'NR>2{print \$2,\$3-1,\$4,sprintf("%d",\$7==int(\$7)?\$7:\$7+1)}' > "$odir/$o.$e.counts.bed")
+					tee -ia >(awk -v OFS='\t' 'NR>2{print \$2,\$3-1,\$4,sprintf("%d",\$7==int(\$7)?\$7:\$7+1)}' | tee -i "$odir/$o.$e.counts.bed" | bg2bw -i /dev/stdin -o "$odir/$o.$e.counts.bw" -c "${tdirs[-1]}/chr.sizes")
 				CMD
 					awk '
 						NR>2{
@@ -526,65 +543,69 @@ function quantify::bamcoverage(){
 						}
 					'
 				CMD
+					tee -i "$odir/$o.$e.tpm.bed" | bg2bw -i /dev/stdin -o "$odir/$o.$e.tpm.bw" -c "${tdirs[-1]}/chr.sizes"
+				CMD
 			else
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-					samtools view -H "$f"
-				CMD
-					sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}'
-				CMD
-					helper::sort -t $threads -k1,1 > "${tdirs[-1]}/chr.sizes"
-				CMD
+				# commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+				# 	samtools view -H "$f"
+				# CMD
+				# 	sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}'
+				# CMD
+				# 	helper::sort -t $threads -k1,1 > "${tdirs[-1]}/chr.sizes"
+				# CMD
 
 				[[ $fragmentsize ]] && params="--extendReads $fragmentsize" || params=''
 
-				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-					rm -f "$odir/$o.$e.counts.bed"
-				CMD
-					mapfile -t chr < <(cut -f 1 "${tdirs[-1]}/chr.sizes")
-				CMD
-					for r in "\${chr[@]}"; do
-						bamCoverage
-							$params
-							-r \$r
-							-b "$f"
-							-bs $windowsize
-							-p $threads
-							--maxFragmentLength 200000
-							--normalizeUsing None
-							--outFileFormat bedgraph
-							-o "${tdirs[-1]}/$e.counts.bed";
-						cat "${tdirs[-1]}/$e.counts.bed" >> "$odir/$o.$e.counts.bed";
-					done
+				# commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				# 	rm -f "$odir/$o.$e.counts.bed"
+				# CMD
+				# 	mapfile -t chr < <(cut -f 1 "${tdirs[-1]}/chr.sizes")
+				# CMD
+				# 	for r in "\${chr[@]}"; do
+				# 		bamCoverage
+				# 			$params
+				# 			-r \$r
+				# 			-b "$f"
+				# 			-bs $windowsize
+				# 			-p $threads
+				# 			--maxFragmentLength 200000
+				# 			--normalizeUsing None
+				# 			--outFileFormat bedgraph
+				# 			-o "${tdirs[-1]}/$e.counts.bed";
+				# 		cat "${tdirs[-1]}/$e.counts.bed" >> "$odir/$o.$e.counts.bed";
+				# 	done
+				# CMD
+
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
+					bamCoverage
+						$params
+						-b "$f"
+						-bs $windowsize
+						-p $threads
+						--maxFragmentLength 200000
+						--normalizeUsing None
+						-o "$odir/$o.$e.counts.bw"
 				CMD
 
-				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-					rm -f "$odir/$o.$e.tpm.bed"
-				CMD
-					mapfile -t chr < <(cut -f 1 "${tdirs[-1]}/chr.sizes")
-				CMD
-					for r in "\${chr[@]}"; do
-						bamCoverage
-							$params
-							-r \$r
-							-b "$f"
-							-bs $windowsize
-							-p $threads
-							--maxFragmentLength 200000
-							--exactScaling
-							--normalizeUsing CPM
-							--outFileFormat bedgraph
-							-o "${tdirs[-1]}/$e.tpm.bed";
-						cat "${tdirs[-1]}/$e.tpm.bed" >> "$odir/$o.$e.tpm.bed";
-					done
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
+					bamCoverage
+						$params
+						-b "$f"
+						-bs $windowsize
+						-p $threads
+						--maxFragmentLength 200000
+						--exactScaling
+						--normalizeUsing CPM
+						-o  "$odir/$o.$e.tpm.bw"
 				CMD
 			fi
 
-			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-				bedGraphToBigWig "$odir/$o.$e.counts.bed" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.counts.bw"
-			CMD
-			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-				bedGraphToBigWig "$odir/$o.$e.tpm.bed" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.tpm.bw"
-			CMD
+			# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+			# 	bedGraphToBigWig "$odir/$o.$e.counts.bed" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.counts.bw"
+			# CMD
+			# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+			# 	bedGraphToBigWig "$odir/$o.$e.tpm.bed" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.tpm.bw"
+			# CMD
 		done
 	done
 
@@ -592,12 +613,12 @@ function quantify::bamcoverage(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
-		commander::printcmd -a cmd4
+		# commander::printcmd -a cmd4
 	else
 		commander::runcmd -v -b -i 1 -a cmd1
 		commander::runcmd -c subread -v -b -i $instances -a cmd2
 		commander::runcmd -c deeptools -v -b -i 1 -a cmd3
-		commander::runcmd -v -b -i $threads -a cmd4
+		# commander::runcmd -v -b -i $threads -a cmd4
 	fi
 
 	return 0
@@ -606,7 +627,7 @@ function quantify::bamcoverage(){
 function quantify::profiles(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[1]} usage:
+			${FUNCNAME[-2]} usage:
 			-S <hardskip> | true/false return
 			-s <softskip> | true/false only print commands
 			-t <threads>  | number of
@@ -636,6 +657,7 @@ function quantify::profiles(){
 			*) _usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	declare -a tdirs cmd1 cmd2 cmd3 coverages pileups toprofile
