@@ -276,6 +276,7 @@ function _bashbone_wrapper(){
 
 	if ${BASHBONE_SET_ENV:-true}; then
 		[[ "$BASHBONE_FUNCNAME" == commander::* ]] && local BASHBONE_LEGACY=$BASHBONE_LEGACY || local BASHBONE_LEGACY=$legacy
+		echo XXXXXX $BASHBONE_LEGACY $legacy
 
 		mapfile -t BASHBONE_BAK_SHOPT < <(shopt | awk '$2=="off"{print "shopt -u "$1}'; shopt | awk '$2=="on"{print "shopt -s "$1}')
 		BASHBONE_BAK_TRAPS=$(trap -p)
@@ -366,8 +367,11 @@ done < <(
 	done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh")
 	for f in $(declare -F | awk '{print $3}'); do
 		read -r f l s < <(declare -F $f)
-		[[ "$s" == "$BASHBONE_DIR/lib/"* ]] && echo $f true
-		[[ "$s" == "$BASHBONE_EXTENSIONDIR/lib/"* ]] && echo $f false
+		if [[ "$s" == "$BASHBONE_DIR/lib/"* ]]; then
+			echo $f true
+		elif [[ "$s" == "$BASHBONE_EXTENSIONDIR/lib/"* ]]; then
+			echo $f false
+		fi
 	done
 )
 
