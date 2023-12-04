@@ -121,7 +121,6 @@ function commander::makecmd(){
 			*)	_usage;;
 		esac
 	done
-	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
 	[[ ! $multiline ]] && ${BASHBONE_LEGACY:-false} && multiline=false
 
@@ -570,11 +569,22 @@ function commander::qsubcmd(){
 
 		# use command/env qstat in case someone like me makes use of an alias :)
 		# wait until accounting record is written to epilog after jobs post-processing metrics collection
-		# while commandqstat -j $jobid &> /dev/null not enought
-		while ! qacct -j $jobid &> /dev/null; do
-			sleep 1
-		done
+		# while command qstat -j $jobid &> /dev/null not enought
 
+
+		qacct &> /dev/null && {
+			while ! qacct -j $jobid &> /dev/null; do
+				sleep 1
+			done
+		} || {
+			commander::warn "SGE accountings cannot be read from current server $HOSTNAME"
+			benchmark=false
+			while command qstat -j $jobid &> /dev/null; do
+				sleep 1
+			done
+		}
+
+		sleep 1
 		touch "$ex" #nfs requirend to make file visible in current shell on current node
 		ex=$(awk '{print $NF}' "$ex" | sort -rg | head -1)
 		# ex=$(qacct -j $jobid | grep -F exit_status | awk '{print $NF}' "$ex" | sort -rg | head -1)
