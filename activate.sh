@@ -15,7 +15,7 @@ export BASHBONE_EXTENSIONDIR="${BASHBONE_EXTENSIONDIR:-$BASHBONE_DIR}" # directo
 export BASHBONE_CONDA=false
 export BASHBONE_LEGACY=false
 
-while getopts 'i:p:c:x:s:r:lah' arg; do
+while getopts 'i:p:c:x:s:r:l:ah' arg; do
 	case $arg in
 		i)	BASHBONE_TOOLSDIR="$OPTARG";;
 		p)	TMPDIR="$OPTARG";;
@@ -23,7 +23,7 @@ while getopts 'i:p:c:x:s:r:lah' arg; do
 		x)	BASHBONE_EXITFUN="$OPTARG";;
 		s)	BASHBONE_EXTENSIONDIR="$OPTARG";;
 		r)	BASHBONE_SETSID=${BASHBONE_SETSID:-$OPTARG}; BASHBONE_REEXEC=$BASHBONE_SETSID;; # use exported state upon restart to not recurse
-		l)	BASHBONE_LEGACY=true;;
+		l)	BASHBONE_LEGACY="$OPTARG";;
 		a)	shift $((OPTIND-1)); break;;
 		h)	cat <<- 'EOF'
 				This is bashbone activation script.
@@ -32,7 +32,8 @@ while getopts 'i:p:c:x:s:r:lah' arg; do
 
 				Usage:
 				-h              | this help
-				-l              | legacy mode: commander inerts line breaks, thus crafts one-liners from makecmd here-documents
+				-l <legacymode> | true/false let commander inerts line breaks, thus crafts one-liners from makecmd here-documents
+				                  default: false
 				-i <path>       | to installation root <path>/latest
 				                  default: inferred from script location
 				                  hint: run activation from source code, indeed enables basic functions, but will fail on executing tools
@@ -271,12 +272,8 @@ function _bashbone_trace_interactive(){
 function _bashbone_wrapper(){
 	local BASHBONE_FUNCNAME=$1
 	shift
-	local legacy=$1
-	shift
 
 	if ${BASHBONE_SET_ENV:-true}; then
-		[[ "$BASHBONE_FUNCNAME" == commander::* ]] && local BASHBONE_LEGACY=$BASHBONE_LEGACY || local BASHBONE_LEGACY=$legacy
-
 		mapfile -t BASHBONE_BAK_SHOPT < <(shopt | awk '$2=="off"{print "shopt -u "$1}'; shopt | awk '$2=="on"{print "shopt -s "$1}')
 		BASHBONE_BAK_TRAPS=$(trap -p)
 		mapfile -t BASHBONE_BAK_SET < <(printf "%s" $- | sed 's/[isc]//g' | sed -E 's/(.)/set -\1\n/g')
@@ -324,6 +321,14 @@ function _bashbone_wrapper(){
 	fi
 	BASHBONE_SET_ENV=false
 
+	local f l s BASHBONE_LEGACY=$BASHBONE_LEGACY
+	read -r f l s < <(declare -F $BASHBONE_FUNCNAME)
+	if [[ "$s" == "$BASHBONE_DIR/lib/"* ]]; then
+		[[ "$BASHBONE_FUNCNAME" == commander::* || "$BASHBONE_FUNCNAME" == progress::* ]] || BASHBONE_LEGACY=true
+	else
+		BASHBONE_LEGACY=false
+	fi
+
 	# reset COMMANDER and execute function specific/local $BASHBONE_CLEANUP script
 	trap '_bashbone_on_return $? "${BASH_COMMAND%% *}"' RETURN
 	# necessary to be implemented in order to trigger ERR->TERM and not EXIT directly in case of hidden exit bit thrown e.g. by sleep
@@ -358,7 +363,7 @@ function _bashbone_wrapper(){
 # ensure expand_aliases shopt is enabled and BASHBONE_DIR to be absolute so is $f and $BASH_SOURCE
 
 while read -r f l; do
-	alias $f="_bashbone_wrapper $f $l"
+	alias $f="_bashbone_wrapper $f"
 done < <(
 	shopt -s extdebug
 	while read -r f; do
@@ -366,11 +371,7 @@ done < <(
 	done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh")
 	for f in $(declare -F | awk '{print $3}'); do
 		read -r f l s < <(declare -F $f)
-		if [[ "$s" == "$BASHBONE_DIR/lib/"* ]]; then
-			echo $f true
-		elif [[ "$s" == "$BASHBONE_EXTENSIONDIR/lib/"* ]]; then
-			echo $f false
-		fi
+		[[ "$s" == "$BASHBONE_DIR/lib/"* || "$s" == "$BASHBONE_EXTENSIONDIR/lib/"* ]] && echo $f
 	done
 )
 
@@ -406,7 +407,7 @@ function bashbone(){
 		case $arg in
 		h)	_usage
 			;;
-		l)	${BASHBONE_LEGACY_GLOBAL:-false} && BASHBONE_LEGACY_GLOBAL=false || BASHBONE_LEGACY_GLOBAL=true
+		l)	${BASHBONE_LEGACY:-false} && BASHBONE_LEGACY=false || BASHBONE_LEGACY=true
 			;;
 		r)	if mdless -h &> /dev/null; then
 				# or mdless -P <file> | less
