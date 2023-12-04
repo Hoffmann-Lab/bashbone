@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
-source "$(dirname "$(dirname "$(readlink -e "$0")")")/activate.sh" -c false -r true -x cleanup -a "$@" || exit 1
+source "$(dirname "$(dirname "$(readlink -e "$0")")")/activate.sh" -l true -c false -r true -x cleanup -a "$@" || exit 1
 
 cleanup() {
 	[[ -e "$LOG" ]] && {

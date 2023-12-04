@@ -109,7 +109,7 @@ function progress::log(){
 	esac
 
 	# manually wrap. aliases are not expanded on runtime
-	_bashbone_wrapper $fun $BASHBONE_LEGACY "$@" 2> "$tmpdir/stderr" > "$tmpdir/stdout"
+	_bashbone_wrapper $fun "$@" 2> "$tmpdir/stderr" > "$tmpdir/stdout"
 
 	return 0
 }

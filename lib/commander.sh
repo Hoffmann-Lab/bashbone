@@ -184,15 +184,12 @@ function commander::printcmd(){
 	[[ $mandatory -lt 1 ]] && _usage
 	[[ ! $multiline ]] && ${BASHBONE_LEGACY:-false} && multiline=false
 
-	if $multiline; then
-		for i in $(seq 0 $((${#_cmds_printcmd[@]}-1))); do
-			echo ":CMD$((i+1)): start"
-			printf '%s\n' "${_cmds_printcmd[$i]}"
-			echo ":CMD$((i+1)): end"
-		done
-	else
-		 [[ "${#_cmds_printcmd[@]}" -gt 0 ]] && printf ':CMD: %s\n' "${_cmds_printcmd[@]}"
-	fi
+	for i in $(seq 0 $((${#_cmds_printcmd[@]}-1))); do
+		echo ":CMD$((i+1)): start"
+		printf '%s\n' "${_cmds_printcmd[$i]}"
+		echo ":CMD$((i+1)): end"
+	done
+	# [[ "${#_cmds_printcmd[@]}" -gt 0 ]] && printf ':CMD: %s\n' "${_cmds_printcmd[@]}"
 
 	return 0
 }
@@ -285,10 +282,10 @@ function commander::runcmd(){
 		echo "    echo \"$jobname.$id (\$((\$(ps -o ppid= -p \$\$ 2> /dev/null)))) exited with exit code \$1\" >> '$ex'" >> "$sh"
 		echo '}' >> "$sh"
 		if [[ $cenv ]]; then
-			echo "source '$BASHBONE_DIR/activate.sh' -s '$BASHBONE_EXTENSIONDIR' -c true -r false -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
+			echo "source '$BASHBONE_DIR/activate.sh' -l ${BASHBONE_LEGACY:-true} -s '$BASHBONE_EXTENSIONDIR' -c true -r false -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 			echo "conda activate --no-stack $cenv" >> "$sh"
 		else
-			echo "source '$BASHBONE_DIR/activate.sh' -s '$BASHBONE_EXTENSIONDIR' -c false -r false -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
+			echo "source '$BASHBONE_DIR/activate.sh' -l ${BASHBONE_LEGACY:-true} -s '$BASHBONE_EXTENSIONDIR' -c false -r false -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 		fi
 		$verbose && echo "echo :CMD$id: $(printf '%s\n' "${_cmds_runcmd[$i]}" | base64 -w 0)" >> "$sh"
 		echo "exec 1> >(trap '' INT TERM; exec tee -a '$log')" >> "$sh"
@@ -544,10 +541,10 @@ function commander::qsubcmd(){
 		# 1 so that any SGE version that sends kill to PID or PGID lets bashbone kill its BASHBONE_PGID and thereby performs cleanup via exit trap before getting cut from terminal/pty
 		# 2 sournal can be executed explicitly, so that no fork runs in backround that will be killed otherwise and thus leaves unlogged write events
 		if [[ $cenv ]]; then
-			echo "source '$BASHBONE_DIR/activate.sh' -s '$BASHBONE_EXTENSIONDIR' -c true -r true -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
+			echo "source '$BASHBONE_DIR/activate.sh' -l ${BASHBONE_LEGACY:-true} -s '$BASHBONE_EXTENSIONDIR' -c true -r true -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 			echo "conda activate --no-stack $cenv" >> "$sh"
 		else
-			echo "source '$BASHBONE_DIR/activate.sh' -s '$BASHBONE_EXTENSIONDIR' -c false -r true -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
+			echo "source '$BASHBONE_DIR/activate.sh' -l ${BASHBONE_LEGACY:-true} -s '$BASHBONE_EXTENSIONDIR' -c false -r true -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 		fi
 		$verbose && echo "echo :CMD$id: $(printf '%s\n' "${_cmds_qsubcmd[$i]}" | base64 -w 0)" >> "$sh"
 		printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
