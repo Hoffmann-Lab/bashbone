@@ -1,8 +1,19 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
+function test::makecmd(){
+	echo $BASHBONE_LEGACY
+	declare -a cmds
+	commander::makecmd -a cmds -s ";" -c {COMMANDER[0]}<<- CMD
+		echo
+			foo
+			bar
+	CMD
+	commander::printcmd -a cmds
+}
+
 function test::test(){
-		function _usage(){
+	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[-2]} usage:
 			-h | help
