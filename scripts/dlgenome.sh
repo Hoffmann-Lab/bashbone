@@ -16,7 +16,7 @@ usage(){
 		$(basename $0) downloads most recent human or mouse genome and annotation including gene ontology and optionally dbSNP
 
 		VERSION
-		0.6.1
+		0.6.2
 
 		SYNOPSIS
 		$(basename $0) -r [hg19|hg38|mm10] -g -a -d -s -n
@@ -322,7 +322,7 @@ dlgenome::_go.msigdb(){
 				say join"\t",($i,$F[0],$collection,lc($F[0]=~s/_+/ /gr));
 			}
 		' -- -info="$out.info" -collection="$collection" >> "$out.go"
-	done < <(curl -s "https://www.gsea-msigdb.org/gsea/msigdb/$msig/collections.jsp" | grep -e "name=" -e symbols.gmt | grep -B 1 symbols.gmt | grep -v -Fx -- '--' | sed -E 's@.*/([^/]+symbols\.gmt).*@\1@;s@.*>([^>]+)<[^<]+$@\1@' | paste - - | grep -vF -e All -e .all. -e .go. | perl -F'\t' -lane '$F[0]=~s/\s+subset\s+of\s+\S+//; $F[0]=~s/^[^:]:\s+//; $F[0]=~s/\W+/_/g; print join"\t",@F')
+	done < <(curl -s "https://www.gsea-msigdb.org/gsea/msigdb/$msig/collections.jsp" | grep -e "name=" -e symbols.gmt | grep -B 1 symbols.gmt | grep -v -Fx -- '--' | sed -E 's@.*/([^/]+symbols\.gmt).*@\1@;s@.*>([^>]+)<[^<]+$@\1@' | paste - - | grep -v -E -e "^(a|A)ll gene sets" -e "(o|O)ntology gene sets" -e "GO" | perl -F'\t' -lane '$F[0]=~s/\s+subset\s+of\s+\S+//; $F[0]=~s/^[^:]:\s+//; $F[0]=~s/\W+/_/g; $F[0]="MSigDB_".$F[0]; print join"\t",@F')
 
 	cat <<-EOF > "$out.go.README"
 		$(date)
