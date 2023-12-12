@@ -56,7 +56,7 @@ for (t in unique(df$type)){
 	l <- nrow(dfg)
 	if(l<2) next
 	tmp <- as.matrix(dfg[ , 2:(ncol(dfg)-1)])
-	rownames(tmp) <- dfg$id
+	rownames(tmp) <- paste0(dfg$type,".",dfg$id)
 	c <- hclust(dist(tmp))
 	tmp <- tmp[c$order , ]
 	ar <- c(ar, rownames(tmp))
@@ -151,7 +151,7 @@ if (nrow(MEcor)>0 && type == "Cluster"){
 	foo = merge(foo,res,by="id")
 	molt <- reshape2::melt(foo, id.vars = c("type", "id", "me_corr"), measure.vars = foo.colnames)
 	ggplot(molt, aes(x = variable, y = value, group = id, color = me_corr)) +
-		theme_bw() +
+		theme_minimal() +
 		theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = rel(min(1,10/ncol(df))))) +
 		labs(x = "", y = labeldatatype, color = "Abs. Correlation", linetype = "") +
 		geom_line(alpha=0.3) +
@@ -166,7 +166,7 @@ if (nrow(MEcor)>0 && type == "Cluster"){
 		foo <- cbind(foo, df[,c(1,ncol(df))])
 		molt <- reshape2::melt(df, id.vars = c("type", "id"), measure.vars = foo.colnames)
 		ggplot(molt, aes(x = variable, y = value, group = id)) +
-			theme_bw() +
+			theme_minimal() +
 			theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = rel(min(1,10/ncol(df))))) +
 			labs(x = "", y = labeldatatype, color = "Mean FC", linetype = "") +
 			geom_line(alpha=0.3) +
@@ -185,7 +185,7 @@ if (nrow(MEcor)>0 && type == "Cluster"){
 		foo <- cbind(foo, df[,c(1,ncol(df))], res)
 		molt <- reshape2::melt(foo, id.vars = c("type", "id", "mean_pw_ch"), measure.vars = foo.colnames)
 		ggplot(molt, aes(x = variable, y = value, group = id, color = mean_pw_ch)) +
-			theme_bw() +
+			theme_minimal() +
 			theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = rel(min(1,10/ncol(df))))) +
 			labs(x = "", y = labeldatatype, color = "Mean FC", linetype = "") +
 			geom_line(alpha=0.3) +
