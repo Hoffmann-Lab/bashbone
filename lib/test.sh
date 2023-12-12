@@ -2,14 +2,21 @@
 # (c) Konstantin Riege
 
 function test::makecmd(){
-	echo $BASHBONE_LEGACY
 	declare -a cmds
-	commander::makecmd -a cmds -s ";" -c {COMMANDER[0]}<<- CMD
-		echo
-			foo
-			bar
-	CMD
+	for i in {1..20}; do
+		commander::makecmd -m -a cmds -s ";" -c {COMMANDER[0]}<<- CMD
+			sleep $((RANDOM%10+1))
+			echo foo$i
+			sleep 2
+			echo bar$i
+		CMD
+	done
 	commander::printcmd -a cmds
+	declare -a runcmds
+	commander::makecmd -a runcmds -v cmds -c <<-'CMD'
+		commander::runcmd -v -i 10 -a cmds
+	CMD
+	commander::runcmd -v -i 1 -a runcmds
 }
 
 function test::test(){
