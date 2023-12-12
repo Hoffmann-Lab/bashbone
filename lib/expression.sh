@@ -406,8 +406,17 @@ function expression::deseq(){
 							find -L "$odir/$c-vs-$t"
 								-type f
 								-name "deseq*.tsv" -and -not -name "*annotated*"
- 								-exec annotate.pl "${gtfinfo:=0}" "$gtf" $feature "{}" "$odir/$c-vs-$t/experiments.tpm" \;
+ 								-exec annotate.pl "${gtfinfo:=0}" "$gtf" $feature "{}" \;
 						CMD
+
+						for e in tpm tpm.zscores mean.tpm mean.tpm.zscores vsc vsc.zscores mean.vsc mean.vsc.zscores; do
+							commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
+								find -L "$odir/$c-vs-$t"
+									-type f
+									-name "deseq*.tsv" -and -not -name "*annotated*"
+	 								-exec annotate.pl "${gtfinfo:=0}" "$gtf" $feature "{}" "$odir/$c-vs-$t/experiments.$e" $e \;
+							CMD
+						done
 
 						commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD
 							find -L "$odir/$c-vs-$t"

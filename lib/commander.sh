@@ -184,6 +184,7 @@ function commander::printcmd(){
 	[[ $mandatory -lt 1 ]] && _usage
 	[[ ! $multiline ]] && ${BASHBONE_LEGACY:-false} && multiline=false
 
+	local i
 	for i in $(seq 0 $((${#_cmds_printcmd[@]}-1))); do
 		echo ":CMD$((i+1)): start"
 		printf '%s\n' "${_cmds_printcmd[$i]}"
@@ -287,9 +288,10 @@ function commander::runcmd(){
 		else
 			echo "source '$BASHBONE_DIR/activate.sh' -l ${BASHBONE_LEGACY:-true} -s '$BASHBONE_EXTENSIONDIR' -c false -r false -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 		fi
-		$verbose && echo "echo :CMD$id: $(printf '%s\n' "${_cmds_runcmd[$i]}" | base64 -w 0)" >> "$sh"
+		$verbose && echo "echo :BASE64$id: $(printf '%s\n' "${_cmds_runcmd[$i]}" | base64 -w 0)" >> "$sh"
 		echo "exec 1> >(trap '' INT TERM; exec tee -a '$log')" >> "$sh"
 		echo "exec 2> >(trap '' INT TERM; exec tee -a '$log' | sed -u 's/^/:STDERR:/')" >> "$sh"
+
 		printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 		echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 		scripts+=("$(realpath -se "$sh")") # necessary for runstat
@@ -312,7 +314,7 @@ function commander::runcmd(){
 		# workaround: use full path, which, env or $(command -v time) <- prefer env to use env bash too
 	else
 		printf '%q\n' "${scripts[@]}" | PARALLEL_SHELL="$tmpdir/shell.$jobname" parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P "$tmpdir/instances.$jobname" -I {} bash {}
-	fi | stdbuf -o L awk '/^:CMD[0-9]*:/{print $1" start"; while(("echo "$2" | base64 -d" | getline l)){print l} print $1" end"; next} /^:STDERR:/{sub(/^:STDERR:/, "", $0); print > "/dev/stderr"; next} {print}'
+	fi | stdbuf -o L awk  '/^:BASE64[0-9]*:/{sub(":BASE64",":CMD",$1); print $1" start"; while(("echo "$2" | base64 -d" | getline l)){print l} print $1" end"; next} /^:STDERR:/{sub(/^:STDERR:/, "", $0); print > "/dev/stderr"; next} {print}'
 
 	return 0
 }
@@ -546,7 +548,7 @@ function commander::qsubcmd(){
 		else
 			echo "source '$BASHBONE_DIR/activate.sh' -l ${BASHBONE_LEGACY:-true} -s '$BASHBONE_EXTENSIONDIR' -c false -r true -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 		fi
-		$verbose && echo "echo :CMD$id: $(printf '%s\n' "${_cmds_qsubcmd[$i]}" | base64 -w 0)" >> "$sh"
+		$verbose && echo "echo :BASE64$id: $(printf '%s\n' "${_cmds_qsubcmd[$i]}" | base64 -w 0)" >> "$sh"
 		printf '%s\n' "${_cmds_qsubcmd[$i]}" >> "$sh"
 		echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
 		chmod 755 "$sh"
@@ -554,7 +556,7 @@ function commander::qsubcmd(){
 
 	if [[ "$dowait" == "y" ]]; then
 		local l jobid
-		{ stdbuf -o L tail -q -f "${logs[@]}" | stdbuf -o L awk '/^\s*:CMD[0-9]*:/{print $1" start"; while(("echo "$2" | base64 -d" | getline l)){print l} print $1" end"; next}{print}'; } &
+		{ stdbuf -o L tail -q -f "${logs[@]}" | stdbuf -o L awk  '/^:BASE64[0-9]*:/{sub(":BASE64",":CMD",$1); print $1" start"; while(("echo "$2" | base64 -d" | getline l)){print l} print $1" end"; next} /^:STDERR:/{sub(/^:STDERR:/, "", $0); print > "/dev/stderr"; next} {print}'; } &
 		echo "{ env kill -TERM $!; wait $!; } &> /dev/null" >> "$BASHBONE_CLEANUP"
 		while read -r l; do
 			if [[ ! $jobid ]]; then
@@ -567,9 +569,7 @@ function commander::qsubcmd(){
 		# use command/env qstat in case someone like me makes use of an alias :)
 		# wait until accounting record is written to epilog after jobs post-processing metrics collection
 		# while command qstat -j $jobid &> /dev/null not enought
-
-
-		qacct &> /dev/null && {
+		qconf -sh &> /dev/null && {
 			while ! qacct -j $jobid &> /dev/null; do
 				sleep 1
 			done
