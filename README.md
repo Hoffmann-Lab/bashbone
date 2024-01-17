@@ -16,11 +16,12 @@ A bash and biobash library for workflow and pipeline design within but not restr
   - [Positional arguments](#positional-arguments)
   - [Developers centerpiece](#developers-centerpiece)
     - [Example](#example)
+    - [Cleanup](#cleanup)
   - [Helper functions](#helper-functions)
     - [OOP bash](#oop-bash)
     - [Multithreaded implementations](#multithreaded-implementations)
     - [Misc](#misc)
-  - [Assign bashbone functionality to custom functions](#assign-bashbone-functionality-to-custom-functions)
+  - [Extending the library](#extending-the-library)
     - [Local cleanup](#local-cleanup)
     - [Global cleanup](#global-cleanup)
 - [Installation](#installation)
@@ -43,20 +44,21 @@ A bash and biobash library for workflow and pipeline design within but not restr
 ## For developers - bash library
 [&#x25B2; back to top](#bashbone)
 
-- Write command line code in your favorite programming language as Here-documents for later orchestrated execution
+- Write command line code in your favorite programming language via Here-documents for later orchestrated execution
 - Add object-oriented programming (oop) like syntactic sugar to bash variables and arrays to avoid complex parameter-expansions, variable-expansions and brace-expansions
 - Execute commands in parallel on your machine or submit them as jobs to a workflow manager like sun grid engine (SGE) and log stdout, stderr and exit codes per job
 - Benchmark runtime and memory usage
 - Infer number of parallel instances according to targeted memory consumption or targeted threads per instance
 - Get a full bash error stack trace in interactive shells or within scripts
 - Log execution of bash functions at different verbosity levels
-- Add custom bash functions that handle upon error or when reaching script end, prompt-command respectively (interactive shell)
-  - termination of all function related - including asynchronous background - (sub-)processes 
-  - removal of temporary files created via `mktemp` and execution of custom cleanup commands
+- Extend the library by custom bash functions which will inherit
+  - Stack trace
+  - Termination of all function related (sub-)processes, including asynchronous background jobs upon error/exit or when reaching prompt-command (interactive shell)
+  - Removal of temporary files created via `mktemp` and execution of custom cleanup commands upon error/exit or when reaching prompt-command (interactive shell)
 - Profit from helper functions that implement
-  - joining of multiple files
-  - multithreaded sorting
-  - multithreaded compression plus indexing for random access by byte offset or line number without noticeable overhead
+  - Joining of multiple files
+  - Multi-threaded sorting
+  - Multi-threaded compression plus indexing for random access by byte offset or line number without noticeable overhead
 
 ## For users - biobash library
 [&#x25B2; back to top](#bashbone)
@@ -82,13 +84,13 @@ A bash and biobash library for workflow and pipeline design within but not restr
 - Read alignment and post-processing
   - knapsack problem based slicing of alignment files for parallel task execution
   - sorting, filtering
-  - UMI based deduplication or removal of optical and PCR duplicates
+  - UMI based de-duplication or removal of optical and PCR duplicates
   - generation of pools and pseudo-replicates
   - read group modification, split N-cigar reads, left-alignment and base quality score recalibration
 - Gene fusion detection
 - Methyl-C calling and prediction of differentially methylated regions
 - Expression analysis
-  - Read quantification, TPM and Z-score normalization and heatmap plotting
+  - Read quantification (also from quasi-mappings), TPM and Z-score normalization and heatmap plotting
   - Inference of strand specific library preparation methods
   - Inference of differential expression as well as clusters of co-expression
   - Detection of differential splice junctions and differential exon usage
@@ -134,11 +136,11 @@ git checkout $(git describe --tags)
 ## Do's and don'ts
 [&#x25B2; back to top](#bashbone)
 
-When used, in a script, bashbone is meant to be sourced at the very top to properly handle positional arguments. It will enable error stack tracing and subprocess handling globally by setting traps for `EXIT` `ERR` `RETURN` `INT`. So, don't override them. In case your script intends to spawn deamons use `setsid` or disable bashbone first.
+When used, in a script, bashbone is meant to be sourced at the very top to handle positional arguments and to re-execute (`-r true`) the script under its own process group id in order to take care of proper termination (`-a "$@"`). It will enable error stack tracing and subprocess handling globally by setting traps for `EXIT` `ERR` `RETURN` `INT`. So, don't override them. In case your script intends to spawn deamons use `setsid` or disable bashbone first.
 
 ```bash
 #!/usr/bin/env bash
-source <path/to/bashbone>/activate.sh -a "$@"
+source <path/to/bashbone>/activate.sh -r true -a "$@"
 # do stuff
 # now spawn deamons
 setsid deamon1 &
@@ -157,7 +159,7 @@ Please note, that error tracing in bash is circumvented by using `||` or '&&' co
 
 ```bash
 #!/usr/bin/env bash
-source <path/to/bashbone>/activate.sh -a "$@"
+source <path/to/bashbone>/activate.sh -r true -a "$@"
 
 function myfun(){
   cat file_not_found
@@ -175,7 +177,7 @@ To get all third-party tools set-upped and subsequently all biobash bashbone fun
 - [Installation](#installation)
 - [Biobash library usage (requires installation)](#biobash-library-usage-requires-installation)
 
-Load the library and list available functions.
+Load the library and list available quick start functions in an interactive terminal session.
 
 ```bash
 source ./activate.sh
@@ -200,30 +202,7 @@ helper::_trimprefixfirst  helper::_trimsuffix             helper::_trimsuffixfir
 helper::_ucfirst          helper::_uniq                   progress::log
 ```
 
-Each function comes with its own usage.
-
-```bash
-commander::runcmd
-
-# will print
-commander::runcmd usage:
--v             | verbose on
--b             | benchmark on
--c <env>       | run with conda
--i <instances> | number of parallel
--t <instances> | obsolete synonym for -i
--s <idx[:idx]> | execute only jobs from cmds array starting from given index or range (default: 1)
--n <name>      | optional. prefix of logs and jobs - should be unique
--o <path>      | optional. for scripts, logs and exit codes
--r             | optional. override existing logs
--a <cmds>      | array of
-example:
-commander::runcmd -v -b -i 2 -a cmd
-example2:
-commander::runcmd -i 2 -n current -o ~/jobs -r -a cmd
-```
-
-To unset bashbone functions in your interactive shell or when used in a script to also revert changes made to the environment, do
+To unset bashbone functions in your interactive shell or to revert changes made to the environment when used in a script, do
 
 ```bash
 bashbone -x
@@ -235,6 +214,7 @@ bashbone -x
 When bashbone is used within a script, which makes use of positional arguments, hand them over to bashbone activation script.
 
 ```bash
+#! /usr/bin/env bash
 source <path/to/bashbone>/activate.sh -a "$@"
 ```
 
@@ -331,6 +311,29 @@ instances=4
 commander::runcmd -v -b -i $instances -a cmds
 ```
 
+### Cleanup
+
+When commands are crafted for later execution, bashbone allows for multiple cleanup strategies to be applied on exit (success or failure). A **reversely** executed, temporary script, which is accessible through the `$BASHBONE_CLEANUP` variable. An overloaded `mktemp` function, that automatically adds removal commands to the cleanup script. An after all called `_on_exit` function, which holds the job scripts exit code in the first positional argument.
+
+```bash
+source <path/to/bashbone>/activate.sh
+
+commander::makecmd -a cmds -c <<-'EOF'
+  function _on_exit(){
+    rm -r /tmp/tmptest3
+    echo "exit code is $1"
+  }
+  mkdir -p /tmp/tmptest1
+  echo "rm -r /tmp/tmptest1" >> "$BASHBONE_CLEANUP"
+  mktemp -p /tmp/tmptest2
+  mkdir -p /tmp/tmptest3
+  ls /tmp/tmptest*
+EOF
+
+commander::runcmd -a cmds -i 1
+ls /tmp/tmptest* # should fail
+```
+
 ## Helper functions
 [&#x25B2; back to top](#bashbone)
 
@@ -387,10 +390,10 @@ helper::basename
 helper::makecatcmd
 ```
 
-## Assign bashbone functionality to custom functions
+## Extending the library
 [&#x25B2; back to top](#bashbone)
 
-To get a full bash error stack trace for your interactively used bash functions and to add handling of proper sub-process termination and running cleanup procedures upon error or when reaching script end, prompt-command respectively (interactive shell), simply extend bashbone functions by your own library.
+To get a full bash error stack trace for your interactively used bash functions, to add proper handling of sub-process termination and to run cleanup procedures upon error or when reaching script end, prompt-command respectively (interactive shell), simply extend bashbone functions by your own library.
 
 I.e. store a set of bash functions that **require** the `function` keyword in a `lib` directory and files with `.sh` suffix to be sourced along with the bashbone library afterwards.
 
@@ -413,7 +416,7 @@ EOF
 Now hand over the parent directory to `activate.sh`.
 
 ```bash
-source <path/to/bashbone>/activate.sh -s $PWD
+source <path/to/bashbone>/activate.sh -s "$PWD"
 world
 
 # will print
@@ -435,16 +438,16 @@ cd <path/to/custom>
 mkdir lib
 cat <<-'EOF' > lib/fun.sh
   function tmptest(){
-    mkdir -p /tmp/tmptest
-    echo "rm -r /tmp/tmptest" >> "$BASHBONE_CLEANUP"
-    mktemp -p /tmp/tmptest
-    ls /tmp/tmptest
+    mkdir -p /tmp/tmptest1
+    echo "rm -r /tmp/tmptest1" >> "$BASHBONE_CLEANUP"
+    mktemp -p /tmp/tmptest2
+    ls /tmp/tmptest*
   }
 EOF
 
 source <path/to/bashbone>/activate.sh -s $PWD
 tmptest
-ls /tmp/tmptest # should fail
+ls /tmp/tmptest* # should fail
 ```
 
 As an alternative, functions can be wrapped manually. Therefore, define an alias before its actual definition.
@@ -460,16 +463,23 @@ function myfun(){
 ### Global cleanup
 [&#x25B2; back to top](#bashbone)
 
-Upon script exit due to failure or upon success, a custom cleanup functions can be hand over to bashbone and executed this way.
+Upon script exit, due to failure or upon success, a custom cleanup functions can be handed over to bashbone and executed at the very end. The scripts exit code will be supplied as positional argument. Analogous to [Local cleanup](#local-cleanup), temporary files created by `mktemp` will be automatically nuked and a cleanup script, kept in the `$BASHBONE_CLEANUP` variable, is executed.
 
 ```bash
-source <path/to/bashbone>/activate.sh -x cleanup
+#! /usr/bin/env bash
+source <path/to/bashbone>/activate.sh -x cleanup -r true -a "$@"
 
 function cleanup(){
-  # do stuff on exit
+  rm -r /tmp/tmptest3
+  ls /tmp/tmptest* # should fail
+  echo "exit code is $1"
 }
 
-# do stuff
+mkdir -p /tmp/tmptest1
+echo "rm -r /tmp/tmptest1" >> "$BASHBONE_CLEANUP"
+mktemp -p /tmp/tmptest2
+mkdir -p /tmp/tmptest3
+ls /tmp/tmptest*
 ```
 
 # Installation
@@ -478,33 +488,29 @@ function cleanup(){
 ## Full installation of all third party tools used in bashbones biobash library
 [&#x25B2; back to top](#bashbone)
 
-The setup routine will always install the latest software unless the `-g` switch is used to create conda environments or to download sources according to enclosed configuration files, URLs respectively. During setup, current configuration files will be written to `<path/of/installation/config>`.
+When using the `-g` switch (**recommended**), the setup routine will create conda environments or setups software from source according to enclosed configuration files, URLs respectively. Without `-g` switch, software is installed in latest available version, which may lead to unexpected behavior and errors. During setup, current configuration files will be written to `<path/of/installation/config>`.
 
 ```bash
 scripts/setup.sh -h
 
-scripts/setup.sh -i all -d <path/to/installation>
+scripts/setup.sh -g -i all -d <path/to/installation>
 source <path/of/installation>/latest/bashbone/activate.sh
 bashbone -h
 ```
 
-## Upgrade to a newer release (sources only)
+## Upgrade to a newer release
 [&#x25B2; back to top](#bashbone)
 
+Use the `-g` switch, in order to also upgrade conda environments that fail the comparison with the supplied configuration files. **Attention**: This switch will downgrade tools, if the initial installation was done for cutting edge tools i.e. without `-g`.
+
 ```bash
-scripts/setup.sh -i upgrade -d <path/of/installation>
+scripts/setup.sh -g -i upgrade -d <path/of/installation>
 ```
 
 ## Update tools
 [&#x25B2; back to top](#bashbone)
 
-Tools installed via conda and other sources can be updated by running the related setup functions again without the `-g` switch.
-
-```bash
-scripts/setup.sh -i conda_tools -d <path/of/installation>
-```
-
-Trimmomatic, segemehl, STAR-Fusion, GEM, mdless and gztool will be installed next to the conda environments. Their latest sources URLs will be automatically inferred.
+Trimmomatic, segemehl, STAR-Fusion, GEM, mdless and gztool will be installed next to the conda environments. Their latest versions and download URLs will be automatically inferred.
 
 ```bash
 scripts/setup.sh -i trimmomatic,segemehl,starfusion,gem,mdless,gztool -d <path/of/installation>
@@ -526,48 +532,56 @@ bashbone -h
 bashbone -f
 
 # will print
-alignment::add4stats        alignment::addreadgroup   alignment::bamqc             alignment::bqsr
-alignment::bulkindex        alignment::bwa            alignment::clipmateoverlaps  alignment::clipmateoverlaps_alt
-alignment::inferstrandness  alignment::leftalign      alignment::mkreplicates      alignment::postprocess
-alignment::qcstats          alignment::reorder        alignment::rmduplicates      alignment::segemehl
-alignment::slice            alignment::soft2hardclip  alignment::splitncigar       alignment::star
-alignment::strandsplit      alignment::tobed          bisulfite::bwa               bisulfite::haarz
-bisulfite::join             bisulfite::mecall         bisulfite::methyldackel      bisulfite::metilene
-bisulfite::mspicut          bisulfite::segemehl       cluster::coexpression        cluster::coexpression_deseq
-enrichment::go              expression::deseq         expression::diego            expression::join
-expression::join_deseq      fusions::arriba           fusions::join2arriba         fusions::starfusion
-genome::indexgtf            genome::mkdict            genome::mkgodb               genome::view
-peaks::gem                  peaks::gem_idr            peaks::genrich               peaks::genrich_idr
-peaks::m6aviewer            peaks::m6aviewer_idr      peaks::macs                  peaks::macs_idr
-peaks::matk                 peaks::matk_idr           peaks::peakachu              peaks::peakachu_idr
-preprocess::add4stats       preprocess::cutadapt      preprocess::dedup            preprocess::fastqc
-preprocess::qcstats         preprocess::rcorrector    preprocess::rmpolynt         preprocess::sortmerna
-preprocess::sortmerna_new   preprocess::trimmomatic   quantify::featurecounts      quantify::tpm
-survival::gettcga           survival::ssgsea          variants::bcftools           variants::freebayes
-variants::haplotypecaller   variants::makepondb       variants::mutect             variants::panelofnormals
-variants::platypus          variants::tree            variants::vardict            variants::vardict_threads
-variants::varscan           variants::vcfnorm         visualize::venn              
+alignment::add4stats       alignment::addreadgroup     alignment::bamqc             alignment::bqsr
+alignment::bulkindex       alignment::bwa              alignment::clip              alignment::clipmateoverlaps
+alignment::downsample      alignment::inferstrandness  alignment::leftalign         alignment::mkreplicates
+alignment::postprocess     alignment::qcstats          alignment::reorder           alignment::rmduplicates
+alignment::segemehl        alignment::slice            alignment::soft2hardclip     alignment::splitncigar
+alignment::star            alignment::strandsplit      alignment::tn5clip           alignment::tobed
+bisulfite::bwa             bisulfite::haarz            bisulfite::join              bisulfite::mecall
+bisulfite::methyldackel    bisulfite::metilene         bisulfite::mspicut           bisulfite::rmduplicates
+bisulfite::segemehl        cluster::coexpression       cluster::coexpression_deseq  cluster::wgcna
+cluster::wgcna_deseq       enrichment::go              expression::deseq            expression::diego
+expression::join           expression::join_deseq      fusions::arriba              fusions::join
+fusions::starfusion        genome::indexgtf            genome::mkdict               genome::mkgodb
+genome::view               peaks::gem                  peaks::gem_idr               peaks::genrich
+peaks::genrich_idr         peaks::gopeaks              peaks::gopeaks_idr           peaks::m6aviewer
+peaks::m6aviewer_idr       peaks::macs                 peaks::macs_idr              peaks::matk
+peaks::matk_idr            peaks::peakachu             peaks::peakachu_idr          peaks::seacr
+peaks::seacr_idr           preprocess::add4stats       preprocess::cutadapt         preprocess::dedup
+preprocess::fastqc         preprocess::qcstats         preprocess::rcorrector       preprocess::rmpolynt
+preprocess::sortmerna      preprocess::trimmomatic     quantify::bamcoverage        quantify::featurecounts
+quantify::normalize        quantify::profiles          quantify::salmon             quantify::tpm
+survival::gettcga          survival::ssgsea            variants::bcftools           variants::freebayes
+variants::haplotypecaller  variants::makepondb         variants::mutect             variants::panelofnormals
+variants::platypus         variants::tree              variants::vardict            variants::vardict_threads
+variants::varscan          variants::vcfnorm           visualize::venn
 ```
 
-In order to make use of bashbone conda environment, which ensures all supplied scripts to work as expected, run bashbone with conda enabled. 
-
-```bash
-# enable/disable conda
-bashbone -c
-# unset bashbone
-bashbone -x
-```
-
-Shortcut:
+In order to make use of bashbone conda environments, which ensures all supplied scripts to work as expected, activate bashbone with conda enabled
 
 ```bash
 source <path/of/installation>/latest/bashbone/activate.sh -c true
 ```
 
+Or activate conda at a later timepoint
+
+```bash
+source <path/of/installation>/latest/bashbone/activate.sh
+# enable/disable conda
+bashbone -c
+```
+
+Or use commander functions with conda enabled (see [Developers centerpiece](#developers-centerpiece)).
+
+```bash
+commander::runcmd -c bashbone -a cmds
+```
+
 ## Enclosed scripts
 [&#x25B2; back to top](#bashbone)
 
-Bashbone is shipped with a couple of scripts to be used stand alone or being part of the biobash functions. They can be listed via
+Bashbone is shipped with a couple of scripts to be used stand alone (experimental, when bashbone is not installed and activated) or being part of the biobash functions. They can be listed via
 
 ```bash
 bashbone -s
@@ -593,7 +607,7 @@ sra-dump.sh -h
 ### Retrieve genomes
 [&#x25B2; back to top](#bashbone)
 
-Use the enclosed script to fetch human hg19/hg38 or mouse mm10/mm11 genomes and annotations plus dbSNP. Plug-n-play CTAT genome resource made for gene fusion detection and shipped with STAR index can be selected optionally.
+Use the enclosed script to fetch human hg19/hg38 or mouse mm10/mm11 genomes, gene and ontology annotations plus dbSNP and MSigDB. The Plug-n-play CTAT genome resource, made for gene fusion detection and shipped with STAR index, can be selected optionally.
 
 ```bash
 dlgenome.sh -h
@@ -662,7 +676,7 @@ Then the info file should consist of:
 ## Adapter sequences
 [&#x25B2; back to top](#bashbone)
 
-Adapter sequences will be automatically inferred from fastQC reports and stored as array.
+Adapter sequences listed below will be tested by FastQC, extracted from the reports and stored as arrays. In case of paired-end data, unknown adapter sequences will be extracted from mate overlaps utilizing BBMap.
 
 ```bash
 source <path/of/installation>/latest/bashbone/activate.sh
@@ -673,7 +687,7 @@ preprocess::fastqc -t <threads> -o <outdir> -1 fastq_R1 [-2 fastq_R2] -a1 adapte
 
 ```
 
-Otherwise adapter sequences can be found in the Illumina Adapter Sequences Document (<https://www.illumina.com/search.html?q=Illumina Adapter Sequences Document>) or Illumina Adapter Sequences HTML (<https://support-docs.illumina.com/SHARE/adapter-sequences.htm>) and the resource of Trimmomatic (<https://github.com/usadellab/Trimmomatic/tree/main/adapters>), FastQC respectively (<https://github.com/s-andrews/FastQC/blob/master/Configuration>).
+Further adapter sequences can be found in the Illumina Adapter Sequences Document (<https://www.illumina.com/search.html?q=Illumina Adapter Sequences Document>) or Illumina Adapter Sequences HTML (<https://support-docs.illumina.com/SHARE/adapter-sequences.htm>) and the resource of Trimmomatic (<https://github.com/usadellab/Trimmomatic/tree/main/adapters>), FastQC respectively (<https://github.com/s-andrews/FastQC/blob/master/Configuration>).
 
 The following excerpt is independent of the indexing type, i.e. single, unique dual (UD) or combinatorial dual (CD).
 
@@ -686,7 +700,10 @@ TruSeq full length DNA & RNA R1: AGATCGGAAGAGCACACGTCTGAACTCCAGTCA R2: AGATCGGAA
 TruSeq full length DNA MethC R1: AGATCGGAAGAGCACACGTCTGAAC R2: AGATCGGAAGAGCGTCGTGTAGGGA
 
 TruSeq Small RNA 3': TGGAATTCTCGGGTGCCAAGG
+
 TruSeq Small RNA 5': GTTCAGAGTTCTACAGTCCGACGATC
+
+Ovation Methyl-Seq R1: AGATCGGAAGAGC R2: AAATCAAAAAAAC
 
 ## Pipeline example
 [&#x25B2; back to top](#bashbone)
@@ -740,6 +757,7 @@ enrichment::go -t $threads -r mapper -c comparisons -l coexpressions -g $go -i r
 | ---  | ---    | --- |
 | Arriba        | <https://github.com/suhrig/arriba/>                                 | NA |
 | BamUtil       | <https://genome.sph.umich.edu/wiki/BamUtil>                         | 10.1101/gr.176552.114 |
+| BBTools       | <https://jgi.doe.gov/data-and-tools/software-tools/bbtools>         | 10.1371/journal.pone.0185056 |
 | BWA           | <https://github.com/lh3/bwa>                                        | 10.1093/bioinformatics/btp324 |
 | BWA-mem2      | <https://github.com/bwa-mem2/bwa-mem2>                              | 10.1109/IPDPS.2019.00041 |
 | BWA-meth      | <https://github.com/brentp/bwa-meth>                                | arXiv:1401.1129 |
@@ -755,6 +773,7 @@ enrichment::go -t $threads -r mapper -c comparisons -l coexpressions -g $go -i r
 | DEXSeq        | <https://bioconductor.org/packages/release/bioc/html/DEXSeq.html>   | 10.1101/gr.133744.111 |
 | DIEGO         | <http://www.bioinf.uni-leipzig.de/Software/DIEGO>                   | 10.1093/bioinformatics/btx690 |
 | DGCA          | <https://github.com/andymckenzie/DGCA>                              | 10.1186/s12918-016-0349-1 |
+| dupsifter     | <https://github.com/huishenlab/dupsifter>                           | 10.1093/bioinformatics/btad729 |
 | fastqc        | <https://www.bioinformatics.babraham.ac.uk/projects/fastqc>         | NA |
 | featureCounts | <http://subread.sourceforge.net>                                    | 10.1093/bioinformatics/btt656 |
 | fgbio         | <http://fulcrumgenomics.github.io/fgbio/>                           | NA |
@@ -786,6 +805,8 @@ enrichment::go -t $threads -r mapper -c comparisons -l coexpressions -g $go -i r
 | RSeQC         | <http://rseqc.sourceforge.net>                                      | 10.1093/bioinformatics/bts356 |
 | REVIGO        | <https://code.google.com/archive/p/revigo-standalone>               | 10.1371/journal.pone.0021800 |
 | RRVGO         | <https://ssayols.github.io/rrvgo>                                   | 10.17912/micropub.biology.000811 |
+| Salmon        | <https://combine-lab.github.io/salmon/>                             | 10.1038/nmeth.4197 |
+| SalmonTE      | <https://github.com/hyunhwan-jeong/SalmonTE>                        | 10.1142/9789813235533_0016 |
 | SAMtools      | <http://www.htslib.org/doc/samtools.html>                           | 10.1093/bioinformatics/btp352 |
 | SEACR         | <https://github.com/FredHutch/SEACR>                                | 10.1186/s13072-019-0287-4 |
 | segemehl      | <http://www.bioinf.uni-leipzig.de/Software/segemehl>                | 10.1186/gb-2014-15-2-r34 <br> 10.1371/journal.pcbi.1000502 |
