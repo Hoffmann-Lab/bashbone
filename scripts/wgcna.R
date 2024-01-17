@@ -191,7 +191,7 @@ for (i in MEcolnames){
   df = subset(MEcor[MEcor$cluster==i,],select=c(paste0(i,".cor"),paste0(i,".padj")))
   df = df[order(abs(df[,1]),decreasing = T),]
   write.table(MEcor[match( rownames(df), rownames(MEcor) ) ,], file=file.path(outdir, "wgcna.cluster.full.tsv"), quote=FALSE, sep='\t', col.names = F, append=T)
-  df = df[df[,2]<=0.05,]
+  df = df[df[,2]<=0.05 & ! is.na(df[,2]),]
   write.table(MEcor[match( rownames(df), rownames(MEcor) ) ,], file=file.path(outdir, "wgcna.cluster.tsv"), quote=FALSE, sep='\t', col.names = F, append=T)
   df = head(df,n=50)
   write.table(MEcor[match( rownames(df), rownames(MEcor) ) ,], file=file.path(outdir, "wgcna.cluster.top.tsv"), quote=FALSE, sep='\t', col.names = F, append=T)
@@ -331,6 +331,13 @@ if(length(wgcnar$blockGenes)==1){
   dendro = as.hclust(Reduce(function(x, y) merge(x, y, height = 1.0001), lapply(wgcnar$dendrograms, function(x) as.dendrogram(x))))
   colors = labels2colors(wgcnar$colors)[unlist(wgcnar$blockGenes)]
 }
+
+# sometimes, when number of input genes is low, dendro order != colors
+if (length(dendro$order) != length(colors)){
+  message("WARNING: Dendrogram and TOM plot not possible.")
+  quit()
+}
+
 pdf(file.path(outdir,"wgcna.dendrogram.pdf"))
 plotDendroAndColors(main="Dendrogram",dendro, colors,"Cluster colors",dendroLabels = FALSE, hang = 0.03,addGuide = TRUE, guideHang = 0.05)
 graphics.off()
