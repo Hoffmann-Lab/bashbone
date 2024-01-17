@@ -36,10 +36,9 @@ function alignment::slice(){
 	commander::printinfo "slicing alignments"
 
 	declare -n _bams_slice="${_mapper_slice[0]}"
-	local instances=$((${#_mapper_slice[@]}*${#_bams_slice[@]}))
-	local minstances mthreads ithreads
+	local minstances mthreads instances ithreads
 	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+	read -r instances ithreads < <(configure::instances_by_threads -t 10 -T $threads)
 
 	local tdir m f i bed o
 	declare -a mapdata cmd1 cmd2 cmd3 cmd4
@@ -148,6 +147,7 @@ function alignment::rmduplicates(){
 			-3 <fastqUMI>  | array of
 			-c <sliceinfo> | array of
 			-o <outdir>    | path to
+			-x <regex>     | of read name identifier with grouped tile information. default: \S+:(\d+):(\d+):(\d+)\s*.*
 		EOF
 		return 1
 	}
@@ -182,7 +182,7 @@ function alignment::rmduplicates(){
 	local nfh=$(($(ulimit -n)/minstances))
 	[[ ! $nfh ]] || [[ $nfh -le 1 ]] && nfh=$((1024/minstances))
 
-	local m i o e slice instances ithreads odir params x=0 catcmd oinstances othreads sinstances
+	local m i o e slice instances ithreads odir params x=0 catcmd oinstances othreads
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
 		i=$(wc -l < "${_bamslices_rmduplicates[${_bams_rmduplicates[0]}]}")
@@ -290,7 +290,9 @@ function alignment::rmduplicates(){
 					CMD
 						samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 					CMD
-
+					# alternative 1
+					# picard MergeBamAlignment on input bam and created unaligned_umi.bam
+					# alternative 2
 					# commander::makecmd -a cmd -s ';' -c {COMMANDER[0]}<<- CMD
 					# 	fgbio
 					# 		-Xmx${jmem}m
@@ -311,17 +313,24 @@ function alignment::rmduplicates(){
 					# less memory consumption than fgbio, but 1/3 more memory than perl hash (still too much ~6 times uncompressed umi fq)
 
 					if $legacy; then
-						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+						commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 							umi_tools dedup
 							-I "$slice"
-							-S "$slice.rmdup"
+							--log2stderr
 							--temp-dir "${tdirs[-1]}"
 							--extract-umi-method tag
 							--umi-tag RX
 							--method directional
 							--edit-distance-threshold 1
 							--random-seed 12345
+							--no-sort-output
 							$params
+						CMD
+							samtools sort
+								-@ $ithreads
+								-O BAM
+								-T "${tdirs[-1]}/$(basename "${slice%.*}")"
+							> "$slice.rmdup"
 						CMD
 					else
 						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
@@ -346,6 +355,7 @@ function alignment::rmduplicates(){
 								MAX_FILE_HANDLES=$nfh
 						CMD
 					fi
+					# alternative: fgbio GroupReadsByUmi --mark-duplicates=true
 				else
 					if [[ $x -gt 0 ]]; then
 						commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
@@ -395,7 +405,7 @@ function alignment::rmduplicates(){
 					# note: -r removes, without -> marks
 					# alternative2: samtools sort -n -@ $threads -O SAM -T $tmp/$prefix1 $bam | samblaster --removeDups --addMateTags | samtools sort -@ $threads -O BAM -T $tmp/$prefix2 > $bam.rmdup
 					# note: --removeDups removes, else use --excludeDups. requires setupped RG in SAM header
-					# alternative3: sambamba
+					# alternative3: sambamba / dupsifter
 				fi
 
 				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -509,15 +519,16 @@ function alignment::clip(){
 	local params version=$(commander::runcmd -c fgbio -a cmdchk)
 	[[ $version -eq 1 ]] || params="--sort-order=Unsorted"
 
+	declare -n _bams_clip="${_mapper_clip[0]}"
+	x=$(samtools view -F 4 "${_bams_clip[0]}" | head -10000 | cat <(samtools view -H "${_bams_clip[0]}") - | samtools view -c -f 1)
+	[[ $x -gt 0 ]] && params+=" --read-two-five-prime=${r25:-0} --read-two-three-prime=${r23:-0}"
+
 	local m i o slice odir x=0
 	declare -a tdirs tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_clip[@]}"; do
 		declare -n _bams_clip=$m
 		odir="$outdir/$m"
 		mkdir -p "$odir"
-
-		x=$(samtools view -F 4 "${_bams_clip[0]}" | head -10000 | cat <(samtools view -H "${_bams_clip[0]}") - | samtools view -c -f 1)
-		[[ $x -gt 0 ]] && params+=" --read-two-five-prime=${r25:-0} --read-two-three-prime=${r23:-0}"
 
 		for i in "${!_bams_clip[@]}"; do
 			tomerge=()
@@ -661,13 +672,15 @@ function alignment::clipmateoverlaps(){
 			tomerge=()
 
 			while read -r slice; do
+				# bamutil clips second read even full length, and by default does not produce unmapped reads
+				# --unmapped marks full length clipped reads as unmapped and does fixmate afterwards
+				# -> when combined with --excludeFlags (default:0xF0C, better: 0x80C) that includes UNMAP and MUNMAP, pairs with 2nd read fully clipped gets removed
 				# use stdout with bam extension to enfoce bam output
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					bam clipOverlap
 						--in "$slice"
 						--out -.bam
-						--unmapped
-						--excludeFlags 0x80C
+						--excludeFlags 0x0
 						--poolSize $poolsize
 						--stats
 						--noPhoneHome
