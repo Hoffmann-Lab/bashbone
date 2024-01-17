@@ -21,3 +21,6 @@ md5bwa=MD5SUM
 
 #genome.fa.bwameth.c2t.pac
 md5bwameth=MD5SUM
+
+#genome.fa.salmon.idx/seq.bin
+md5salmon=MD5SUM
