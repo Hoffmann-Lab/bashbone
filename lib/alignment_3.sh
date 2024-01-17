@@ -162,7 +162,7 @@ function alignment::mkreplicates(){
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					samtools collate
 						-@ $ithreads1
-						-n $((threads<64?64:threads))
+						-n $((threads>64?64:threads))
 						-u
 						-O
 						"$pf" "${tdirs[-1]}/$(basename "${pf%.*}")"
@@ -366,9 +366,9 @@ function alignment::downsample(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir merged
+	local OPTIND arg mandatory skip=false threads outdir merged delete=false
 	declare -n _mapper_downsample
-	while getopts 'S:s:t:r:o:m:' arg; do
+	while getopts 'S:s:t:r:o:m:d' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -376,6 +376,7 @@ function alignment::downsample(){
 			r)	((++mandatory)); _mapper_downsample=$OPTARG;;
 			o)	outdir="$OPTARG"; mkdir -p "$outdir";;
 			m)	merged="$OPTARG";;
+			d)	delete=true;;
 			*)	_usage;;
 		esac
 	done
@@ -389,7 +390,7 @@ function alignment::downsample(){
 	# local ithreads instances=$((${#_mapper_downsample[@]}*${#_bams_downsample[@]}))
 	# read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a cmd1 cmd2 cmd3 tomerge
+	declare -a cmd1 cmd2 cmd3 cmd4 tomerge
 	local m i n f min odir
 	for m in "${_mapper_downsample[@]}"; do
 		declare -n _bams_downsample=$m
@@ -405,8 +406,9 @@ function alignment::downsample(){
 
 			if [[ $min -eq 0 ]]; then
 				min=$n
+				# ln -sfnr "$f" "$o"
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					ln -sfnr "$f" "$o"
+					cp "$f" "$o"
 				CMD
 			else
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
@@ -416,6 +418,8 @@ function alignment::downsample(){
 			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 				samtools index -@ $threads "$o" "${o%.*}.bai"
 			CMD
+
+			_bams_downsample[$i]="$o"
 		done < <(
 			for i in "${!_bams_downsample[@]}"; do
 				echo "$(samtools idxstats "${_bams_downsample[$i]}" | awk '{n=n+$3}END{print n}') $i"
@@ -428,6 +432,12 @@ function alignment::downsample(){
 			CMD
 				samtools index -@ $threads "$outdir/$m/$merged" "$outdir/$m/${merged%.*}.bai"
 			CMD
+
+			if $delete; then
+				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+					rm -f $(printf '"%s" ' "${tomerge[@]}")
+				CMD
+			fi
 		fi
 	done
 
@@ -435,10 +445,12 @@ function alignment::downsample(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
+		commander::printcmd -a cmd4
 	else
 		commander::runcmd -v -b -i 1 -a cmd1
 		commander::runcmd -v -b -i 1 -a cmd2
 		commander::runcmd -v -b -i 1 -a cmd3
+		commander::runcmd -v -b -i 1 -a cmd4
 	fi
 
 	return 0
