@@ -1,0 +1,29 @@
+name: dupsifter
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - _libgcc_mutex==0.1
+  - _openmp_mutex==4.5
+  - bzip2==1.0.8
+  - c-ares==1.24.0
+  - dupsifter==1.2.0.20230926
+  - keyutils==1.6.1
+  - krb5==1.21.2
+  - libcurl==8.5.0
+  - libdeflate==1.18
+  - libedit==3.1.20230828
+  - libev==4.33
+  - libgcc-ng==13.2.0
+  - libgomp==13.2.0
+  - libnghttp2==1.58.0
+  - libssh2==1.11.0
+  - libstdcxx-ng==13.2.0
+  - libzlib==1.2.13
+  - ncurses==6.4
+  - openssl==3.2.0
+  - pthread-stubs==0.4
+  - xz==5.4.5
+  - zlib==1.2.13
+  - zstd==1.5.5
