@@ -366,7 +366,7 @@ function expression::deseq(){
 					CMD
 						head -1 "$odir/$c-vs-$t/experiments.tpm" > "$odir/$c-vs-$t/heatmap.tpm"
 					CMD
-						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm" >> "$odir/$c-vs-$t/heatmap.tpm"
+						grep -Fw -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm" >> "$odir/$c-vs-$t/heatmap.tpm"
 					CMD
 						heatmap.R TRUE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.tpm" "TPM" "most differentially expressed ${feature}s"
 					CMD
@@ -376,7 +376,7 @@ function expression::deseq(){
 					CMD
 						head -1 "$odir/$c-vs-$t/experiments.tpm.zscores" > "$odir/$c-vs-$t/heatmap.tpm.zscores"
 					CMD
-						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.tpm.zscores"
+						grep -Fw -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.tpm.zscores"
 					CMD
 						heatmap.R TRUE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.tpm.zscores" "Z-Score" "most differentially expressed ${feature}s"
 					CMD
@@ -386,7 +386,7 @@ function expression::deseq(){
 					CMD
 						head -1 "$odir/$c-vs-$t/experiments.mean.tpm" > "$odir/$c-vs-$t/heatmap.mean.tpm"
 					CMD
-						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm" >> "$odir/$c-vs-$t/heatmap.mean.tpm"
+						grep -Fw -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm" >> "$odir/$c-vs-$t/heatmap.mean.tpm"
 					CMD
 						heatmap.R FALSE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.mean.tpm" "TPM" "most differentially expressed ${feature}s"
 					CMD
@@ -396,7 +396,7 @@ function expression::deseq(){
 					CMD
 						head -1 "$odir/$c-vs-$t/experiments.mean.tpm.zscores" > "$odir/$c-vs-$t/heatmap.mean.tpm.zscores"
 					CMD
-						grep -F -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.mean.tpm.zscores"
+						grep -Fw -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.mean.tpm.zscores"
 					CMD
 						heatmap.R FALSE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.mean.tpm.zscores" "Z-Score" "most differentially expressed ${feature}s"
 					CMD
@@ -715,7 +715,7 @@ function expression::join_deseq(){
 				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					head -1 "$odir/experiments.$e" > "$deseqdir/$m/heatmap.$e"
 				CMD
-					grep -F -f "$topids" "$odir/experiments.$e" >> "$deseqdir/$m/heatmap.$e"
+					grep -Fw -f "$topids" "$odir/experiments.$e" >> "$deseqdir/$m/heatmap.$e"
 				CMD
 					heatmap.R TRUE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.$e" "${e^^}" "most differentially expressed ${feature}s"
 				CMD
@@ -723,7 +723,7 @@ function expression::join_deseq(){
 				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					head -1 "$odir/experiments.$e.zscores" > "$deseqdir/$m/heatmap.$e.zscores"
 				CMD
-					grep -F -f "$topids" "$odir/experiments.$e.zscores" >> "$deseqdir/$m/heatmap.$e.zscores"
+					grep -Fw -f "$topids" "$odir/experiments.$e.zscores" >> "$deseqdir/$m/heatmap.$e.zscores"
 				CMD
 					heatmap.R TRUE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.$e.zscores" "Z-Score" "most differentially expressed ${feature}s"
 				CMD
@@ -731,7 +731,7 @@ function expression::join_deseq(){
 				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					head -1 "$odir/experiments.mean.$e" > "$deseqdir/$m/heatmap.mean.$e"
 				CMD
-					grep -F -f "$topids" "$odir/experiments.mean.$e" >> "$deseqdir/$m/heatmap.mean.$e"
+					grep -Fw -f "$topids" "$odir/experiments.mean.$e" >> "$deseqdir/$m/heatmap.mean.$e"
 				CMD
 					heatmap.R FALSE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.mean.$e" "${e^^}" "most differentially expressed ${feature}s"
 				CMD
@@ -739,7 +739,7 @@ function expression::join_deseq(){
 				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					head -1 "$odir/experiments.mean.$e.zscores" > "$deseqdir/$m/heatmap.mean.$e.zscores"
 				CMD
-					grep -F -f "$topids" "$odir/experiments.mean.$e.zscores" >> "$deseqdir/$m/heatmap.mean.$e.zscores"
+					grep -Fw -f "$topids" "$odir/experiments.mean.$e.zscores" >> "$deseqdir/$m/heatmap.mean.$e.zscores"
 				CMD
 					heatmap.R FALSE $width $height "$deseqdir/$m/experiments.csv" "$deseqdir/$m/heatmap.mean.$e.zscores" "Z-Score" "most differentially expressed ${feature}s"
 				CMD
