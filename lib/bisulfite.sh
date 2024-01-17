@@ -160,6 +160,7 @@ function bisulfite::segemehl(){
 			commander::printinfo "updating md5 sums"
 			thismd5segemehlbs=$(md5sum "$ctidx" | cut -d ' ' -f 1)
 			sed -i "s/md5segemehlbs=.*/md5segemehlbs=$thismd5segemehlbs/" $genome.md5.sh
+			sed -i "s/md5genome=.*/md5genome=$thismd5genome/" "$genome.md5.sh"
 		fi
 	fi
 
@@ -281,6 +282,7 @@ function bisulfite::bwa(){
 			commander::printinfo "updating md5 sums"
 			thismd5bwameth=$(md5sum "$genome.bwameth.c2t.pac" | cut -d ' ' -f 1)
 			sed -i "s/md5bwameth=.*/md5bwameth=$thismd5bwameth/" "$genome.md5.sh"
+			sed -i "s/md5genome=.*/md5genome=$thismd5genome/" "$genome.md5.sh"
 		fi
 	fi
 
@@ -343,6 +345,255 @@ function bisulfite::bwa(){
 }
 
 #todo gem: gem-mapper -p --bisulfite-mode -I c2t+g2a.fa.gem -s 1 -p -M 4 && bs_call -r genome.fa.gz -p -L5
+
+function bisulfite::rmduplicates(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[-2]} usage:
+			-S <hardskip>  | true/false return
+			-s <softskip>  | true/false only print commands
+			-k             | keep marked duplicates in bam
+			-t <threads>   | number of
+			-m <memory>    | amount of
+			-M <maxmemory> | amount of
+			-g <genome>    | mandatory
+			-r <mapper>    | array of sorted, indexed bams within array of
+			-3 <fastqUMI>  | array of
+			-c <sliceinfo> | array of
+			-o <outdir>    | path to
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome outdir remove=true tmpdir="${TMPDIR:-/tmp}"
+	declare -n _mapper_rmduplicates _bamslices_rmduplicates _umi_rmduplicates
+	while getopts 'S:s:t:m:M:g:r:3:c:o:k' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			k)	remove=false;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			r)	((++mandatory)); _mapper_rmduplicates=$OPTARG;;
+			3)	_umi_rmduplicates=$OPTARG;;
+			c)	((++mandatory)); _bamslices_rmduplicates=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
+		esac
+	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
+	[[ $mandatory -lt 6 ]] && _usage
+
+	commander::printinfo "removing duplicates"
+
+	local sinstances sthreads smemory minstances mthreads jmem jgct jcgct
+	read -r sinstances sthreads smemory jgct jcgct < <(configure::jvm -i ${#_umi_rmduplicates[@]} -T $threads -m $memory -M "$maxmemory")
+	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
+
+	local m i o e slice instances ithreads odir params1 params2 x=0 catcmd oinstances othreads
+	for m in "${_mapper_rmduplicates[@]}"; do
+		declare -n _bams_rmduplicates=$m
+		i=$(wc -l < "${_bamslices_rmduplicates[${_bams_rmduplicates[0]}]}")
+		((instances+=i*${#_bams_rmduplicates[@]}))
+		((oinstances+=${#_bams_rmduplicates[@]}))
+	done
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+	read -r oinstances othreads < <(configure::instances_by_threads -i $oinstances -t 10 -T $threads)
+
+	declare -a cmdsort
+	if [[ $_umi_rmduplicates ]]; then
+		params2='-B'
+
+		for i in "${!_umi_rmduplicates[@]}"; do
+			helper::basename -f "${_umi_rmduplicates[$i]}" -o o -e e
+			e=$(echo $e | cut -d '.' -f 1)
+			o="$tmpdir/$o.$e.gz"
+
+			helper::makecatcmd -c catcmd -f "${_umi_rmduplicates[$i]}"
+
+			commander::makecmd -a cmdsort -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
+				$catcmd "${_umi_rmduplicates[$i]}" | paste - - - -
+			CMD
+				awk -v OFS='\t' '{print $1,$(NF-2),$(NF-1),$NF}'
+			CMD
+				LC_ALL=C sort --parallel=$sthreads -S ${smemory}M -T "$tmpdir" -k1,1V
+			CMD
+				tr '\t' '\n'
+			CMD
+				helper::pgzip -t $sthreads -o "$o"
+			CMD
+			_umi_rmduplicates[$i]="$o"
+		done
+	fi
+
+	x=$(samtools view -F 4 "${_bams_rmduplicates[0]}" | head -10000 | cat <(samtools view -H "${_bams_rmduplicates[0]}") - | samtools view -c -f 1)
+	[[ $x -gt 0 ]] && params1='--paired' || params2+=' -s'
+	$remove && params2+=' -r'
+
+	declare -a tdirs tomerge cmd1 cmd2 cmd3 cmd4 cmd5
+	for m in "${_mapper_rmduplicates[@]}"; do
+		declare -n _bams_rmduplicates=$m
+		odir="$outdir/$m"
+		mkdir -p "$odir"
+
+		for i in "${!_bams_rmduplicates[@]}"; do
+			tomerge=()
+			while read -r slice; do
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rmduplicates)")
+
+				if [[ $_umi_rmduplicates ]]; then
+					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD
+						samtools sort
+							-n
+							-@ $ithreads
+							-u
+							-T "${tdirs[-1]}/$(basename "${slice%.*}")"
+							"$slice"
+					CMD
+						| samtools fixmate
+							-@ $ithreads
+							-r
+							-O SAM
+							- -
+					CMD
+						| perl -slane '
+							BEGIN{
+								open(F, "pigz -p 1 -cd \"$f\" | paste - - - - |")
+							}
+							if(/^@\S\S\s/){print; next}
+							while($l[0] ne $F[0]){
+								$l=<F>;
+								exit unless defined $l;
+								@l=split(/\t/,$l);
+								$l[0]=~s/^.//
+							}
+							print join"\t",(@F,"RX:Z:$l[1]")
+						'
+					CMD
+						-- -f="${_umi_rmduplicates[$i]}"
+					CMD
+						| samtools sort
+							-@ $ithreads
+							-O BAM
+							-T "${tdirs[-1]}/$(basename "${slice%.*}").rx"
+						> "$slice.rx";
+					CMD
+						mv "$slice.rx" "$slice";
+					CMD
+						samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
+					CMD
+
+					# misuse corrected umi group tag (default often MI as corrected barcode tag CB for dupsifter -B == --has-barcodes - searches for CB tag)
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+						umi_tools group
+							-I "$slice"
+							-S "$slice.grouped"
+							--log2stderr
+							--output-bam
+							--extract-umi-method tag
+							--umi-tag RX
+							--umi-group-tag CB
+							--temp-dir "${tdirs[-1]}"
+							--method directional
+							--edit-distance-threshold 1
+							--random-seed 12345
+							--no-sort-output
+							$params1
+					CMD
+						mv "$slice.grouped" "$slice"
+					CMD
+				fi
+
+				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
+					samtools sort
+						-@ $ithreads
+						-n
+						-O SAM
+						-T "${tdirs[-1]}/$(basename "${slice%.*}")"
+						"$slice"
+				CMD
+					perl -F'\t' -lane '
+						if(/^@\S\S\s/){print; next}
+						$F[11]="EC:Z:$F[5]\t$F[11]";
+						$F[5]=~s/[=X]/M/g;
+						print join"\t",@F
+					'
+				CMD
+					dupsifter
+						-o "/dev/stdout"
+						-O "/dev/stderr"
+						$params2
+						"$genome"
+				CMD
+					perl -F'\t' -lane '
+						if(/^@\S\S\s/){print; next}
+						$F[5]=substr($F[11],5);
+						print join"\t",@F[0..10,12..$#F]
+					'
+				CMD
+					samtools fixmate
+						-@ $ithreads
+						-r
+						-u
+						- -
+				CMD
+					samtools sort
+						-@ $ithreads
+						-O BAM
+						-T "${tdirs[-1]}/$(basename "${slice%.*}").rmdup"
+					> "$slice.rmdup"
+				CMD
+				# dupsifter handles only sam v 1.3 not extended cigar by X and =
+				# solution: replace X and = by M, store extended cigar as EC tag and afterwards sqeeze back in
+
+				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					mv "$slice.rmdup" "$slice"
+				CMD
+					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
+				CMD
+
+				tomerge+=("$slice")
+			done < "${_bamslices_rmduplicates[${_bams_rmduplicates[$i]}]}"
+
+			o="$odir/$(basename "${_bams_rmduplicates[$i]}")"
+			o="${o%.*}.rmdup.bam"
+
+			# slices have full sam header info used by merge to maintain the global sort order
+			commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD
+				samtools merge
+					-@ $othreads
+					-f
+					-c
+					-p
+					"$o"
+					$(printf '"%s" ' "${tomerge[@]}")
+			CMD
+
+			_bamslices_rmduplicates["$o"]="${_bamslices_rmduplicates[${_bams_rmduplicates[$i]}]}"
+			_bams_rmduplicates[$i]="$o"
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmdsort
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+		commander::printcmd -a cmd4
+		commander::printcmd -a cmd5
+	else
+		commander::runcmd -v -b -i $sinstances -a cmdsort
+		commander::runcmd -v -b -i $instances -a cmd1
+		commander::runcmd -c umitools -v -b -i $minstances -a cmd2
+		commander::runcmd -c dupsifter -v -b -i $instances -a cmd3
+		commander::runcmd -v -b -i $instances -a cmd4
+		commander::runcmd -v -b -i $oinstances -a cmd5
+	fi
+
+	return 0
+}
 
 function bisulfite::haarz(){
 	bisulfite::mecall "$@"
