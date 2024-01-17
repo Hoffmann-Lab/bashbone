@@ -1403,13 +1403,13 @@ function peaks::genrich(){
 
 	local params
 	# f=200
-	# for single sample ATAC, -a 0 does not filter for AUC and results are pretty much comparable with macs peaks when -d f/2 -g f/4
+	# for single sample ATAC, -a 50 or -a 0 (turns off filter for AUC) results are pretty much comparable with macs peaks when -d f/2 -g f/4
 	# for ATAC relicates, -a set to -d (f/2) outcome is close to intersection of single runs with auc filter turned off (-a 0)
 	# todo in case of RIP-seq prevent downsampling if #secondaries exceed 10 by manipulating sam? test it!
 	if $pairwise || [[ ${#_tidx_genrich[@]} -eq 1 ]]; then
 		if $ripseq; then
 			params="-l 50 -j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))"
-			params+=' -a 0'
+			params+=' -a 50'
 		else
 			$broad && params="-l 150 -g $((fragmentsize/2*4))" || params="-l 50 -g $((fragmentsize/2))"
 			$pointy && params+=' -a 200' || params+=' -a 100'
