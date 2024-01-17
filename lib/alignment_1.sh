@@ -105,6 +105,7 @@ function alignment::segemehl(){
 			commander::printinfo "updating md5 sums"
 			thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
 			sed -i "s/md5segemehl=.*/md5segemehl=$thismd5segemehl/" "$genome.md5.sh"
+			sed -i "s/md5genome=.*/md5genome=$thismd5genome/" "$genome.md5.sh"
 		fi
 	fi
 
@@ -305,6 +306,8 @@ function alignment::star(){
 			commander::printinfo "updating md5 sums"
 			thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
 			sed -i "s/md5star=.*/md5star=$thismd5star/" "$genome.md5.sh"
+			sed -i "s/md5genome=.*/md5genome=$thismd5genome/" "$genome.md5.sh"
+			[[ -s "$gtf" ]] && sed -i "s/md5gtf=.*/md5gtf=$thismd5gtf/" "$genome.md5.sh"
 		fi
 	fi
 
@@ -320,7 +323,7 @@ function alignment::star(){
 		[[ $extractcmd != "cat" ]] && params+=" --readFilesCommand '$extractcmd'"
 
 		if [[ ${_fq2_star[$i]} ]]; then
-			$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999' || params+=" --alignMatesGapMax $insertsize --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
+			$nosplitaln && params+=" --alignMatesGapMax $insertsize --alignIntronMax 1  --alignSJDBoverhangMin 999999" || params+=" --alignMatesGapMax $insertsize --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				STAR
 				--runMode alignReads
@@ -496,6 +499,7 @@ function alignment::bwa(){
 			commander::printinfo "updating md5 sums"
 			thismd5bwa=$(md5sum "$idxprefix.pac" | cut -d ' ' -f 1)
 			sed -i "s/md5bwa=.*/md5bwa=$thismd5bwa/" "$genome.md5.sh"
+			sed -i "s/md5genome=.*/md5genome=$thismd5genome/" "$genome.md5.sh"
 		fi
 	fi
 
