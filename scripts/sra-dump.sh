@@ -128,15 +128,9 @@ else
 		} || {
 			i="${#srr[@]}"
 			mapfile -t mapdata < <(esearch -db sra -query "$id" | efetch -format xml | grep .)
-
-			# srr+=($(printf '%s\n' "${mapdata[@]}" | sed -nE 's/^\s*<RUN\s.*accession="([SED]RR[^"]+)".*/\1/p' | sort -Vu))
-			# n="$({ printf '%s\n' "${mapdata[@]}" | grep -oE 'sample_(title|name)="[^"]+' || echo "NA"; } | sort -Vr | head -1 | cut -d '"' -f 2)"
-			# meta="$(printf '%s\n' "${mapdata[@]}" | grep '<SAMPLE_ATTRIBUTE>' -A 2 | grep '<TAG>' -A 1 | grep -vx -- '--' | sed -nE 's/^\s*<([^>]+>)(.+)<\/\1/\2/p' | paste - - | awk -F '\t' '{gsub(/\s+/,"_",$1); print $1"=\""$2"\";"}' | sed ':a;N;$!ba; s/\n/ /g')"
-			# printf "$id\t%s\t$n\tsample_name=\"$n;\" $meta\n" "${srr[@]:$i}" | tee -a "$outfile" >&2
-
-			mapfile -t mapdata < <(join <(printf '%s\n' "${mapdata[@]}" | xtract -pattern EXPERIMENT_PACKAGE -element RUN@accession,EXPERIMENT/TITLE,Member@sample_name,Member@sample_title | sed -E ':a;s/([^\t]+)\t\1/\1/;ta' | awk -F '\t' '{if($4){$3=$4}; print $1"\tsample_name=\""$3"\";\tsample_title=\""$2"\";"}') <(printf '%s\n' "${mapdata[@]}" | xtract -pattern EXPERIMENT_PACKAGE -element RUN@accession,SAMPLE_ATTRIBUTE/TAG,SAMPLE_ATTRIBUTE/VALUE | perl -F'\t' -lane '$F[$_].="=\"$F[$_+$#F/2]\";" for 1..$#F/2; print join"\t",@F[0..$#F/2]'))
+			mapfile -t mapdata < <(join -t $'\t' <(printf '%s\n' "${mapdata[@]}" | xtract -pattern EXPERIMENT_PACKAGE -element RUN@accession,EXPERIMENT/TITLE,Member@sample_name,Member@sample_title | sed -E ':a;s/([^\t]+)\t\1/\1/;ta' | awk -F '\t' '{if($4){$3=$4}; print $1"\tsample_name=\""$3"\";\tsample_title=\""$2"\";"}') <(printf '%s\n' "${mapdata[@]}" | xtract -pattern EXPERIMENT_PACKAGE -element RUN@accession,SAMPLE_ATTRIBUTE/TAG,SAMPLE_ATTRIBUTE/VALUE | perl -F'\t' -lane 'for (1..$#F/2){$F[$_]=~s/\s+/_/g; $F[$_].="=\"$F[$_+$#F/2]\";"} print join"\t",@F[0..$#F/2]'))
 			srr+=($(printf '%s\n' "${mapdata[@]}" | cut -f 1))
-			printf '%s\n' "${mapdata[@]}" | sed "s/^/$id /" | tee -a "$outfile" >&2
+			printf '%s\n' "${mapdata[@]}" | sed "s/^/$id\t/" | tee -a "$outfile" >&2
 		}
 	done
 	$nodownload && exit 0
