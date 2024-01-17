@@ -1,6 +1,240 @@
 #! /usr/bin/env bash
 # (c) Konstantin Riege
 
+function quantify::salmon(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[-2]} quantifies pre-processed read data in fastq(.gz) format utilizing the quasi-mapping software salmon
+
+			-S <hardskip>     | optional. default: false
+			                  | [true|false] do nothing and return
+			-s <softskip>     | optional. default: false
+			                  | [true|false] do nothing but check for files and print commands
+			-5 <skip>         | optional, default: false
+			                  | [true|false] skip md5sum check, indexing respectively
+			-t <threads>      | mandatory
+			                  | number of threads
+			-c <mapper>       | mandatory
+			                  | array of array names which contain counts paths. salmon will be added.
+			                  | mapper+=(salmon); salmon=(/outdir/salmon/1.counts /outdir/salmon/2.counts ..)
+			-r <reference>    | mandatory
+			                  | path to reference in fasta format
+			-g <gtf>          | mandatory unless reference is transcriptomic
+			                  | path to annotation in gtf format
+			-f <feature>      | optional. default: gene
+			                  | feature for which counts should be summed up. gtf needs <feature>_id tag
+			-i <transcripts>  | optional. default: false
+			                  | [true|false] reference is transcriptomic
+			                  |   true:  transcript extraction prior to indexing not necessary
+			                  |   false: requires gtf
+			-x <genomeidxdir> | mandatory
+			                  | path to salmon or salmonTE genome index
+			-o <outdir>       | mandatory
+			                  | path to output directory. subdirectory salmon will be created
+			-1 <fastq1>       | mandatory
+			                  | array which contains single or first mate fastq(.gz) paths
+			-2 <fastq2>       | optional
+			                  | array which contains mate pair fastq(.gz) paths
+			-F                | optional
+			                  | force indexing even if md5sums match. ignored upon -5
+			-P <parameter>    | optional
+			                  | additional salmonTE parameter
+		EOF
+		return 1
+	}
+
+	# default regex for ensembl trascript fasta
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir forceidx=false inparams feature=gene tmpdir="${TMPDIR:-/tmp}" transcriptome=false
+	declare -n _fq1_salmon _fq2_salmon _mapper_salmon
+	declare -g -a salmon=()
+	while getopts 'S:s:5:t:c:g:x:o:1:2:f:r:P:i:Fh' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			5)	$OPTARG && skipmd5=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			c)	((++mandatory))
+				_mapper_salmon=$OPTARG
+				_mapper_salmon+=(salmon)
+			;;
+			r)	((++mandatory)); genome="$OPTARG";;
+			g)	gtf="$OPTARG";;
+			x)	((++mandatory)); genomeidxdir="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG/salmon"; mkdir -p "$outdir";;
+			1)	((++mandatory)); _fq1_salmon=$OPTARG;;
+			2)	_fq2_salmon=$OPTARG;;
+			f)	feature="$OPTARG";;
+			i)	transcriptome="$OPTARG";;
+			P)	inparams="$OPTARG";;
+			F)	forceidx=true;;
+			h)	{ _usage || return 0; };;
+			*)	_usage;;
+		esac
+	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
+	[[ $mandatory -lt 5 ]] && _usage
+	$transcriptome || [[ $gtf ]] || _usage
+
+	commander::printinfo "quantifying reads by salmon through salmon TE"
+
+	if $skipmd5; then
+		commander::warn "skip checking md5 sums and genome indexing respectively"
+	else
+		commander::printinfo "checking md5 sums"
+		[[ ! -s "$genome.md5.sh" ]] && cp "$BASHBONE_DIR/lib/md5.sh" "$genome.md5.sh"
+		source "$genome.md5.sh"
+
+		local doindex=$forceidx idxparams thismd5genome thismd5salmon thismd5gtf
+		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
+		[[ -s "$genomeidxdir/seq.bin" ]] && thismd5salmon=$(md5sum "$genomeidxdir/seq.bin" | cut -d ' ' -f 1)
+		if ! $transcriptome; then
+			thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1) && [[ "$thismd5gtf" != "$md5gtf" ]] && doindex=true
+		fi
+		if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5salmon" || "$thismd5salmon" != "$md5salmon" || "$thismd5gtf" != "$md5gtf" ]]; then
+			doindex=true
+		fi
+
+		if $doindex; then
+			mkdir -p "$genomeidxdir"
+			declare -a cmdidx
+
+			if $transcriptome; then
+				commander::printinfo "indexing reference for salmon"
+
+				commander::makecmd -a cmdidx -s ' ' -c {COMMANDER[0]}<<- CMD
+					salmon index -t "$genome" -i "$genomeidxdir" -p $threads
+				CMD
+			else
+				commander::printinfo "extracting and indexing transcriptome for salmon"
+
+				# use much faster decoy index
+				# https://combine-lab.github.io/alevin-tutorial/2019/selective-alignment/
+				# and create clades to satisfy salmonTE
+				commander::makecmd -a cmdidx -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					genome2transcriptome.pl -v -f "$genome" -g "$gtf" -o "$genomeidxdir";
+				CMD
+					perl -F'\t' -slane '
+						BEGIN{print "name,class,clade"}
+						next unless $F[2] eq "gene";
+						$F[-1]=~/${f}_id "([^"]+)/;
+						print "$F[0],$1,$f"
+					'
+				CMD
+					-- -f=$feature "$genomeidxdir/transcriptome.gtf" > "$genomeidxdir/clades.csv";
+				CMD
+					samtools faidx --fai-idx /dev/stdout "$genome" | cut -f 1 > "$genomeidxdir/decoys.txt";
+					cat "$genomeidxdir/transcriptome.gtf" "$gtf" > "$genomeidxdir/transcriptgenome.gtf";
+					cat "$genomeidxdir/transcriptome.fa" "$genome" > "$genomeidxdir/transcriptgenome.fa";
+					salmon index -t "$genomeidxdir/transcriptgenome.fa" -d "$genomeidxdir/decoys.txt" -i "$genomeidxdir" -p $threads
+				CMD
+			fi
+
+			commander::runcmd -c salmon -v -b -i 1 -a cmdidx
+			commander::printinfo "updating md5 sums"
+			thismd5salmon=$(md5sum "$genomeidxdir/seq.bin" | cut -d ' ' -f 1)
+			sed -i "s/md5salmon=.*/md5salmon=$thismd5salmon/" "$genome.md5.sh"
+			sed -i "s/md5genome=.*/md5genome=$thismd5genome/" "$genome.md5.sh"
+			$transcriptome || sed -i "s/md5gtf=.*/md5gtf=$thismd5gtf/" "$genome.md5.sh"
+		fi
+	fi
+
+	declare -a tdirs cmd1 cmd2
+	local params="$inparams"
+	if [[ -e "$(dirname "$(which SalmonTE.py)")/reference/$(basename "$genomeidxdir")" ]]; then
+		params+=" --reference='$(basename "$genomeidxdir")'"
+	else
+		tdirs+=("$(mktemp -d -p "$(dirname "$(which SalmonTE.py)")/reference/" "$(basename "$genomeidxdir").XXXXXXXXXX")")
+		ln -sfn "$(realpath -s "$genomeidxdir")/"* "${tdirs[0]}"
+		params+=" --reference='$(basename "${tdirs[0]}")'"
+	fi
+
+	local o b e params
+	for i in "${!_fq1_salmon[@]}"; do
+		helper::basename -f "${_fq1_salmon[$i]}" -o b -e e
+		o="$(realpath -s "$outdir/$b.${feature}counts")"
+		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.salmon)")
+
+		if [[ ${_fq2_salmon[$i]} ]]; then
+			# --useVBOpt is default in recent version, installed by bashbone compile
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+				cd "${tdirs[-1]}";
+				ln -s "$(realpath -se "${_fq1_salmon[$i]}")" sample_R1.fastq.gz;
+				ln -s "$(realpath -se "${_fq2_salmon[$i]}")" sample_R2.fastq.gz
+			CMD
+				SalmonTE.py quant
+					$params
+					--outpath="${tdirs[-1]}"
+					--num_threads=$threads
+					--exprtype=count
+					sample_R1.fastq.gz
+					sample_R2.fastq.gz
+			CMD
+				sed "s/sample/$b/" MAPPING_INFO.csv
+			CMD
+				cat "sample/quant.sf" | tee >(awk -F '\\t' 'NR>1{printf "%s\\t%0.f\n",\$1,\$NF}' | helper::sort -t $threads -k1,1 > "$o.htsc") > "$o"
+			CMD
+			# sample/quant.sf is default salmon output. ./EXPR.csv is a joined csv count matrix from salmonTE in case of multiple inputs...
+			# if salmonTE reference is used as input, salmonTE can be further used to test for differential TE expression on consensus family level
+			# (..which is an outdated method. see: 10.1093/bib/bbab417)
+			# therefore, join all jounts (similar to experiments.htsc) into a file called EXPR.csv with header TE,sample1,sample2,..
+		else
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+				cd "${tdirs[-1]}";
+				ln -s "$(realpath -se "${_fq1_salmon[$i]}")" sample.fastq.gz
+			CMD
+				SalmonTE.py quant
+					$params
+					--outpath="${tdirs[-1]}"
+					--num_threads=$threads
+					--exprtype=count
+					sample.fastq.gz
+			CMD
+				sed "s/sample/$b/" MAPPING_INFO.csv
+			CMD
+				cat "sample/quant.sf" | tee >(awk -F '\\t' 'NR>1{printf "%s\\\t%0.f\n",\$1,\$NF}' | helper::sort -t $threads -k1,1 > "$o.htsc") > "$o"
+			CMD
+		fi
+
+		salmon+=("$o")
+
+		if [[ $gtf ]]; then
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				perl -F'\t' -slane '
+					BEGIN{
+						open F,"<$g" or die $!;
+						while(<F>){
+							chomp;
+							@F=split/\t/;
+							next if exists $m{$F[0]};
+							if ($F[-1]=~/${f}_id "([^"]+)/){
+								$m{$F[0]}=$1;
+							}
+						}
+						close F;
+					}
+					next if $.==1;
+					$c{$m{$F[0]}}+=$F[-1];
+					END{
+						printf "%s\t%0.f\n",$_,$c{$_} for keys %c;
+					}
+				'
+			CMD
+				-- -g="$gtf" -f="$feature" "${tdirs[-1]}/sample/quant.sf" | helper::sort -t $threads -k1,1 > "$o.htsc";
+			CMD
+		fi
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+	else
+		commander::runcmd -c salmon -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+	fi
+
+	return 0
+}
+
 function quantify::featurecounts(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
@@ -13,31 +247,33 @@ function quantify::featurecounts(){
 			-g <gtf>        | path to
 			-l <level>      | feature (default: exon)
 			-f <feature>    | feature (default: gene, needs <feature>_id tag)
+			-i <transcripts>| true/false input is transcriptomic i.e. count fractional by transcript_id tag in gtf and sum up per feature
 			-o <outdir>     | path to
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" gtf level="exon" feature="gene"
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" gtf level="exon" feature="gene" transcriptome=false
 	declare -n _mapper_featurecounts _strandness_featurecounts
-	while getopts 'S:s:t:r:x:g:l:f:o:' arg; do
+	while getopts 'S:s:t:r:x:g:l:f:o:i:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			r) ((++mandatory)); _mapper_featurecounts=$OPTARG;;
-			x) ((++mandatory)); _strandness_featurecounts=$OPTARG;;
-			g) ((++mandatory)); gtf="$OPTARG";;
-			l) level=$OPTARG;;
-			f) feature=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			*) _usage;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_featurecounts=$OPTARG;;
+			x)	((++mandatory)); _strandness_featurecounts=$OPTARG;;
+			g)	((++mandatory)); gtf="$OPTARG";;
+			l)	level=$OPTARG;;
+			f)	feature=$OPTARG;;
+			i)	transcriptome=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			*)	_usage;;
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
-	commander::printinfo "quantifying reads"
+	commander::printinfo "quantifying reads by featureCounts"
 
 	# featurecounts cannot handle more than 64 threads
 	declare -n _bams_featurecounts="${_mapper_featurecounts[0]}"
@@ -50,7 +286,7 @@ function quantify::featurecounts(){
 	local version=$(commander::runcmd -c subread -a cmdchk)
 	[[ "$(echo -e "v2.0.1\n$version" | sort -Vr | head -1)" == "v2.0.1" ]] && version=" " || version="--countReadPairs "
 
-	declare -a tdirs cmd1
+	declare -a tdirs cmd1 cmd2
 	local m f o params x
 	for m in "${_mapper_featurecounts[@]}"; do
 		declare -n _bams_featurecounts=$m
@@ -62,38 +298,88 @@ function quantify::featurecounts(){
 			# infer SE or PE
 			params=''
 			x=$(samtools view -F 4 "$f" | head -10000 | cat <(samtools view -H "$f") - | samtools view -c -f 1)
-			[[ $x -gt 0 ]] && params+="-p $version"
-			[[ "$feature" == "$level" ]] && params+='-f -O '
+			[[ $x -gt 0 ]] && params+="-p $version "
+			if $transcriptome; then
+				# mimics salmon fraction count
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					featureCounts
+						$params
+						-Q 0
+						--minOverlap 10
+						--maxMOp 999
+						-s ${_strandness_featurecounts["$f"]}
+						-T $ithreads
+						-t $level
+						-g transcript_id
+						--fraction
+						-M
+						--ignoreDup
+						--tmpDir "${tdirs[-1]}"
+						-a "$gtf"
+						-o "$o"
+						"$f"
+				CMD
 
-			# use -M and --ignoreDup to count also multi-mappings and dulpicates ie. everythin given from bam
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				featureCounts
-					$params
-					-Q 0
-					--minOverlap 10
-					--maxMOp 999
-					-s ${_strandness_featurecounts["$f"]}
-					-T $ithreads
-					-t $level
-					-g ${feature}_id
-					-M
-					--ignoreDup
-					--tmpDir "${tdirs[-1]}"
-					-a "$gtf"
-					-o "$o"
-					"$f"
-			CMD
-				awk 'NR>2{
-					print \$1"\t"\$NF
-				}' $o > $o.htsc
-			CMD
+				commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+					perl -F'\t' -slane '
+						BEGIN{
+							open F,"<$g" or die $!;
+							while(<F>){
+								chomp;
+								@F=split/\t/;
+								next if exists $m{$F[0]};
+								if ($F[-1]=~/${f}_id "([^"]+)/){
+									$m{$F[0]}=$1;
+								}
+							}
+							close F;
+						}
+						next if $.<3;
+						$c{$m{$F[0]}}+=$F[-1];
+						END{
+							printf "%s\t%0.f\n",$_,$c{$_} for keys %c;
+						}
+					'
+				CMD
+					-- -g="$gtf" -f="$feature" "$o" | helper::sort -t $threads -k1,1 > "$o.htsc";
+				CMD
+			else
+				[[ "$feature" == "$level" ]] && params+='-f -O '
+
+				# use -M and --ignoreDup to count also multi-mappings and dulpicates ie. everythin given from bam
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					featureCounts
+						$params
+						-Q 0
+						--minOverlap 10
+						--maxMOp 999
+						-s ${_strandness_featurecounts["$f"]}
+						-T $ithreads
+						-t $level
+						-g ${feature}_id
+						-M
+						--ignoreDup
+						--tmpDir "${tdirs[-1]}"
+						-a "$gtf"
+						-o "$o"
+						"$f"
+				CMD
+
+				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+					awk 'NR>2{
+						print \$1"\t"\$NF
+					}' "$o" | helper::sort -t $threads -k1,1 > "$o.htsc"
+				CMD
+			fi
 		done
 	done
 
 	if $skip; then
 		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
 	else
 		commander::runcmd -c subread -v -b -i $instances -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0
