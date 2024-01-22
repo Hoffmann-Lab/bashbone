@@ -506,13 +506,19 @@ function bisulfite::rmduplicates(){
 					CMD
 				fi
 
-				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
+				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD' {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD
 					samtools sort
 						-@ $ithreads
 						-n
-						-O SAM
+						-u
 						-T "${tdirs[-1]}/$(basename "${slice%.*}")"
 						"$slice"
+				CMD
+					samtools fixmate
+						-@ $ithreads
+						-r
+						-O SAM
+						- -
 				CMD
 					perl -F'\t' -lane '
 						if(/^@\S\S\s/){print; next}
