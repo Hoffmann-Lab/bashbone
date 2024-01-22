@@ -14,6 +14,8 @@ function quantify::salmon(){
 			                  | [true|false] skip md5sum check, indexing respectively
 			-t <threads>      | mandatory
 			                  | number of threads
+			-M <maxmemory>    | optional. default: all available
+			                  | amount of memory to allocate
 			-c <mapper>       | mandatory
 			                  | array of array names which contain counts paths. salmon will be added.
 			                  | mapper+=(salmon); salmon=(/outdir/salmon/1.counts /outdir/salmon/2.counts ..)
@@ -44,10 +46,10 @@ function quantify::salmon(){
 	}
 
 	# default regex for ensembl trascript fasta
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir forceidx=false inparams feature=gene tmpdir="${TMPDIR:-/tmp}" transcriptome=false
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir forceidx=false inparams feature=gene tmpdir="${TMPDIR:-/tmp}" transcriptome=false maxmemory
 	declare -n _fq1_salmon _fq2_salmon _mapper_salmon
 	declare -g -a salmon=()
-	while getopts 'S:s:5:t:c:g:x:o:1:2:f:r:P:i:Fh' arg; do
+	while getopts 'S:s:5:t:c:g:x:o:1:2:f:r:M:P:i:Fh' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -65,6 +67,7 @@ function quantify::salmon(){
 			2)	_fq2_salmon=$OPTARG;;
 			f)	feature="$OPTARG";;
 			i)	transcriptome="$OPTARG";;
+			M)	maxmemory=$OPTARG;;
 			P)	inparams="$OPTARG";;
 			F)	forceidx=true;;
 			h)	{ _usage || return 0; };;
@@ -74,6 +77,10 @@ function quantify::salmon(){
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 	$transcriptome || [[ $gtf ]] || _usage
+
+	local imemory instances=${#_fq1_salmon[@]}
+	read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
+	local ithreads=$((threads/instances))
 
 	commander::printinfo "quantifying reads by salmon through salmon TE"
 
@@ -171,7 +178,7 @@ function quantify::salmon(){
 			CMD
 				sed "s/sample/$b/" MAPPING_INFO.csv
 			CMD
-				cat "sample/quant.sf" | tee >(awk -F '\\t' 'NR>1{printf "%s\\t%0.f\n",\$1,\$NF}' | helper::sort -t $threads -k1,1 > "$o.htsc") > "$o"
+				cat "sample/quant.sf" | tee >(awk -F '\\t' 'NR>1{printf "%s\\t%0.f\n",\$1,\$NF}' | helper::sort -t $threads -M "$maxmemory" -k1,1 > "$o.htsc") > "$o"
 			CMD
 			# sample/quant.sf is default salmon output. ./EXPR.csv is a joined csv count matrix from salmonTE in case of multiple inputs...
 			# if salmonTE reference is used as input, salmonTE can be further used to test for differential TE expression on consensus family level
@@ -191,7 +198,7 @@ function quantify::salmon(){
 			CMD
 				sed "s/sample/$b/" MAPPING_INFO.csv
 			CMD
-				cat "sample/quant.sf" | tee >(awk -F '\\t' 'NR>1{printf "%s\\\t%0.f\n",\$1,\$NF}' | helper::sort -t $threads -k1,1 > "$o.htsc") > "$o"
+				cat "sample/quant.sf" | tee >(awk -F '\\t' 'NR>1{printf "%s\\\t%0.f\n",\$1,\$NF}' | helper::sort -t $threads -M "$maxmemory" -k1,1 > "$o.htsc") > "$o"
 			CMD
 		fi
 
@@ -219,7 +226,7 @@ function quantify::salmon(){
 					}
 				'
 			CMD
-				-- -g="$gtf" -f="$feature" "${tdirs[-1]}/sample/quant.sf" | helper::sort -t $threads -k1,1 > "$o.htsc";
+				-- -g="$gtf" -f="$feature" "${tdirs[-1]}/sample/quant.sf" | helper::sort -t $ithreads -M $imemory -k1,1 > "$o.htsc";
 			CMD
 		fi
 	done
@@ -242,6 +249,7 @@ function quantify::featurecounts(){
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
+			-M <maxmemory>  | amount of
 			-r <mapper>     | array of bams within array of
 			-x <strandness> | hash per bam of
 			-g <gtf>        | path to
@@ -253,9 +261,9 @@ function quantify::featurecounts(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" gtf level="exon" feature="gene" transcriptome=false
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" gtf level="exon" feature="gene" transcriptome=false maxmemory
 	declare -n _mapper_featurecounts _strandness_featurecounts
-	while getopts 'S:s:t:r:x:g:l:f:o:i:' arg; do
+	while getopts 'S:s:t:r:x:g:l:f:o:i:M:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -264,6 +272,7 @@ function quantify::featurecounts(){
 			x)	((++mandatory)); _strandness_featurecounts=$OPTARG;;
 			g)	((++mandatory)); gtf="$OPTARG";;
 			l)	level=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			f)	feature=$OPTARG;;
 			i)	transcriptome=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
@@ -277,7 +286,9 @@ function quantify::featurecounts(){
 
 	# featurecounts cannot handle more than 64 threads
 	declare -n _bams_featurecounts="${_mapper_featurecounts[0]}"
-	local instances ithreads i=$((${#_mapper_featurecounts[@]}*${#_bams_featurecounts[@]}))
+	local instances ithreads imemory i=$((${#_mapper_featurecounts[@]}*${#_bams_featurecounts[@]}))
+	read -r instances imemory < <(configure::memory_by_instances -i $i -t $threads -M "$maxmemory")
+	local ithreads2=$((threads/instances))
 	read -r instances ithreads < <(configure::instances_by_threads -i $i -t 64 -T $threads)
 	[[ $instances -lt $i && $ithreads -gt 64 ]] && ((++instances)) && ithreads=$((threads/instances))
 	[[ $ithreads -gt 64 ]] && ithreads=64
@@ -341,7 +352,7 @@ function quantify::featurecounts(){
 						}
 					'
 				CMD
-					-- -g="$gtf" -f="$feature" "$o" | helper::sort -t $threads -k1,1 > "$o.htsc";
+					-- -g="$gtf" -f="$feature" "$o" | helper::sort -t $ithreads2 -M $imemory -k1,1 > "$o.htsc";
 				CMD
 			else
 				[[ "$feature" == "$level" ]] && params+='-f -O '
@@ -368,7 +379,7 @@ function quantify::featurecounts(){
 				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
 					awk 'NR>2{
 						print \$1"\t"\$NF
-					}' "$o" | helper::sort -t $threads -k1,1 > "$o.htsc"
+					}' "$o" | helper::sort -t $ithreads2 -M $imemory -k1,1 > "$o.htsc"
 				CMD
 			fi
 		done
@@ -599,7 +610,7 @@ function quantify::bamcoverage(){
 				CMD
 					sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}'
 				CMD
-					helper::sort -t $threads -k1,1 > "${tdirs[-1]}/chr.sizes"
+					helper::sort -t $threads -M "$maxmemory" -k1,1 > "${tdirs[-1]}/chr.sizes"
 				CMD
 
 				if [[ ${_nidx_bam2bedg[$i]} ]]; then
@@ -769,14 +780,14 @@ function quantify::bamcoverage(){
 
 				if [[ $bed ]]; then
 					commander::makecmd -a cmd1 -s ' ' -o "${tdirs[-1]}/regions.saf" -c {COMMANDER[0]}<<- CMD {COMMANDER[2]}<<- 'CMD'
-						samtools view -H "$f" | sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}' | helper::sort -t $threads -k1,1 > "${tdirs[-1]}/chr.sizes";
-						helper::sort -f "$bed" -t $threads -k1,1 -k2,2n -k3,3n | awk -v i=$index -v OFS='\t'
+						samtools view -H "$f" | sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}' | helper::sort -t $threads -M "$maxmemory" -k1,1 > "${tdirs[-1]}/chr.sizes";
+						helper::sort -f "$bed" -t $threads -M "$maxmemory" -k1,1 -k2,2n -k3,3n | awk -v i=$index -v OFS='\t'
 					CMD
 						'BEGIN{i=i==1?0:1}{id=$1":"$2"-"$3; if($4){id=$4}; s="."; if($6){s=$6}; print id,$1,$2+i,$3,".",".",s}'
 					CMD
 				else
 					commander::makecmd -a cmd1 -s '|' -o "${tdirs[-1]}/regions.saf" -c {COMMANDER[0]}<<- CMD {COMMANDER[2]}<<- 'CMD'
-						samtools view -H "$f" | sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}' | helper::sort -t $threads -k1,1 > "${tdirs[-1]}/chr.sizes";
+						samtools view -H "$f" | sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}' | helper::sort -t $threads -M "$maxmemory" -k1,1 > "${tdirs[-1]}/chr.sizes";
 						bedtools makewindows -w $windowsize -g "${tdirs[-1]}/chr.sizes"
 					CMD
 						awk -v OFS='\t' '{id=$1":"$2"-"$3; print id,$1,$2+1,$3,".",".","."}'
@@ -837,7 +848,7 @@ function quantify::bamcoverage(){
 				# CMD
 				# 	sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}'
 				# CMD
-				# 	helper::sort -t $threads -k1,1 > "${tdirs[-1]}/chr.sizes"
+				# 	helper::sort -t $threads -M "$maxmemory" -k1,1 > "${tdirs[-1]}/chr.sizes"
 				# CMD
 
 				[[ $fragmentsize ]] && params="--extendReads $fragmentsize" || params=''
@@ -927,27 +938,30 @@ function quantify::profiles(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" gtf bed bwdir pearson=false
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" gtf bed bwdir pearson=false maxmemory
 	declare -n _mapper_profiles _strandness_profiles
-	while getopts 'S:s:t:r:g:b:c:o:p' arg; do
+	while getopts 'S:s:t:r:g:b:c:o:M:p' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			r) ((++mandatory)); _mapper_profiles=$OPTARG;;
-			g) gtf="$OPTARG";;
-			b) bed="$OPTARG";;
-			c) ((++mandatory)); bwdir="$OPTARG";;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p) pearson=true;;
-			*) _usage;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_profiles=$OPTARG;;
+			g)	gtf="$OPTARG";;
+			b)	bed="$OPTARG";;
+			M)	maxmemory=$OPTARG;;
+			c)	((++mandatory)); bwdir="$OPTARG";;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			p)	pearson=true;;
+			*)	_usage;;
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
 	declare -a tdirs cmd1 cmd2 cmd3 coverages pileups toprofile
-	local m f b e odir
+	local m f b e odir imemory instances="${#_mapper_profiles[@]}"
+	read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
+	local ithreads=$((threads/instances))
 
 	for m in "${_mapper_profiles[@]}"; do
 		declare -n _bams_profiles=$m
@@ -982,7 +996,7 @@ function quantify::profiles(){
 					print join"\t",($F[0],$F[3]-1,$F[4],$t,0,$F[6])
 				'
 			CMD
-				helper::sort -t $threads -k1,1 -k2,2n -k3,3n > "$odir/transcripts.bed"
+				helper::sort -t $ithreads -M "$imemory" -k1,1 -k2,2n -k3,3n > "$odir/transcripts.bed"
 			CMD
 
 			toprofile+=("$odir/transcripts.bed")

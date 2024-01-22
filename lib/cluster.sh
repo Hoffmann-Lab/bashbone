@@ -38,7 +38,7 @@ function cluster::coexpression_deseq(){
 			b)	biotype="$OPTARG";;
 			g)	gtf="$OPTARG";;
 			t)	((++mandatory)); threads=$OPTARG;;
-			M)	((++mandatory)); maxmemory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			c)	_cmpfiles_coexpression=$OPTARG;;
 			r)	((++mandatory)); _mapper_coexpression=$OPTARG;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
@@ -51,8 +51,10 @@ function cluster::coexpression_deseq(){
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
 	[[ $biotype && ! $gtf ]] && _usage
+	local instances=$((${#_mapper_coexpression[@]}*2)) imemory
+	read -r instances imemory < <(configure::memory_by_instances -i $instances -M "$maxmemory")
 
 	declare -p _idfiles_coexpression | grep -q '=' || {
 		unset _idfiles_coexpression
@@ -153,7 +155,7 @@ function cluster::coexpression_deseq(){
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 				ulimit -s $(ulimit -Hs)
 			CMD
-				wgcna.R $((maxmemory/1024/2)) $params "$odir/experiments.filtered.$e" "$odir/$e" $([[ $deseqdir ]] && echo "'$ddir/experiments.csv'")
+				wgcna.R $((imemory/1024)) $params "$odir/experiments.filtered.$e" "$odir/$e" $([[ $deseqdir ]] && echo "'$ddir/experiments.csv'")
 			CMD
 		done
 	done
@@ -161,7 +163,7 @@ function cluster::coexpression_deseq(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd1
 	fi
 
 	declare -a cmd2
@@ -278,7 +280,7 @@ function cluster::coexpression(){
 			b)	biotype="$OPTARG";;
 			g)	gtf="$OPTARG";;
 			t)	((++mandatory)); threads=$OPTARG;;
-			M)	((++mandatory)); maxmemory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			r)	((++mandatory)); _mapper_coexpression=$OPTARG;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
@@ -288,8 +290,10 @@ function cluster::coexpression(){
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 5 ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage && return 1
 	[[ $biotype && ! $gtf ]] && _usage && return 1
+	local instances=$((${#_mapper_coexpression[@]}*2)) imemory
+	read -r instances imemory < <(configure::memory_by_instances -i $instances -M "$maxmemory")
 
 	declare -p _idfiles_coexpression | grep -q '=' || {
 		unset _idfiles_coexpression
@@ -412,7 +416,7 @@ function cluster::coexpression(){
 			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 				ulimit -s $(ulimit -Hs)
 			CMD
-				wgcna.R $((maxmemory/1024/2)) $params "$odir/experiments.filtered.$e" "$odir/$e"
+				wgcna.R $((imemory/1024)) $params "$odir/experiments.filtered.$e" "$odir/$e"
 			CMD
 		done
 	done
@@ -420,7 +424,7 @@ function cluster::coexpression(){
 	if $skip; then
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $instances -a cmd3
 	fi
 
 	declare -a cmd4

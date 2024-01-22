@@ -634,6 +634,8 @@ function alignment::postprocess(){
 			                 | mapper=(segemehl star); [segemehl|star]=(/outdir/[segemehl|star]/1.[unique|sorted].bam /outdir/[segemehl|star]/2.[unique|sorted].bam ..);
 			-o <outdir>      | mandatory
 			                 | path to output directory. subdirectories will be created according to array of array names (see -r)
+			-M <maxmemory>   | optional. default: all available
+			                 | amount of memory to allocate
 			-P <parameter>   | optional
 			                 | additional samtools [view|sort|index] parameter
 
@@ -655,15 +657,16 @@ function alignment::postprocess(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir job tmpdir="${TMPDIR:-/tmp}" inparams misc
+	local OPTIND arg mandatory skip=false threads outdir job tmpdir="${TMPDIR:-/tmp}" inparams misc maxmemory
 	declare -n _mapper_process
-	while getopts 'S:s:t:j:f:r:o:P:h' arg; do
+	while getopts 'S:s:t:j:f:r:o:M:P:h' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			j)	((++mandatory)); job=${OPTARG,,*};;
 			f)	misc="$OPTARG";;
+			M)	maxmemory=$OPTARG;;
 			r)	((++mandatory)); _mapper_process=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			P)	inparams="$OPTARG";;
@@ -676,8 +679,9 @@ function alignment::postprocess(){
 	[[ "$job" == "exclude" && ! $misc ]] && BASHBONE_ERROR="blacklist file missing" && _usage
 
 	declare -n _bams_process="${_mapper_process[0]}"
-	local ithreads instances=$((${#_mapper_process[@]}*${#_bams_process[@]}))
+	local ithreads instances=$((${#_mapper_process[@]}*${#_bams_process[@]})) memory
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+	read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
 
 	commander::printinfo "$job alignments"
 
@@ -702,7 +706,7 @@ function alignment::postprocess(){
 					_bams_process[$i]="$newbam"
 				;;
 				blacklist)
-					instances=1
+					instances=1 # use ithreads and imemory otherwise
 					alignment::_blacklist \
 						-1 cmd1 \
 						-2 cmd2 \
@@ -710,6 +714,7 @@ function alignment::postprocess(){
 						-f "${_bams_process[$i]}" \
 						-b "$misc" \
 						-o "$outbase" \
+						-m "$maxmemory" \
 						-p "$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)" \
 						-r newbam \
 						-P "$inparams"
@@ -914,6 +919,8 @@ function alignment::_blacklist(){
 			               | path to output directory plus alignment file prefix
 			-p <tmpdir>    | mandatory
 			               | path to temporary directory
+			-m <memory>    | mandatory
+			               | amount of memory to allocate
 			-r <var>       | optional
 			               | variable to store resulting alignment file path
 			-P <parameter> | optional
@@ -935,9 +942,9 @@ function alignment::_blacklist(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads bam outbase _returnfile_blacklist blacklist inparams tmpdir
+	local OPTIND arg mandatory threads bam outbase _returnfile_blacklist blacklist inparams tmpdir memory
 	declare -n _cmds1_blacklist _cmds2_blacklist
-	while getopts '1:2:t:b:f:o:p:r:P:h' arg; do
+	while getopts '1:2:t:b:f:o:p:r:m:P:h' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_blacklist=$OPTARG;;
 			2)	((++mandatory)); _cmds2_blacklist=$OPTARG;;
@@ -945,6 +952,7 @@ function alignment::_blacklist(){
 			b)	((++mandatory)); blacklist="$OPTARG";;
 			f)	((++mandatory)); bam="$OPTARG";;
 			o)	((++mandatory)); outbase="$OPTARG";;
+			m)	((++mandatory)); memory=$OPTARG;;
 			p)	((++mandatory)); tmpdir="$OPTARG";; # needs to be given here, otherwise a mktemp dir will be deleted upon returning of this function
 			r)	declare -n _returnfile_blacklist=$OPTARG;;
 			P)	inparams="$OPTARG";;
@@ -953,7 +961,7 @@ function alignment::_blacklist(){
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 7 ]] && _usage
+	[[ $mandatory -lt 8 ]] && _usage
 
 	_returnfile_blacklist="$outbase.blacklisted.bam"
 
@@ -962,8 +970,8 @@ function alignment::_blacklist(){
 		# or bedtools complement
 		commander::makecmd -a _cmds1_blacklist -s ';' -c {COMMANDER[0]}<<- CMD
 			bedtools subtract
-				-a <(samtools view -H "$bam" | awk '/^@SQ/{\$1=""; print}' | cut -d ':' -f 2,3 | sed -r 's/(\S+)\s+LN:(.+)/\1\t0\t\2/' | helper::sort -k1,1 -k2,2n -k3,3n -t $threads)
-				-b <(helper::sort -k1,1 -k2,2n -k3,3n -t $threads -f "$blacklist")
+				-a <(samtools view -H "$bam" | awk '/^@SQ/{\$1=""; print}' | cut -d ':' -f 2,3 | sed -r 's/(\S+)\s+LN:(.+)/\1\t0\t\2/' | helper::sort -k1,1 -k2,2n -k3,3n -t $threads -M $((memory/2)))
+				-b <(helper::sort -k1,1 -k2,2n -k3,3n -t $threads -f "$blacklist" -M $((memory/2)))
 			> "$tmpdir/whitelist.bed"
 		CMD
 
