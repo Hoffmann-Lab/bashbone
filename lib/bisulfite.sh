@@ -287,14 +287,15 @@ function bisulfite::bwa(){
 	fi
 
 	declare -a cmd1
-	local o e readlength params=""
+	local o e readlength params="" reflength=$(cat "$genome.fai" | datamash min 2)
 	for i in "${!_fq1_bwa[@]}"; do
 		helper::basename -f "${_fq1_bwa[$i]}" -o o -e e
 		o="$outdir/$o"
 
 		helper::makecatcmd -c catcmd -f "${_fq1_bwa[$i]}"
 		readlength=$($catcmd "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%.f",l/(NR/4))}')
-		[[ $accuracy ]] && params='--score '$(echo $accuracy | awk -v l=$readlength '{printf("%.f",l-l*(1-$1/100)*5)}')
+		[[ $readlength -lt $reflength ]] || readlength=$reflength
+		[[ $accuracy ]] && params='--score '$(echo $accuracy | awk -v l=$readlength '{print l-sprintf("%.0d",(1-$1/100)*l+1)*5}')
 
 		if [[ ${_fq2_bwa[$i]} ]]; then
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
@@ -454,6 +455,7 @@ function bisulfite::rmduplicates(){
 					CMD
 						| samtools fixmate
 							-@ $ithreads
+							-p
 							-r
 							-O SAM
 							- -
@@ -506,7 +508,57 @@ function bisulfite::rmduplicates(){
 					CMD
 				fi
 
-				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD' {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD
+				# commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD' {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD
+				# 	samtools sort
+				# 		-@ $ithreads
+				# 		-n
+				# 		-u
+				# 		-T "${tdirs[-1]}/$(basename "${slice%.*}")"
+				# 		"$slice"
+				# CMD
+				# 	samtools fixmate
+				# 		-@ $ithreads
+				#		-p
+				# 		-r
+				# 		-O SAM
+				# 		- -
+				# CMD
+				# 	perl -F'\t' -lane '
+				# 		if(/^@\S\S\s/){print; next}
+				# 		$F[11]="EC:Z:$F[5]\t$F[11]";
+				# 		$F[5]=~s/[=X]/M/g;
+				# 		print join"\t",@F
+				# 	'
+				# CMD
+				# 	dupsifter
+				# 		-o "/dev/stdout"
+				# 		-O "/dev/stderr"
+				# 		$params2
+				# 		"$genome"
+				# CMD
+				# 	perl -F'\t' -lane '
+				# 		if(/^@\S\S\s/){print; next}
+				# 		$F[5]=substr($F[11],5);
+				# 		print join"\t",@F[0..10,12..$#F]
+				# 	'
+				# CMD
+				# 	samtools fixmate
+				# 		-@ $ithreads
+				# 		-r
+				# 		-u
+				# 		- -
+				# CMD
+				# 	samtools sort
+				# 		-@ $ithreads
+				# 		-O BAM
+				# 		-T "${tdirs[-1]}/$(basename "${slice%.*}").rmdup"
+				# 	> "$slice.rmdup"
+				# CMD
+				# dupsifter handles only sam v 1.3 not extended cigar by X and =
+				# solution: replace X and = by M, store extended cigar as EC tag and afterwards sqeeze back in
+
+				# between fixmate and dupsifter no conversion from sam 1.3 to sam >1.4 extended cigar not necessary any longer from v 1.2.1
+				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 					samtools sort
 						-@ $ithreads
 						-n
@@ -520,30 +572,11 @@ function bisulfite::rmduplicates(){
 						-O SAM
 						- -
 				CMD
-					perl -F'\t' -lane '
-						if(/^@\S\S\s/){print; next}
-						$F[11]="EC:Z:$F[5]\t$F[11]";
-						$F[5]=~s/[=X]/M/g;
-						print join"\t",@F
-					'
-				CMD
 					dupsifter
 						-o "/dev/stdout"
 						-O "/dev/stderr"
 						$params2
 						"$genome"
-				CMD
-					perl -F'\t' -lane '
-						if(/^@\S\S\s/){print; next}
-						$F[5]=substr($F[11],5);
-						print join"\t",@F[0..10,12..$#F]
-					'
-				CMD
-					samtools fixmate
-						-@ $ithreads
-						-r
-						-u
-						- -
 				CMD
 					samtools sort
 						-@ $ithreads
@@ -551,8 +584,6 @@ function bisulfite::rmduplicates(){
 						-T "${tdirs[-1]}/$(basename "${slice%.*}").rmdup"
 					> "$slice.rmdup"
 				CMD
-				# dupsifter handles only sam v 1.3 not extended cigar by X and =
-				# solution: replace X and = by M, store extended cigar as EC tag and afterwards sqeeze back in
 
 				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					mv "$slice.rmdup" "$slice"
@@ -676,12 +707,12 @@ function bisulfite::mecall(){
 				bcftools view -H "$odir/$o.vcf.gz" |
 			CMD
 				perl -slane '
-					next unless $F[7]=~/;CC=$c;/;
+					next unless $F[7]=~/^CS=$s;CC=$c;/;
 					$F[1]-- if $F[7]=~/^CS=-;/;
 					print join"\t",($F[0],$F[1]-1,$F[1],(split/:/,$F[-1])[-3,-4,0])
 				'
 			CMD
-				-- -c="$context" |
+				-- -c="$context" -s="$([[ $context == "CG" ]] && echo [+-] || echo [+])" |
 			CMD
 				bedtools merge -d -1 -c 4,5,6 -o sum,sum,max |
 			CMD
@@ -777,13 +808,13 @@ function bisulfite::methyldackel(){
 				tee >(helper::pgzip -t $threads -o "$odir/$o.cytosine_report.tsv.gz") |
 			CMD
 				perl -slane '
-					next unless $F[-1]=~/^$c/;
+					next unless $F[-1]=~/^$c/ && $F[2]=~/$s/;
 					next if $F[3]+$F[4]==0;
 					$F[1]-- if $F[2] eq "-";
 					print join"\t",($F[0],$F[1]-1,$F[1],$F[3],$F[3]+$F[4])
 				'
 			CMD
-				-- -c="$context" |
+				-- -c="$context" -s="$([[ $context == "CG" ]] && echo [+-] || echo [+])" |
 			CMD
 				bedtools merge -d -1 -c 4,5 -o sum,sum |
 			CMD

@@ -8,7 +8,7 @@ dependencies:
   - _openmp_mutex==4.5
   - bzip2==1.0.8
   - c-ares==1.24.0
-  - dupsifter==1.2.0.20230926
+  - dupsifter==1.2.1.20240119
   - keyutils==1.6.1
   - krb5==1.21.2
   - libcurl==8.5.0
