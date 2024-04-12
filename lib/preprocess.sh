@@ -154,6 +154,7 @@ function preprocess::fastqc(){
 				Nextera Transposase Sequence	CTGTCTCTTATA
 				SOLID Small RNA Adapter	CGCCTTGGCCGT
 				Tecan NuGEN Methyl-Seq Adapter	AAATCAAAAAAAC
+				10x Genomics TSO	CCCATGTACTCTGCGTTGATACCACTGCTT
 			EOF
 		CMD
 
@@ -175,6 +176,7 @@ function preprocess::fastqc(){
 					case 4 {print "CTGTCTCTTATACACATCT"}
 					case 5 {print "CGCCTTGGCCGT"}
 					case 6 {print "AAATCAAAAAAAC"}
+					case 6 {print "CCCATGTACTCTGCGTTGATACCACTGCTT"}
 				}
 				exit
 			}'
