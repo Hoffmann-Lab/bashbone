@@ -52,7 +52,7 @@ function cluster::coexpression_deseq(){
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
-	[[ $biotype && ! $gtf ]] && _usage
+	[[ $clusterfilter =~ 5 && $biotype && ! $gtf ]] && _usage
 	local instances=$((${#_mapper_coexpression[@]}*2)) imemory
 	read -r instances imemory < <(configure::memory_by_instances -i $instances -M "$maxmemory")
 
@@ -125,11 +125,11 @@ function cluster::coexpression_deseq(){
 				mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			fi
 
-			[[ $biotype && "$biotype" != "." ]] && {
+			[[ $clusterfilter =~ 5 && "$biotype" != "." ]] && {
 				perl -F'\t' -slane '
 					next if /^#/;
 					if($#F<5){
-						print $F[0] if $F[2]==$cb;
+						print $F[0] if $F[2] eq $cb;
 					} else {
 						$F[-1]=~/${ft}_(bio)?type\s+"([^"]+)/;
 						if ($2 =~ /$cb/ && $F[-1]=~/${ft}_id\s+"([^"]+)/){
@@ -137,7 +137,7 @@ function cluster::coexpression_deseq(){
 							$m{$1}=1;
 						}
 					}
-				' -- -cb="$biotype" -ft="$feature" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
+				' -- -cb="$biotype" -ft="$feature" "$({ readlink -e "$gtf.info" "$gtf" || true; } | head -1 | grep .)" > "$tmp.genes"
 				grep -Fw -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 				mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			}
@@ -291,7 +291,7 @@ function cluster::coexpression(){
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage && return 1
-	[[ $biotype && ! $gtf ]] && _usage && return 1
+	[[ $clusterfilter =~ 5 && $biotype && ! $gtf ]] && _usage
 	local instances=$((${#_mapper_coexpression[@]}*2)) imemory
 	read -r instances imemory < <(configure::memory_by_instances -i $instances -M "$maxmemory")
 
@@ -389,11 +389,11 @@ function cluster::coexpression(){
 			awk 'NR>1{print $1}' "$odir/experiments.tpm" > "$odir/experiments.filtered.genes"
 		fi
 
-		[[ $biotype && "$biotype" != "." ]] && {
+		[[ $$clusterfilter =~ 5 && "$biotype" != "." ]] && {
 			perl -F'\t' -slane '
 				next if /^#/;
 				if($#F<5){
-					print $F[0] if $F[2]==$cb;
+					print $F[0] if $F[2] eq $cb;
 				} else {
 					$F[-1]=~/${ft}_(bio)?type\s+"([^"]+)/;
 					if ($2 =~ /$cb/ && $F[-1]=~/${ft}_id\s+"([^"]+)/){
@@ -401,7 +401,7 @@ function cluster::coexpression(){
 						$m{$1}=1;
 					}
 				}
-			' -- -cb="$biotype" -ft="$feature" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
+			' -- -cb="$biotype" -ft="$feature" "$({ readlink -e "$gtf.info" "$gtf" || true; } | head -1 | grep .)" > "$tmp.genes"
 			grep -Fw -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 		}
