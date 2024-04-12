@@ -376,13 +376,13 @@ done < <(
 	done < <(declare -F)
 	while read -r f; do
 		source "$f"
-	done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh")
+	done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh" -not -name "#*")
 	declare -F
 )
 
 while read -r f; do
 	source "$f"
-done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh")
+done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh" -not -name "#*")
 
 #####################################################################################
 
@@ -436,7 +436,7 @@ function bashbone(){
 				_bashbone_setpath
 			fi
 			;;
-		s)	find -L "$BASHBONE_DIR/scripts/" "$BASHBONE_EXTENSIONDIR/scripts/" -type f -not -name "test.sh" -and -not -name "setup.sh" | rev | sort -t '/' -u | rev
+		s)	find -L "$BASHBONE_DIR/scripts/" "$BASHBONE_EXTENSIONDIR/scripts/" -type f -not -name "test.sh" -not -name "setup.sh" -not -name "#*" | rev | sort -t '/' -u | rev
 			;;
 		f)	(	shopt -s extdebug
 				for f in $(declare -F | awk '{print $3}'); do
