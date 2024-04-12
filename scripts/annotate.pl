@@ -37,7 +37,7 @@ if ($ARGV[1]){
 			next if /^(\s*$|#)/;
 			my @l=split/\t/;
 			next unless $l[2] eq $ft;
-			my ($g,$n,$b) = ('','','');
+			my ($g,$n,$b) = ('NA','NA','NA');
 			if ($l[-1]=~/${ft}_id\s+\"([^\"]+)/){
 				$g = $1;
 				next if exists $mps{$g};
