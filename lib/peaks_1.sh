@@ -169,7 +169,7 @@ function peaks::macs(){
 	local numchr=$(samtools view -H "${_bams_macs[0]}" | grep -c '^@SQ')
 	local buffer=$(( (1024*1024*memory)/(numchr*mult) ))
 
-	local instances instances2 ithreads ithreads2 params='' params2
+	local instances instances2 ithreads ithreads2 params='' params2 cutoff
 	instances=$((${#_bams_macs[@]} * ${#_mapper_macs[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -T $threads -i $instances)
 	if [[ $buffer -lt 100000 ]]; then
@@ -182,16 +182,33 @@ function peaks::macs(){
 	if ! $ripseq && $pointy; then
 		# according to cut&tag benchmark dont use local background at all
 		# https://doi.org/10.1101/2022.03.30.486382
-		$strict && params+=' --nolambda -q 0.00001' || params+=' --nolambda -q 0.01'
+		# highest precision at 10^-5 but for higher recall use 10^-4
+		if $strict; then
+			cutoff=0.00001
+		 	params+=" --nolambda -q $cutoff"
+		else
+			cutoff=0.0001
+			params+=" --nolambda -q $cutoff"
+		fi
 	else
-		$strict && params+=' -q 0.01' || params+=' -q 0.1' # -p 0.01 is encode setting for downstream IDR, but precision will go down massively
+		if $strict; then
+			cutoff=0.01
+		 	params+=" -q $cutoff"
+		else
+			# -p 0.01 is encode setting for downstream IDR, but precision will go down massively
+			cutoff=0.1
+			params+=" -q $cutoff"
+		fi
 	fi
 	if $broad; then
-		params+=' --min-length 150 --broad' #" --broad-cutoff $cutoff"
-		# --broad option uses final threshold of q<0.1 and increases the maximum distance between significant sites by a factor of 4
+		params+=" --min-length 150 --broad --broad-cutoff $cutoff"
+		# --broad option uses threshold of 0.1 which needs to be set via --broad-cutoff == -p or -q
+		# further --broad increases the maximum distance between significant sites by 4 times --max-gap
+		# -> --max-gap 100 --broad <=> --max-gap 400 whereas the latter reports narrow peaks with much higher signals and scores under the summit
+		# -> better use broad instead of --max-gap $((fragmentsize/2*mult))
 		# in case of missing control, dont use local background to not miss broad peaks due to gapped peaks in local vicinity
 		# https://github.com/macs3-project/MACS/issues/467
-		# -> parameter still necessary if --max-gap defined manually?
+		# -> alternative increase by 4 times --slocal 1000 -> 4000 and increase --llocal 10000 -> 40000
 		[[ $_nidx_macs ]] || $pointy || params+=' --nolambda'
 		broad="broadPeak"
 		mult=4
@@ -207,21 +224,24 @@ function peaks::macs(){
 	# use options --max-gap and --min-length. minlength should be ~500 for broad peaks..
 	if $ripseq; then
 		if $pointy; then
-			params+=" --max-gap $((fragmentsize/4))"
+			#params+=" --max-gap $((fragmentsize/4))"
+			params+=" --max-gap 50"
 			params2="$params --nomodel --shift -$((fragmentsize/4)) --extsize $((fragmentsize/2))"
 		else
 			# works also for atac seq: shift -75 (encode) to -100 and extsize 150 (encode) to 200
-			params+=" --max-gap $((fragmentsize/2))"
+			#params+=" --max-gap $((fragmentsize/2))"
+			params+=" --max-gap 100"
 			params2="$params --nomodel --shift -$((fragmentsize/2)) --extsize $fragmentsize"
 		fi
 	else
-		params+=" --max-gap $((fragmentsize/2*mult))"
-		if $pointy; then
-			# or even "$((fragmentsize/4))" ?
-			params2="$params --nomodel --shift 0 --extsize $((fragmentsize/2))"
-		else
+		#params+=" --max-gap $((fragmentsize/2))"
+		params+=" --max-gap 100"
+		# if $pointy; then
+		# 	# nope!
+		# 	params2="$params --nomodel --shift 0 --extsize $((fragmentsize/2))"
+		# else
 			params2="$params --nomodel --shift 0 --extsize $fragmentsize"
-		fi
+		# fi
 		# mfold parameter (default: --mfold 5 50) is hard to estimate for small genome sizes and or huge coverages - as of chip-exo (-m 5 100) or RIP-seq
 		# the first can be tackled by downsampling, but the latter also faces strong variation in base gene expression levels, which makes model estimation nearly impossible
 		$pointy && params+=' -m 5 100' || params+=' -m 5 50'
@@ -247,8 +267,6 @@ function peaks::macs(){
 			if [[ ${_nidx_macs[$i]} ]]; then
 				nf="${_bams_macs[${_nidx_macs[$i]}]}"
 				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
-				mkdir -p "$odir/$o"
-
 				# encode replaces read name by static N and score by max value 1000 to spare disk space
 				# SE: bedtools bamtobed -i $nf | awk -v OFS='\t' '{$4="N"; $5="1000"; print}' | gzip -nc > $nf.tagAlign.gz # bed3+3
 				# PE: bedtools bamtobed -bedpe -mate1 -i <(samtools view -F 2028 -F 256 -F 4 -f 2 $nf -u | samtools sort -n -O BAM $nf) | awk -v OFS='\t' '{print $1,$2,$3,"N",1000,$9; print $4,$5,$6,"N",1000,$10}' | gzip -nc > $nf.tagAlign.gz
@@ -271,8 +289,9 @@ function peaks::macs(){
 				unset nf
 				o="$(basename "$f")"
 				o="${o%.*}"
-				mkdir -p "$odir/$o"
 			fi
+
+			mkdir -p "$odir/$o"
 
 			# commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 			# 	samtools view -u -e 'rname!~"^chrM" && rname!="MT"' "$f"
@@ -478,9 +497,7 @@ function peaks::seacr(){
 			-z true
 	fi
 
-	$strict && strict="stringent" || strict="relaxed"
-
-	local m i f o odir mkdir nf readsbed
+	local m i f o odir mkdir nf readsbed params
 	declare -a cmd1 cmd2 cmd3 cmd4 cmd5 tdirs
 	for m in "${_mapper_seacr[@]}"; do
 		declare -n _bams_seacr=$m
@@ -505,9 +522,14 @@ function peaks::seacr(){
 					bedtools genomecov -bg -ibam "$nf" > "${tdirs[-1]}/$(basename "${nf%.*}").bedg"
 				CMD
 				nf="$(basename "${nf%.*}").bedg"
+				$strict && params="stringent" || params="relaxed"
 			else
-				# value between 0 and 1. readme example uses 0.01 and literature shows highest precision
-				nf="0.01"
+				# value between 0 and 1 as top x% of regions by area under the curve (AUC)
+				# https://doi.org/10.1101/2022.03.30.486382
+				# highest precision at 0.01 but for better tradoff between precision and recall use 0.02
+				# at 0.02 has 90% overlap with gopeaks, whereas 0.01 as 70% at half the number of peaks
+				params="stringent"
+				$strict && nf="0.02" || nf="0.03"
 				o="$(basename "$f")"
 				o="${o%.*}"
 			fi
@@ -528,13 +550,14 @@ function peaks::seacr(){
 			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				cd "${tdirs[-1]}"
 			CMD
-				SEACR.sh "$(basename "${f%.*}").bedg" "$nf" norm $strict "$(realpath -s "$odir/$o/$o")"
+				SEACR.sh "$(basename "${f%.*}").bedg" "$nf" norm $params "$(realpath -s "$odir/$o/$o")"
 			CMD
+			# norm only applied on control input
 
 			# likewise to own summit estimation, report first maximum summit and not middle of range in case of mutliple summits
 			# awk -v OFS='\t' '{print $1,$2,$3,"peak_"NR,0,".",-1,-1,-1,sprintf("%0.f",($6+($7-$6)/2-$2))}'
 			commander::makecmd -a cmd3 -s '|' -o "$odir/$o/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-				sed -E 's/(.+)\t\S+:([0-9]+)-([0-9]+)$/\1\t\2\t\3/' "$odir/$o/$o.$strict.bed"
+				sed -E 's/(.+)\t\S+:([0-9]+)-([0-9]+)$/\1\t\2\t\3/' "$odir/$o/$o.$params.bed"
 			CMD
 				awk -v OFS='\t' '{print $1,$2,$3,"peak_"NR,0,".",-1,-1,-1,$6-$2}'
 			CMD
@@ -627,6 +650,11 @@ function peaks::gopeaks(){
 	local x=$(samtools view -F 4 "${_bams_gopeaks[0]}" | head -10000 | cat <(samtools view -H "${_bams_gopeaks[0]}") - | samtools view -c -f 1)
 	[[ $x -eq 0 ]] && commander::warn "peak calling gopeaks not applied due to single-end data" && return 0
 
+	# according to dev: memory requirement is ~17X per GB bam input for default -l 50
+	# y=$($broad && echo 1 || echo 2)
+	local minstances mthreads memory=$(du -k "${_bams_gopeaks[0]}" | awk -v x=$([[ $_nidx_gopeaks ]] && echo 1.5 || echo 1) -v y=2 '{printf "%.f",$1/1024*17*x*y}')
+	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
+
 	commander::printinfo "peak calling gopeaks"
 
 	if [[ ! $macsdir ]]; then
@@ -650,17 +678,18 @@ function peaks::gopeaks(){
 	fi
 
 	local params
-	$strict && params="-p 0.05" || params="-p 0.1"
-	$broad && params+=" -m $((fragmentsize/2*4))" || params+=" -w 50 -t $((fragmentsize/4)) -l $((fragmentsize/8)) -m $((fragmentsize/2))"
+	$strict && params="-p 0.01" || params="-p 0.05"
+	# $broad && params+=" -w 150 -t $((fragmentsize/2)) -l 25 -m $((fragmentsize/2*4))" || params+=" -w 50 -t 75 -l 25 -m $((fragmentsize/2))"
+	$broad && params+=" -w 150 -t 100 -l 25 -m 400" || params+=" -w 50 -t 75 -l 25 -m 100"
+	# warning!!: memory usage doubles with half sliding size. better dont touch and wait for summit.py stable release
 	# $pointy && params+=" -w $((fragmentsize/2))" || params="-w $fragmentsize"
-	# --broad          Run GoPeaks on broad marks (--step 5000 & --slide 1000) <- for extream broad marks like h3k27me3
+	# --broad          Run GoPeaks on broad marks (--step 5000 & --slide 1000) <- for seldom extreme broad marks by h3k27me3
 	# -t  --step       Bin size for coverage bins. Default: 100 <- for standard histone chip signal detection
 	# -l  --slide      Slide size for coverage bins. Default: 50
-	# -w  --minwidth   Minimum width (bp) of a peak. Default: 150
+	# -w  --minwidth   Minimum width (bp) of a peak. Default: 150 <- minimum in output is actually -w + -l i.e. 200 for defaults
 	# -m  --mdist      Merge peaks within <mdist> base pairs. Default: 1000
+	# ==> -w 150 -l 25 -p 001 (i.e. min peask length 175) has highest overlap with macs in cutntag mode
 
-    # according to dev: memory requirement is ~17X per GB bam input
-    # du -b file | awk '{print $1/1024/1024/1024}'
 	local m i f o odir mdir nf readsbed
 	declare -a tdirs cmd1 cmd2 cmd3
 	for m in "${_mapper_gopeaks[@]}"; do
@@ -686,6 +715,8 @@ function peaks::gopeaks(){
 			# gopeaks is not parallelized. golang per default uses #cpu concurrent goroutines => != parallelism
 			# on 85mb test bam: 40:3m40 vs 4:3m43 vs 2:3m50 vs 1:4m48
 			# ==> set analogous to MALLOC_ARENA_MAX=4 for single-threads java applications
+			# GOMAXPROCS=4 gopeaks <- old with heavy memory usage -> re-implementation in python called summit.py <- various bugs like if r1.is_forward & r2.is_reverse object has no attribute 'is_forward'
+			# OMP_NUM_THREADS=$threads summit.py
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 				GOMAXPROCS=4 gopeaks
 				$nf
@@ -711,7 +742,7 @@ function peaks::gopeaks(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -c gopeaks -v -b -i $threads -a cmd1
+		commander::runcmd -c gopeaks -v -b -i $minstances -a cmd1
 		commander::runcmd -c macs -v -b -i $threads -a cmd2
 		commander::runcmd -v -b -i $threads -a cmd3
 	fi
@@ -976,6 +1007,311 @@ function peaks::gem(){
 		commander::runcmd -v -b -i $threads -a cmd2
 		commander::runcmd -c macs -v -b -i $threads -a cmd3
 		commander::runcmd -v -b -i $threads -a cmd4
+	fi
+
+	return 0
+}
+
+function peaks::homer(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[-2]} usage:
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-t <threads>    | number of
+			-m <memory>     | amount of
+			-M <maxmemory>  | amount of
+			-c <macsdir>    | base directory where to find "macs" sub-directory according to used mappers (see -r) i.e. <macsdir>/<mapper>/macs
+			-f <size>       | assumed mean fragment
+			-g <genome>     | path to
+			-r <mapper>     | array of sorted bams within array of
+			-a <nidx>       | array of normal bam idices within -r (if paired input, requires also -i)
+			-i <tidx>       | array of IP* bam idices within -r (if paired input, requires also -a)
+			-o <outdir>     | path to
+			-q <ripseq>     | true/false
+			-x <strandness> | hash per bam of (if ripseq)
+			-w <broad>      | true/false peak detection
+			-y <pointy>     | true/false call only pointy peaks
+			-z <strict>     | true/false peak filters
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false ripseq=false threads memory maxmemory genome outdir tmpdir="${TMPDIR:-/tmp}" strict=false broad=false pointy=false macsdir fragmentsize
+	declare -n _mapper_homer _strandness_homer _nidx_homer _tidx_homer
+	while getopts 'S:s:c:f:t:m:M:g:q:r:x:a:i:o:w:z:y:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			c)	macsdir=$OPTARG;;
+			f)	((++mandatory)); fragmentsize=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			r)	((++mandatory)); _mapper_homer=$OPTARG;;
+			a)	_nidx_homer=$OPTARG;;
+			i)	_tidx_homer=$OPTARG;;
+			x)	_strandness_homer=$OPTARG;;
+			q)	ripseq=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			w)	broad=$OPTARG;;
+			z)	strict=$OPTARG;;
+			y)	pointy=$OPTARG;;
+			*)	_usage;;
+		esac
+	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
+	if [[ $macsdir ]]; then
+		[[ $mandatory -lt 5 ]] && _usage
+	else
+		[[ $mandatory -lt 6 ]] && _usage
+	fi
+	[[ $_nidx_homer ]] && [[ ! $_tidx_homer ]] && _usage
+
+	$ripseq && [[ ${#_strandness_homer[@]} -eq 0 ]] && _usage
+	[[ $_nidx_homer ]] && [[ ! $_tidx_homer ]] && _usage
+
+	declare -n _bams_homer=${_mapper_homer[0]}
+	if [[ ! $_nidx_homer && ! $_tidx_homer ]]; then
+		declare -a tidx_homer=("${!_bams_homer[@]}") # use all bams as unpaired input unless -a and -i
+		_tidx_homer=tidx_homer
+	fi
+
+	local instances ithreads imemory
+	instances=$((${#_bams_homer[@]} * ${#_mapper_homer[@]}))
+	read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
+	ithreads=$((threads/instances))
+
+	commander::printinfo "peak calling homer"
+
+	if [[ ! $macsdir ]]; then
+		macsdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.homer)"
+		peaks::macs \
+			-S false \
+			-s $skip \
+			-q false \
+			-f $fragmentsize \
+			-g "$genome" \
+			-a _nidx_homer \
+			-i _tidx_homer \
+			-r _mapper_homer \
+			-t $threads \
+			-m $memory \
+			-M "$maxmemory" \
+			-o "$macsdir" \
+			-w false \
+			-y false \
+			-z true
+	fi
+
+	# get effective genome size
+	# if multimapped reads: genome minus Ns , else genome minus Ns minus repetetive Elements
+	local genomesize=2801039415
+	local x=$(samtools view -F 4 "${_bams_homer[0]}" | head -10000 | cat <(samtools view -H "${_bams_homer[0]}") - | samtools view -c -f 256)
+	if [[ $x -gt 0 ]]; then
+		genomesize=$(faCount $genome | tail -1 | awk '{print $3+$4+$5+$6}')
+	else
+		genomesize=$(unique-kmers.py -k 100 $genome |& tail -1 | awk '{print $NF}')
+	fi
+
+	# slocal default 10000 -> 2000 works better for narrow peaks
+	# narrow: -L 2 (lower cutoff for smaller local sizes) -localSize 2000 (alternative: run with slocal and llocal and merge peaks)
+	# broad: -minDist 400 (-localSize 40000 if no input to get at least one p-value)
+	# atac: -fragLength 0 -> don't center reads -> actually not applied for -region, but results differ..
+	# cutntag: -L 0 (or -localSize 40000)
+	# score always in column 7
+	# if -center -L 4 : merge -c 12,13
+	# if -center -L 0 : merge -c 10,11
+	# if -region -L 0 : merge -c 10,11
+	# if -region -L 4 : merge -c 8,9 <- attention: column names out of order when mixing -region and local filter
+	#	-> is: PeakID	chr	start	end	strand	Normalized Tag Count	region size	findPeaks Score	Total Tags (normalized to Control Experiment)	Control Tags	Fold Change vs Control	p-value vs Control	Fold Change vs Local	p-value vs Local
+	#	-> must: PeakID	chr	start	end	strand	Normalized Tag Count	region size	findPeaks Score	Fold Change vs Local	p-value vs Local	Total Tags (normalized to Control Experiment)	Control Tags	Fold Change vs Control	p-value vs Control
+	# if input is missing: -fdr 0.00001
+
+	local params='' params2='' strandness=0 minsize=50 maxsize=400
+	if [[ $(wc -l < "$genome.fai") -gt 100 ]]; then
+		# create single tags.tsv to favor nfs at cost of higher memory consuption
+		params+=' -single'
+	fi
+	if ! $ripseq && $pointy; then
+		# cutntag
+		params2+=' -L 4 -localSize 40000'
+	else
+		if $broad; then
+			params2+=' -L 4 -localSize 10000'
+			mult=4
+		else
+			params2+=' -L 2 -localSize 2000'
+			mult=1
+		fi
+	fi
+	if $ripseq; then
+		local x=$(samtools view -F 4 "${_bams_homer[0]}" | head -10000 | cat <(samtools view -H "${_bams_homer[0]}") - | samtools view -c -f 1)
+		[[ $x -eq 0 ]] && strandness=${_strandness_homer["${_bams_homer[0]}"]}
+		if [[ $strandness -ne 0 ]]; then
+			params+=' -ssep'
+			if [[ $strandness -eq 2 ]]; then
+				params+=' -flip'
+			fi
+			params2+=' -strand separate'
+		fi
+
+		if $pointy; then
+			maxsize=200
+			#params2+=" -minDist $((fragmentsize/4))"
+			params2+=" -minDist 50"
+		else
+			# atac
+			# params2+=" -minDist $((fragmentsize/2))"
+			params2+=" -minDist 100"
+			fragmentsize=0
+		fi
+	else
+		if $broad; then
+			minsize=150
+			maxsize=1000
+			#params2+=" -minDist $((fragmentsize/2*4))"
+			params2+=" -minDist 400"
+		else
+			#params2+=" -minDist $((fragmentsize/2))"
+			params2+=" -minDist 100"
+		fi
+	fi
+	if [[ $_nidx_homer ]]; then
+		if $strict; then
+			params2+=' -fdr 0.001' # default
+		else
+			params2+=" -P 0.1 -LP 0.1 -fdr 0.1"
+		fi
+	else
+		if $strict; then
+			params2+=' -fdr 0.00001'
+		else
+			params2+=" -P 0.01 -LP 0.01 -fdr 0.01"
+		fi
+	fi
+
+	local m i s f o odir mdir nf readsbed
+	declare -a cmd1 cmd2 cmd3 cmd4 cmd5 tdirs
+	for m in "${_mapper_homer[@]}"; do
+		declare -n _bams_homer=$m
+		odir="$outdir/$m/homer"
+		mdir="$macsdir/$m/macs"
+
+		for i in "${!_tidx_homer[@]}"; do
+			f="${_bams_homer[${_tidx_homer[$i]}]}"
+
+			if [[ ${_nidx_homer[$i]} ]]; then
+				nf="${_bams_homer[${_nidx_homer[$i]}]}"
+				o="$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')"
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.tagdir)")
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					ln -sfn "$(realpath -se "$nf")" "${tdirs[-1]}/$(basename "$nf")"
+				CMD
+					makeTagDirectory
+						"$odir/$o/normal"
+						$params
+						-keepAll
+						-precision 3
+						-totalReads all
+						"${tdirs[-1]}/$(basename "$nf")"
+				CMD
+				nf="-i '$odir/$o/normal' -inputFragLength $fragmentsize"
+			else
+				unset nf
+				o="$(basename "$f")"
+				o="${o%.*}"
+			fi
+
+			readsbed="$(find -L "$mdir/$o" -maxdepth 1 -name "$(basename "${f%.*}").bed.gz" -print -quit | grep .)"
+			mkdir -p "$odir/$o"
+
+			# can also normalize for different gc levels
+			# -ssep for PE strand specific data - if inverse FR, use also -flip -> allows strand specificv peak calling via findPeaks -strand separate
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.tagdir)")
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				ln -sfn "$(realpath -se "$f")" "${tdirs[-1]}/$(basename "$f")"
+			CMD
+				makeTagDirectory
+					"$odir/$o/treatment"
+					$params
+					-keepAll
+					-precision 3
+					-totalReads all
+					"${tdirs[-1]}/$(basename "$f")"
+			CMD
+
+			# or as one-liner: seq 50 10 400 | parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P 40 findPeaks TEST/ip/ -i TEST/input/ -gsize 2801039415 -region -L 2 -localSize 2000 -size {} -minDist 100 -fragLength 150 -inputFragLength 150 -C 0 | grep -v '^#' | cut -f 2- | awk -v OFS='\t' '$4="name\t"$7"\t"$4' | psort -k1,1 -k2,2n -k3,3n | bedtools merge -s -i - -c 4,5,6,10,11 -o distinct,max,distinct,max,min | awk -v s=$(${ss:-false} && echo 1 || echo 0) -v OFS='\t' '{$4="peak_"NR; if(!s){$6="."} print $0,-1,-1}' > homer.narrowPeak
+			for s in $(seq $minsize 10 $maxsize); do
+				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
+					findPeaks
+						"$odir/$o/treatment"
+						$nf
+						-fragLength $fragmentsize
+						-gsize $genomesize
+						-region
+						-size $s
+						-o "$odir/$o/size_$s.tsv"
+						$params2
+						-C 0
+				CMD
+			done
+
+			if [[ $strandness -eq 0 ]]; then
+				commander::makecmd -a cmd3 -s '|' -o "$odir/$o/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- 'CMD'
+					grep -v '^#' "$odir/$o/size_"*.tsv
+				CMD
+					cut -f 2-
+				CMD
+					awk -v OFS='\t' '$4="name\t"$7"\t"$4'
+				CMD
+					helper::sort -t $ithreads -M $imemory -k1,1 -k2,2n -k3,3n
+				CMD
+					bedtools merge -s -i - -c 4,5,6,10,11 -o distinct,max,distinct,max,min
+				CMD
+					awk -v OFS='\t' '{$4="peak_"NR; $6="."; if($8==0){$8=999}else{$8=-log($8)/log(10)} print $0,-1,-1}'
+				CMD
+			else
+				commander::makecmd -a cmd3 -s '|' -o "$odir/$o/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- 'CMD'
+					grep -v '^#' "$odir/$o/size_"*.tsv
+				CMD
+					cut -f 2-
+				CMD
+					awk -v OFS='\t' '$4="name\t"$7"\t"$4'
+				CMD
+					helper::sort -t $ithreads -M $imemory -k1,1 -k2,2n -k3,3n
+				CMD
+					bedtools merge -s -i - -c 4,5,6,10,11 -o distinct,max,distinct,max,min
+				CMD
+					awk -v OFS='\t' '{$4="peak_"NR; if($8==0){$8=999}else{$8=-log($8)/log(10)} print $0,-1,-1}'
+				CMD
+			fi
+
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed2narrowpeak)")
+			peaks::_bed2narrowpeak \
+				-1 cmd4 \
+				-2 cmd5 \
+				-i "$readsbed" \
+				-f "$f" \
+				-b "$odir/$o/$o.narrowPeak" \
+				-p "${tdirs[-1]}" \
+				-o "$odir/$o.narrowPeak"
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
+		commander::printcmd -a cmd4
+		commander::printcmd -a cmd5
+	else
+		commander::runcmd -c homer -v -b -i $threads -a cmd1
+		commander::runcmd -c homer -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $instances -a cmd3
+		commander::runcmd -c macs -v -b -i $threads -a cmd4
+		commander::runcmd -v -b -i $threads -a cmd5
 	fi
 
 	return 0
@@ -1405,26 +1741,33 @@ function peaks::genrich(){
 	# f=200
 	# for single sample ATAC, -a 50 or -a 0 (turns off filter for AUC) results are pretty much comparable with macs peaks when -d f/2 -g f/4
 	# for ATAC relicates, -a set to -d (f/2) outcome is close to intersection of single runs with auc filter turned off (-a 0)
-	# todo in case of RIP-seq prevent downsampling if #secondaries exceed 10 by manipulating sam? test it!
+	# todo in case of RIP-seq on transcriptome, where multimapped reads have to be kept, prevent downsampling if #secondaries exceed 10 by manipulating sam? test it!
+	# filter relaxed for poiny & ! ripsec i.e sparse cutntag data
+
 	if $pairwise || [[ ${#_tidx_genrich[@]} -eq 1 ]]; then
 		if $ripseq; then
-			params="-l 50 -j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))"
-			params+=' -a 50'
-		else
-			$broad && params="-l 150 -g $((fragmentsize/2*4))" || params="-l 50 -g $((fragmentsize/2))"
-			$pointy && params+=' -a 200' || params+=' -a 100'
-		fi
-		$strict && params+=' -p 0.01' || params+=' -p 0.05'
-	else
-		if $ripseq; then
-			params="-l 50 -j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))"
+			#params="-l 50 -j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))"
+			params="-l 50 -j -D -d 100 -g 50"
 			params+=' -a 100'
 		else
-			$broad && params="-l 150 -g $((fragmentsize/2*4))" || params="-l 50 -g $((fragmentsize/2))"
-			$pointy && params+=' -a 400' || params+=' -a 200'
+			#$broad && params="-l 150 -g $((fragmentsize/2*4))" || params="-l 50 -g $((fragmentsize/2))"
+			$broad && params="-l 150 -g 400" || params="-l 50 -g 100"
+			params+=' -a 100'
+			# $pointy && params+=' -a 100' || params+=' -a 200'
 		fi
-		$strict && params+=' -q 0.01' || params+=' -q 0.1'
+	else
+		if $ripseq; then
+			#params="-l 50 -j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))"
+			params="-l 50 -j -D -d 100 -g 50"
+			params+=' -a 200'
+		else
+			#$broad && params="-l 150 -g $((fragmentsize/2*4))" || params="-l 50 -g $((fragmentsize/2))"
+			$broad && params="-l 150 -g 400" || params="-l 50 -g 100"
+			# $pointy && params+=' -a 200' || params+=' -a 400'
+			params+=' -a 400'
+		fi
 	fi
+	$strict && params+=' -p 0.01' || params+=' -p 0.05'
 
 	local m f a b i nf o odir
 	declare -a tdirs cmd1 cmd2 cmd3
