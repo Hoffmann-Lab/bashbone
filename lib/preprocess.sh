@@ -141,45 +141,48 @@ function preprocess::fastqc(){
 	# increase default v0.12:512m|v0.11:250m java xmx via threads parameter trick. (workaround for fastqc freezing at 95%)
 	ithreads=$(awk '{if ($0<=0.11){print 4}else{print 2}}' <<< $version)
 
-	declare -a tdirs cmd1 cmd2 cmd3
-	local f b e i=0
+	declare -a tdirs cmd1 cmd2
+	local f b e
 	for f in {"${_fq1_fastqc[@]}","${_fq2_fastqc[@]}"}; do
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fastqc)")
 
-		commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-			MALLOC_ARENA_MAX=4
-			fastqc
-			-t $ithreads
-			-d "${tdirs[-1]}"
-			-outdir "$outdir"
-			"$f" 2>&1
-		CMD
-			sed -u '/Exception/{q 1};${/Analysis complete/!{q 1}}'
+		commander::makecmd -m -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+			cat <<- EOF | MALLOC_ARENA_MAX=4 fastqc -a /dev/stdin -t $ithreads -d "${tdirs[-1]}" -outdir "$outdir" "$f" 2>&1 | sed -u '/Exception/{q 1};\${/Analysis complete/!{q 1}}'
+				Illumina Universal Adapter	AGATCGGAAGAGC
+				Illumina Small RNA 3' Adapter	TGGAATTCTCGG
+				Illumina Small RNA 5' Adapter	GATCGTCGGACT
+				Nextera Transposase Sequence	CTGTCTCTTATA
+				SOLID Small RNA Adapter	CGCCTTGGCCGT
+				Tecan NuGEN Methyl-Seq Adapter	AAATCAAAAAAAC
+				10x Genomics TSO	CCCATGTACTCTGCGTTGATACCACTGCTT
+			EOF
 		CMD
 
 		helper::basename -f "$f" -o b -e e
 		e=$(echo $e | cut -d '.' -f 1) # if e == fastq or fq : check for ${b}_fastqc.zip else $b.${e}_fastqc.zip
 		[[ $e == "fastq" || $e == "fq" ]] && f="${b}_fastqc.zip" || f="$b.${e}_fastqc.zip"
-		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 			unzip -c "$outdir/$f" "${f%.*}/fastqc_data.txt" | tac
 		CMD
-			perl -M'List::Util q(max)' -M'Switch' -lane '{
+			perl -F'\t' -M'List::Util q(max)' -M'Switch' -lane '{
 				next unless /^\d+/;
-				$m=max(@F[1..4]);
+				$m=max(@F[1..$#F]);
 				exit if $m<0.001;
-				$i=(grep {$F[$_]==$m} 1..4)[0];
+				$i=(grep {$F[$_]==$m} 1..$#F)[0];
 				switch($i){
 					case 1 {print "AGATCGGAAGAGC"}
 					case 2 {print "TGGAATTCTCGGGTGCCAAGG"}
 					case 3 {print "GTTCAGAGTTCTACAGTCCGACGATC"}
 					case 4 {print "CTGTCTCTTATACACATCT"}
 					case 5 {print "CGCCTTGGCCGT"}
+					case 6 {print "AAATCAAAAAAAC"}
+					case 6 {print "CCCATGTACTCTGCGTTGATACCACTGCTT"}
 				}
 				exit
 			}'
 		CMD
-		# till v0.11: pos, uiversal, srna3' srna5', nextera, solexa
-		# from v0.12: pos, uiversal, srna3' srna5', nextera, polyA, polyg
+			tee "$($skip && echo "/dev/null" || echo "$outdir/$b.adapter")"
+		CMD
 	done
 
 	if $skip; then
@@ -189,13 +192,64 @@ function preprocess::fastqc(){
 	fi
 
 	declare -p _adapter1_fastqc | grep -q '=' && {
+		commander::printinfo "inferring adapter"
+		commander::printcmd -a cmd2
+
 		mapfile -t _adapter1_fastqc < <(commander::runcmd -i $threads -a cmd2 -s 1:${#_fq1_fastqc[@]} | sort -u)
+
 		if [[ $_fq2_fastqc ]]; then
+
 			mapfile -t _adapter2_fastqc < <(commander::runcmd -i $threads -a cmd2 -s $((${#_fq1_fastqc[@]}+1)):$((${#_fq1_fastqc[@]}+${#_fq2_fastqc[@]})) | sort -u)
-			[[ $_adapter2_fastqc ]] || _adapter2_fastqc=("${_adapter1_fastqc[@]}")
-			[[ $_adapter1_fastqc ]] || _adapter1_fastqc=("${_adapter2_fastqc[@]}")
+
+			if ! [[ $_adapter1_fastqc && $_adapter2_fastqc ]]; then
+				read -r instances maxmemory < <(configure::memory_by_instances -i 1 -T $threads -M "$maxmemory")
+				local f1 f2 b1 b2 e1 e2 l=20
+
+				[[ $_adapter1_fastqc ]] && l=$(printf '%s\n' "${_adapter1_fastqc[@]}" | awk '{print length($1)}' | sort -nr | head -1)
+				[[ $_adapter2_fastqc ]] && l=$(printf '%s\n' "${_adapter2_fastqc[@]}" | awk '{print length($1)}' | sort -nr | head -1)
+
+				declare -a tomerge1 tomerge2 cmd3
+
+				for i in ${!_fq1_fastqc[@]}; do
+					f1="${_fq1_fastqc[$i]}"
+					f2="${_fq2_fastqc[$i]}"
+
+					helper::basename -f "$f1" -o b1 -e e1
+					helper::basename -f "$f2" -o b2 -e e2
+
+					tomerge1+=("$outdir/$b1.adapter")
+					tomerge2+=("$outdir/$b2.adapter")
+
+					commander::makecmd -a cmd3 -s ' ' -o "${tdirs[$i]}/adapter.tsv" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
+						bbmerge.sh
+							-Xmx${maxmemory}m
+							reads=1000000
+							t=$threads
+							in1="${_fq1_fastqc[$i]}"
+							in2="${_fq2_fastqc[$i]}"
+							outa=/dev/stdout |
+					CMD
+						awk -v l=$l
+					CMD
+						'!/^>/{sub(/^N$/,"",$1); o[i++]=substr($1,0,l)}END{print o[0]"\t"o[1]}' |
+					CMD
+						tee >(cut -f 1 > "$outdir/$b1.adapter") >(cut -f 2 > "$outdir/$b2.adapter") > /dev/null | cat
+					CMD
+				done
+
+				if $skip; then
+					commander::printcmd -a cmd3
+				else
+					commander::runcmd -c bbmap -v -b -i 1 -a cmd3
+				fi
+				[[ $_adapter1_fastqc ]] || _adapter1_fastqc=($(sort -u "${tomerge1[@]}"))
+				[[ $_adapter2_fastqc ]] || _adapter2_fastqc=($(sort -u "${tomerge2[@]}"))
+			fi
+			[[ $_adapter1_fastqc ]] && commander::printinfo "Inferred first mate adapter sequence(s): ${_adapter1_fastqc[*]}" || commander::warn "No first mate adapter sequence inferred"
+			[[ $_adapter2_fastqc ]] && commander::printinfo "Inferred mate pair adapter sequence(s): ${_adapter2_fastqc[*]}" || commander::warn "No mate pair adapter sequence inferred"
+		else
+			[[ $_adapter1_fastqc ]] && commander::printinfo "Inferred adapter sequence(s): ${_adapter1_fastqc[*]}" || commander::warn "No adapter sequence inferred"
 		fi
-		[[ $_adapter1_fastqc ]] && commander::printinfo "Inferred adapter sequences: ${_adapter1_fastqc[*]}" || commander::warn "No adapter sequence inferred"
 	}
 
 	return 0
@@ -216,7 +270,7 @@ function preprocess::rmpolynt(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false dinuc=true threads outdir
+	local OPTIND arg mandatory skip=false dinuc=false threads outdir
 	declare -n _fq1_rmpolynuc _fq2_rmpolynuc
 	while getopts 'S:s:d:t:o:1:2:' arg; do
 		case $arg in
@@ -242,6 +296,7 @@ function preprocess::rmpolynt(){
 	for i in A C G T; do
 		poly+=("$(printf "$i%.0s" {1..200})X")
 	done
+	# or -a {A}{100}X
 	if $dinuc; then
 		for i in AB CD GH TV; do #iupac
 			poly+=("$(printf "$i%.0s" {1..200})X")

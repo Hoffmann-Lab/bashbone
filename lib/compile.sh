@@ -292,7 +292,7 @@ function compile::conda_tools(){
 	}
 
 	# better do not predefine python version. if tool recipe depends on earlier version, conda installs an older or the oldest version (freebayes)
-	for tool in fastqc cutadapt rcorrector star bwa rseqc subread htseq picard bamutil fgbio macs2 genrich peakachu diego gatk4 freebayes varscan igv intervene deeptools raxml metilene umi_tools methyldackel idr clust seacr gopeaks; do
+	for tool in fastqc cutadapt rcorrector star bwa bbmap rseqc subread htseq picard bamutil fgbio macs2 genrich peakachu diego gatk4 freebayes varscan igv intervene deeptools raxml metilene dupsifter umi_tools methyldackel idr clust seacr gopeaks homer; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
 		[[ $tool == "bwa" ]] && tool+=" bwa-mem2"
@@ -326,6 +326,37 @@ function compile::conda_tools(){
 		exec "\$(realpath -s "\$(dirname "\$0")")/$(basename "$insdir/conda/envs/seacr/bin/"SEACR_*.sh)" "\$@"
 	EOF
 	chmod 755 "$insdir/conda/envs/seacr/bin/SEACR.sh"
+
+	# tool=gopeaks
+	# n=${tool/=*/}
+	# n=${n//[^[:alpha:]]/}
+	# if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+	# 	$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	# else
+	# 	$upgrade && ${envs[$n]:=false}
+	# fi || {
+	# 	doclean=true
+
+	# 	commander::printinfo "setup conda $n env"
+	# 	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+	# 		mamba env create -n $n --force --file "$src/config/$n.yaml"
+	# 	else
+	# 		mamba create -y -n $n
+	# 		mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults gopeaks pandas numpy  pybedtools scipy pysam
+	# 	fi
+
+	# 	git clone https://github.com/gartician/summit.git "$insdir/conda/envs/gopeaks/src"
+	# 	echo '#!/usr/bin/env python' > "$insdir/conda/envs/gopeaks/bin/summit.py"
+	# 	cat "$insdir/conda/envs/gopeaks/src/summit/summit.py" >> "$insdir/conda/envs/gopeaks/bin/summit.py"
+	# 	chmod 755 "$insdir/conda/envs/gopeaks/bin/summit.py"
+
+	# 	mkdir -p "$insdir/config"
+	# 	mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
+
+	# 	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
+	# 		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	# 	done
+	# }
 
 	star_version=$(mamba list -n star -f star | tail -1 | awk '{print $2}')
 	# manual setup of requirements from bioconda meta.yaml (see compile::starfusion) due to non-latest installation via conda
@@ -601,6 +632,38 @@ function compile::conda_tools(){
 		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
 			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
 		done
+	}
+
+	tool=salmon
+	n=${tool/=*/}
+	n=${n//[^[:alpha:]]/}
+	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+		$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	else
+		$upgrade && ${envs[$n]:=false}
+	fi || {
+		doclean=true
+
+		commander::printinfo "setup conda $n env"
+		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+			mamba env create -n $n --force --file "$src/config/$n.yaml"
+		else
+			mamba create -y -n $n
+			mamba install -n $n --override-channels -c conda-forge -c bioconda -c defaults $n snakemake docopt pandas r-tidyverse r-scales r-WriteXLS r-BiocManager
+		fi
+
+		mkdir -p "$insdir/config"
+		mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
+
+		for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
+			mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+		done
+
+		rm -rf "$insdir/SalmonTE"
+		git clone https://github.com/hyunhwan-jeong/SalmonTE "$insdir/SalmonTE"
+		mv "$insdir/SalmonTE/salmon/linux/bin/salmon" "$insdir/SalmonTE/salmon/linux/bin/salmon.old"
+		ln -sfnr "$insdir/conda/envs/$n/bin/salmon" "$insdir/SalmonTE/salmon/linux/bin/salmon"
+		ln -sfn "$insdir/SalmonTE" "$insdir/latest/salmon"
 	}
 
 	# this is a pipeline itself with own genome and databases and thus will not be part of bashbone

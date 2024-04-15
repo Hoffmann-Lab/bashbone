@@ -106,14 +106,14 @@ function commander::makecmd(){
 		return 1
 	}
 
-	local OPTIND arg mandatory sep='' suffix vars='' multiline
+	local OPTIND arg mandatory sep suffix vars='' multiline
 	# declare -a vars
 	declare -n _cmds_makecmd # be very careful with circular name reference
 	while getopts 'v:a:o:O:s:mc' arg; do
 		case $arg in
 			v)	vars+="$(declare -p $OPTARG)"$'\n';;
 			a)	((++mandatory)); _cmds_makecmd=$OPTARG;;
-			s)	sep=$(echo -e "$OPTARG");; # echo -e here to make e.g. '\t' but not '\n' possible
+			s)	sep=$(echo -e "$OPTARG");;
 			m)	multiline=true;;
 			o)	suffix=" > '$OPTARG'";;
 			O)	suffix=" >> '$OPTARG'";;
@@ -123,6 +123,7 @@ function commander::makecmd(){
 	done
 	[[ $mandatory -lt 2 ]] && _usage
 	[[ ! $multiline ]] && ${BASHBONE_LEGACY:-false} && multiline=false
+	[[ $sep ]] || { $multiline && sep=$'\n' || sep=''; }
 
 	local fd tmp
 	declare -a mapdata cmd_makecmd # be very careful with references name space
@@ -171,18 +172,16 @@ function commander::printcmd(){
 		return 1
 	}
 
-	local OPTIND arg mandatory multiline
+	local OPTIND arg mandatory
 	declare -n _cmds_printcmd # be very careful with circular name reference
-	while getopts 'a:m' arg; do
+	while getopts 'a:' arg; do
 		case $arg in
 			a)	((++mandatory)); _cmds_printcmd=$OPTARG;;
-			m)	multiline=true;;
 			*)	_usage;;
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 1 ]] && _usage
-	[[ ! $multiline ]] && ${BASHBONE_LEGACY:-false} && multiline=false
 
 	local i
 	for i in $(seq 0 $((${#_cmds_printcmd[@]}-1))); do
@@ -190,7 +189,6 @@ function commander::printcmd(){
 		printf '%s\n' "${_cmds_printcmd[$i]}"
 		echo ":CMD$((i+1)): end"
 	done
-	# [[ "${#_cmds_printcmd[@]}" -gt 0 ]] && printf ':CMD: %s\n' "${_cmds_printcmd[@]}"
 
 	return 0
 }
@@ -279,8 +277,10 @@ function commander::runcmd(){
 		log="$tmpdir/job.$jobname.$id.log"
 		$override && rm -f "$log" "$ex"
 		echo '#!/usr/bin/env bash' > "$sh"
+		echo "_on_exit(){ :; }" >> "$sh"
 		echo "exit::$jobname.$id(){" >> "$sh"
 		echo "    echo \"$jobname.$id (\$((\$(ps -o ppid= -p \$\$ 2> /dev/null)))) exited with exit code \$1\" >> '$ex'" >> "$sh"
+		echo "    _on_exit \$1" >> "$sh"
 		echo '}' >> "$sh"
 		if [[ $cenv ]]; then
 			echo "source '$BASHBONE_DIR/activate.sh' -l ${BASHBONE_LEGACY:-true} -s '$BASHBONE_EXTENSIONDIR' -c true -r false -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
@@ -289,8 +289,9 @@ function commander::runcmd(){
 			echo "source '$BASHBONE_DIR/activate.sh' -l ${BASHBONE_LEGACY:-true} -s '$BASHBONE_EXTENSIONDIR' -c false -r false -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 		fi
 		$verbose && echo "echo :BASE64$id: $(printf '%s\n' "${_cmds_runcmd[$i]}" | base64 -w 0)" >> "$sh"
-		echo "exec 1> >(trap '' INT TERM; exec tee -a '$log')" >> "$sh"
-		echo "exec 2> >(trap '' INT TERM; exec tee -a '$log' | sed -u 's/^/:STDERR:/')" >> "$sh"
+		# redirect sterr to original stdout FD first to not duplicate stream without >&2
+		echo "exec 2> >(trap '' INT TERM; exec stdbuf -o L tee -a '$log' | sed -u 's/^/:STDERR:/')" >> "$sh"
+		echo "exec 1> >(trap '' INT TERM; exec stdbuf -o L tee -a '$log')" >> "$sh"
 
 		printf '%s\n' "${_cmds_runcmd[$i]}" >> "$sh"
 		echo "exit 0" >> "$sh" # in case last command threw sigpipe, exit 0
@@ -535,8 +536,10 @@ function commander::qsubcmd(){
 		sh="$logdir/job.$jobname.$id.sh"
 
 		echo '#!/usr/bin/env bash' > "$sh"
+		echo "_on_exit(){ :; }" >> "$sh"
 		echo "exit::$jobname.$id(){" >> "$sh"
 		echo "    echo \"$jobname.$id (\$JOB_ID) exited with exit code \$1\" >> '$ex'" >> "$sh"
+		echo "    _on_exit \$1" >> "$sh"
 		[[ "$dowait" == "y" ]] && echo '    [[ $1 -gt 0 ]] && qdel $JOB_ID &> /dev/null || true' >> "$sh"
 		echo '}' >> "$sh"
 		# re-execution via setsid required!

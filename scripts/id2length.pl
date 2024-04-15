@@ -54,23 +54,29 @@ while(<F>){
 }
 close F;
 my %id2len;
+my %id2t;
 for my $g (keys %m){
 	my $k = min(keys %{$m{$g}});
 	my @ls;
+	my @ts;
+	my $x;
 	while (my ($t, $l) = each %{$m{$g}{$k}}) {
 		push @ls,$l;
+		push @ts,$t;
 	}
-	$id2len{$g} = max(@ls);
+	$x = max(@ls);
+	$id2len{$g} = $x;
+	$id2t{$g} = $ts[(grep {$ls[$_]==$x} 0..$#ls)[0]];
 }
 
 if ($#ARGV==2){
-	say $_."\t".$id2len{$_} for @ids;
+	say $_."\t".$id2t{$_}."\t".$id2len{$_} for @ids;
 } else {
 	open F, "<".$ARGV[3] or die $!;
 	while(<F>){
 		chomp;
 		my @l = split /\s+/;
-		say exists $id2len{$l[0]} ? $l[0]."\t".$id2len{$l[0]} : $l[0]."\tNA";
+		say exists $id2len{$l[0]} ? $l[0].."\t".$id2t{$l[0]}."\t".$id2len{$l[0]} : $l[0]."\tNA\tNA";
 	}
 	close F;
 }

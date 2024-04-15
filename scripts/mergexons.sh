@@ -2,6 +2,7 @@
 # (c) Konstantin Riege
 
 source "$(dirname "$0")/../bashbone_lite.sh" -x cleanup -a "$@" || exit 1
+cleanup(){ :; }
 
 usage(){
 	cat <<- EOF
@@ -43,7 +44,7 @@ offset=${4:-0}
 
 tmp="$(mktemp --suffix=.gtf2features)"
 cleanup(){
-	rm -rf "$tmp.*"
+	[[ $tmp ]] && rm -rf "$tmp.*"
 	return 0
 }
 echo "temp file prefix: $tmp" 1>&2

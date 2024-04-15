@@ -105,6 +105,7 @@ function alignment::segemehl(){
 			commander::printinfo "updating md5 sums"
 			thismd5segemehl=$(md5sum "$genomeidx" | cut -d ' ' -f 1)
 			sed -i "s/md5segemehl=.*/md5segemehl=$thismd5segemehl/" "$genome.md5.sh"
+			sed -i "s/md5genome=.*/md5genome=$thismd5genome/" "$genome.md5.sh"
 		fi
 	fi
 
@@ -264,21 +265,14 @@ function alignment::star(){
 		source "$genome.md5.sh"
 
 		declare -a cmdidx=("STAR --help | grep -m 1 -F versionGenome | sed -E 's/.+\s+(.+)/\1/'")
-		local doindex=$forceidx idxparams thisidxversion idxversion=$(commander::runcmd -c star -i $threads -a cmdidx)
+		local idxparams thisidxversion idxversion=$(commander::runcmd -c star -i $threads -a cmdidx)
 		[[ -s "$genomeidxdir/genomeParameters.txt" ]] && thisidxversion=$(grep -m 1 -F versionGenome "$genomeidxdir/genomeParameters.txt" | sed -E 's/.+\s+(.+)/\1/')
+		local thismd5genome thismd5star thismd5gtf
+		thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
+		[[ -s "$genomeidxdir/SA" ]] && thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
+		[[ -s "$gtf" ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
 
-		if [[ "$thisidxversion" != "$idxversion" ]]; then
-			doindex=true
-		else
-			local thismd5genome thismd5star thismd5gtf
-			thismd5genome=$(md5sum "$genome" | cut -d ' ' -f 1)
-			[[ -s "$genomeidxdir/SA" ]] && thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
-			[[ -s "$gtf" ]] && thismd5gtf=$(md5sum "$gtf" | cut -d ' ' -f 1)
-			if [[ "$thismd5genome" != "$md5genome" || ! "$thismd5star" || "$thismd5star" != "$md5star" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
-				doindex=true
-			fi
-		fi
-		if $doindex; then
+		if $forceidx || [[ "$thisidxversion" != "$idxversion" || "$thismd5genome" != "$md5genome" || ! "$thismd5star" || "$thismd5star" != "$md5star" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::printinfo "indexing genome for star"
 			#100 = assumend usual read length. tools like arriba use 250 in case of longer reads
 			[[ -s "$gtf" ]] && idxparams+=" --sjdbGTFfile '$gtf' --sjdbOverhang 250"
@@ -305,6 +299,8 @@ function alignment::star(){
 			commander::printinfo "updating md5 sums"
 			thismd5star=$(md5sum "$genomeidxdir/SA" | cut -d ' ' -f 1)
 			sed -i "s/md5star=.*/md5star=$thismd5star/" "$genome.md5.sh"
+			sed -i "s/md5genome=.*/md5genome=$thismd5genome/" "$genome.md5.sh"
+			[[ -s "$gtf" ]] && sed -i "s/md5gtf=.*/md5gtf=$thismd5gtf/" "$genome.md5.sh"
 		fi
 	fi
 
@@ -320,7 +316,7 @@ function alignment::star(){
 		[[ $extractcmd != "cat" ]] && params+=" --readFilesCommand '$extractcmd'"
 
 		if [[ ${_fq2_star[$i]} ]]; then
-			$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999' || params+=" --alignMatesGapMax $insertsize --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
+			$nosplitaln && params+=" --alignMatesGapMax $insertsize --alignIntronMax 1  --alignSJDBoverhangMin 999999" || params+=" --alignMatesGapMax $insertsize --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 				STAR
 				--runMode alignReads
@@ -496,6 +492,7 @@ function alignment::bwa(){
 			commander::printinfo "updating md5 sums"
 			thismd5bwa=$(md5sum "$idxprefix.pac" | cut -d ' ' -f 1)
 			sed -i "s/md5bwa=.*/md5bwa=$thismd5bwa/" "$genome.md5.sh"
+			sed -i "s/md5genome=.*/md5genome=$thismd5genome/" "$genome.md5.sh"
 		fi
 	fi
 
@@ -503,24 +500,27 @@ function alignment::bwa(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
 
 	declare -a cmd1 cmd2
-	local i o1 e1 o2 e2 readlength catcmd params
+	local i o1 e1 o2 e2 readlength reflength=$(cat "$genome.fai" | datamash min 2) catcmd params
 	for i in "${!_fq1_bwa[@]}"; do
 		helper::basename -f "${_fq1_bwa[$i]}" -o o1 -e e1
 		o1="$outdir/$o1"
 
 		helper::makecatcmd -c catcmd -f "${_fq1_bwa[$i]}"
 		readlength=$($catcmd "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%.f",l/(NR/4))}')
+		[[ $readlength -lt $reflength ]] || readlength=$reflength
 		params="$inparams"
 		if $forcemem || [[ $readlength -gt 70 ]]; then
 			# minOUTscore:30 @ MM/indelpenalty:4/6 -> (100-30)/5=~14% errors -> increase minOUTscore
 			# 100*(1-95/100)*6 = 25 allowed penalties -> minOUTscore = 70
 			# => minOUTscore = readlength − readlength*(1−accuracy/100)*5
+			# round: -T $(echo $accuracy | awk -v l=$readlength '{printf("%.f",l-l*(1-$1/100)*5)}')
+			# ceil: -T $(echo $accuracy | awk -v l=$readlength '{print l-sprintf("%.0d",(1-$1/100)*l+1)*5}')
 
 			if [[ ${_fq2_bwa[$i]} ]]; then
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					$bwacmd mem
 						$params
-						-T $(echo $accuracy | awk -v l=$readlength '{printf("%.f",l-l*(1-$1/100)*5)}')
+						-T $(echo $accuracy | awk -v l=$readlength '{print l-sprintf("%.0d",(1-$1/100)*l+1)*5}')
 						-R '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
 						-a
 						-Y
@@ -534,7 +534,7 @@ function alignment::bwa(){
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					$bwacmd mem
 						$params
-						-T $(echo $accuracy | awk -v l=$readlength '{printf("%.f",l-l*(1-$1/100)*5)}')
+						-T $(echo $accuracy | awk -v l=$readlength '{print l-sprintf("%.0d",(1-$1/100)*l+1)*5}')
 						-R '@RG\tID:A1\tSM:sample1\tLB:library1\tPU:unit1\tPL:illumina'
 						-a
 						-Y
@@ -551,7 +551,7 @@ function alignment::bwa(){
 				o2="$outdir/$o2"
 
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bwa	aln
+					bwa aln
 						$params
 						-n $(echo $accuracy | awk -v l=$readlength '{printf("%.f",l*(1-$1/100))}')
 						-t $threads
@@ -559,7 +559,7 @@ function alignment::bwa(){
 						"${_fq1_bwa[$i]}"
 					> "$o1.sai"
 				CMD
-					bwa	aln
+					bwa aln
 						$params
 						-n $(echo $accuracy | awk -v l=$readlength '{printf("%.f",l*(1-$1/100))}')
 						-t $threads
@@ -578,7 +578,7 @@ function alignment::bwa(){
 				CMD
 			else
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					bwa	aln
+					bwa aln
 						$params
 						-n $(echo $accuracy | awk -v l=$readlength '{printf("%.f",l*(1-$1/100))}')
 						-t $threads
@@ -622,7 +622,7 @@ function alignment::postprocess(){
 			                 | [true|false] do nothing but check for files and print commands
 			-j <job>         | mandatory
 			                 | [uniqify|blacklist|sizeselect|sort|index] to be applied on alignments (see -r). index requires coordinate sorted alignment files
-			-f <path/string> | bedfile of regions or reference/chromosome name to remove alignments (-j blacklist) or a range of insert sizes to keep (-j sizeselect). default: 0:1000
+			-f <path/string> | bedfile of regions or reference/chromosome name to remove alignments from (-j blacklist) or a range of insert sizes to keep (-j sizeselect). default: 0:1000
 			-t <threads>     | mandatory
 			                 | number of threads
 			-r <mapper>      | mandatory
@@ -630,6 +630,8 @@ function alignment::postprocess(){
 			                 | mapper=(segemehl star); [segemehl|star]=(/outdir/[segemehl|star]/1.[unique|sorted].bam /outdir/[segemehl|star]/2.[unique|sorted].bam ..);
 			-o <outdir>      | mandatory
 			                 | path to output directory. subdirectories will be created according to array of array names (see -r)
+			-M <maxmemory>   | optional. default: all available
+			                 | amount of memory to allocate
 			-P <parameter>   | optional
 			                 | additional samtools [view|sort|index] parameter
 
@@ -651,15 +653,16 @@ function alignment::postprocess(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir job tmpdir="${TMPDIR:-/tmp}" inparams misc
+	local OPTIND arg mandatory skip=false threads outdir job tmpdir="${TMPDIR:-/tmp}" inparams misc maxmemory
 	declare -n _mapper_process
-	while getopts 'S:s:t:j:f:r:o:P:h' arg; do
+	while getopts 'S:s:t:j:f:r:o:M:P:h' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			j)	((++mandatory)); job=${OPTARG,,*};;
 			f)	misc="$OPTARG";;
+			M)	maxmemory=$OPTARG;;
 			r)	((++mandatory)); _mapper_process=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			P)	inparams="$OPTARG";;
@@ -672,8 +675,9 @@ function alignment::postprocess(){
 	[[ "$job" == "exclude" && ! $misc ]] && BASHBONE_ERROR="blacklist file missing" && _usage
 
 	declare -n _bams_process="${_mapper_process[0]}"
-	local ithreads instances=$((${#_mapper_process[@]}*${#_bams_process[@]}))
+	local ithreads instances=$((${#_mapper_process[@]}*${#_bams_process[@]})) memory
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+	read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
 
 	commander::printinfo "$job alignments"
 
@@ -698,7 +702,7 @@ function alignment::postprocess(){
 					_bams_process[$i]="$newbam"
 				;;
 				blacklist)
-					instances=1
+					instances=1 # use ithreads and imemory otherwise
 					alignment::_blacklist \
 						-1 cmd1 \
 						-2 cmd2 \
@@ -706,6 +710,7 @@ function alignment::postprocess(){
 						-f "${_bams_process[$i]}" \
 						-b "$misc" \
 						-o "$outbase" \
+						-m "$maxmemory" \
 						-p "$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)" \
 						-r newbam \
 						-P "$inparams"
@@ -910,6 +915,8 @@ function alignment::_blacklist(){
 			               | path to output directory plus alignment file prefix
 			-p <tmpdir>    | mandatory
 			               | path to temporary directory
+			-m <memory>    | mandatory
+			               | amount of memory to allocate
 			-r <var>       | optional
 			               | variable to store resulting alignment file path
 			-P <parameter> | optional
@@ -931,9 +938,9 @@ function alignment::_blacklist(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads bam outbase _returnfile_blacklist blacklist inparams tmpdir
+	local OPTIND arg mandatory threads bam outbase _returnfile_blacklist blacklist inparams tmpdir memory
 	declare -n _cmds1_blacklist _cmds2_blacklist
-	while getopts '1:2:t:b:f:o:p:r:P:h' arg; do
+	while getopts '1:2:t:b:f:o:p:r:m:P:h' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_blacklist=$OPTARG;;
 			2)	((++mandatory)); _cmds2_blacklist=$OPTARG;;
@@ -941,6 +948,7 @@ function alignment::_blacklist(){
 			b)	((++mandatory)); blacklist="$OPTARG";;
 			f)	((++mandatory)); bam="$OPTARG";;
 			o)	((++mandatory)); outbase="$OPTARG";;
+			m)	((++mandatory)); memory=$OPTARG;;
 			p)	((++mandatory)); tmpdir="$OPTARG";; # needs to be given here, otherwise a mktemp dir will be deleted upon returning of this function
 			r)	declare -n _returnfile_blacklist=$OPTARG;;
 			P)	inparams="$OPTARG";;
@@ -949,7 +957,7 @@ function alignment::_blacklist(){
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 7 ]] && _usage
+	[[ $mandatory -lt 8 ]] && _usage
 
 	_returnfile_blacklist="$outbase.blacklisted.bam"
 
@@ -958,8 +966,8 @@ function alignment::_blacklist(){
 		# or bedtools complement
 		commander::makecmd -a _cmds1_blacklist -s ';' -c {COMMANDER[0]}<<- CMD
 			bedtools subtract
-				-a <(samtools view -H "$bam" | awk '/^@SQ/{\$1=""; print}' | cut -d ':' -f 2,3 | sed -r 's/(\S+)\s+LN:(.+)/\1\t0\t\2/' | helper::sort -k1,1 -k2,2n -k3,3n -t $threads)
-				-b <(helper::sort -k1,1 -k2,2n -k3,3n -t $threads -f "$blacklist")
+				-a <(samtools view -H "$bam" | awk '/^@SQ/{\$1=""; print}' | cut -d ':' -f 2,3 | sed -r 's/(\S+)\s+LN:(.+)/\1\t0\t\2/' | helper::sort -k1,1 -k2,2n -k3,3n -t $threads -M $((memory/2)))
+				-b <(helper::sort -k1,1 -k2,2n -k3,3n -t $threads -f "$blacklist" -M $((memory/2)))
 			> "$tmpdir/whitelist.bed"
 		CMD
 
@@ -968,16 +976,20 @@ function alignment::_blacklist(){
 		local x=$(samtools view -F 4 "$bam" | head -10000 | cat <(samtools view -H "$bam") - | samtools view -c -f 1)
 
 		if [[ $x -gt 0 ]]; then
-			# needs workaraound
-			# filter for a region allows to keep second mate and set second mate either to
-			# 	- unmapped (cigar to * from version 1.16) -> proper paired flag kept in first read
-			# 	- or keep it (from v1.15) iterator initialization bug still existing in v1.17
-			commander::makecmd -a _cmds2_blacklist -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+			# to remove both mates, needs workaraound, because
+			# filter for a region only allows to keep second mate and set either to
+			# 	- unmapped by -p switch (cigar to * from version 1.16) -> does not work for multi-region iterator (-M)
+			# 	- or keep it by -P switch. from v1.14 iterator initialization bug still existing in v1.17
+			# even if second mate is not kept, all flags, including proper paired flag kept in first mate
+			# => solution1: mark as unmapped, fixmate and filter by proper pair
+			# ==> solution2: fast remove via -M, fixmate and filter by pair
+			# attention: disable FR check by fixmate to not loose proper pair flag for kept pairs
+			commander::makecmd -a _cmds2_blacklist -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 				samtools view
 					$params
 					-@ $threads
 					-u
-					-p
+					-M
 					-L "$tmpdir/whitelist.bed"
 					"$bam"
 			CMD
@@ -989,9 +1001,16 @@ function alignment::_blacklist(){
 			CMD
 				samtools fixmate
 					-@ $threads
+					-p
 					-u
 					-r
 					- -
+			CMD
+				samtools view
+					$params
+					-@ $threads
+					-u
+					-f 1
 			CMD
 				samtools sort
 					-@ $threads
@@ -1797,7 +1816,7 @@ function alignment::qcstats(){
 
 	commander::printinfo "plotting mapping stats"
 
-	local filter b o all a s c x odir
+	local filter b o all a s c odir
 	declare -a cmd1 tojoin header
 	for m in "${_mapper_bamstats[@]}"; do
 		declare -n _bams_bamstats=$m
@@ -1807,11 +1826,8 @@ function alignment::qcstats(){
 		tojoin=()
 		echo -e "sample\ttype\tcount" > "$odir/mapping.barplot.tsv"
 		for i in "${!_bams_bamstats[@]}"; do
-			[[ "${_bams_bamstats[$i]}" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
 			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
-
-			x=${#_mi_bamstats[@]}
-			[[ $x -eq 0 ]] && continue
+			[[ ${#_mi_bamstats[@]} -eq 0 || "${_bams_bamstats[$i]}" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
 
 			b="$(basename "${_mi_bamstats[0]}")"
 			b="${b%.*}"
@@ -1847,7 +1863,7 @@ function alignment::qcstats(){
 			perl -F'\t' -lane '$all=$F[2] unless $all; $F[0].=" ($all)"; $F[2]=(100*$F[2]/$all); print join"\t",@F' $o | tac | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$odir/mapping.barplot.tsv"
 		done
 
-		if [[ $x -ge 2 ]]; then
+		if [[ $(wc -l < "$odir/mapping.barplot.tsv") -gt 2 ]]; then
 			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 				Rscript - <<< '
 					suppressMessages(library("ggplot2"));

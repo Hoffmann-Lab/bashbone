@@ -7,6 +7,7 @@ function enrichment::_ora(){
 			${FUNCNAME[-2]} usage:
 			-1 <cmds1>    | array of
 			-d <title>    | prefix for plots. in case of GO may be domain
+			-w <whitelist>| path to
 			-g <gmtfile>  | path to
 			-r <refterms> | path to
 			-i <idsfile>  | path to
@@ -25,13 +26,14 @@ function enrichment::_ora(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads domain gmtfile refterms idsfile tpmtsv outdir universe
+	local OPTIND arg mandatory threads domain gmtfile refterms idsfile tpmtsv outdir universe whitelist
 	declare -n _cmds1_ora
-	while getopts '1:d:g:r:i:j:u:o:' arg; do
+	while getopts '1:d:g:r:i:j:u:o:w:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_ora=$OPTARG;;
 			d)	((++mandatory)); domain="$OPTARG";;
 			g)	((++mandatory)); gmtfile="$OPTARG";;
+			w)	whitelist="$OPTARG";;
 			r)	refterms="$OPTARG";;
 			i)	((++mandatory)); idsfile="$OPTARG";;
 			j)	tpmtsv="$OPTARG";;
@@ -82,6 +84,7 @@ function enrichment::_ora(){
 	[[ $universe ]] || universe="$tpmtsv"
 	[[ $universe ]] || universe="/dev/null"
 
+	# df.ora$setSize = as.numeric(unlist(lapply(strsplit(df.ora$GeneRatio,"/"), `[[`,1))) + as.numeric(unlist(lapply(strsplit(df.ora$BgRatio,"/"), `[[`,1)));
 	commander::makecmd -a _cmds1_ora -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
 			suppressMessages(library("clusterProfiler"));
@@ -99,7 +102,7 @@ function enrichment::_ora(){
 
 			genes <- scan(idsfile, character(), quote="", quiet=T);
 			universe <- scan(unifile, character(), quote="", quiet=T);
-			ora <- data.frame(matrix(ncol = 6, nrow = 0));
+			df.ora <- data.frame(matrix(ncol = 8, nrow = 0));
 			if(length(genes)>0){
 				tg <- suppressMessages(read.gmt(gmt));
 				tn <- read.table(g2n, sep="\t", stringsAsFactors=F, check.names=F, quote="");
@@ -109,52 +112,65 @@ function enrichment::_ora(){
 					} else {
 						ora <- enricher(genes, TERM2GENE=tg, TERM2NAME=tn, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500);
 					};
+
 					if(!is.null(ora) && nrow(ora)>0){
+						ora@result$setSize <- unlist(lapply(strsplit(ora@result$BgRatio,"/"), `[[`,1));
+						ora@result$GeneRatio <- paste(ora@result$Count,ora@result$setSize,sep="/");
+						ora@result$Description <- paste0(ora@result$Description," (",ora@result$Count,"/",ora@result$setSize,")");
+						df.ora <- as.data.frame(ora);
+						df.ora$Description <- factor(df.ora$Description, level=rev(df.ora$Description));
+						df.ora$NES <- NA;
+
+						midpoint <- -log10(0.05)+(max(-log10(df.ora$p.adjust))--log10(0.05))/2;
+						fs <- 10;
+
 						n <- min(20,nrow(ora));
-						fs <- round(10-max(10,n)/10+5);
-						dotplot(ora, title=paste0(domain," (Top ",n,")"), showCategory=n, label_format=max(nchar(ora$Description))+1) +
-							theme(axis.text.y = element_text(size=fs), axis.text.x = element_text(size=fs), axis.title.x = element_text(size=fs), strip.background = element_rect(linetype = 0, fill=NA)) +
-							guides(color = guide_colourbar("FDR"));
+						dotplot(ora, title=paste0(domain," (Top ",n,")"), showCategory=n, label_format=max(nchar(as.character(ora$Description)))+1) +
+							theme(axis.text.y = element_text(size=fs), axis.text.x = element_text(size=fs), axis.title.x = element_text(size=fs), strip.background = element_rect(linetype = 0, fill=NA));
 						suppressMessages(ggsave(file.path(odir,"dotplot.pdf"), width=10, height=round(log10(n+1)*8)));
 
 						n <- nrow(ora);
-						fs <- round(10-max(10,n)/10+5);
-						dotplot(ora, title=paste0(domain," (",n,")"), showCategory=n, label_format=max(nchar(ora$Description))+1) +
-							theme(axis.text.y = element_text(size=fs), axis.text.x = element_text(size=fs), axis.title.x = element_text(size=fs), strip.background = element_rect(linetype = 0, fill=NA)) +
-							guides(color = guide_colourbar("FDR"));
+						dotplot(ora, title=paste0(domain," (",n,")"), showCategory=n, label_format=max(nchar(as.character(ora$Description)))+1) +
+							theme(axis.text.y = element_text(size=fs), axis.text.x = element_text(size=fs), axis.title.x = element_text(size=fs), strip.background = element_rect(linetype = 0, fill=NA));
 						suppressMessages(ggsave(file.path(odir,"dotplot.full.pdf"), width=10, height=round(log10(n+1)*8)));
 
-						df <- data.frame(fdr=-log(ora$p.adjust, base=10), description = paste0(ora$Description," (",ora$Count,")"));
-						n <- min(20,nrow(df));
-						dfp <- head(df,n);
-						pdf(file.path(odir,"barplot.pdf"),width=max(nchar(df$description))/5,height=n/2+1.8);
-						par(mar=c(5,max(nchar(df$description))/3+3,5,1));
-						barplot(rev(dfp$fdr), main=paste0(domain," (Top ",n,")"), horiz=T, names.arg=rev(dfp$description),
-							xlab="-log10 q-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
-							cex.names=0.8, las=1);
-						graphics.off();
+						n <- min(20,nrow(df.ora));
+						df <- head(df.ora,n);
+						df$p.adjust <- -log10(df$p.adjust);
+						ggplot(df, aes(x=Description, y=p.adjust, fill=p.adjust)) +
+							geom_bar(stat="identity") +
+							coord_flip() +
+							scale_fill_gradient2(low="blue", mid="#7F007F", high="red", midpoint=midpoint, guide=NULL) +
+							theme_bw() + theme(axis.text.y = element_text(size=fs)) +
+							ggtitle(paste0(domain," (Top ",n,")")) +
+							ylab("-log10 padj") +
+							xlab(NULL);
+						suppressMessages(ggsave(file.path(odir,"barplot.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3));
 
-						n <- nrow(df);
-						dfp <- df;
-						pdf(file.path(odir,"barplot.full.pdf"),width=max(nchar(df$description))/5,height=n/2+1.8);
-						par(mar=c(5,max(nchar(df$description))/3+3,5,1));
-						barplot(rev(dfp$fdr), main=paste0(domain," (",n,")"), horiz=T, names.arg=rev(dfp$description),
-							xlab="-log10 q-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
-							cex.names=0.8, las=1);
-						graphics.off();
+						n <- nrow(df.ora);
+						df <- df.ora;
+						df$p.adjust <- -log10(df$p.adjust);
+						ggplot(df, aes(x=Description, y=p.adjust, fill=p.adjust)) +
+							geom_bar(stat="identity") +
+							coord_flip() +
+							scale_fill_gradient2(low="blue", mid="#7F007F", high="red", midpoint=midpoint, guide=NULL) +
+							theme_bw() + theme(axis.text.y = element_text(size=fs)) +
+							ggtitle(paste0(domain," (",n,")")) +
+							ylab("-log10 padj") +
+							xlab(NULL);
+						suppressMessages(ggsave(file.path(odir,"barplot.full.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3,limitsize = F));
 
-						ora <- as.data.frame(ora)[c("ID","Count","pvalue","p.adjust","Description","geneID")];
-						ora$geneID <- gsub("/",";",ora$geneID);
+						df.ora <- df.ora[c("ID","setSize","Count","pvalue","p.adjust","NES","Description","geneID")];
 					} else {
-						ora <- data.frame(matrix(ncol = 6, nrow = 0));
+						df.ora <- data.frame(matrix(ncol = 8, nrow = 0));
 					};
 				};
 			};
-			colnames(ora) = c("id","count","pval","padj","description","enrichment");
-			write.table(ora, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");
+			colnames(df.ora) = c("id","setsize","count","pval","padj","score","description","enrichment");
+			write.table(df.ora, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");
 		'
 	CMD
-		"$gmtfile" "$refterms" "$idsfile" <(perl -M'List::Util qw(max)' -lanE 'say \$#F==0? \$F[0] : \$F[0] if max(@F)>=1 && \$.>1' "$universe") "$outdir" "$domain"
+		"$gmtfile" "$refterms" <(if [[ -s "$whitelist" ]]; then grep -Fx -f "$whitelist" "$idsfile" || true; else cat "$idsfile"; fi) <(perl -M'List::Util qw(max)' -lanE 'say \$#F==0? \$F[0] : \$F[0] if max(@F)>=1 && \$.>1' "$universe") "$outdir" "$domain"
 	CMD
 
 	return 0
@@ -166,6 +182,7 @@ function enrichment::_gsea(){
 			${FUNCNAME[-2]} usage:
 			-1 <cmds1>    | array of
 			-d <title>    | prefix for plots. in case of GO may be domain
+			-w <whitelist>| path to
 			-g <gmtfile>  | path to
 			-r <refterms> | path to
 			-i <deseqtsv> | path to
@@ -181,13 +198,14 @@ function enrichment::_gsea(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads domain gmtfile refterms deseqtsv outdir
+	local OPTIND arg mandatory threads domain gmtfile refterms deseqtsv outdir whitelist
 	declare -n _cmds1_gsea
-	while getopts '1:d:g:r:i:j:o:' arg; do
+	while getopts '1:d:g:r:i:j:o:w:' arg; do
 		case $arg in
 			1)	((++mandatory)); _cmds1_gsea=$OPTARG;;
 			d)	((++mandatory)); domain="$OPTARG";;
 			g)	((++mandatory)); gmtfile="$OPTARG";;
+			w)	whitelist="$OPTARG";;
 			r)	refterms="$OPTARG";;
 			i)	((++mandatory)); deseqtsv="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
@@ -223,6 +241,7 @@ function enrichment::_gsea(){
 			suppressMessages(library("DOSE"));
 			suppressMessages(library("enrichplot"));
 			suppressMessages(library("ggplot2"));
+			options(warn=-1);
 			args <- commandArgs(TRUE);
 			gmt <- args[1];
 			g2n <- args[2];
@@ -231,10 +250,8 @@ function enrichment::_gsea(){
 			domain <- args[5];
 
 			df <- read.table(ddsr, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-			df <- df[!is.na(df$padj) , ];
-			df <- df[df$padj<=0.05 , ];
-
-			gsea <- data.frame(matrix(ncol = 6, nrow = 0));
+			df <- df[df$baseMean > 0,];
+			df.gsea <- data.frame(matrix(ncol = 8, nrow = 0));
 			if(nrow(df)>0){
 				tg <- suppressMessages(read.gmt(gmt));
 				tn <- read.table(g2n, sep="\t", stringsAsFactors=F, check.names=F, quote="");
@@ -245,51 +262,61 @@ function enrichment::_gsea(){
 					gsea <- GSEA(gl, TERM2GENE=tg, TERM2NAME=tn, pvalueCutoff = 0.05, pAdjustMethod = "BH", minGSSize = 10, maxGSSize = 500, eps = 0, seed = T);
 
 					if(!is.null(gsea) && nrow(gsea)>0){
+						gsea@result$Count <- as.numeric(unlist(lapply(strsplit(gsea@result$core_enrichment,"/"), length)));
+						gsea@result$Description <- paste0(gsea@result$Description," (",gsea@result$Count,"/",gsea@result$setSize,")");
+						df.gsea <- as.data.frame(gsea);
+						df.gsea$Description <- factor(df.gsea$Description, level=rev(df.gsea$Description));
+
+						midpoint <- -log10(0.05)+(max(-log10(df.gsea$p.adjust))--log10(0.05))/2;
+						fs <- 10;
+
 						n <- min(20,nrow(gsea));
-						fs <- round(10-max(10,n)/10+5);
-						dotplot(gsea, title=paste0(domain," (Top ",n,")"), showCategory=n, split=".sign", label_format=max(nchar(gsea$Description))+1) +
+						dotplot(gsea, title=paste0(domain," (Top ",n,")"), showCategory=n, split=".sign", label_format=max(nchar(as.character(gsea$Description)))+1) +
 							facet_grid(.~.sign) +
-							theme(axis.text.y = element_text(size=fs), axis.text.x = element_text(size=fs), axis.title.x = element_text(size=fs), strip.background = element_rect(linetype = 0, fill=NA)) +
-							guides(color = guide_colourbar("FDR"));
+							theme(axis.text.y = element_text(size=fs), axis.text.x = element_text(size=fs), axis.title.x = element_text(size=fs), strip.background = element_rect(linetype = 0, fill=NA));
 						suppressMessages(ggsave(file.path(odir,"dotplot.pdf"), width=10, height=round(log10(n+1)*8)));
 
 						ridgeplot(gsea, showCategory=n, label_format=max(nchar(gsea$Description))+1) + xlab("log2 FC distribution") +
-							guides(fill = guide_colourbar("FDR")) + ggtitle(paste0(domain," (Top ",n,")")) +
+							ggtitle(paste0(domain," (Top ",n,")")) +
 							theme(axis.text.y = element_text(size=fs), axis.text.x = element_text(size=fs), axis.title.x = element_text(size=fs));
 						suppressMessages(ggsave(file.path(odir,"ridgeplot.pdf"), width=10, height=round(log10(n+1)*8)));
 
 						n <- nrow(gsea);
-						fs <- round(10-max(10,n)/10+5);
-						dotplot(gsea, title=paste0(domain," (",n,")"), showCategory=n, split=".sign", label_format=max(nchar(gsea$Description))+1) +
+						dotplot(gsea, title=paste0(domain," (",n,")"), showCategory=n, split=".sign", label_format=max(nchar(as.character(gsea$Description)))+1) +
 							facet_grid(.~.sign) +
-							theme(axis.text.y = element_text(size=fs), axis.text.x = element_text(size=fs), axis.title.x = element_text(size=fs), strip.background = element_rect(linetype = 0, fill=NA)) +
-							guides(color = guide_colourbar("FDR"));
+							theme(axis.text.y = element_text(size=fs), axis.text.x = element_text(size=fs), axis.title.x = element_text(size=fs), strip.background = element_rect(linetype = 0, fill=NA));
 						suppressMessages(ggsave(file.path(odir,"dotplot.full.pdf"), width=10, height=round(log10(n+1)*8)));
 
 						ridgeplot(gsea, showCategory=n, label_format=max(nchar(gsea$Description))+1) + xlab("log2 FC distribution") +
-							guides(fill = guide_colourbar("FDR")) + ggtitle(paste0(domain," (",n,")")) +
+							ggtitle(paste0(domain," (",n,")")) +
 							theme(axis.text.y = element_text(size=fs), axis.text.x = element_text(size=fs), axis.title.x = element_text(size=fs));
 						suppressMessages(ggsave(file.path(odir,"ridgeplot.full.pdf"), width=10, height=round(log10(n+1)*8)));
 
-						df <- data.frame(fdr=-log(gsea$p.adjust, base=10), description = paste0(gsea$Description," (",gsea$setSize,")"));
-						n <- min(20,nrow(df));
-						dfp <- head(df,n);
-						pdf(file.path(odir,"barplot.pdf"),width=max(nchar(df$description))/5,height=n/2+1.8);
-						par(mar=c(5,max(nchar(df$description))/3+3,5,1));
-						barplot(rev(dfp$fdr), main=paste0(domain," (Top ",n,")"), horiz=T, names.arg=rev(dfp$description),
-							xlab="-log10 q-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
-							cex.names=0.8, las=1);
-						graphics.off();
+						n <- min(20,nrow(df.gsea));
+						df <- head(df.gsea,n);
+						df$p.adjust <- -log10(df$p.adjust);
+						ggplot(df, aes(x=Description, y=p.adjust, fill=p.adjust)) +
+							geom_bar(stat="identity") +
+							coord_flip() +
+							scale_fill_gradient2(low="blue", mid="#7F007F", high="red", midpoint=midpoint, guide=NULL) +
+							theme_bw() + theme(axis.text.y = element_text(size=fs)) +
+							ggtitle(paste0(domain," (Top ",n,")")) +
+							ylab("-log10 padj") +
+							xlab(NULL);
+						suppressMessages(ggsave(file.path(odir,"barplot.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3));
 
-						df <- data.frame(fdr=-log(gsea$p.adjust, base=10), description = paste0(gsea$Description," (",gsea$setSize,")"));
-						n <- nrow(df);
-						dfp <- df;
-						pdf(file.path(odir,"barplot.full.pdf"),width=max(nchar(df$description))/5,height=n/2+1.8);
-						par(mar=c(5,max(nchar(df$description))/3+3,5,1));
-						barplot(rev(dfp$fdr), main=paste0(domain," (",n,")"), horiz=T, names.arg=rev(dfp$description),
-							xlab="-log10 q-value", col=rainbow(9)[1], xlim=c(0,max(dfp$fdr)+max(dfp$fdr)/10*2),
-							cex.names=0.8, las=1);
-						graphics.off();
+						n <- nrow(df.gsea);
+						df <- df.gsea;
+						df$p.adjust <- -log10(df$p.adjust);
+						ggplot(df, aes(x=Description, y=p.adjust, fill=p.adjust)) +
+							geom_bar(stat="identity") +
+							coord_flip() +
+							scale_fill_gradient2(low="blue", mid="#7F007F", high="red", midpoint=midpoint, guide=NULL) +
+							theme_bw() + theme(axis.text.y = element_text(size=fs)) +
+							ggtitle(paste0(domain," (",n,")")) +
+							ylab("-log10 padj") +
+							xlab(NULL);
+						suppressMessages(ggsave(file.path(odir,"barplot.full.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3,limitsize = F));
 
 						dir.create(file.path(odir,"gsea_plots"), recursive = T, showWarnings = F);
 						for (i in 1:length(gsea$Description)){
@@ -299,18 +326,17 @@ function enrichment::_gsea(){
 							};
 						};
 
-						gsea <- as.data.frame(gsea)[c("ID","setSize","pvalue","p.adjust","Description","core_enrichment")];
-						gsea$core_enrichment <- gsub("/",";",gsea$core_enrichment);
+						df.gsea <- df.gsea[c("ID","setSize","Count","pvalue","p.adjust","NES","Description","core_enrichment")];
 					} else {
-						gsea <- data.frame(matrix(ncol = 6, nrow = 0));
+						df.gsea <- data.frame(matrix(ncol = 8, nrow = 0));
 					};
 				};
 			};
-			colnames(gsea) = c("id","count","pval","padj","description","enrichment");
-			write.table(gsea, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");
+			colnames(df.gsea) = c("id","setsize","count","pval","padj","score","description","enrichment");
+			write.table(df.gsea, row.names = F, file = file.path(odir,"goenrichment.tsv"), quote=F, sep="\t");
 		'
 	CMD
-		"$gmtfile" "$refterms" "$deseqtsv" "$outdir" "$domain"
+		"$gmtfile" "$refterms" <(if [[ -s "$whitelist" ]]; then head -1 "$deseqtsv"; grep -Fw -f "$whitelist" "$deseqtsv" || true; else cat "$deseqtsv"; fi) "$outdir" "$domain"
 	CMD
 
 	return 0
@@ -344,8 +370,6 @@ function enrichment::_reducego(){
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
-	# sum up counts of clustered terms?
-	# dfp$count <- sapply(unique(df$parent), function(x) sum(df$count[df$parent==x]));
 	commander::makecmd -a _cmds1_reduce -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		Rscript - <<< '
 			args <- commandArgs(TRUE);
@@ -357,49 +381,89 @@ function enrichment::_reducego(){
 
 			.libPaths(c(libdir,.libPaths()));
 			suppressMessages(library(rrvgo));
-			suppressMessages(library(ggplot2));
+			suppressMessages(library("clusterProfiler"));
+			suppressMessages(library("ggplot2"));
+			options(warn=-1);
 
-			df <- read.table(ora, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-			dfc <- df[,1:2];
-			colnames(dfc) <- c("go","count");
+			df.ora <- read.table(ora, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+			colnames(df.ora) <- c("ID","setSize","Count","pvalue","p.adjust","NES","Description","core_enrichment");
 
-			if(nrow(df)>2){
-				m <- calculateSimMatrix(df$id, orgdb="org.My.eg.db", ont=domshort, method="Wang", keytype="GID");
+			if(nrow(df.ora)>2){
+				m <- calculateSimMatrix(df.ora$ID, orgdb="org.My.eg.db", ont=domshort, method="Wang", keytype="GID");
 				if(! is.na(m) && nrow(m)>2){
-					df <- reduceSimMatrix(m, setNames(-log10(df$padj), df$id), threshold=0.7, orgdb="org.My.eg.db", keytype="GID");
-					df <- merge(dfc, df, by="go");
-					df <- df[order(df$score, decreasing=T), ];
-
-					write.table(df, row.names = F, file = file.path(odir,"goenrichment_reduced.tsv"), quote=F, sep="\t");
+					df <- reduceSimMatrix(m, setNames(-log10(df.ora$p.adjust), df.ora$ID), threshold=0.7, orgdb="org.My.eg.db", keytype="GID");
+					colnames(df)[1] <- "ID";
+					df.ora <- merge(df, df.ora, by="ID");
+					df.ora$score <- NULL;
+					df.ora$size <- NULL;
+					df.ora <- df.ora[order(df.ora$p.adjust), ];
+					df.ora$Description <- factor(df.ora$Description, level=rev(df.ora$Description));
+					colnames(df)[1] <- "go";
 
 					pdf(file.path(odir,"treemap.pdf"), width=16, height=10);
 					treemapPlot(df, force.print.labels=T);
 					graphics.off();
 
-					p <- scatterPlot(m, df, labelSize=2);
-					ggsave(file.path(odir,"semantic_space.pdf"), plot=p, width=16, height=10);
+					p <- cmdscale(as.matrix(as.dist(1 - m)), eig=TRUE, k=2);
+					if(ncol(p$points) > 1){
+						p <- scatterPlot(m, df, labelSize=5);
+						ggsave(file.path(odir,"semantic_space.pdf"), plot=p, width=16, height=10);
+					};
 
-					dfp <- df[df$go %in% unique(df$parent),];
-					dfp$term <- paste0(dfp$term," (",dfp$count,")");
-					df <- dfp;
+					df.reduced <- df.ora[df.ora$ID %in% unique(df.ora$parent),];
 
-					n <- min(10,nrow(df));
-					dfp <- head(df,n);
-					pdf(file.path(odir,"barplot_reduced.pdf"),width=max(nchar(dfp$term))/5,height=n/2+1.8);
-					par(mar=c(5,max(nchar(dfp$term))/3+3,5,1));
-					barplot(rev(dfp$score), main=paste0(domain," (Top ",n,")"), horiz=T, names.arg=rev(dfp$term),
-						xlab="-log10 q-value", col=rainbow(9)[1], xlim=c(0,max(dfp$score+5)),
-						cex.names=0.8, las=1);
-					graphics.off();
+					midpoint <- -log10(0.05)+(max(-log10(df.reduced$p.adjust))--log10(0.05))/2;
+					fs <- 10;
 
-					n <- nrow(df);
-					dfp <- df;
-					pdf(file.path(odir,"barplot_reduced.full.pdf"),width=max(nchar(dfp$term))/5,height=n/2+1.8);
-					par(mar=c(5,max(nchar(dfp$term))/3+3,5,1));
-					barplot(rev(dfp$score), main=domain, horiz=T, names.arg=rev(dfp$term),
-						xlab="-log10 q-value", col=rainbow(9)[1], xlim=c(0,max(dfp$score+5)),
-						cex.names=0.8, las=1);
-					graphics.off();
+					n <- min(20,nrow(df.reduced));
+					df <- head(df.reduced,n);
+					ora <- new("gseaResult",result=df);
+					p <- dotplot(ora, title=paste0(domain," (Top ",n,")"), showCategory=n, split=".sign", label_format=max(nchar(as.character(ora$Description)))+1) +
+						theme(axis.text.y = element_text(size=fs), axis.text.x = element_text(size=fs), axis.title.x = element_text(size=fs), strip.background = element_rect(linetype = 0, fill=NA));
+					if (sum(is.na(df.reduced$NES)) < nrow(df.reduced)) {
+						p + facet_grid(.~.sign);
+					} else {
+						p;
+					};
+					suppressMessages(ggsave(file.path(odir,"dotplot_reduced.pdf"), width=10, height=round(log10(n+1)*8)));
+
+					df$p.adjust <- -log10(df$p.adjust);
+					ggplot(df, aes(x=Description, y=p.adjust, fill=p.adjust)) +
+						geom_bar(stat="identity") +
+						coord_flip() +
+						scale_fill_gradient2(low="blue", mid="#7F007F", high="red", midpoint=midpoint, guide=NULL) +
+						theme_bw() + theme(axis.text.y = element_text(size=fs)) +
+						ggtitle(paste0(domain," (",n,")")) +
+						ylab("-log10 padj") +
+						xlab(NULL);
+					suppressMessages(ggsave(file.path(odir,"barplot_reduced.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3));
+
+					n <- nrow(df.reduced);
+					df <- df.reduced;
+					ora = new("gseaResult",result=df);
+					p <- dotplot(ora, title=paste0(domain," (",n,")"), showCategory=n, split=".sign", label_format=max(nchar(as.character(ora$Description)))+1) +
+						theme(axis.text.y = element_text(size=fs), axis.text.x = element_text(size=fs), axis.title.x = element_text(size=fs), strip.background = element_rect(linetype = 0, fill=NA));
+					if (sum(is.na(df.reduced$NES)) < nrow(df.reduced)) {
+						p + facet_grid(.~.sign);
+					} else {
+						p;
+					};
+					suppressMessages(ggsave(file.path(odir,"dotplot_reduced.full.pdf"), width=10, height=round(log10(n+1)*8)));
+
+					df$p.adjust <- -log10(df$p.adjust);
+					ggplot(df, aes(x=Description, y=p.adjust, fill=p.adjust)) +
+						geom_bar(stat="identity") +
+						coord_flip() +
+						scale_fill_gradient2(low="blue", mid="#7F007F", high="red", midpoint=midpoint, guide=NULL) +
+						theme_bw() + theme(axis.text.y = element_text(size=fs)) +
+						ggtitle(paste0(domain," (",n,")")) +
+						ylab("-log10 padj") +
+						xlab(NULL);
+					suppressMessages(ggsave(file.path(odir,"barplot_reduced.full.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3,limitsize = F));
+
+					df.ora <- df.ora[c("ID","parent","parentSimScore","setSize","Count","pvalue","p.adjust","NES","Description","core_enrichment")];
+					colnames(df.ora) <- c("id","parent","simscore","setsize","count","pval","padj","score","description","enrichment");
+					write.table(df.ora, row.names = F, file = file.path(odir,"goenrichment_reduced.tsv"), quote=F, sep="\t");
 				};
 			};
 		'
@@ -535,42 +599,49 @@ function enrichment::go(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[-2]} usage:
-			-S <hardskip> | true/false return
-			-s <softskip> | true/false only print commands
-			-t <threads>  | number of
-			-g <gtfile>   | path to 4-column, tab separated, gene transposed file to generate domain/collection specific (column 3) gene matrix transposed (gmt) and term files
-			                ..
-			                ENSG00000199065 GO:0005615 cellular_component extracellular space
-			                ENSG00000199065 GO:1903231 molecular_function mRNA binding involved in posttranscriptional gene silencing
-			                ENSG00000199065 GO:0035195 biological_process gene silencing by miRNA
-			                ..
-			-r <mapper>   | array of bams within array of
-			-i <deseqdir> | for gsea path to
-			-j <countsdir>| of joined tpms for ora gmt background creation
-			-c <cmpfiles> | array of
-			-l <idfiles>  | for ora array of (does not require -i -r -c)
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-t <threads>    | number of
+			-g <gtf>        | path to (optional)
+			-b <biotype>    | with <feature>_(bio)?type within gtf to create whitelist (recommendation: protein_coding)
+			-f <feature>    | with <feature>_id tag within gtf to create whitelist (default: gene)
+			-d <domainfile> | path to 4-column, tab separated, gene sets file to generate domain/collection specific (column 3) gene matrix transposed (gmt) and term files
+			                  ..
+			                  ENSG00000199065 GO:0005615 cellular_component extracellular space
+			                  ENSG00000199065 GO:1903231 molecular_function mRNA binding involved in posttranscriptional gene silencing
+			                  ENSG00000199065 GO:0035195 biological_process gene silencing by miRNA
+			                  ..
+			-r <mapper>     | array of bams within array of
+			-i <deseqdir>   | for gsea path to
+			-j <countsdir>  | of joined tpms for ora gmt background creation
+			-c <cmpfiles>   | array of
+			-l <idfiles>    | for ora array of (does not require -i -r -c)
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads gofile deseqdir countsdir tmpdir=${TMPDIR:-/tmp}
+	local OPTIND arg mandatory skip=false threads gofile deseqdir countsdir tmpdir=${TMPDIR:-/tmp} biotype gtf feature="gene"
     declare -n _mapper_go _cmpfiles_go _idfiles_go
-	while getopts 'S:s:t:r:c:g:l:i:j:' arg; do
+	while getopts 'S:s:t:r:c:g:f:b:d:l:i:j:' arg; do
 		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			r) _mapper_go=$OPTARG;;
-			c) _cmpfiles_go=$OPTARG;;
-			g) ((++mandatory)); gofile="$OPTARG";;
-			l) _idfiles_go="$OPTARG";;
-			i) deseqdir="$OPTARG";;
-			j) countsdir="$OPTARG";;
-			*) _usage;;
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	_mapper_go=$OPTARG;;
+			c)	_cmpfiles_go=$OPTARG;;
+			d)	((++mandatory)); gofile="$OPTARG";;
+			g)	gtf="$OPTARG";;
+			f)	feature="$OPTARG";;
+			b)	biotype="$OPTARG";;
+			l)	_idfiles_go="$OPTARG";;
+			i)	deseqdir="$OPTARG";;
+			j)	countsdir="$OPTARG";;
+			*)	_usage;;
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 2 ]] && _usage
+	[[ $biotype && "$biotype" != "." && ! $gtf ]] && _usage
 
 	commander::printinfo "calculating go enrichment"
 
@@ -583,7 +654,7 @@ function enrichment::go(){
 	# While it might be in some cases necessary to apply permutation-based GSEA for RNA-seq data, there are also alternatives avoiding permutation. Among them is ROtAtion gene Set Testing (ROAST), which uses rotation instead of permutation
 
 	declare -a cmd1 cmd2 cmd3 mapdata domains
-	local m f i c t title domain odir orgdb="$gofile.oRgdb"
+	local m f i c t title domain odir orgdb="$gofile.oRgdb" whitelist
 	[[ -e "$orgdb" ]] || orgdb="$(dirname "$gofile")/oRgdb"
 	local tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.go)"
 	mapfile -t domains < <(cut -f 3 "$gofile" | grep . | sort -u)
@@ -601,14 +672,30 @@ function enrichment::go(){
 		CMD
 	done
 
+	[[ $biotype && "$biotype" != "." ]] && {
+		whitelist="$tdir/whitelist"
+		perl -F'\t' -slane '
+			next if /^#/;
+			if($#F<5){
+				print $F[0] if $F[2] eq $cb;
+			} else {
+				$F[-1]=~/${ft}_(bio)?type\s+"([^"]+)/;
+				if ($2 =~ /$cb/ && $F[-1]=~/${ft}_id\s+"([^"]+)/){
+					print $1 unless exists $m{$1};
+					$m{$1}=1;
+				}
+			}
+		' -- -cb="$biotype" -ft="$feature" "$({ readlink -e "$gtf.info" "$gtf" || true; } | head -1 | grep .)" > "$whitelist"
+	}
+
 	for f in "${_idfiles_go[@]}"; do
 		for domain in "${domains[@]}"; do
 			[[ $domain =~ ^(cellular_component|molecular_function|biological_process)$ ]] && title="$(echo $domain | sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1. \u\2/')" || title="$(echo $domain | sed -E 's/_+/ /g')"
 			odir="$(dirname "$f")/$domain"
 			if [[ $countsdir ]]; then
-				enrichment::_ora -1 cmd2 -d "$title" -g "$tdir/$domain.gmt" -r "$tdir/$domain.terms" -i "$f" -j "$(find -L "$countsdir" -name "experiments.tpm" -print -quit | grep .)" -o "$odir"
+				enrichment::_ora -1 cmd2 -w "$whitelist" -d "$title" -g "$tdir/$domain.gmt" -r "$tdir/$domain.terms" -i "$f" -j "$(find -L "$countsdir" -name "experiments.tpm" -print -quit | grep .)" -o "$odir"
 			else
-				enrichment::_ora -1 cmd2 -d "$title" -g "$tdir/$domain.gmt" -r "$tdir/$domain.terms" -i "$f" -o "$odir"
+				enrichment::_ora -1 cmd2 -w "$whitelist" -d "$title" -g "$tdir/$domain.gmt" -r "$tdir/$domain.terms" -i "$f" -o "$odir"
 			fi
 			[[ -e "$orgdb" && $domain =~ ^(cellular_component|molecular_function|biological_process)$ ]] && enrichment::_reducego -1 cmd3 -d $domain -i "$odir/goenrichment.tsv" -g "$orgdb" -o "$odir"
 		done
@@ -621,13 +708,13 @@ function enrichment::go(){
 			for c in "${mapdata[@]::${#mapdata[@]}-1}"; do
 				for t in "${mapdata[@]:$((++i)):${#mapdata[@]}}"; do
 					IFS=$'\n'
-					for deseqtsv in $(find -L "$deseqdir/$m/$c-vs-$t/" -type f -name "deseq.full.fcshrunk.tsv" | grep .); do
+					for deseqtsv in $(find -L "$deseqdir/$m/$c-vs-$t/" -type f -name "deseq.full.fcshrunk.annotated.tsv" | grep . || find -L "$deseqdir/$m/$c-vs-$t/" -type f -name "deseq.full.fcshrunk.tsv" | grep . || find -L "$deseqdir/$m/$c-vs-$t/" -type f -name "deseq.full.annotated.tsv" | grep . || find -L "$deseqdir/$m/$c-vs-$t/" -type f -name "deseq.full.tsv" | grep .); do
 						unset IFS
 						if [[ $(head "$deseqtsv" | wc -l) -gt 1 ]]; then
 							for domain in "${domains[@]}"; do
 								[[ $domain =~ ^(cellular_component|molecular_function|biological_process)$ ]] && title="$(echo $domain | sed -E 's/([^_]{1,3})[^_]*_(\S+)/\u\1. \u\2/')" || title="$(echo $domain | sed -E 's/_+/ /g')"
 								odir="$(dirname "$deseqtsv")/$domain"
-								enrichment::_gsea -1 cmd2 -d "$title" -g "$tdir/$domain.gmt" -r "$tdir/$domain.terms" -i "$deseqtsv" -o "$odir"
+								enrichment::_gsea -1 cmd2 -w "$whitelist" -d "$title" -g "$tdir/$domain.gmt" -r "$tdir/$domain.terms" -i "$deseqtsv" -o "$odir"
 								[[ -e "$orgdb" && $domain =~ ^(cellular_component|molecular_function|biological_process)$ ]] && enrichment::_reducego -1 cmd3 -d $domain -i "$odir/goenrichment.tsv" -g "$orgdb" -o "$odir"
 							done
 						fi

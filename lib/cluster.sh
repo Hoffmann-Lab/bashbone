@@ -38,7 +38,7 @@ function cluster::coexpression_deseq(){
 			b)	biotype="$OPTARG";;
 			g)	gtf="$OPTARG";;
 			t)	((++mandatory)); threads=$OPTARG;;
-			M)	((++mandatory)); maxmemory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			c)	_cmpfiles_coexpression=$OPTARG;;
 			r)	((++mandatory)); _mapper_coexpression=$OPTARG;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
@@ -51,8 +51,10 @@ function cluster::coexpression_deseq(){
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 5 ]] && _usage
-	[[ $biotype && ! $gtf ]] && _usage
+	[[ $mandatory -lt 4 ]] && _usage
+	[[ $clusterfilter =~ 5 && $biotype && ! $gtf ]] && _usage
+	local instances=$((${#_mapper_coexpression[@]}*2)) imemory
+	read -r instances imemory < <(configure::memory_by_instances -i $instances -M "$maxmemory")
 
 	declare -p _idfiles_coexpression | grep -q '=' || {
 		unset _idfiles_coexpression
@@ -123,11 +125,11 @@ function cluster::coexpression_deseq(){
 				mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			fi
 
-			[[ $biotype && "$biotype" != "." ]] && {
+			[[ $clusterfilter =~ 5 && "$biotype" != "." ]] && {
 				perl -F'\t' -slane '
 					next if /^#/;
 					if($#F<5){
-						print $F[0] if $F[2]==$cb;
+						print $F[0] if $F[2] eq $cb;
 					} else {
 						$F[-1]=~/${ft}_(bio)?type\s+"([^"]+)/;
 						if ($2 =~ /$cb/ && $F[-1]=~/${ft}_id\s+"([^"]+)/){
@@ -135,7 +137,7 @@ function cluster::coexpression_deseq(){
 							$m{$1}=1;
 						}
 					}
-				' -- -cb="$biotype" -ft="$feature" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
+				' -- -cb="$biotype" -ft="$feature" "$({ readlink -e "$gtf.info" "$gtf" || true; } | head -1 | grep .)" > "$tmp.genes"
 				grep -Fw -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 				mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			}
@@ -153,7 +155,7 @@ function cluster::coexpression_deseq(){
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 				ulimit -s $(ulimit -Hs)
 			CMD
-				wgcna.R $((maxmemory/1024/2)) $params "$odir/experiments.filtered.$e" "$odir/$e" $([[ $deseqdir ]] && echo "'$ddir/experiments.csv'")
+				wgcna.R $((imemory/1024)) $params "$odir/experiments.filtered.$e" "$odir/$e" $([[ $deseqdir ]] && echo "'$ddir/experiments.csv'")
 			CMD
 		done
 	done
@@ -161,7 +163,7 @@ function cluster::coexpression_deseq(){
 	if $skip; then
 		commander::printcmd -a cmd1
 	else
-		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd1
 	fi
 
 	declare -a cmd2
@@ -278,7 +280,7 @@ function cluster::coexpression(){
 			b)	biotype="$OPTARG";;
 			g)	gtf="$OPTARG";;
 			t)	((++mandatory)); threads=$OPTARG;;
-			M)	((++mandatory)); maxmemory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
 			r)	((++mandatory)); _mapper_coexpression=$OPTARG;;
 			i)	((++mandatory)); countsdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
@@ -288,8 +290,10 @@ function cluster::coexpression(){
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 5 ]] && _usage && return 1
-	[[ $biotype && ! $gtf ]] && _usage && return 1
+	[[ $mandatory -lt 4 ]] && _usage && return 1
+	[[ $clusterfilter =~ 5 && $biotype && ! $gtf ]] && _usage
+	local instances=$((${#_mapper_coexpression[@]}*2)) imemory
+	read -r instances imemory < <(configure::memory_by_instances -i $instances -M "$maxmemory")
 
 	declare -p _idfiles_coexpression | grep -q '=' || {
 		unset _idfiles_coexpression
@@ -385,11 +389,11 @@ function cluster::coexpression(){
 			awk 'NR>1{print $1}' "$odir/experiments.tpm" > "$odir/experiments.filtered.genes"
 		fi
 
-		[[ $biotype && "$biotype" != "." ]] && {
+		[[ $$clusterfilter =~ 5 && "$biotype" != "." ]] && {
 			perl -F'\t' -slane '
 				next if /^#/;
 				if($#F<5){
-					print $F[0] if $F[2]==$cb;
+					print $F[0] if $F[2] eq $cb;
 				} else {
 					$F[-1]=~/${ft}_(bio)?type\s+"([^"]+)/;
 					if ($2 =~ /$cb/ && $F[-1]=~/${ft}_id\s+"([^"]+)/){
@@ -397,7 +401,7 @@ function cluster::coexpression(){
 						$m{$1}=1;
 					}
 				}
-			' -- -cb="$biotype" -ft="$feature" "$(readlink -e "$gtf"*.+(info|descr) "$gtf" | head -1 || true)" > "$tmp.genes"
+			' -- -cb="$biotype" -ft="$feature" "$({ readlink -e "$gtf.info" "$gtf" || true; } | head -1 | grep .)" > "$tmp.genes"
 			grep -Fw -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 		}
@@ -412,7 +416,7 @@ function cluster::coexpression(){
 			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 				ulimit -s $(ulimit -Hs)
 			CMD
-				wgcna.R $((maxmemory/1024/2)) $params "$odir/experiments.filtered.$e" "$odir/$e"
+				wgcna.R $((imemory/1024)) $params "$odir/experiments.filtered.$e" "$odir/$e"
 			CMD
 		done
 	done
@@ -420,7 +424,7 @@ function cluster::coexpression(){
 	if $skip; then
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -i $threads -a cmd3
+		commander::runcmd -v -b -i $instances -a cmd3
 	fi
 
 	declare -a cmd4

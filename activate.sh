@@ -12,8 +12,8 @@ export BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
 export BASHBONE_VERSION=$(source "$BASHBONE_DIR/lib/version.sh"; echo $version)
 export BASHBONE_TOOLSDIR="${BASHBONE_TOOLSDIR:-$(dirname "$BASHBONE_DIR")}" # export to not override if previously defined
 export BASHBONE_EXTENSIONDIR="${BASHBONE_EXTENSIONDIR:-$BASHBONE_DIR}" # directory of sh files to be sourced (functions will be wrapped) after bashbone
-export BASHBONE_CONDA=false
-export BASHBONE_LEGACY=false
+export BASHBONE_CONDA=${BASHBONE_CONDA:-false}
+export BASHBONE_LEGACY=${BASHBONE_LEGACY:-false}
 
 while getopts 'i:p:c:x:s:r:l:ah' arg; do
 	case $arg in
@@ -168,7 +168,7 @@ function _bashbone_on_exit(){
 	if [[ $$ -eq $BASHBONE_PGID ]]; then
 		# no need to check for $1 -eq 0 since killing is conducted upon error anyways
 		! [[ -t 1 && -t 2 ]] && [[ ! $BASHBONE_REEXEC ]] && {
-			commander::warn "Pipeline detected. Not killing PGID $BASHBONE_PGID may leads to orphan processes." >&2
+			commander::warn "Bashbone detected a pipeline. Not killing PGID $BASHBONE_PGID may leads to orphan processes." >&2
 			commander::warn "Consider to run your script under own PGID utilizing re-execution option '-r true' upon sourcing activate.sh." >&2
 		} || {
 			{ env kill -INT -- -$BASHBONE_PGID & wait $!; } &> /dev/null
@@ -354,6 +354,9 @@ function _bashbone_wrapper(){
 # to capture non-function error
 [[ $- =~ i ]] || {
 	_bashbone_wrapper true
+	# allow user to use bashbone cleanup ie auto-cleanup upon mktemp usage and to append their cleanup commands to $BASHBONE_CLEANUP
+	# further, users can override _on_exit() when defining qsub/runcmd jobs
+	BASHBONE_CLEANUP="$(command mktemp -p "$BASHBONE_TMPDIR" cleanup.XXXXXXXXXX.sh)"
 	trap 'exit 143' TERM
 	trap '_bashbone_on_exit $?' EXIT
 }
@@ -361,23 +364,25 @@ function _bashbone_wrapper(){
 #####################################################################################
 
 # ensure expand_aliases shopt is enabled and BASHBONE_DIR to be absolute so is $f and $BASH_SOURCE
-
-while read -r f l; do
+# further, ensure to unset all bashbone functions to not wrap nested functions like _usage which leads to unexpected error trace when interactive
+# also unset RETURN which tries to call already unset _on_return triggered by source
+while read -r f f f; do
 	alias $f="_bashbone_wrapper $f"
 done < <(
 	shopt -s extdebug
+	trap - RETURN
+	while read -r f f f; do
+		unset -f $f
+	done < <(declare -F)
 	while read -r f; do
 		source "$f"
-	done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh")
-	for f in $(declare -F | awk '{print $3}'); do
-		read -r f l s < <(declare -F $f)
-		[[ "$s" == "$BASHBONE_DIR/lib/"* || "$s" == "$BASHBONE_EXTENSIONDIR/lib/"* ]] && echo $f
-	done
+	done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh" -not -name "#*")
+	declare -F
 )
 
 while read -r f; do
 	source "$f"
-done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh")
+done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh" -not -name "#*")
 
 #####################################################################################
 
@@ -420,6 +425,7 @@ function bashbone(){
 				while [[ $CONDA_PREFIX ]]; do
 					conda deactivate &> /dev/null
 				done
+				BASHBONE_CONDA=false
 				PATH="${PATH/$BASHBONE_PATH/}"
 			else
 				source "$BASHBONE_TOOLSDIR/conda/bin/activate" bashbone &> /dev/null || {
@@ -430,13 +436,13 @@ function bashbone(){
 				_bashbone_setpath
 			fi
 			;;
-		s)	find -L "$BASHBONE_DIR/scripts/" "$BASHBONE_EXTENSIONDIR/scripts/" -type f -not -name "test.sh" -and -not -name "setup.sh" | rev | sort -t '/' -u | rev
+		s)	find -L "$BASHBONE_DIR/scripts/" "$BASHBONE_EXTENSIONDIR/scripts/" -type f -not -name "test.sh" -not -name "setup.sh" -not -name "#*" | rev | sort -t '/' -u | rev
 			;;
 		f)	(	shopt -s extdebug
 				for f in $(declare -F | awk '{print $3}'); do
 					read -r f l s < <(declare -F $f)
 					[[ "$s" == "$BASHBONE_DIR/lib/"* ]] && echo $f
-				done | grep -vF -e ::_ -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V
+				done | grep -vF -e ::_ -e test:: -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V
 			)
 			;;
 		d)	(	shopt -s extdebug
@@ -461,10 +467,6 @@ function bashbone(){
 			done
 			PATH="${PATH/$BASHBONE_PATH/}"
 			[[ $- =~ i ]] || _bashbone_reset # already done when interactive
-			local v
-			for v in $(declare -p | grep -E '^declare -. BASHBONE_' | cut -d ' ' -f 3 | cut -d '=' -f 1); do
-				unset $v
-			done
 			# do in subshell to not alter enviroment again by extdebug
 			while read -r f; do
 				unset -f $f
@@ -476,6 +478,10 @@ function bashbone(){
 					[[ "$s" == "$BASHBONE_DIR/lib/"* || "$s" == "$BASHBONE_EXTENSIONDIR/lib/"* || "$f" == *"bashbone"* ]] && echo $f
 				done
 			)
+			local v
+			for v in $(declare -p | grep -E '^declare -. BASHBONE_' | cut -d ' ' -f 3 | cut -d '=' -f 1); do
+				unset $v
+			done
 			;;
 		*)	_usage
 			return 1

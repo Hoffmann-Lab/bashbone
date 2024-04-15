@@ -37,7 +37,7 @@ if ($ARGV[1]){
 			next if /^(\s*$|#)/;
 			my @l=split/\t/;
 			next unless $l[2] eq $ft;
-			my ($g,$n,$b) = ('','','');
+			my ($g,$n,$b) = ('NA','NA','NA');
 			if ($l[-1]=~/${ft}_id\s+\"([^\"]+)/){
 				$g = $1;
 				next if exists $mps{$g};
@@ -80,6 +80,7 @@ open I,"<$f" or die $!;
 open O,">$o" or die $!;
 my $ps;
 my $deseq;
+my $matrix;
 while(<I>){
 	chomp;
 	my @l=split/\t/;
@@ -96,7 +97,11 @@ while(<I>){
 				say O join"\t",(@l,"name","biotype","description");
 			}
 			next;
-		} # else: not next!
+		} elsif($l[0] eq "id"){
+			$matrix=1;
+			say O join"\t",($l[0],"name","biotype","description",@l[1..$#l]);
+			next;
+		}
 	}
 	# do splits by '@' in case of merged gtf with ids of type feature@subfeature@subfeature...
 	if ($ps) {
@@ -116,6 +121,11 @@ while(<I>){
 			$n .= "\t$t";
 		}
 		say O join"\t",(@l,$n);
+	} elsif($matrix) {
+		my $n = $m{$l[0]};
+		$n = $m{(split/\@/,$l[0])[-1]} unless $n;
+		$n = join"\t",('NA','NA','NA') unless $n;
+		say O join"\t",($l[0],$n,@l[1..$#l]);
 	} else {
 		my $n = $m{$l[3]};
 		$n = $m{(split/\@/,$l[3])[-1]} unless $n;

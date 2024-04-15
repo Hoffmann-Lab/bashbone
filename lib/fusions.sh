@@ -419,13 +419,14 @@ function fusions::join(){
 			-i <fusionsdir> | path to
 			-o <outdir>     | path to
 			-d <tool>       | name identical to subdir in fusionsdir. parameter can be used multiple times
+			-M <maxmemory>  | amount of
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads fusionsdir outdir tmpdir="${TMPDIR:-/tmp}"
+	local OPTIND arg mandatory skip=false threads fusionsdir outdir tmpdir="${TMPDIR:-/tmp}" maxmemory
 	declare -a tools
-	while getopts 'S:s:t:i:o:d:' arg; do
+	while getopts 'S:s:t:i:o:d:M:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -433,12 +434,12 @@ function fusions::join(){
 			i)	((++mandatory)); fusionsdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir" ;;
 			d)	tools+=("$OPTARG");;
+			M)	maxmemory=$OPTARG;;
 			*)	_usage;;
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 3 ]] && _usage
-
 
 	echo -e "sample tool fusion gene1 gene2 junction_count spanning_pairs breakpoint1 breakpoint2 effect" | sed 's/ /\t/g' > "$outdir/fusions.tsv"
 	head -1 "$outdir/fusions.tsv" > "$outdir/fusions.full.tsv"
@@ -478,7 +479,7 @@ function fusions::join(){
 						}
 					}
 				' -- -s=$s
-			} | helper::sort -t $threads -k3,3 -k4,4 -k7,7 -k8,8 | tee >(awk '$5+$6>=10' >> "$outdir/fusions.tsv") >> "$outdir/fusions.full.tsv"
+			} | helper::sort -t $threads -M "$maxmemory" -k3,3 -k4,4 -k7,7 -k8,8 | tee >(awk '$5+$6>=10' >> "$outdir/fusions.tsv") >> "$outdir/fusions.full.tsv"
 		else
 			# arriba v2
 			{
@@ -501,7 +502,7 @@ function fusions::join(){
 						}
 					}
 				' -- -s=$s
-			} | helper::sort -t $threads -k3,3 -k4,4 -k7,7 -k8,8 | tee >(awk '$5+$6>=10' >> "$outdir/fusions.tsv") >> "$outdir/fusions.full.tsv"
+			} | helper::sort -t $threads -M "$maxmemory" -k3,3 -k4,4 -k7,7 -k8,8 | tee >(awk '$5+$6>=10' >> "$outdir/fusions.tsv") >> "$outdir/fusions.full.tsv"
 		fi
 	done < <(find -L "$fusionsdir/arriba/star/" -type f -name "*.sorted.bam" -exec basename {} .sorted.bam \; | grep .)
 

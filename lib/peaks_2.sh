@@ -6,6 +6,11 @@
 # https://sites.google.com/site/anshulkundaje/projects/idr/deprecated
 
 function peaks::_idr(){
+	# according to github.com/karmel/homer-idr
+	# if start with 150-300k peaks, threshold of 0.01 works
+	# if started with 100k peaks, go with 0.05
+	# for more similar pseudo-replicates use 0.005
+	# scale linear form 0.05 at 75k to 0.01 at 300k
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[-2]} usage:
@@ -637,6 +642,155 @@ function peaks::gem_idr(){
 		-i tidx_gem \
 		-r ${!_mapper_gem} \
 		-x ${!_strandness_gem} \
+		-t $threads \
+		-m "$memory" \
+		-M "$maxmemory" \
+		-o "$outdir" \
+		-y $pointy \
+		-z $strict
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+	else
+		commander::runcmd -c idr -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
+	fi
+
+	return 0
+}
+
+function peaks::homer_idr(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[-2]} usage:
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands
+			-t <threads>    | number of
+			-m <memory>     | amount of
+			-M <maxmemory>  | amount of
+			-c <macsdir>    | base directory where to find "macs" sub-directory according to used mappers (see -r) i.e. <macsdir>/<mapper>/macs
+			-f <size>       | assumed mean fragment. required unless macs directory is given by -c
+			-g <genome>     | path to
+			-r <mapper>     | array of sorted bams within array of
+			-a <nidx>       | array of normal bam idices within -r
+			-b <nridx>      | array of normal replicates bam idices within -r (optional)
+			-i <tidx>       | array of IP* bam idices within -r
+			-j <ridx>       | array of IP* bam replicates idices within -r
+			-k <pidx>       | array of IP* bam pools idices within -r
+			-o <outdir>     | path to
+			-q <ripseq>     | true/false
+			-x <strandness> | hash per bam of (if ripseq)
+			-y <pointy>     | true/false call only pointy peaks
+			-z <strict>     | true/false peak filters
+
+			requires prior execution of alignment::mkreplicates
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false ripseq=false threads memory maxmemory genome outdir strict=false pointy=false macsdir fragmentsize
+	declare -n _mapper_homer _strandness_homer _nidx_homer _nridx_homer _tidx_homer _ridx_homer _pidx_homer
+	while getopts 'S:s:c:f:t:m:M:g:q:r:x:a:b:i:j:k:o:z:y:' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			c)	macsdir=$OPTARG;;
+			f)	((++mandatory)); fragmentsize=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			m)	((++mandatory)); memory=$OPTARG;;
+			M)	maxmemory=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			r)	((++mandatory)); _mapper_homer=$OPTARG;;
+			x)	_strandness_homer=$OPTARG;;
+			q)	ripseq=$OPTARG;;
+			a)	((++mandatory)); _nidx_homer=$OPTARG;; # contains nridx by alignment::mkreplicates
+			b)	_nridx_homer=$OPTARG;;
+			i)	((++mandatory)); _tidx_homer=$OPTARG;;
+			j)	((++mandatory)); _ridx_homer=$OPTARG;;
+			k)	((++mandatory)); _pidx_homer=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			z)	$OPTARG && strict=true;;
+			y)	pointy=$OPTARG;;
+			*)	_usage;;
+		esac
+	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
+	if [[ $macsdir ]]; then
+		[[ $mandatory -lt 9 ]] && _usage
+	else
+		[[ $mandatory -lt 10 ]] && _usage
+	fi
+	$ripseq && [[ ${#_strandness_homer[@]} -eq 0 ]] && _usage
+
+
+	local m i f o odir nf tf rf pf nrf pff nff x
+	declare -a nidx_homer tidx_homer cmd1 cmd2 toidr
+
+	for m in "${_mapper_homer[@]}"; do
+		declare -n _bams_homer=$m
+		odir="$outdir/$m/homer"
+		nidx_homer=()
+		tidx_homer=()
+
+		for i in "${!_nidx_homer[@]}"; do
+			nidx_homer+=(${_nidx_homer[$i]} ${_nidx_homer[$i]} ${_nidx_homer[$i]})
+			tidx_homer+=(${_tidx_homer[$i]} ${_ridx_homer[$i]} ${_pidx_homer[$i]})
+
+			nf="${_bams_homer[${_nidx_homer[$i]}]}"
+			tf="${_bams_homer[${_tidx_homer[$i]}]}"
+			rf="${_bams_homer[${_ridx_homer[$i]}]}"
+			pf="${_bams_homer[${_pidx_homer[$i]}]}"
+
+			toidr=()
+			for f in "$tf" "$rf" "$pf"; do
+				o=$(echo -e "$(basename "$nf")\t$(basename "$f")" | sed -E 's/(\..+)\t(.+)\1/-\2/')
+				toidr+=("$odir/$o.narrowPeak")
+			done
+
+			peaks::_idr \
+				-1 cmd1 \
+				-2 cmd2 \
+				-t "${toidr[0]}" \
+				-r "${toidr[1]}" \
+				-p "${toidr[2]}" \
+				-o "${toidr[2]%.*}.idr"
+		done
+
+		for i in "${!_nridx_homer[@]}"; do
+			nf="${_bams_homer[${_nidx_homer[$i]}]}"
+			nrf="${_bams_homer[${_nridx_homer[$i]}]}"
+			pf="${_bams_homer[${_pidx_homer[$i]}]}"
+
+			x=$(( ${_nridx_homer[$i]} + ${_pidx_homer[$i]} ))
+			pff="${_bams_homer[$x]}"
+			nff="${_bams_homer[$((x-1))]}"
+
+			toidr=( "$odir/$(echo -e "$(basename "$nf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nrf")\t$(basename "$pf")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+			toidr+=( "$odir/$(echo -e "$(basename "$nff")\t$(basename "$pff")" | sed -E 's/(\..+)\t(.+)\1/-\2/').narrowPeak" )
+
+			peaks::_idr \
+				-1 cmd1 \
+				-2 cmd2 \
+				-t "${toidr[0]}" \
+				-r "${toidr[1]}" \
+				-p "${toidr[2]}" \
+				-o "${toidr[2]%.*}.idr"
+		done
+	done
+
+	peaks::homer \
+		-S false \
+		-s $skip \
+		-q $ripseq \
+		-g "$genome" \
+		-c "$macsdir" \
+		-f $fragmentsize \
+		-a nidx_homer \
+		-i tidx_homer \
+		-r ${!_mapper_homer} \
+		-x ${!_strandness_homer} \
 		-t $threads \
 		-m "$memory" \
 		-M "$maxmemory" \

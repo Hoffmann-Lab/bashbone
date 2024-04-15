@@ -35,7 +35,7 @@ Convert a genome and its annotation into
 - a transcriptgenome - i.e. fake chromosomes containing all transcripts 1000-N-separated in input gtf order
 (c) Konstantin Riege - konstantin{.}riege{a}leibniz-fli{.}de
 
-an chromosomal input gtf with
+a chromosomal input gtf with
 
 pos  i                            j
 .....[=======....========..=======]..   transcript and exons
@@ -44,15 +44,16 @@ pos  i                            j
 will be converted into
 
 1                     j-i
-[======================]   transcript as "gene"
+[======================]   transcript
 =======|========|=======   exons
           ------|----      CDS
 uuuuuuuuuu            uu   UTR
 
 PARAMETER
 
--h | --help      does what it says
--v | --verbose   say something
+-h | --help      print this
+-v | --verbose   report progress
+-t | --tmpdir    path to temporary directory (default: \$TMPDIR or /tmp)
 -f | --fasta     path to fasta input file
 -g | --gtf       path to gtf input file
 -o | --outdir    path to output directory
@@ -80,11 +81,12 @@ my ($verbose, $fasta, $gtf, $outdir, $tmpdir);
 	'h|help' => sub{&usage},
 	'v|verbose' => \$verbose,
 	'f|fasta=s' => \$fasta,
+	't|tmpdir=s' => \$tmpdir,
 	'g|gtf=s' => \$gtf,
 	'o|odir=s' => \$outdir,
 ) or &usage;
 &usage unless $fasta && $gtf && $outdir;
-$tmpdir = defined $ENV{TMPDIR} ? $ENV{TMPDIR} : "/tmp";
+$tmpdir = defined $ENV{TMPDIR} ? $ENV{TMPDIR} : "/tmp" unless $tmpdir;
 
 try {
 	make_path($outdir);
@@ -119,21 +121,23 @@ try {
 	close TMP;
 
 	say STDERR "reading GTF" if $verbose;
-	my ($tid, %t, @tsrt, %tgtf, $eno, %eorigsta, %tseq, $seq, $subseq, %enewsta, $sta, %csta, %csto);
+	my ($tid, %t2g, %t, @tsrt, %tgtf, $eno, %eorigsta, %tseq, $seq, $subseq, %enewsta, $sta, %csta, %csto);
 	my $chr="";
 	open GTF,"<$tmp[-1]" or &mydie($!);
 		while(<GTF>){
 		chomp;
 		@F = split/\t/,$_;
-		if($verbose && $F[2] eq "gene"){
-
-		}
+		# if($verbose && $F[2] eq "gene"){
+		#		say STDERR
+		# }
 		if($F[2] eq "transcript"){ #due to sort -k3,3r, handle transcript features first
 			$F[-1]=~/transcript_id "([^"]+)/;
 			$tid=$1;
-			$F[-1]=~s/gene_id ("[^"]+")/gene_id "$tid"/;
-			$F[-1].=" orig_id $1; orig_pos \"$F[0]:$F[3]-$F[4]\";";
-
+			$F[-1]=~/gene_id "([^"]+)/;
+			$t2g{$tid}=$1;
+			# $F[-1]=~s/gene_id ("[^"]+")/gene_id "$tid"/;
+			# $F[-1].=" orig_id $1; orig_pos \"$F[0]:$F[3]-$F[4]\";";
+			$F[-1].=" genomic_position \"$F[0]:$F[3]-$F[4]\";";
 			$t{$tid}=join"\t",@F;
 			$tseq{$tid}=""; # store id and initialize sequence
 			push @tsrt,$tid; # keep chr and feature order
@@ -142,8 +146,9 @@ try {
 			$F[-1]=~/transcript_id "([^"]+)/;
 			$tid=$1;
 			next unless exists $t{$tid}; # if valid gtf, this should not occure
-			$F[-1]=~s/gene_id ("[^"]+")/gene_id "$tid"/;
-			$F[-1].=" orig_id $1; orig_pos \"$F[0]:$F[3]-$F[4]\";";
+			# $F[-1]=~s/gene_id ("[^"]+")/gene_id "$tid"/;
+			# $F[-1].=" orig_id $1; orig_pos \"$F[0]:$F[3]-$F[4]\";";
+			$F[-1].=" genomic_position \"$F[0]:$F[3]-$F[4]\";";
 
 			unless ($chr eq $F[0]){
 				$seq=$fa->fetch($F[0]); # get chr seq obj
@@ -168,8 +173,9 @@ try {
 			$F[-1]=~/exon_number "([^"]+)/;
 			$eno=$1;
 			next unless exists $enewsta{"$tid$eno"};
-			$F[-1]=~s/gene_id ("[^"]+")/gene_id "$tid"/;
-			$F[-1].=" orig_id $1; orig_pos \"$F[0]:$F[3]-$F[4]\";";
+			# $F[-1]=~s/gene_id ("[^"]+")/gene_id "$tid"/;
+			# $F[-1].=" orig_id $1; orig_pos \"$F[0]:$F[3]-$F[4]\";";
+			$F[-1].=" genomic_position \"$F[0]:$F[3]-$F[4]\";";
 
 			$sta=$enewsta{"$tid$eno"}+$F[3]-$eorigsta{"$tid$eno"}; # calculate new start position
 			$F[4]=$sta+$F[4]-$F[3]; # set new stop position
@@ -221,7 +227,6 @@ try {
 	}
 	close TGTF;
 
-
 	say STDERR "writing FASTAs and genome GTF" if $verbose;
 	open GGTF,">".catfile($outdir,"transcriptgenome.gtf") or &mydie($!);
 	open TFA,">".catfile($outdir,"transcriptome.fa") or &mydie($!);
@@ -241,7 +246,7 @@ try {
 			$lastchr=$chr;
 		}
 		$s=$tseq{$tid};
-		say TFA ">$tid";
+		say TFA ">$tid $t2g{$tid}";
 		say TFA $_ for unpack "(A100)*",$s;
 
 		$s="N"x$overhang.$s;
