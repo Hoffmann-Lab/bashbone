@@ -304,16 +304,16 @@ function alignment::star(){
 		fi
 	fi
 
-	declare -a tdirs cmd1
-	local params a o e extractcmd
+	declare -a tdirs cmd1 catcmd
+	local params a o e
 	for i in "${!_fq1_star[@]}"; do
 		helper::basename -f "${_fq1_star[$i]}" -o o -e e
 		o="$outdir/$o"
 		tdirs+=("$(mktemp -u -d -p "$tmpdir" cleanup.XXXXXXXXXX.star)")
 
 		params="$inparams"
-		helper::makecatcmd -c extractcmd -f "${_fq1_star[$i]}"
-		[[ $extractcmd != "cat" ]] && params+=" --readFilesCommand '$extractcmd'"
+		helper::makecatcmd -l -v catcmd -f "${_fq1_star[$i]}"
+		[[ $extractcmd != "cat" ]] && params+=" --readFilesCommand '${catcmd[*]}'"
 
 		if [[ ${_fq2_star[$i]} ]]; then
 			$nosplitaln && params+=" --alignMatesGapMax $insertsize --alignIntronMax 1  --alignSJDBoverhangMin 999999" || params+=" --alignMatesGapMax $insertsize --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
@@ -500,13 +500,12 @@ function alignment::bwa(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
 
 	declare -a cmd1 cmd2
-	local i o1 e1 o2 e2 readlength reflength=$(cat "$genome.fai" | datamash min 2) catcmd params
+	local i o1 e1 o2 e2 readlength reflength=$(cat "$genome.fai" | datamash min 2) params
 	for i in "${!_fq1_bwa[@]}"; do
 		helper::basename -f "${_fq1_bwa[$i]}" -o o1 -e e1
 		o1="$outdir/$o1"
 
-		helper::makecatcmd -c catcmd -f "${_fq1_bwa[$i]}"
-		readlength=$($catcmd "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%.f",l/(NR/4))}')
+		readlength=$(helper::cat -f "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%.f",l/(NR/4))}')
 		[[ $readlength -lt $reflength ]] || readlength=$reflength
 		params="$inparams"
 		if $forcemem || [[ $readlength -gt 70 ]]; then

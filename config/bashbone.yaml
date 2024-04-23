@@ -638,5 +638,6 @@ dependencies:
   - zlib==1.2.11
   - zstd==1.5.2
   - pip:
-      - rapidgzip==0.12.1
+      - rapidgzip==0.13.2
+      - indexed_bzip2==1.6.0
       - scipy==1.7.3

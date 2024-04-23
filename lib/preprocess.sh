@@ -38,7 +38,7 @@ function preprocess::dedup(){
 	commander::printinfo "umi based de-duplication"
 
 	declare -a cmd1
-	local i o1 e1 o2 e2 instances memory catcmd
+	local i o1 e1 o2 e2 instances memory
 	read -r instances memory < <(configure::memory_by_instances -i 1 -M "$maxmemory")
 
 	for i in "${!_fq1_dedup[@]}"; do
@@ -47,15 +47,13 @@ function preprocess::dedup(){
 		e1=$(echo $e1 | cut -d '.' -f 1)
 		o1="$outdir/$o1.$e1.gz"
 
-		helper::makecatcmd -c catcmd -f "${_fq1_dedup[$i]}"
-
 		if [[ "${_fq2_dedup[$i]}" ]]; then
 			helper::basename -f "${_fq2_dedup[$i]}" -o o2 -e e2
 			e2=$(echo $e2 | cut -d '.' -f 1)
 			o2="$outdir/$o2.$e2.gz"
 
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
-				paste <($catcmd "${_fq1_dedup[$i]}" | paste - - - -) <($catcmd "${_fq2_dedup[$i]}" | paste - - - -) <($catcmd "${_umi_dedup[$i]}" | paste - - - -)
+				paste <(helper::cat -f "${_fq1_dedup[$i]}" | paste - - - -) <(helper::cat -f "${_fq2_dedup[$i]}" | paste - - - -) <(helper::cat -f "${_umi_dedup[$i]}" | paste - - - -)
 			CMD
 				awk -F '\t' -v OFS='\t' '{print $2$6$10,$0}'
 			CMD
@@ -72,7 +70,7 @@ function preprocess::dedup(){
 			_fq2_dedup[$i]="$o2"
 		else
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
-				paste <($catcmd "${_fq1_dedup[$i]}" | paste - - - -) <($catcmd "${_umi_dedup[$i]}" | paste - - - -)
+				paste <(helper::cat -f "${_fq1_dedup[$i]}" | paste - - - -) <(helper::cat -f "${_umi_dedup[$i]}" | paste - - - -)
 			CMD
 				awk -F '\t' -v OFS='\t' '{print $2$6,$0}'
 			CMD
@@ -387,7 +385,7 @@ function preprocess::cutadapt(){
 				-m 18
 				-o >(helper::pgzip -t $(((threads+1)/2)) -o "$o1")
 				-p >(helper::pgzip -t $(((threads+1)/2)) -o "$o2")
-				"${_fq1_cutadapt[$i]}" "${_fq2_cutadapt[$i]}"
+				<(helper::cat -f "${_fq1_cutadapt[$i]}") <(helper::cat -f "${_fq2_cutadapt[$i]}")
 				| cat
 			CMD
 			_fq1_cutadapt[$i]="$o1"
@@ -402,7 +400,7 @@ function preprocess::cutadapt(){
 				-j $threads
 				-m 18
 				-o >(helper::pgzip -t $threads -o "$o1")
-				"${_fq1_cutadapt[$i]}"
+				<(helper::cat -f "${_fq1_cutadapt[$i]}")
 				| cat
 			CMD
 			_fq1_cutadapt[$i]="$o1"
@@ -462,13 +460,12 @@ function preprocess::trimmomatic(){
 	#https://www.drive5.com/usearch/manual/quality_score.html
 	#od -v -A n -t u1
 	declare -a cmd1
-	local f catcmd params
+	local f params
 	$rrbs || params='LEADING:20'
 
 	for f in "${_fq1_trimmomatic[@]}"; do
-		helper::makecatcmd -c catcmd -f "$f"
 		commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-			$catcmd "$f" | head -4000
+			helper::cat -f "$f" | head -4000
 		CMD
 			| perl -M'List::Util qw(min max)' -slne '
 				BEGIN{
@@ -533,7 +530,7 @@ function preprocess::trimmomatic(){
 				PE
 				-threads $threads
 				-${phred["${_fq1_trimmomatic[$i]}"]}
-				"${_fq1_trimmomatic[$i]}" "${_fq2_trimmomatic[$i]}"
+				<(helper::cat -f "${_fq1_trimmomatic[$i]}") <(helper::cat -f "${_fq2_trimmomatic[$i]}")
 				>(helper::pgzip -t $(((threads+1)/2)) -o "$o1") >(helper::pgzip -t $(((threads+1)/2)) -o "$os1")
 				>(helper::pgzip -t $(((threads+1)/2)) -o "$o2") >(helper::pgzip -t $(((threads+1)/2)) -o "$os2")
 				$params
@@ -555,7 +552,7 @@ function preprocess::trimmomatic(){
 				SE
 				-threads $threads
 				-${phred["${_fq1_trimmomatic[$i]}"]}
-				"${_fq1_trimmomatic[$i]}"
+				<(helper::cat -f "${_fq1_trimmomatic[$i]}")
 				>(helper::pgzip -t $threads -o "$o1")
 				$params
 				SLIDINGWINDOW:5:20
@@ -611,6 +608,10 @@ function preprocess::rcorrector(){
 
 	declare -a tdirs cmd1 cmd2
 	local i o1 e1 o2 e2 r1 r2
+
+	declare -a cmdchk=("conda list | grep -F rcorrector | awk '{print \$2}' | sed 's/\./\t/' | awk '\$1>1||\$2>=0.7{print true; exit}{print false}'")
+	local workaround=$(commander::runcmd -c rcorrector -a cmdchk)
+
 	for i in "${!_fq1_rcorrector[@]}"; do
 		helper::basename -f "${_fq1_rcorrector[$i]}" -o o1 -e e1
 		e1=$(echo $e1 | cut -d '.' -f 1) # if e1 == fastq or fq : mv $o1.cor.fq.gz $o1.$e1.gz else mv $o1.$e1.cor.fq.gz $o1.$e1.gz
@@ -624,43 +625,71 @@ function preprocess::rcorrector(){
 			o2="$outdir/$o2"
 			[[ $e2 == "fastq" || $e2 == "fq" ]] && r2="cor.fq" || r2="$e2.cor.fq"
 
-			readlink -e "${_fq1_rcorrector[$i]}" | file -b --mime-type -f - | grep -qF -e 'gzip' -e 'bzip2' && {
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-					cd "${tdirs[-1]}"
-				CMD
+			if $workaround; then
+				# -stdout is broken for PE data. reports R1 twice instead of R1 and R2
+				# does not work with dynamic FD
+				readlink -e "${_fq1_rcorrector[$i]}" | file -b --mime-type -f - | grep -qF -e 'gzip' -e 'bzip2' && {
+					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
+						cd "${tdirs[-1]}"
+					CMD
+						exec 11>&1; exec 12>&1
+					CMD
+						ln -sfn "/dev/fd/11" "$(basename "$o1").$r1.gz"
+					CMD
+						ln -sfn "/dev/fd/12" "$(basename "$o2").$r2.gz"
+					CMD
+						run_rcorrector.pl
+						-1 "$(realpath -se "${_fq1_rcorrector[$i]}")"
+						-2 "$(realpath -se "${_fq2_rcorrector[$i]}")"
+						-od "${tdirs[-1]}"
+						-t $threads
+						11> >(helper::gzindex -o "$o1.$e1.gz")
+						12> >(helper::gzindex -o "$o2.$e2.gz")
+						| cat
+					CMD
+						exec 11>&-; exec 12>&-
+					CMD
+				} || {
+					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
+						cd "${tdirs[-1]}"
+					CMD
+						exec 11>&1; exec 12>&1
+					CMD
+						ln -sfn "/dev/fd/11" "$(basename "$o1").$r1"
+					CMD
+						ln -sfn "/dev/fd/12" "$(basename "$o2").$r2"
+					CMD
+						run_rcorrector.pl
+						-1 "$(realpath -se "${_fq1_rcorrector[$i]}")"
+						-2 "$(realpath -se "${_fq2_rcorrector[$i]}")"
+						-od "${tdirs[-1]}"
+						-t $threads
+						11> >(helper::pgzip -t $(((threads+1)/2)) -o "$o1.$e1.gz")
+						12> >(helper::pgzip -t $(((threads+1)/2)) -o "$o2.$e2.gz")
+						| cat
+					CMD
+						exec 11>&-; exec 12>&-
+					CMD
+				}
+			else
+				# stdout fixed in v1.0.6 and -tmpd added in v1.0.7
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 					run_rcorrector.pl
+					-tmpd "${tdirs[-1]}"
 					-1 "$(realpath -se "${_fq1_rcorrector[$i]}")"
 					-2 "$(realpath -se "${_fq2_rcorrector[$i]}")"
-					-od "$outdir"
 					-t $threads
+					-stdout
 				CMD
-					mv "$o1.$r1.gz" "$o1.$e1.gz"
+					paste - - - -
 				CMD
-					mv "$o2.$r2.gz" "$o2.$e2.gz"
+					tee -i
+					>(sed -n '1~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$o1.$e1.gz")
+					>(sed -n '2~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$o2.$e2.gz") > /dev/null)
 				CMD
-			} || {
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
-					cd "${tdirs[-1]}"
+					cat
 				CMD
-					exec 11>&1; exec 12>&1
-				CMD
-					ln -sfn "/dev/fd/11" "$(basename "$o1").$r1"
-				CMD
-					ln -sfn "/dev/fd/12" "$(basename "$o2").$r2"
-				CMD
-					run_rcorrector.pl
-					-1 "$(realpath -se "${_fq1_rcorrector[$i]}")"
-					-2 "$(realpath -se "${_fq2_rcorrector[$i]}")"
-					-od "${tdirs[-1]}"
-					-t $threads
-					11> >(helper::pgzip -t $(((threads+1)/2)) -o "$o1.$e1.gz")
-					12> >(helper::pgzip -t $(((threads+1)/2)) -o "$o2.$e2.gz")
-					| cat
-				CMD
-					exec 11>&-; exec 12>&-
-				CMD
-			}
-			# -stdout is broken for PE data. reports R1 twice instead of R1 and R2
+			fi
 
 			_fq1_rcorrector[$i]="$o1.$e1.gz"
 			_fq2_rcorrector[$i]="$o2.$e2.gz"
@@ -721,15 +750,15 @@ function preprocess::sortmerna_new(){
 
 	commander::printinfo "filtering rRNA fragments"
 
-	declare -a tdirs cmd1 cmd2
-	local i f catcmd o1 o2 e1 e2
+	declare -a tdirs cmd1 cmd2 catcmd
+	local i f o1 o2 e1 e2
 	for i in "${!_fq1_sortmerna[@]}"; do
 		helper::basename -f "${_fq1_sortmerna[$i]}" -o o1 -e e1
 		e1=$(echo $e1 | cut -d '.' -f 1)
 
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sortmerna)")
 
-		helper::makecatcmd -c catcmd -f "${_fq1_sortmerna[$i]}"
+		helper::makecatcmd -v catcmd -f "${_fq1_sortmerna[$i]}"
 
 		if [[ ${_fq2_sortmerna[$i]} ]]; then
 			helper::basename -f "${_fq2_sortmerna[$i]}" -o o2 -e e2
@@ -881,8 +910,8 @@ function preprocess::sortmerna(){
 
 	commander::printinfo "filtering rRNA fragments"
 
-	declare -a tdirs cmd1 cmd2 cmd3
-	local i catcmd tmp o1 o2 or1 or2 e1 e2
+	declare -a tdirs cmd1 cmd2 cmd3 catcmd
+	local i tmp o1 o2 or1 or2 e1 e2
 	for i in "${!_fq1_sortmerna[@]}"; do
 		helper::basename -f "${_fq1_sortmerna[$i]}" -o o1 -e e1
 		e1=$(echo $e1 | cut -d '.' -f 1)
@@ -892,8 +921,6 @@ function preprocess::sortmerna(){
 
 		or1="$outdir/rRNA.$o1.$e1.gz"
 		o1="$outdir/$o1.$e1.gz"
-
-		helper::makecatcmd -c catcmd -f "${_fq1_sortmerna[$i]}"
 
 		# sortmerna v2.1 input must not be compressed (v.3.* creates empty files)
 		# outfile gets extension from input file
@@ -905,7 +932,7 @@ function preprocess::sortmerna(){
 			o2="$outdir/$o2.$e2.gz"
 
 			commander::makecmd -a cmd1 -s '|' -o "$tmp.merged.$e1" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
-				paste <($catcmd "${_fq1_sortmerna[$i]}") <($catcmd "${_fq2_sortmerna[$i]}")
+				paste <(helper::cat -f "${_fq1_sortmerna[$i]}") <(helper::cat -f "${_fq2_sortmerna[$i]}")
 			CMD
 				paste - - - -
 			CMD
@@ -939,14 +966,14 @@ function preprocess::sortmerna(){
 			_fq1_sortmerna[$i]="$o1"
 			_fq2_sortmerna[$i]="$o2"
 		else
-			helper::makecatcmd -c catcmd -f "${_fq1_sortmerna[$i]}"
+			helper::makecatcmd -v catcmd -f "${_fq1_sortmerna[$i]}"
 			[[ $catcmd == "cat" ]] && {
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					ln -sfn "${_fq1_sortmerna[$i]}" "$tmp.$e1"
 				CMD
 			} || {
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-					$catcmd "${_fq1_sortmerna[$i]}" > "$tmp.$e1"
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					helper::cat -f "${_fq1_sortmerna[$i]}" > "$tmp.$e1"
 				CMD
 			}
 

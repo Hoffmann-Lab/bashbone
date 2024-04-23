@@ -1,6 +1,35 @@
 #!/usr/bin/env bash
 # (c) Konstantin Riege
 
+function helper::gzindex(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[-2]} usage:
+			-f <infile>  | path to. else stdin
+			-o <outfile> | path to
+		EOF
+		return 1
+	}
+
+	local OPTIND arg threads=1 f o tool="bgzip"
+	while getopts 'f:t:o:p' arg; do
+		case $arg in
+			f)	f="$OPTARG";;
+			o)	o="$OPTARG"; mkdir -p "$(dirname "$o")";;
+			*)	_usage;;
+		esac
+	done
+	[[ ! $f && ! $o ]] && { _usage || return 0; }
+
+	if [[ $f ]]; then
+		cat "$f" | tee -i >(gztool -v 0 -f -i -x -C -I "${f%.*}.gzi") >(rapidgzip -P 4 -f --export-index "${f%.*}.rgzi") > /dev/null | cat
+	else
+		tee -i >(gztool -v 0 -f -i -x -C -I "${o%.*}.gzi") >(rapidgzip -P 4 -f --export-index "${o%.*}.rgzi") > "$o" | cat
+	fi
+
+	return 0
+}
+
 function helper::pgzip(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
@@ -29,16 +58,16 @@ function helper::pgzip(){
 
 	if [[ $tool == "bgzip" && -x "$(command -v bgzip)" ]]; then
 		# compression level changed from v1.16 to ~match gzip size at cost of throughput (still being faster than pigz)
-		tool+=" -l $(bgzip --version | head -1 | awk 'NF>1.15{print 5; exit}{print 6}') -@"
+		tool+=" -l $(bgzip --version | head -1 | awk '$NF>1.15{print 5; exit}{print 6}') -@"
 	else
 		tool="pigz -p"
 	fi
 
-	if [[ -x "$(command -v rapidgzip)" ]]; then
-		$tool $threads -k -c "$f" | tee -i >(gztool -v 0 -f -i -x -C -I "${o%.*}.gzi") >(rapidgzip --export-index "${o%.*}.rgzi") > "$o" | cat
-	else
-		$tool $threads -k -c "$f" | tee -i "$o" | gztool -v 0 -f -i -x -C -I "${o%.*}.gzi" | cat
-	fi
+	# if [[ -x "$(command -v rapidgzip)" ]]; then
+	$tool $threads -k -c "$f" | tee -i >(gztool -v 0 -f -i -x -C -I "${o%.*}.gzi") >(rapidgzip -P 4 -f --export-index "${o%.*}.rgzi") > "$o" | cat
+	# else
+	# 	$tool $threads -k -c "$f" | tee -i "$o" | gztool -v 0 -f -i -x -C -I "${o%.*}.gzi" | cat
+	# fi
 
 	return 0
 }
@@ -237,7 +266,7 @@ function helper::vcfsort(){
 	local instances maxmemory tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vcfsort)"
 	read -r instances maxmemory < <(configure::memory_by_instances -i 1 -M "$maxmemory")
 	if $zip; then
-		bcftools view "$f" 2> >(sed -u '/vcf_parse/{q 1}' >&2) | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[a[1]]=i}; print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[i]=a[1]}; print; next} {$1=c[$1]; print}' | bgzip -k -c -@ $threads /dev/stdin > "$o" | cat
+		bcftools view "$f" 2> >(sed -u '/vcf_parse/{q 1}' >&2) | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[a[1]]=i}; print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[i]=a[1]}; print; next} {$1=c[$1]; print}' | bgzip -k -c -@ $threads > "$o" | cat
 		tabix -f -p vcf "$o"
 	else
 		bcftools view "$f" 2> >(sed -u '/vcf_parse/{q 1}' >&2) | awk -F'\t' -v t=$threads -v m=$maxmemory -v p="$tdir" -v OFS='\t' '/^#/{if(match($0,/^##contig=<ID=(\S+),length.*/,a)){i++; c[a[1]]=i}; print; next} {$1=c[$1]; print | "LC_ALL=C sort -k1,1n -k2,2n -k4,4 -k5,5 --parallel="t" -S "m"M -T \""p"\""}' | awk -F'\t' -v OFS='\t' '/^#/{if(match($0,/.*#contig=<ID=(\S+),length.*/,a)){i++; c[i]=a[1]}; print; next} {$1=c[$1]; print}' > "$o" | cat
@@ -250,63 +279,101 @@ function helper::makecatcmd(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[-2]} usage:
-			-c <var>  | cmd
-			-f <file> | to ascii
+			-c <var>  | obsolete synonym for -v
+			-v <var>  | variable
+			-f <file> | path to
+			-l        | legacy mode without index
 			example:
 			${FUNCNAME[-2]} -c cmd -f [txt|bz2|gz]
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory f
-	declare -n _makecatcmd
-	while getopts 'f:c:' arg; do
+	local OPTIND arg mandatory f v legacy=false
+	while getopts 'f:c:v:l' arg; do
 		case $arg in
-			c) ((++mandatory)); _makecatcmd=$OPTARG;;
-			f) ((++mandatory)); f="$OPTARG";;
-			*) _usage;;
+			c)	v=$OPTARG;;
+			v)	v=$OPTARG;;
+			l)	legacy=true;;
+			f)	((++mandatory)); f="$OPTARG";;
+			*)	_usage;;
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 2 ]] && _usage
+	[[ $mandatory -lt 1 ]] && _usage
 
-	# pigz p=1: 370MB/s
-	# pigz p=2: 500MB/s
-	# bgzip   : 400MB/s
-	# rapidgzip P=4   : index or bgzip : 1300MB/s | no index: 800MB/s
-	# rapidgzip P=8   : index or bgzip : 1500MB/s | no index: 1100MB/s
+	if [[ $v ]]; then
+		declare -n _makecatcmd=$v
+	else
+		local _makecatcmd
+	fi
+
+	### SSD
+	# pigz p=1  : 400MB/s
+	# pigz p=2  : 500MB/s
+	# bgzip @=1 : 400MB/s
+	# bgzip @=2 : 400MB/s
+	# rapidgzip P=4 : index or bgzip : 1300MB/s | no index : 800MB/s
+	# rapidgzip P=8 : index or bgzip : 1500MB/s | no index : 1100MB/s
+	### NFS
+	# pigz p=1  : 250MB/s
+	# pigz p=2  : 200MB/s
+	# bgzip @=1 : 550MB/s
+	# bgzip @=4 : 2500MB/s
+	# bgzip @=8 : 3800MB/s
+	# rapidgzip P=4               : index or bgzip : 2500MB/s | no index : 550MB/s (P=1!)
+	# rapidgzip P=8               : index or bgzip : 3800MB/s | no index : 550MB/s (P=1!)
+	# rapidgzip P=12              : index or bgzip : 5500MB/s | no index : 550MB/s (P=1!)
+	# rapidgzip (sequential) P=4  : index or bgzip : 2500MB/s | no index : 2200MB/s
+	# rapidgzip (sequential) P=8  : index or bgzip : 3800MB/s | no index : 3500MB/s
+	# rapidgzip (sequential) P=12 : index or bgzip : 5500MB/s | no index : 5000MB/s
+
 	# _makecatcmd=$({ readlink -e "$f" | file -b --mime-type -f - | grep -oF -e 'gzip' -e 'bzip2' || echo cat; } | sed '/cat/!{s/gzip/pigz -p 2/; s/$/ -kcd/}')
 	# _makecatcmd=$({ readlink -e "$f" | file -b --mime-type -f - | grep -oF -e 'gzip' -e 'bzip2' || echo cat; } | sed '/cat/!{s/gzip/bgzip -@ 1/; s/$/ -kcd/}')
 	# _makecatcmd=$({ readlink -e "$f" | file -b --mime-type -f - | grep -oF -e 'gzip' -e 'bzip2' || echo cat; } | sed '/cat/!{s/gzip/rapidgzip -P 4/; s/$/ -kcd/}')
 
 	case "$(readlink -e "$f" | file -b --mime-type -f - | grep -oF -e 'gzip' -e 'bzip2' || echo cat)" in
 		gzip)
-			local params
-			if [[ -e "${f%.*}.rgzi" ]]; then
-				params="-P 4 --import-index '"${f%.*}.rgzi"'"
-			else
-				# bgzip || gzip
-				params="-P $(gzip -l "$f" | tail -1 | awk '$1>0 && $2==0{print 4; exit}{print 8}')"
-			fi
-			local d=$(
-				d="$(df --output=source "$(readlink -e "$f")" | tail -1)"
-				lsblk -n -o ROTA "$d" 2> /dev/null || {
-					d="$(realpath "/dev/disk/by-label/$(rev <<< "$d" | xargs basename | rev)")"
-					lsblk -n -o ROTA "$d" 2> /dev/null || echo 0
+			local rota=$(
+				rota="$(df --output=source "$(readlink -e "$f")" | tail -1)"
+				lsblk -n -o ROTA "$rota" 2> /dev/null || {
+					rota="$(realpath "/dev/disk/by-label/$(rev <<< "$rota" | xargs basename | rev)")"
+					lsblk -n -o ROTA "$rota" 2> /dev/null || echo 1
 				}
 			)
-			if [[ $d -eq 1 ]]; then
-				params+=" --io-read-method sequential"
+			# restrict to 4 threads
+			if [[ $rota -eq 0 ]]; then
+				# ssd
+				if ! $legacy && [[ -e "${f%.*}.rgzi" ]]; then
+					_makecatcmd=("rapidgzip" "-kcd" "-P" "4" "--import-index" "${f%.*}.rgzi")
+				else
+					# bgzip || gzip
+					# params="-P $(gzip -l "$f" | tail -1 | awk '$1>0 && $2==0{print 4; exit}{print 8}')"
+					_makecatcmd=("rapidgzip" "-kcd" "-P" "4")
+				fi
+			else
+				# nfs/overlay/...
+				# not necessary to go with 12 threads
+				if ! $legacy && [[ -e "${f%.*}.rgzi" ]]; then
+					_makecatcmd=("rapidgzip" "-kcd" "-P" "4" "--import-index" "${f%.*}.rgzi")
+				else
+					_makecatcmd=("rapidgzip" "-kcd" "-P" "4" "--io-read-method" "sequential")
+				fi
 			fi
-			_makecatcmd="rapidgzip -kcd $params"
 		;;
 		bzip2)
-			_makecatcmd="bzip2 -kcd"
+			# bzip2 replaced by faster indexed_bzip2
+			_makecatcmd=("ibzip2" "-kcd" "-P 4")
 			;;
-		*)	_makecatcmd="cat";;
+		*)	_makecatcmd=("cat");;
 	esac
 
+	[[ $v ]] || "${_makecatcmd[@]}" "$f"
 	return 0
+}
+
+function helper::cat(){
+	helper::makecatcmd "$@"
 }
 
 function helper::basename(){
