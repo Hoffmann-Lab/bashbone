@@ -182,7 +182,7 @@ function alignment::rmduplicates(){
 	local nfh=$(($(ulimit -n)/minstances))
 	[[ ! $nfh ]] || [[ $nfh -le 1 ]] && nfh=$((1024/minstances))
 
-	local m i o e slice instances ithreads odir params x=0 catcmd oinstances othreads
+	local m i o e slice instances ithreads odir params x=0 oinstances othreads
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
 		i=$(wc -l < "${_bamslices_rmduplicates[${_bams_rmduplicates[0]}]}")
@@ -202,10 +202,8 @@ function alignment::rmduplicates(){
 			e=$(echo $e | cut -d '.' -f 1)
 			o="$tmpdir/$o.$e.gz"
 
-			helper::makecatcmd -c catcmd -f "${_umi_rmduplicates[$i]}"
-
 			commander::makecmd -a cmdsort -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
-				$catcmd "${_umi_rmduplicates[$i]}" | paste - - - -
+				helper::cat -f "${_umi_rmduplicates[$i]}" | paste - - - -
 			CMD
 				awk -v OFS='\t' '{print $1,$(NF-2),$(NF-1),$NF}'
 			CMD

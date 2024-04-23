@@ -292,8 +292,7 @@ function bisulfite::bwa(){
 		helper::basename -f "${_fq1_bwa[$i]}" -o o -e e
 		o="$outdir/$o"
 
-		helper::makecatcmd -c catcmd -f "${_fq1_bwa[$i]}"
-		readlength=$($catcmd "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%.f",l/(NR/4))}')
+		readlength=$(helper::cat -f "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%.f",l/(NR/4))}')
 		[[ $readlength -lt $reflength ]] || readlength=$reflength
 		[[ $accuracy ]] && params='--score '$(echo $accuracy | awk -v l=$readlength '{print l-sprintf("%.0d",(1-$1/100)*l+1)*5}')
 
@@ -393,7 +392,7 @@ function bisulfite::rmduplicates(){
 	read -r sinstances sthreads smemory jgct jcgct < <(configure::jvm -i ${#_umi_rmduplicates[@]} -T $threads -m $memory -M "$maxmemory")
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
-	local m i o e slice instances ithreads odir params1 params2 x=0 catcmd oinstances othreads
+	local m i o e slice instances ithreads odir params1 params2 x=0 oinstances othreads
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
 		i=$(wc -l < "${_bamslices_rmduplicates[${_bams_rmduplicates[0]}]}")
@@ -412,10 +411,8 @@ function bisulfite::rmduplicates(){
 			e=$(echo $e | cut -d '.' -f 1)
 			o="$tmpdir/$o.$e.gz"
 
-			helper::makecatcmd -c catcmd -f "${_umi_rmduplicates[$i]}"
-
 			commander::makecmd -a cmdsort -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
-				$catcmd "${_umi_rmduplicates[$i]}" | paste - - - -
+				helper::cat -f "${_umi_rmduplicates[$i]}" | paste - - - -
 			CMD
 				awk -v OFS='\t' '{print $1,$(NF-2),$(NF-1),$NF}'
 			CMD

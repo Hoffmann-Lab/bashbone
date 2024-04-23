@@ -201,7 +201,7 @@ function compile::conda_tools(){
 				git wget curl ghostscript dos2unix \
 				sra-tools entrez-direct cgpbigwig \
 				datamash samtools bedtools ucsc-facount khmer \
-				htslib htseq bcftools vcflib vt vcftools \
+				libdeflate htslib htseq bcftools vcflib vt vcftools \
 				perl perl-app-cpanminus perl-list-moreutils perl-try-tiny perl-xml-parser perl-dbi perl-db-file "perl-bioperl>=1.7" perl-bio-eutilities \
 				java-jdk \
 				nlopt "r-base>=4" \
@@ -321,6 +321,8 @@ function compile::conda_tools(){
 	done
 	# necessary fixes
 	chmod 755 "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl"
+	sed -i 's/gzip -cd/rapidgzip -kcd -P 4/' "$insdir/conda/envs/rcorrector/bin/run_rcorrector.pl"
+
 	cat <<-EOF > "$insdir/conda/envs/seacr/bin/SEACR.sh"
 		#!/usr/bin/env bash
 		exec "\$(realpath -s "\$(dirname "\$0")")/$(basename "$insdir/conda/envs/seacr/bin/"SEACR_*.sh)" "\$@"

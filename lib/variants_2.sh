@@ -114,6 +114,8 @@ function variants::haplotypecaller(){
 				CMD
 
 				if $isdna; then
+					# or 'QD<2.0||MQ<40.0||FS>60.0||MQRankSum<−12.5||ReadPosRankSum<−8.0'
+					# doi: 10.1093/hr/uhae033 or 10.1093/hr/uhad182
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 						MALLOC_ARENA_MAX=4 gatk
 							--java-options '
