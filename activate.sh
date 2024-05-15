@@ -133,7 +133,8 @@ function _bashbone_reset(){
 	source <(printf '%s\n' "${BASHBONE_BAK_SET[@]}")
 	source <(printf '%s\n' "${BASHBONE_BAK_ALIASES[@]}")
 	${BASHBONE_CONDA:-false} || PATH="${PATH/$BASHBONE_PATH/}"
-	if [[ "$(declare -p BASHBONE_BAK_PROMPT_CMD 2> /dev/null)" == "declare -a BASHBONE_BAK_PROMPT_CMD="* ]]; then
+	if compgen -A arrayvar BASHBONE_BAK_PROMPT_CMD > /dev/null; then
+	# if [[ "$(declare -p BASHBONE_BAK_PROMPT_CMD 2> /dev/null)" == "declare -a BASHBONE_BAK_PROMPT_CMD="* ]]; then
 		mapfile -t PROMPT_COMMAND < <(printf "%s\n" "${BASHBONE_BAK_PROMPT_CMD[@]}")
 	else
 		PROMPT_COMMAND="$BASHBONE_BAK_PROMPT_CMD"
@@ -141,7 +142,8 @@ function _bashbone_reset(){
 
 	# remove all non-exported variables
 	local v
-	for v in COMMANDER $(declare -p | grep -E '^declare -[^x] BASHBONE_' | cut -d ' ' -f 3 | cut -d '=' -f 1); do
+	for v in COMMANDER $(compgen -A variable BASHBONE_ | grep -vFx -f <(compgen -A export BASHBONE_)); do
+	# for v in COMMANDER $(declare -p | grep -E '^declare -[^x] BASHBONE_' | cut -d ' ' -f 3 | cut -d '=' -f 1); do
 		unset $v
 	done
 	return 0
@@ -279,7 +281,8 @@ function _bashbone_wrapper(){
 		mapfile -t BASHBONE_BAK_SET < <(printf "%s" $- | sed 's/[isc]//g' | sed -E 's/(.)/set -\1\n/g')
 		mapfile -t BASHBONE_BAK_ALIASES < <(declare -p BASH_ALIASES | sed 's/^declare/declare -g/') # squeeze in global paramater otherwise _bashbone_reset function call declares BASH_ALIASES locally
 		mapfile -t BASHBONE_BAK_CMD_NOT_FOUND < <(declare -f command_not_found_handle)
-		if [[ "$(declare -p PROMPT_COMMAND 2> /dev/null)" == "declare -a PROMPT_COMMAND="* ]]; then
+		if compgen -A arrayvar PROMPT_COMMAND > /dev/null; then
+		# if [[ "$(declare -p PROMPT_COMMAND 2> /dev/null)" == "declare -a PROMPT_COMMAND="* ]]; then
 			mapfile -t BASHBONE_BAK_PROMPT_CMD < <(printf "%s\n" "${PROMPT_COMMAND[@]}")
 		else
 			BASHBONE_BAK_PROMPT_CMD="$PROMPT_COMMAND"
@@ -366,19 +369,22 @@ function _bashbone_wrapper(){
 # ensure expand_aliases shopt is enabled and BASHBONE_DIR to be absolute so is $f and $BASH_SOURCE
 # further, ensure to unset all bashbone functions to not wrap nested functions like _usage which leads to unexpected error trace when interactive
 # also unset RETURN which tries to call already unset _on_return triggered by source
-while read -r f f f; do
-	alias $f="_bashbone_wrapper $f"
-done < <(
+
+declare -x -a BASHBONE_FUNCNAMES
+mapfile -t BASHBONE_FUNCNAMES < <(
 	shopt -s extdebug
 	trap - RETURN
-	while read -r f f f; do
+	while read -r f; do
 		unset -f $f
-	done < <(declare -F)
+	done < <(compgen -A function)
 	while read -r f; do
 		source "$f"
 	done < <(find -L "$BASHBONE_DIR/lib/" "$BASHBONE_EXTENSIONDIR/lib/" -name "*.sh" -not -name "#*")
-	declare -F
+	compgen -A function
 )
+for f in "${BASHBONE_FUNCNAMES[@]}"; do
+	alias $f="_bashbone_wrapper $f"
+done
 
 while read -r f; do
 	source "$f"
@@ -394,20 +400,20 @@ function bashbone(){
 			Is a bash/biobash library for workflow and pipeline design within, but not restricted to, the scope of Next Generation Sequencing (NGS) data analyses.
 
 			Usage:
-			-h | this help
-			-l | enable or disable legacy mode
-			-r | open readme
-			-c | activate bashbone conda environment or deactivate conda
-			-s | list bashbone scripts
-			-f | list bashbone function
-			-d | list bashbone developer functions
-			-e | list installed tools and versions
-			-x | remove bashbone functions and within scripts, restore environment (traps and shell options)
+			-h        | this help
+			-l        | enable or disable legacy mode
+			-r        | open readme
+			-c        | activate bashbone conda environment or deactivate conda
+			-s        | list bashbone scripts
+			-f <name> | list or execute bashbone functions
+			-d        | list bashbone developer functions
+			-e        | list installed tools and versions
+			-x        | remove bashbone functions and within scripts, restore environment (traps and shell options)
 		EOF
 		return 0
 	}
 
-	local OPTIND arg f l s
+	local OPTIND arg f l s v e i
 	while getopts 'hlrcsfdex' arg; do
 		case $arg in
 		h)	_usage
@@ -438,19 +444,14 @@ function bashbone(){
 			;;
 		s)	find -L "$BASHBONE_DIR/scripts/" "$BASHBONE_EXTENSIONDIR/scripts/" -type f -not -name "test.sh" -not -name "setup.sh" -not -name "#*" | rev | sort -t '/' -u | rev
 			;;
-		f)	(	shopt -s extdebug
-				for f in $(declare -F | awk '{print $3}'); do
-					read -r f l s < <(declare -F $f)
-					[[ "$s" == "$BASHBONE_DIR/lib/"* ]] && echo $f
-				done | grep -vF -e ::_ -e test:: -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V
-			)
+		f)	shift $((OPTIND-1));
+			if [[ $1 ]]; then
+				"$@"
+			else
+				printf '%s\n' "${BASHBONE_FUNCNAMES[@]}" | grep -vF -e ::_ -e test:: -e compile:: -e helper:: -e progress:: -e commander:: -e configure:: -e options:: | sort -t ':' -k1,1 -k3,3V
+			fi
 			;;
-		d)	(	shopt -s extdebug
-				for f in $(declare -F | awk '{print $3}'); do
-					read -r f l s < <(declare -F $f)
-					[[ "$s" == "$BASHBONE_DIR/lib/"* ]] && echo $f
-				done | grep -F -e helper:: -e progress:: -e commander:: -e configure:: | sort -t ':' -k1,1 -k3,3V
-			)
+		d)	printf '%s\n' "${BASHBONE_FUNCNAMES[@]}" | grep -F -e helper:: -e progress:: -e commander:: -e configure:: | sort -t ':' -k1,1 -k3,3V
 			;;
 		e)	(	source "$BASHBONE_TOOLSDIR/conda/bin/activate" bashbone &> /dev/null || {
 					echo ":ERROR: no bashbone installation found" >&2
@@ -466,20 +467,28 @@ function bashbone(){
 				conda deactivate &> /dev/null
 			done
 			PATH="${PATH/$BASHBONE_PATH/}"
-			[[ $- =~ i ]] || _bashbone_reset # already done when interactive
-			# do in subshell to not alter enviroment again by extdebug
-			while read -r f; do
+
+			[[ $- =~ i ]] || _bashbone_reset # already in prompt_command done when interactive
+
+			complete -r bashbone
+			[[ ${BASH_VERSINFO[0]} -ge 5 ]] && complete -r -I
+			_bashbone_completion_default
+			if compgen -A arrayvar PROMPT_COMMAND > /dev/null; then
+				l=${#PROMPT_COMMAND[@]}
+				for i in "${!PROMPT_COMMAND[@]}"; do
+					[[ ${PROMPT_COMMAND[$i]} == "_bashbone_completion_default" ]] || PROMPT_COMMAND+=("${PROMPT_COMMAND[$i]}")
+				done
+				PROMPT_COMMAND=("${PROMPT_COMMAND[@]:$l}")
+			else
+				PROMPT_COMMAND="${PROMPT_COMMAND/$'\n'_bashbone_completion_default/}"
+			fi
+
+			for f in "${BASHBONE_FUNCNAMES[@]}" bashbone $(compgen -A function _bashbone); do
 				unset -f $f
 				unalias $f &> /dev/null || true
-			done < <(
-				shopt -s extdebug
-				for f in $(declare -F | awk '{print $3}'); do
-					read -r f l s < <(declare -F $f)
-					[[ "$s" == "$BASHBONE_DIR/lib/"* || "$s" == "$BASHBONE_EXTENSIONDIR/lib/"* || "$f" == *"bashbone"* ]] && echo $f
-				done
-			)
-			local v
-			for v in $(declare -p | grep -E '^declare -. BASHBONE_' | cut -d ' ' -f 3 | cut -d '=' -f 1); do
+			done
+
+			for v in $(compgen -A variable BASHBONE_); do
 				unset $v
 			done
 			;;
@@ -493,3 +502,53 @@ function bashbone(){
 	_usage
 	return 0
 }
+
+function _bashbone_completion(){
+	declare -a args
+	mapfile -d ' ' -t args < <(sed 's/\s*$//'< <(printf '%s' "$COMP_LINE"))
+
+	local cur # cur prev words cword
+	_get_comp_words_by_ref -n : cur	# _init_completion -n :
+	[[ "$3" == "-f" ]] || [[ ${#args[@]} -ge 2 && ${args[-2]} == "-f" && $3 && $cur ]] || return
+	COMPREPLY=($(compgen -W "${BASHBONE_FUNCNAMES[*]}" -- "$cur"))
+	__ltrim_colon_completions "$cur"
+
+	return 0
+}
+
+# override to ensure COMP_WORDBREAKS reset in loaded completion functions like _scp, _make or _git ..
+function _completion_loader(){
+    local cmd="${1:-_EmptycmD_}"
+    __load_completion "$cmd" || complete -F _minimal -- "$cmd" && {
+    	local fun=$(complete -p $cmd | grep -oE ' -F [^[:space:]]+' | awk '{print $NF}')
+    	source <(
+    		echo "$fun (){"
+    		echo 'COMP_WORDBREAKS="${COMP_WORDBREAKS/:/}:"'
+    		declare -f $fun | tail -n +3
+    	)
+    	return 124
+    }
+}
+
+function _bashbone_completion_init(){
+	COMP_WORDBREAKS=${COMP_WORDBREAKS/:/}
+	# necessary detour to reset in current readline
+	complete -F _bashbone_completion_default -D
+}
+
+function _bashbone_completion_default(){
+	COMP_WORDBREAKS="${COMP_WORDBREAKS/:/}:"
+	complete -F _completion_loader -D
+}
+
+if [[ ! ${PROMPT_COMMAND[*]} == *_bashbone_completion_default* ]]; then
+	if compgen -A arrayvar PROMPT_COMMAND > /dev/null; then
+		PROMPT_COMMAND+=("_bashbone_completion_default")
+	else
+		PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}_bashbone_completion_default"
+	fi
+fi
+
+# activate colon aware _InitialWorD_ completion
+[[ ${BASH_VERSINFO[0]} -ge 5 ]] && complete -F _bashbone_completion_init -c -W "${BASHBONE_FUNCNAMES[*]}" -I
+complete -F _bashbone_completion bashbone
