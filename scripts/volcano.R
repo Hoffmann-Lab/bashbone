@@ -38,32 +38,22 @@ df$Regulation[!is.na(df$log2FoldChange) & df$log2FoldChange<0 & !is.na(df$padj) 
 df$Regulation[!is.na(df$log2FoldChange) & df$log2FoldChange>0 & !is.na(df$padj) & df$padj<=0.05] = "Up"
 df$label = rep(NA,nrow(df))
 
+# to have at least one up and down feature (plottet out of bounds) to show full legend and scale_color_manual
 e = df[1,]
-e$id = "_fake_down_"
+e$id = paste0("_fake_down_",as.integer(runif(1,100000,999999)))
 e$name = e$id
 e$log2FoldChange = 0
 e$padj = 1
 e$pvalue = 10
 e$Regulation="Down"
 df = rbind(e,df)
-e$id = "_fake_up_"
+e$id = paste0("_fake_up_",as.integer(runif(1,100000,999999)))
 e$name = e$id
 e$log2FoldChange = 0
 e$padj = 1
 e$pvalue = 10
 e$Regulation="Up"
 df = rbind(e,df)
-
-mycolors=c()
-if (sum(df$Regulation=="Down")>0){
-  mycolors=c(mycolors,"blue")
-}
-if (sum(df$Regulation=="n.s.")>0){
-  mycolors=c(mycolors,"darkgrey")
-}
-if (sum(df$Regulation=="Up")>0){
-  mycolors=c(mycolors,"red")
-}
 
 nups=10
 ndowns=10
@@ -84,19 +74,23 @@ df = df[order(df$padj,na.last = T),]
 topidx = head(which(! is.na(df$padj) & df$padj<0.05),n=10)
 df[topidx,]$label = df[topidx,]$name
 
+# kick out low signals and outliers (analogous to padj based volcano plots)
 df = df[! is.na(df$padj),]
-myxlim=max(abs(df$log2FoldChange))+0.5
+# to handle very! rare cases of pvalues == 0 caused by tpm 10 vs 30k in over expression experiments
+df$padj[df$padj==0] = 0.1 * min(df$padj[df$padj>0])
+df$pvalue[df$pvalue==0] = 0.1 * min(df$pvalue[df$pvalue>0])
 myylim=max(0.5+-log10(df$pvalue))
+myxlim=max(abs(df$log2FoldChange))+0.5
+
 ggplot(df, aes(x=log2FoldChange, y=-log10(pvalue), col=Regulation, label=label)) +
   geom_point(alpha=0.65) + 
   theme_classic() +
-  scale_color_manual(values=mycolors) +
+  scale_color_manual(values=c("blue","darkgrey","red")) +
   geom_vline(xintercept=c(-0.5, 0.5), col="black", linetype="longdash") +
   geom_hline(yintercept=-log10(0.05), col="black", linetype="longdash") +
   ggtitle("Volcano plot") +
   xlab("log2 FoldChange") +
   ylab("-log10(p-value)") +
-  xlim(-myxlim, myxlim) +
   annotate("text", x=myxlim, y=myylim, color="red", label= paste0(ups,paste0(rep(" ",10-nchar(ups)),collapse="") )) +
   annotate("text", x=-myxlim, y=myylim, color="blue", label= paste0(paste0(rep(" ",10-nchar(downs)),collapse=""),downs)) +
   #theme(plot.title = element_text(hjust = 0.5)) +
