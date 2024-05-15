@@ -411,7 +411,7 @@ function compile::conda_tools(){
 			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults "$tool"
 		fi
 
-		git clone https://github.com/biocore/sortmerna.git "$insdir/conda/envs/sortmerna/src"
+		git clone --depth 1 https://github.com/biocore/sortmerna "$insdir/conda/envs/sortmerna/src"
 		mv "$insdir/conda/envs/sortmerna/src/data/rRNA_databases/" "$insdir/conda/envs/sortmerna/"
 		mkdir -p "$insdir/conda/envs/sortmerna/rRNA_databases/index"
 		rm -rf  "$insdir/conda/envs/sortmerna/src"
@@ -600,8 +600,14 @@ function compile::conda_tools(){
 		commander::printinfo "setup conda $n env"
 
 		rm -rf "$insdir/DANPOS3"
-		git clone https://github.com/sklasfeld/DANPOS3.git "$insdir/DANPOS3"
-		chmod 755 "$insdir/DANPOS3/"*.py
+		mkdir -p "$insdir/DANPOS3"
+		cd "$insdir/DANPOS3"
+		git init
+		git remote add origin https://github.com/sklasfeld/DANPOS3
+		git fetch origin 665bdd115f77a0e4c4f2f07f53f42b34490d703c
+		git reset --hard FETCH_HEAD
+		# chmod 755 *.py
+		cd - > /dev/null
 
 		sed -i -E 's/,\s*lower_tail\s*=\s*False,\s*log_bool\s*=\s*True\s*//' "$insdir/DANPOS3/reads.py"
 
@@ -662,7 +668,13 @@ function compile::conda_tools(){
 		done
 
 		rm -rf "$insdir/SalmonTE"
-		git clone https://github.com/hyunhwan-jeong/SalmonTE "$insdir/SalmonTE"
+		mkdir -p "$insdir/SalmonTE"
+		cd "$insdir/SalmonTE"
+		git init
+		git remote add origin https://github.com/hyunhwan-jeong/SalmonTE
+		git fetch origin 0a405190b7b5796b646814f14870b268bdf33249
+		git reset --hard FETCH_HEAD
+		cd - > /dev/null
 		mv "$insdir/SalmonTE/salmon/linux/bin/salmon" "$insdir/SalmonTE/salmon/linux/bin/salmon.old"
 		ln -sfnr "$insdir/conda/envs/$n/bin/salmon" "$insdir/SalmonTE/salmon/linux/bin/salmon"
 		ln -sfn "$insdir/SalmonTE" "$insdir/latest/salmon"
@@ -848,8 +860,12 @@ function compile::preparedexseq(){
 	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
 	rm -rf "$insdir/Subread_to_DEXSeq"
-	git clone https://github.com/vivekbhr/Subread_to_DEXSeq.git "$insdir/Subread_to_DEXSeq"
+	mkdir -p "$insdir/Subread_to_DEXSeq"
 	cd "$insdir/Subread_to_DEXSeq"
+	git init
+	git remote add origin https://github.com/vivekbhr/Subread_to_DEXSeq
+	git fetch origin 23ccd2ff4ff605622d3f3575130b31b6761a0990
+	git reset --hard FETCH_HEAD
 	mkdir -p bin
 	mv *.py bin
 	mkdir -p "$insdir/latest"
@@ -865,7 +881,7 @@ function compile::revigo(){
 	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
 	rm -rf "$insdir/revigo"
-	git clone https://gitlab.leibniz-fli.de/kriege/revigo.git "$insdir/revigo"
+	git clone --depth 1 https://gitlab.leibniz-fli.de/kriege/revigo "$insdir/revigo"
 	cd "$insdir/revigo"
 	mkdir -p bin
 	compile::_javawrapper bin/revigo "$(readlink -e RevigoStandalone.jar)" "$insdir/latest/java/java"
@@ -926,7 +942,7 @@ function compile::m6aviewer(){
 	wget -q --show-progress --progress=bar:force --timeout=2 --waitretry=2 --tries=2 "$url" -O "$insdir/m6aviewer-$version/m6aviewer.jar" || fallback=true
 	if $fallback; then
 		rm -rf "$insdir/m6aviewer-$version"
-		git clone https://gitlab.leibniz-fli.de/kriege/m6aviewer.git "$insdir/m6aviewer-$version"
+		git clone --depth 1 https://gitlab.leibniz-fli.de/kriege/m6aviewer "$insdir/m6aviewer-$version"
 	fi
 	cd "$insdir/m6aviewer-$version"
 	mkdir -p bin
@@ -1099,9 +1115,12 @@ function compile::moose(){
 	compile::_parse -r insdir -s threads -f cfg "$@"
 	source "$insdir/conda/bin/activate" bashbone
 	rm -rf "$insdir/moose2"
-	git clone https://github.com/grabherr/moose2.git "$insdir/moose2"
+	mkdir -p "$insdir/moose2"
 	cd "$insdir/moose2"
-	# git checkout a14ba3ef463c479c8037d1bb986f3cb6b5525da5
+	git init
+	git remote add origin https://github.com/grabherr/moose2
+	git fetch origin a14ba3ef463c479c8037d1bb986f3cb6b5525da5
+	git reset --hard FETCH_HEAD
 	sed -iE 's/\s*-static//' Makefile
 	export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
 	make clean || true
