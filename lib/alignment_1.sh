@@ -1835,8 +1835,9 @@ function alignment::qcstats(){
 			for bam in "${_mi_bamstats[@]}"; do
 				[[ -s "${bam%.*}.sizemetrics.tsv" ]] && header+="\t$b" && tojoin+=("${bam%.*}.sizemetrics.tsv")
 
-				# total = primary mapped + secondary + supplementary (primary mapped may include unampped reads if any i.e. 0 = total - secondary - supplementary)
+				# total = primary + secondary + supplementary (primary includes unmapped reads)
 				# primary mapped = mapped - secondary - supplementary
+				# unmapped = primary - primary mapped
 				[[ ! $filter ]] && filter='mapped' || filter=$(echo "${bam/\.sorted\./.}" | rev | cut -d '.' -f 2 | rev)
 				a=$(grep -m 1 -F mapped "${bam%.*}.flagstat" | cut -d ' ' -f 1)
 				s=$(grep -m 1 -F secondary "${bam%.*}.flagstat" | cut -d ' ' -f 1)
