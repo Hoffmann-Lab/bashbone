@@ -736,7 +736,7 @@ function helper::_replaceprefix(){
 
 function helper::_replacesuffix(){
 	declare -n __="$1"
-	__=("${__[@]/${2:-*}%/"$3"}")
+	__=("${__[@]/%${2:-*}/"$3"}")
 }
 
 function helper::_uniq(){
