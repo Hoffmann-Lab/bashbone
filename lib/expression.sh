@@ -260,9 +260,8 @@ function expression::deseq(){
 	commander::printinfo "principal component and differential expression analyses"
 
 	local instances ithreads i=${#_mapper_deseq[@]}
-	read -r instances ithreads < <(configure::instances_by_threads -i $i -t 64 -T $threads)
-	[[ $instances -lt $i && $ithreads -gt 64 ]] && ((++instances)) && ithreads=$((threads/instances))
-	[[ $ithreads -gt 64 ]] && ithreads=64
+	read -r instances ithreads < <(configure::instances_by_threads -i $i -t 10 -T $threads)
+	[[ $ithreads -gt 10 ]] && ithreads=10 # further speedup questionable and to avoid running out of memory due to too many forks.
 
 	declare -a cmd1 cmd2 cmd3 cmdanno cmd4 cmd5 cmd6 cmps mapdata tojoin
 	declare -A visited
