@@ -159,14 +159,20 @@ function preprocess::fastqc(){
 		helper::basename -f "$f" -o b -e e
 		e=$(echo $e | cut -d '.' -f 1) # if e == fastq or fq : check for ${b}_fastqc.zip else $b.${e}_fastqc.zip
 		[[ $e == "fastq" || $e == "fq" ]] && f="${b}_fastqc.zip" || f="$b.${e}_fastqc.zip"
+		# attention: nugen adapter search causes low false positive rates in R2 seqeunces
 		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 			unzip -c "$outdir/$f" "${f%.*}/fastqc_data.txt" | tac
 		CMD
 			perl -F'\t' -M'List::Util q(max)' -M'Switch' -lane '{
 				next unless /^\d+/;
-				$m=max(@F[1..$#F]);
-				exit if $m<0.001;
-				$i=(grep {$F[$_]==$m} 1..$#F)[0];
+				$m=max(@F[1..5]);
+				if($m>=0.001){
+					$i=(grep {$F[$_]==$m} 1..5)[0];
+				} else {
+					$m=max(@F[6..$#F]);
+					exit if $m<0.1;
+					$i=(grep {$F[$_]==$m} 6..$#F)[0];
+				}
 				switch($i){
 					case 1 {print "AGATCGGAAGAGC"}
 					case 2 {print "TGGAATTCTCGGGTGCCAAGG"}
@@ -174,7 +180,7 @@ function preprocess::fastqc(){
 					case 4 {print "CTGTCTCTTATACACATCT"}
 					case 5 {print "CGCCTTGGCCGT"}
 					case 6 {print "AAATCAAAAAAAC"}
-					case 6 {print "CCCATGTACTCTGCGTTGATACCACTGCTT"}
+					case 7 {print "CCCATGTACTCTGCGTTGATACCACTGCTT"}
 				}
 				exit
 			}'
