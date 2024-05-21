@@ -22,6 +22,9 @@ function helper::gzindex(){
 	[[ ! $f && ! $o ]] && { _usage || return 0; }
 
 	if [[ $f ]]; then
+		if [[ -e "${f%.*}.rgzi" ]]; then
+			gztool -v 0 -l "$f" && rapidgzip -kcd -P 4 --import-index "${f%.*}.rgzi" "$f" 2> /dev/null | head -1 | grep . &> /dev/null && return 0
+		fi
 		cat "$f" | tee -i >(gztool -v 0 -f -i -x -C -I "${f%.*}.gzi") >(rapidgzip -P 4 -f --export-index "${f%.*}.rgzi") > /dev/null | cat
 	else
 		tee -i >(gztool -v 0 -f -i -x -C -I "${o%.*}.gzi") >(rapidgzip -P 4 -f --export-index "${o%.*}.rgzi") > "$o" | cat

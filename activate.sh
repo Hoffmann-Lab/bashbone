@@ -470,17 +470,19 @@ function bashbone(){
 
 			[[ $- =~ i ]] || _bashbone_reset # already in prompt_command done when interactive
 
-			complete -r bashbone
-			[[ ${BASH_VERSINFO[0]} -ge 5 ]] && complete -r -I
-			_bashbone_completion_default
-			if compgen -A arrayvar PROMPT_COMMAND > /dev/null; then
-				l=${#PROMPT_COMMAND[@]}
-				for i in "${!PROMPT_COMMAND[@]}"; do
-					[[ ${PROMPT_COMMAND[$i]} == "_bashbone_completion_default" ]] || PROMPT_COMMAND+=("${PROMPT_COMMAND[$i]}")
-				done
-				PROMPT_COMMAND=("${PROMPT_COMMAND[@]:$l}")
-			else
-				PROMPT_COMMAND="${PROMPT_COMMAND/$'\n'_bashbone_completion_default/}"
+			if [[ ${BASH_VERSINFO[0]} -ge 5 ]]; then
+				complete -r bashbone
+				complete -r -I
+				_bashbone_completion_default
+				if compgen -A arrayvar PROMPT_COMMAND > /dev/null; then
+					l=${#PROMPT_COMMAND[@]}
+					for i in "${!PROMPT_COMMAND[@]}"; do
+						[[ ${PROMPT_COMMAND[$i]} == "_bashbone_completion_default" ]] || PROMPT_COMMAND+=("${PROMPT_COMMAND[$i]}")
+					done
+					PROMPT_COMMAND=("${PROMPT_COMMAND[@]:$l}")
+				else
+					PROMPT_COMMAND="${PROMPT_COMMAND/$'\n'_bashbone_completion_default/}"
+				fi
 			fi
 
 			for f in "${BASHBONE_FUNCNAMES[@]}" bashbone $(compgen -A function _bashbone); do
@@ -503,52 +505,54 @@ function bashbone(){
 	return 0
 }
 
-function _bashbone_completion(){
-	declare -a args
-	mapfile -d ' ' -t args < <(sed 's/\s*$//'< <(printf '%s' "$COMP_LINE"))
-
-	local cur # cur prev words cword
-	_get_comp_words_by_ref -n : cur	# _init_completion -n :
-	[[ "$3" == "-f" ]] || [[ ${#args[@]} -ge 2 && ${args[-2]} == "-f" && $3 && $cur ]] || return
-	COMPREPLY=($(compgen -W "${BASHBONE_FUNCNAMES[*]}" -- "$cur"))
-	__ltrim_colon_completions "$cur"
-
-	return 0
-}
-
-# override to ensure COMP_WORDBREAKS reset in loaded completion functions like _scp, _make or _git ..
-function _completion_loader(){
-    local cmd="${1:-_EmptycmD_}"
-    __load_completion "$cmd" || complete -F _minimal -- "$cmd" && {
-    	local fun=$(complete -p $cmd | grep -oE ' -F [^[:space:]]+' | awk '{print $NF}')
-    	source <(
-    		echo "$fun (){"
-    		echo 'COMP_WORDBREAKS="${COMP_WORDBREAKS/:/}:"'
-    		declare -f $fun | tail -n +3
-    	)
-    	return 124
-    }
-}
-
-function _bashbone_completion_init(){
-	COMP_WORDBREAKS=${COMP_WORDBREAKS/:/}
-	# necessary detour to reset in current readline
-	complete -F _bashbone_completion_default -D
-}
-
-function _bashbone_completion_default(){
-	COMP_WORDBREAKS="${COMP_WORDBREAKS/:/}:"
-	complete -F _completion_loader -D
-}
-
-if [[ ! ${PROMPT_COMMAND[*]} == *_bashbone_completion_default* ]]; then
-	if compgen -A arrayvar PROMPT_COMMAND > /dev/null; then
-		PROMPT_COMMAND+=("_bashbone_completion_default")
-	else
-		PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}_bashbone_completion_default"
-	fi
-fi
-
 # activate colon aware _InitialWorD_ completion
-[[ ${BASH_VERSINFO[0]} -ge 5 ]] && complete -F _bashbone_completion_init -c -W "${BASHBONE_FUNCNAMES[*]}" -I
-complete -F _bashbone_completion bashbone
+if [[ ${BASH_VERSINFO[0]} -ge 5 ]]; then
+	function _bashbone_completion(){
+		declare -a args
+		mapfile -d ' ' -t args < <(sed 's/\s*$//'< <(printf '%s' "$COMP_LINE"))
+
+		local cur # cur prev words cword
+		_get_comp_words_by_ref -n : cur	# _init_completion -n :
+		[[ "$3" == "-f" ]] || [[ ${#args[@]} -ge 2 && ${args[-2]} == "-f" && $3 && $cur ]] || return
+		COMPREPLY=($(compgen -W "${BASHBONE_FUNCNAMES[*]}" -- "$cur"))
+		__ltrim_colon_completions "$cur"
+
+		return 0
+	}
+
+	# override to ensure COMP_WORDBREAKS reset in loaded completion functions like _scp, _make or _git ..
+	function _completion_loader(){
+	    local cmd="${1:-_EmptycmD_}"
+	    __load_completion "$cmd" || complete -F _minimal -- "$cmd" && {
+	    	local fun=$(complete -p $cmd | grep -oE ' -F [^[:space:]]+' | awk '{print $NF}')
+	    	source <(
+	    		echo "$fun (){"
+	    		echo 'COMP_WORDBREAKS="${COMP_WORDBREAKS/:/}:"'
+	    		declare -f $fun | tail -n +3
+	    	)
+	    	return 124
+	    }
+	}
+
+	function _bashbone_completion_init(){
+		COMP_WORDBREAKS=${COMP_WORDBREAKS/:/}
+		# necessary detour to reset in current readline
+		complete -F _bashbone_completion_default -D
+	}
+
+	function _bashbone_completion_default(){
+		COMP_WORDBREAKS="${COMP_WORDBREAKS/:/}:"
+		complete -F _completion_loader -D
+	}
+
+	if [[ ! ${PROMPT_COMMAND[*]} == *_bashbone_completion_default* ]]; then
+		if compgen -A arrayvar PROMPT_COMMAND > /dev/null; then
+			PROMPT_COMMAND+=("_bashbone_completion_default")
+		else
+			PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}_bashbone_completion_default"
+		fi
+	fi
+
+	complete -F _bashbone_completion_init -c -W "${BASHBONE_FUNCNAMES[*]}" -I
+	complete -F _bashbone_completion bashbone
+fi

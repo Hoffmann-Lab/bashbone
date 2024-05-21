@@ -186,7 +186,8 @@ function compile::conda_tools(){
 		doclean=true
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env remove -y -n $n # manually remove to be compatible with different version: create had --force in newer version replace by -y
+			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
 			# r and main channel is included in conda’s “defaults” channel built by Anaconda Inc.
@@ -305,7 +306,8 @@ function compile::conda_tools(){
 
 			commander::printinfo "setup conda $n env"
 			if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-				mamba env create -n $n --force --file "$src/config/$n.yaml"
+				mamba env remove -y -n $n
+				mamba env create -n $n --file "$src/config/$n.yaml"
 			else
 				mamba create -y -n $n
 				mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults $tool
@@ -341,7 +343,8 @@ function compile::conda_tools(){
 
 	# 	commander::printinfo "setup conda $n env"
 	# 	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-	# 		mamba env create -n $n --force --file "$src/config/$n.yaml"
+	#		mamba env remove -y -n $n
+	# 		mamba env create -n $n --file "$src/config/$n.yaml"
 	# 	else
 	# 		mamba create -y -n $n
 	# 		mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults gopeaks pandas numpy  pybedtools scipy pysam
@@ -375,7 +378,8 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env remove -y -n $n
+			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n #python=3
 			# propably enought: perl perl-set-intervaltree perl-carp perl-carp-assert perl-db-file perl-io-gzip perl-json-xs perl-uri \
@@ -392,51 +396,101 @@ function compile::conda_tools(){
 		done
 	}
 
-	# prepared for sortmrna >4 , but newer versions have extreme runtime troubles
-	tool="sortmerna<3"
+	# tool="sortmerna<3"
+	# n=${tool/=*/}
+	# n=${n//[^[:alpha:]]/}
+	# if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+	# 	$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	# else
+	# 	$upgrade && ${envs[$n]:=false}
+	# fi || {
+	# 	doclean=true
+
+	# 	commander::printinfo "setup conda $n env"
+	# 	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+	# 		mamba env remove -y -n $n
+	# 		mamba env create -n $n --file "$src/config/$n.yaml"
+	# 	else
+	# 		mamba create -y -n $n
+	# 		mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults "$tool"
+	# 	fi
+
+	# 	git clone --depth 1 https://github.com/biocore/sortmerna "$insdir/conda/envs/sortmerna/src"
+	# 	mv "$insdir/conda/envs/sortmerna/src/data/rRNA_databases/" "$insdir/conda/envs/sortmerna/"
+	# 	mkdir -p "$insdir/conda/envs/sortmerna/rRNA_databases/index"
+	# 	rm -rf "$insdir/conda/envs/sortmerna/src"
+
+	# 	declare -a cmdidx
+	# 	for f in "$insdir/conda/envs/sortmerna/rRNA_databases/"*.fasta; do
+	# 		commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD
+	# 			indexdb_rna
+	# 			--ref "$f","$insdir/conda/envs/sortmerna/rRNA_databases/index/$(basename "$f" .fasta)-L18"
+	# 			-m 4096
+	# 			-L 18
+	# 		CMD
+	# 	done
+	# 	commander::runcmd -c sortmerna -i $threads -a cmdidx
+
+	# 	mkdir -p "$insdir/config"
+	# 	mamba env export -n $n --no-builds --override-channels -c conda-forge -c bioconda -c defaults | grep -vi -e "^prefix:" -e certifi | sed -E 's/=+/==/; s/- r-base==.*/- r-base>=4/' | sed -n '/variables:/,$!p' > "$insdir/config/$n.yaml"
+
+	# 	for bin in perl bgzip samtools bcftools bedtools vcfsamplediff bg2bw bwcat; do
+	# 		mamba list -n $n -f $bin | grep -qv '^#' || ln -sfnr "$insdir/conda/envs/bashbone/bin/$bin" "$insdir/conda/envs/$n/bin/$bin"
+	# 	done
+	# }
+
+	tool="sortmerna"
 	n=${tool/=*/}
 	n=${n//[^[:alpha:]]/}
-	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+	if [[ -e "$src/config/$n.3.4.7.yaml" ]] && $cfg; then
+		# not yet available via bioconda
 		$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
 	else
-		$upgrade && ${envs[$n]:=false}
+		$upgrade && [[ "$(mamba list -n $n -f $n | tail -1 | grep -o -E -m 1 '[0-9]\.[0-9]')" == "4.3" ]]
+		# $upgrade && ${envs[$n]:=false}
 	fi || {
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env remove -y -n $n
+			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
-			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults "$tool"
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults gcc_linux-64=11.4 gxx_linux-64=11.4 glib pkg-config make automake cmake conda-build
 		fi
 
-		git clone --depth 1 https://github.com/biocore/sortmerna "$insdir/conda/envs/sortmerna/src"
-		mv "$insdir/conda/envs/sortmerna/src/data/rRNA_databases/" "$insdir/conda/envs/sortmerna/"
-		mkdir -p "$insdir/conda/envs/sortmerna/rRNA_databases/index"
-		rm -rf  "$insdir/conda/envs/sortmerna/src"
+		mkdir -p "$insdir/conda/envs/$n/rRNA_databases/index" "$insdir/conda/envs/$n/src"
+		wget -q --show-progress --progress=bar:force "https://github.com/biocore/$n/releases/download/v4.3.4/database.tar.gz" -O "$insdir/conda/envs/$n/rRNA_databases/database.tar.gz"
+		tar -xzf "$insdir/conda/envs/$n/rRNA_databases/database.tar.gz" -C "$insdir/conda/envs/$n/rRNA_databases"
+		rm -f "$insdir/conda/envs/$n/rRNA_databases/database.tar.gz"
 
-		declare -a cmdidx tdirs
-		for f in "$insdir/conda/envs/sortmerna/rRNA_databases/"*.fasta; do
-			# v4
-			# tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sortmerna)")
-			# commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD
-			# 	sortmerna
-			# 	--ref "$f"
-			# 	--index 1
-			# 	-L 18
-			# 	--workdir "${tdirs[-1]}"
-			# 	--idx-dir "$insdir/conda/envs/sortmerna/rRNA_databases/index"
-			# CMD
-
-			# v2
-			commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD
-				indexdb_rna
-				--ref "$f","$insdir/conda/envs/sortmerna/rRNA_databases/index/$(basename "$f" .fasta)-L18"
-				-m 4096
+		declare -a cmdidx
+		local tmp="$(mktemp -d -p "${TMPDIR:-/tmp}" cleanup.XXXXXXXXXX.sortmerna)"
+		commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD {COMMANDER[7]}<<- CMD
+			cd "$insdir/conda/envs/$n/src"
+		CMD
+			git init
+		CMD
+			git remote add origin https://github.com/conda-forge/staged-recipes
+		CMD
+			git fetch origin pull/25438/head
+		CMD
+			git reset --hard FETCH_HEAD
+		CMD
+			conda build --no-anaconda-upload recipes/sortmerna
+		CMD
+			mamba install -y --override-channels -c conda-forge -c bioconda -c defaults "$insdir/conda/envs/$n/conda-bld/linux-64/sortmerna-4.3.7.beta.1-py312hde9dbc4_0.tar.bz2"
+		CMD
+			sortmerna
+				--ref "$insdir/conda/envs/$n/rRNA_databases/smr_v4.3_fast_db.fasta"
+				--index 1
 				-L 18
-			CMD
-		done
+				-m 4096
+				--threads $threads
+				--workdir "$tmp/"
+				--idx-dir "$insdir/conda/envs/$n/rRNA_databases/index"
+		CMD
 		commander::runcmd -c sortmerna -i $threads -a cmdidx
 
 		mkdir -p "$insdir/config"
@@ -460,7 +514,8 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env remove -y -n $n
+			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
 			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults "$tool$(awk -F '.' '{if ($1>=2 && $2>=7){print ">=2"}else{print "<2"}}' <<< $star_version)'" "star=$star_version"
@@ -486,7 +541,8 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env remove -y -n $n
+			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
 			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults $tool bwa-mem2
@@ -522,7 +578,8 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env remove -y -n $n
+			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
 			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults $tool vardict-java readline=6
@@ -548,7 +605,8 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env remove -y -n $n
+			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n #python=3
 			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults $tool snpsift
@@ -573,7 +631,8 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env remove -y -n $n
+			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
 			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults $tool
@@ -628,7 +687,8 @@ function compile::conda_tools(){
 		ln -sfn "$insdir/DANPOS3" "$insdir/latest/danpos"
 
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env remove -y -n $n
+			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
 			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults ucsc-wigtobigwig samtools scipy "r-base>=4" $(awk '!/^\s*#/{print $1}' "$insdir/latest/danpos/requirements.txt")
@@ -654,7 +714,8 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env create -n $n --force --file "$src/config/$n.yaml"
+			mamba env remove -y -n $n
+			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
 			mamba install -n $n --override-channels -c conda-forge -c bioconda -c defaults $n snakemake docopt pandas r-tidyverse r-scales r-WriteXLS r-BiocManager

@@ -898,6 +898,8 @@ function preprocess::sortmerna(){
 		return 1
 	}
 
+	# sortmerna --version |& grep version | tail -1 | grep -oE '[0-9.]+' | head -1
+
 	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}"
 	declare -n _fq1_sortmerna _fq2_sortmerna
 	while getopts 'S:s:t:i:o:1:2:' arg; do
@@ -916,104 +918,251 @@ function preprocess::sortmerna(){
 
 	commander::printinfo "filtering rRNA fragments"
 
-	declare -a tdirs cmd1 cmd2 cmd3 catcmd
+	declare -a cmdchk=("sortmerna --version |& grep version | tail -1 | grep -oE '[0-9]' | head -1")
+	local version=$(commander::runcmd -c sortmerna -a cmdchk)
+
+	declare -a tdirs cmd1 cmd2
 	local i tmp o1 o2 or1 or2 e1 e2
-	for i in "${!_fq1_sortmerna[@]}"; do
-		helper::basename -f "${_fq1_sortmerna[$i]}" -o o1 -e e1
-		e1=$(echo $e1 | cut -d '.' -f 1)
 
-		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sortmerna)")
-		tmp="${tdirs[-1]}/$o1"
+	if [[ $version -eq 2 ]]; then
+		for i in "${!_fq1_sortmerna[@]}"; do
+			helper::basename -f "${_fq1_sortmerna[$i]}" -o o1 -e e1
+			e1=$(echo $e1 | cut -d '.' -f 1)
 
-		or1="$outdir/rRNA.$o1.$e1.gz"
-		o1="$outdir/$o1.$e1.gz"
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sortmerna)")
+			tmp="${tdirs[-1]}/$o1"
 
-		# sortmerna v2.1 input must not be compressed (v.3.* creates empty files)
-		# outfile gets extension from input file
-		# in.fq.bz2 > in.fq + rRNA.out|out -> rRNA.out.fq|out.fq -> rRNA.out.fq.gz|out.fq.gz
-		if [[ ${_fq2_sortmerna[$i]} ]]; then
-			helper::basename -f "${_fq2_sortmerna[$i]}" -o o2 -e e2
-			e2=$(echo $e2 | cut -d '.' -f 1)
-			or2="$outdir/rRNA.$o2.$e2.gz"
-			o2="$outdir/$o2.$e2.gz"
+			or1="$outdir/rRNA.$o1.$e1.gz"
+			o1="$outdir/$o1.$e1.gz"
 
-			commander::makecmd -a cmd1 -s '|' -o "$tmp.merged.$e1" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
-				paste <(helper::cat -f "${_fq1_sortmerna[$i]}") <(helper::cat -f "${_fq2_sortmerna[$i]}")
-			CMD
-				paste - - - -
-			CMD
-				awk -F '\t' -v OFS='\n' '{print $1,$3,$5,$7; print $2,$4,$6,$8}'
-			CMD
+			# sortmerna v2.1 input must not be compressed (v.3.* creates empty files)
+			# outfile gets extension from input file
+			# in.fq.bz2 > in.fq + rRNA.out|out -> rRNA.out.fq|out.fq -> rRNA.out.fq.gz|out.fq.gz
+			if [[ ${_fq2_sortmerna[$i]} ]]; then
+				helper::basename -f "${_fq2_sortmerna[$i]}" -o o2 -e e2
+				e2=$(echo $e2 | cut -d '.' -f 1)
+				or2="$outdir/rRNA.$o2.$e2.gz"
+				o2="$outdir/$o2.$e2.gz"
 
-			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
-				exec 11>&1; exec 12>&1
-			CMD
-				ln -sfn /dev/fd/11 "$tmp.ok.$e1"
-			CMD
-				ln -sfn /dev/fd/12 "$tmp.rRNA.$e1"
-			CMD
-				sortmerna
-				--ref \$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} bash -c 'printf ":%q,%q" "\$1" "\$(dirname "\$1")/index/\$(basename "\$1" .fasta)-L18"' bash {} | sed 's/://')
-				--reads "$tmp.merged.$e1"
-				--num_alignments 1
-				--fastx
-				--paired_out
-				--aligned "$tmp.rRNA"
-				--other "$tmp.ok"
-				-a $threads
-				11> >(sed -E '/^\s*$/d' | paste - - - - | tee -i >(sed -n '1~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$o1") >(sed -n '2~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$o2") > /dev/null)
-				12> >(sed -E '/^\s*$/d' | paste - - - - | tee -i >(sed -n '1~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$or1") >(sed -n '2~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$or2") > /dev/null)
-				| cat
-			CMD
-				rm -f "$tmp.merged.$e1"; exec 11>&-; exec 12>&-
-			CMD
-			# attention: sometimes sortmerna inserts empty lines - use sed /^\s*$/d
+				commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD
+					paste <(helper::cat -f "${_fq1_sortmerna[$i]}") <(helper::cat -f "${_fq2_sortmerna[$i]}") | paste - - - - |
+				CMD
+					awk -F '\t' -v OFS='\n' '{print $1,$3,$5,$7; print $2,$4,$6,$8}'
+				CMD
+					> "$tmp.merged.$e1";
+				CMD
+					exec 11>&1; exec 12>&1;
+				CMD
+					ln -sfn /dev/fd/11 "$tmp.ok.$e1"; ln -sfn /dev/fd/12 "$tmp.rRNA.$e1";
+				CMD
+					sortmerna
+						--ref \$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} bash -c 'printf ":%q,%q" "\$1" "\$(dirname "\$1")/index/\$(basename "\$1" .fasta)-L18"' bash {} | sed 's/://')
+						--reads "$tmp.merged.$e1"
+						--num_alignments 1
+						--fastx
+						--paired_out
+						--aligned "$tmp.rRNA"
+						--other "$tmp.ok"
+						-a $threads
+						11> >(sed -E '/^\s*$/d' | paste - - - - | tee -i >(sed -n '1~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$o1") >(sed -n '2~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$o2") > /dev/null)
+						12> >(sed -E '/^\s*$/d' | paste - - - - | tee -i >(sed -n '1~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$or1") >(sed -n '2~2{s/\t/\n/gp}' | helper::pgzip -t $(((threads+1)/2)) -o "$or2") > /dev/null)
+					| cat;
+				CMD
+					rm -f "$tmp.merged.$e1"; exec 11>&-; exec 12>&-
+				CMD
+				# attention: sometimes sortmerna inserts empty lines - use sed /^\s*$/d
 
-			_fq1_sortmerna[$i]="$o1"
-			_fq2_sortmerna[$i]="$o2"
+				_fq1_sortmerna[$i]="$o1"
+				_fq2_sortmerna[$i]="$o2"
+			else
+				helper::makecatcmd -v catcmd -f "${_fq1_sortmerna[$i]}"
+
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
+					if [[ "$catcmd" == "cat" ]]; then ln -sfn "${_fq1_sortmerna[$i]}" "$tmp.$e1"; else helper::cat -f "${_fq1_sortmerna[$i]}" > "$tmp.$e1"; fi
+				CMD
+					exec 11>&1; exec 12>&1
+				CMD
+					ln -sfn /dev/fd/11 "$tmp.ok.$e1"
+				CMD
+					ln -sfn /dev/fd/12 "$tmp.rRNA.$e1"
+				CMD
+					sortmerna
+						--ref \$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} bash -c 'printf ":%q,%q" "\$1" "\$(dirname "\$1")/index/\$(basename "\$1" .fasta)-L18"' bash {} | sed 's/://')
+						--reads "$tmp.$e1"
+						--fastx
+						--aligned "$tmp.rRNA"
+						--other "$tmp.ok"
+						-a $threads
+						11> >(sed -E '/^\s*$/d' | helper::pgzip -t $threads -o "$o1")
+						12> >(sed -E '/^\s*$/d' | helper::pgzip -t $threads -o "$or1")
+					| cat
+				CMD
+					rm -f "$tmp.$e1"; exec 11>&-; exec 12>&-
+				CMD
+
+				_fq1_sortmerna[$i]="$o1"
+			fi
+		done
+
+		if $skip; then
+			commander::printcmd -a cmd1
 		else
-			helper::makecatcmd -v catcmd -f "${_fq1_sortmerna[$i]}"
-			[[ $catcmd == "cat" ]] && {
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					ln -sfn "${_fq1_sortmerna[$i]}" "$tmp.$e1"
-				CMD
-			} || {
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					helper::cat -f "${_fq1_sortmerna[$i]}" > "$tmp.$e1"
-				CMD
-			}
-
-			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
-				exec 11>&1; exec 12>&1
-			CMD
-				ln -sfn /dev/fd/11 "$tmp.ok.$e1"
-			CMD
-				ln -sfn /dev/fd/12 "$tmp.rRNA.$e1"
-			CMD
-				sortmerna
-				--ref \$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} bash -c 'printf ":%q,%q" "\$1" "\$(dirname "\$1")/index/\$(basename "\$1" .fasta)-L18"' bash {} | sed 's/://')
-				--reads "$tmp.$e1"
-				--fastx
-				--aligned "$tmp.rRNA"
-				--other "$tmp.ok"
-				-a $threads
-				11> >(sed -E '/^\s*$/d' | helper::pgzip -t $threads -o "$o1")
-				12> >(sed -E '/^\s*$/d' | helper::pgzip -t $threads -o "$or1")
-				| cat
-			CMD
-				rm -f "$tmp.$e1"; exec 11>&-; exec 12>&-
-			CMD
-
-			_fq1_sortmerna[$i]="$o1"
+			commander::runcmd -c sortmerna -v -b -i 1 -a cmd1
 		fi
-	done
-
-	if $skip; then
-		commander::printcmd -a cmd1
-		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -i $threads -a cmd1
-		commander::runcmd -c sortmerna -v -b -i 1 -a cmd2
+		# NEW
+		# comparison for 150m 51bp reads @ 56 cores:
+		# old: 60 min
+		# new without tweak and fast ref: 70 min
+		# new with tweak and fast ref: 20 min (65m rRNA)
+		# new with tweak and default or old ref: 30 min (65m or 67m rRNA)
+		for i in "${!_fq1_sortmerna[@]}"; do
+			helper::basename -f "${_fq1_sortmerna[$i]}" -o o1 -e e1
+			e1=$(echo $e1 | cut -d '.' -f 1)
+			or1="$outdir/rRNA.$o1.$e1.gz"
+			o1="$outdir/$o1.$e1.gz"
+
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sortmerna)")
+
+			if [[ ${_fq2_sortmerna[$i]} ]]; then
+				helper::basename -f "${_fq2_sortmerna[$i]}" -o o2 -e e2
+				e2=$(echo $e2 | cut -d '.' -f 1)
+				or2="$outdir/rRNA.$o2.$e2.gz"
+				o2="$outdir/$o2.$e2.gz"
+
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					helper::gzindex -f "${_fq1_sortmerna[$i]}"
+				CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					helper::gzindex -f "${_fq2_sortmerna[$i]}"
+				CMD
+
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD {COMMANDER[7]}<<- CMD {COMMANDER[8]}<<- CMD {COMMANDER[9]}<<- CMD {COMMANDER[10]}<<- CMD {COMMANDER[11]}<<- CMD {COMMANDER[12]}<<- CMD {COMMANDER[13]}<<- CMD {COMMANDER[14]}<<- CMD
+					helper::cat -f "${_fq1_sortmerna[$i]}" | head -n $((threads*4)) | helper::pgzip -t $threads -o "${tdirs[-1]}/input.R1.fastq.gz"
+				CMD
+					helper::cat -f "${_fq2_sortmerna[$i]}" | head -n $((threads*4)) | helper::pgzip -t $threads -o "${tdirs[-1]}/input.R2.fastq.gz"
+				CMD
+					sortmerna
+						--idx-dir "\$CONDA_PREFIX/rRNA_databases/index"
+						--ref "\$CONDA_PREFIX/rRNA_databases/smr_v4.3_fast_db.fasta"
+						--workdir "${tdirs[-1]}"
+						--threads $threads
+						--reads "${tdirs[-1]}/input.R1.fastq.gz"
+						--reads "${tdirs[-1]}/input.R2.fastq.gz"
+						--fastx
+						--no-best
+						--num_alignments 1
+						--aligned
+						--other
+						--zip-out true
+						--paired_out
+						--out2
+						--task 1
+				CMD
+					rm -rf "${tdirs[-1]}/kvdb" "${tdirs[-1]}/out/"*
+				CMD
+					helper::papply_gzip -i $threads -f "${_fq1_sortmerna[$i]}" -c 'bgzip -@ 1 -kc > "${tdirs[-1]}/readb/fwd_\$((JOB_ID-1)).fq.gz"'
+				CMD
+					helper::papply_gzip -i $threads -f "${_fq2_sortmerna[$i]}" -c 'bgzip -@ 1 -kc > "${tdirs[-1]}/readb/rev_\$((JOB_ID-1)).fq.gz"'
+				CMD
+					mkfifo "${tdirs[-1]}/out/aligned_fwd_0.fq.gz" "${tdirs[-1]}/out/aligned_rev_0.fq.gz" "${tdirs[-1]}/out/other_fwd_0.fq.gz" "${tdirs[-1]}/out/other_rev_0.fq.gz"
+				CMD
+					{ cat "${tdirs[-1]}/out/aligned_fwd_0.fq.gz" | helper::gzindex -o "$or1" & } 2> /dev/null
+				CMD
+					{ cat "${tdirs[-1]}/out/aligned_rev_0.fq.gz" | helper::gzindex -o "$or2" & } 2> /dev/null
+				CMD
+					{ cat "${tdirs[-1]}/out/other_fwd_0.fq.gz" | helper::gzindex -o "$o1" & } 2> /dev/null
+				CMD
+					{ cat "${tdirs[-1]}/out/other_rev_0.fq.gz" | helper::gzindex -o "$o2" & } 2> /dev/null
+				CMD
+					exec {FDAF}<> "${tdirs[-1]}/out/aligned_fwd_0.fq.gz"; exec {FDAR}<> "${tdirs[-1]}/out/aligned_rev_0.fq.gz"; exec {FDOF}<> "${tdirs[-1]}/out/other_fwd_0.fq.gz"; exec {FDOR}<> "${tdirs[-1]}/out/other_rev_0.fq.gz"
+				CMD
+					sortmerna
+						--idx-dir "\$CONDA_PREFIX/rRNA_databases/index"
+						--ref "\$CONDA_PREFIX/rRNA_databases/smr_v4.3_fast_db.fasta"
+						--workdir "${tdirs[-1]}"
+						--threads $threads
+						--reads "${tdirs[-1]}/input.R1.fastq.gz"
+						--reads "${tdirs[-1]}/input.R2.fastq.gz"
+						--fastx
+						--no-best
+						--num_alignments 1
+						--aligned
+						--other
+						--zip-out true
+						--paired_out
+						--out2
+				CMD
+					exec {FDAF}>&-; exec {FDAR}>&-; exec {FDOF}>&-; exec {FDOR}>&-
+				CMD
+					rm -rf "${tdirs[-1]}"
+				CMD
+
+				_fq1_sortmerna[$i]="$o1"
+				_fq2_sortmerna[$i]="$o2"
+			else
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					helper::gzindex -f "${_fq1_sortmerna[$i]}"
+				CMD
+
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD {COMMANDER[7]}<<- CMD {COMMANDER[8]}<<- CMD {COMMANDER[9]}<<- CMD {COMMANDER[10]}<<- CMD
+					helper::cat -f "${_fq1_sortmerna[$i]}" | head -n $((threads*4)) | helper::pgzip -t $threads -o "${tdirs[-1]}/input.fastq.gz"
+				CMD
+					sortmerna
+						--idx-dir "\$CONDA_PREFIX/rRNA_databases/index"
+						--ref "\$CONDA_PREFIX/rRNA_databases/smr_v4.3_fast_db.fasta"
+						--workdir "${tdirs[-1]}"
+						--threads $threads
+						--reads "${tdirs[-1]}/input.fastq.gz"
+						--fastx
+						--no-best
+						--num_alignments 1
+						--aligned
+						--other
+						--zip-out true
+						--task 1
+				CMD
+					rm -rf "${tdirs[-1]}/kvdb" "${tdirs[-1]}/out/"*
+				CMD
+					helper::papply_gzip -i $threads -f "${_fq1_sortmerna[$i]}" -c 'bgzip -@ 1 -kc > "${tdirs[-1]}/readb/fwd_\$((JOB_ID-1)).fq.gz"'
+				CMD
+					mkfifo "${tdirs[-1]}/out/aligned_0.fq.gz" "${tdirs[-1]}/out/other_0.fq.gz"
+				CMD
+					{ cat "${tdirs[-1]}/out/aligned_0.fq.gz" | helper::gzindex -o "$or1" & } 2> /dev/null
+				CMD
+					{ cat "${tdirs[-1]}/out/other_0.fq.gz" | helper::gzindex -o "$o1" & } 2> /dev/null
+				CMD
+					exec {FDA}<> "${tdirs[-1]}/out/aligned_0.fq.gz"; exec {FDO}<> "${tdirs[-1]}/out/other_0.fq.gz"
+				CMD
+					sortmerna
+						--idx-dir "\$CONDA_PREFIX/rRNA_databases/index"
+						--ref "\$CONDA_PREFIX/rRNA_databases/smr_v4.3_fast_db.fasta"
+						--workdir "${tdirs[-1]}"
+						--threads $threads
+						--reads "${tdirs[-1]}/input.fastq.gz"
+						--fastx
+						--no-best
+						--num_alignments 1
+						--aligned
+						--other
+						--zip-out true
+				CMD
+					exec {FDA}>&-; exec {FDO}>&-
+				CMD
+					rm -rf "${tdirs[-1]}"
+				CMD
+
+				_fq1_sortmerna[$i]="$o1"
+			fi
+		done
+
+		if $skip; then
+			commander::printcmd -a cmd1
+			commander::printcmd -a cmd2
+		else
+			commander::runcmd -v -b -i $threads -a cmd1
+			commander::runcmd -c sortmerna -v -b -i 1 -a cmd2
+		fi
 	fi
 
 	return 0
