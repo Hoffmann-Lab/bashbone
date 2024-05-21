@@ -36,11 +36,13 @@ dependencies:
   - libstdcxx-ng==9.3.0
   - libtiff==4.2.0
   - libwebp-base==1.2.0
+  - libzlib==1.2.11
   - lz4-c==1.9.3
   - matplotlib-base==3.3.4
   - ncurses==6.2
   - numpy==1.20.1
   - olefile==0.46
+  - openjpeg==2.4.0
   - openssl==1.1.1k
   - pillow==8.1.2
   - pip==21.0.1
