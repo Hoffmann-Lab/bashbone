@@ -452,7 +452,7 @@ function compile::conda_tools(){
 		doclean=true
 
 		commander::printinfo "setup conda $n env"
-		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+		if [[ -e "$src/config/$n.3.4.7.yaml" ]] && $cfg; then
 			mamba env remove -y -n $n
 			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
