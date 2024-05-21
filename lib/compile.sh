@@ -210,15 +210,13 @@ function compile::conda_tools(){
 				bioconductor-biomart bioconductor-biocparallel bioconductor-genefilter bioconductor-deseq2 bioconductor-dexseq bioconductor-clusterprofiler bioconductor-tcgautils r-r.utils \
 				r-survminer bioconductor-impute bioconductor-preprocesscore bioconductor-go.db bioconductor-annotationdbi bioconductor-annotationforge bioconductor-enrichplot bioconductor-rrvgo \
 				r-reshape2 r-wgcna r-dplyr r-tidyverse r-ggpubr r-ggplot2 r-gplots r-rcolorbrewer r-svglite r-pheatmap r-treemap r-data.table r-ggridges r-ashr r-dendextend
+
+			# python stuff
+			declare -a cmd1
+			commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
+				python -m pip install rapidgzip indexed-bzip2
+			CMD
 		fi
-
-		echo "rm -rf '$tmpdir'" >> "$BASHBONE_CLEANUP"
-
-		# # python stuff
-		declare -a cmd1
-		commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
-			python -m pip install rapidgzip
-		CMD
 
 		# perl stuff
 		declare -a cmd1
@@ -227,6 +225,7 @@ function compile::conda_tools(){
 		CMD
 
 		# R basics
+		echo "rm -rf '$tmpdir'" >> "$BASHBONE_CLEANUP"
 		declare -a cmd2
 		commander::makecmd -a cmd2 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
@@ -347,7 +346,7 @@ function compile::conda_tools(){
 	# 		mamba env create -n $n --file "$src/config/$n.yaml"
 	# 	else
 	# 		mamba create -y -n $n
-	# 		mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults gopeaks pandas numpy  pybedtools scipy pysam
+	# 		mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults gopeaks pandas numpy pybedtools scipy pysam
 	# 	fi
 
 	# 	git clone https://github.com/gartician/summit.git "$insdir/conda/envs/gopeaks/src"
