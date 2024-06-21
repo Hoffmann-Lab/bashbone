@@ -160,9 +160,12 @@ function peaks::macs(){
 	local genomesize
 	local x=$(samtools view -F 4 "${_bams_macs[0]}" | head -10000 | cat <(samtools view -H "${_bams_macs[0]}") - | samtools view -c -f 256)
 	if [[ $x -gt 0 ]]; then
-		genomesize=$(faCount $genome | tail -1 | awk '{print $3+$4+$5+$6}')
+		# genomesize=$(faCount "$genome" | tail -1 | awk '{print $3+$4+$5+$6}')
+		genomesize=$(cut -f 1 "$genome.fai" | helper::lapply -t $threads -d 1 -c "samtools faidx -r /dev/stdin '$genome' | faCount /dev/stdin" | awk '/^total/{c=c+$3+$4+$5+$6}END{print c}')
 	else
-		genomesize=$(unique-kmers.py -k 100 $genome |& tail -1 | awk '{print $NF}')
+		# genomesize=$(unique-kmers.py -k 100 $genome |& tail -1 | awk '{print $NF}')
+		declare -a gscmd=("kmc -e -r -k120 -hp -fm -t$threads -m$((maxmemory/1024>1024?1024:maxmemory/1024)) "$genome" /dev/stdout "$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.kmc)" | head -1")
+		read -r genomesize genomesize < <(commander::runcmd -c kmc -i 1 -a gscmd)
 	fi
 
 	local mult=5 # macs min mem in byte according to manual is numchr * buffer=100000 * mult=2 - observation max mem used ~ mult=5
@@ -844,10 +847,14 @@ function peaks::gem(){
 	local genomesize
 	local x=$(samtools view -F 4 "${_bams_gem[0]}" | head -10000 | cat <(samtools view -H "${_bams_gem[0]}") - | samtools view -c -f 256)
 	if [[ $x -gt 0 ]]; then
-		genomesize=$(faCount $genome | tail -1 | awk '{print $3+$4+$5+$6}')
+		# genomesize=$(faCount "$genome" | tail -1 | awk '{print $3+$4+$5+$6}')
+		genomesize=$(cut -f 1 "$genome.fai" | helper::lapply -t $threads -d 1 -c "samtools faidx -r /dev/stdin '$genome' | faCount /dev/stdin" | awk '/^total/{c=c+$3+$4+$5+$6}END{print c}')
 	else
-		genomesize=$(unique-kmers.py -k 100 $genome |& tail -1 | awk '{print $NF}')
+		# genomesize=$(unique-kmers.py -k 100 $genome |& tail -1 | awk '{print $NF}')
+		declare -a gscmd=("kmc -e -r -k120 -hp -fm -t$threads -m$((maxmemory/1024>1024?1024:maxmemory/1024)) "$genome" /dev/stdout "$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.kmc)" | head -1")
+		read -r genomesize genomesize < <(commander::runcmd -c kmc -i 1 -a gscmd)
 	fi
+
 	local tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.genome)"
 	samtools view -H "${_bams_gem[0]}" | sed -rn '/^@SQ/{s/.+\tSN:(\S+)\s+LN:(\S+).*/\1\t\2/p}' > "$tdir/chr.info"
 	declare -a cmdg
@@ -1107,12 +1114,15 @@ function peaks::homer(){
 
 	# get effective genome size
 	# if multimapped reads: genome minus Ns , else genome minus Ns minus repetetive Elements
-	local genomesize=2801039415
+	local genomesize
 	local x=$(samtools view -F 4 "${_bams_homer[0]}" | head -10000 | cat <(samtools view -H "${_bams_homer[0]}") - | samtools view -c -f 256)
 	if [[ $x -gt 0 ]]; then
-		genomesize=$(faCount $genome | tail -1 | awk '{print $3+$4+$5+$6}')
+		# genomesize=$(faCount "$genome" | tail -1 | awk '{print $3+$4+$5+$6}')
+		genomesize=$(cut -f 1 "$genome.fai" | helper::lapply -t $threads -d 1 -c "samtools faidx -r /dev/stdin '$genome' | faCount /dev/stdin" | awk '/^total/{c=c+$3+$4+$5+$6}END{print c}')
 	else
-		genomesize=$(unique-kmers.py -k 100 $genome |& tail -1 | awk '{print $NF}')
+		# genomesize=$(unique-kmers.py -k 100 $genome |& tail -1 | awk '{print $NF}')
+		declare -a gscmd=("kmc -e -r -k120 -hp -fm -t$threads -m$((maxmemory/1024>1024?1024:maxmemory/1024)) "$genome" /dev/stdout "$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.kmc)" | head -1")
+		read -r genomesize genomesize < <(commander::runcmd -c kmc -i 1 -a gscmd)
 	fi
 
 	# slocal default 10000 -> 2000 works better for narrow peaks
@@ -1786,7 +1796,7 @@ function peaks::genrich(){
 					b="$(basename "${nf%.*}")"
 
 					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-						samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" -n "$nf" > "${tdirs[-1]}/$b.bam"
+						samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" -n -o "${tdirs[-1]}/$b.bam" "$nf"
 					CMD
 
 					nf="-c '${tdirs[-1]}/$b.bam'"
@@ -1798,7 +1808,7 @@ function peaks::genrich(){
 
 				b="$(basename "${f%.*}")"
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" -n "$f" > "${tdirs[-1]}/$b.bam"
+					samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" -n -o "${tdirs[-1]}/$b.bam" "$f"
 				CMD
 
 				f="-t '${tdirs[-1]}/$b.bam'"
@@ -1811,7 +1821,7 @@ function peaks::genrich(){
 					b="$(basename "${b%.*}")"
 
 					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-						samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" -n "${_bams_genrich[${_nidx_genrich[$i]}]}" > "${tdirs[-1]}/$b.bam"
+						samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" -n -o "${tdirs[-1]}/$b.bam" "${_bams_genrich[${_nidx_genrich[$i]}]}"
 					CMD
 
 					nf+="$(printf '"%s",' "${tdirs[-1]}/$b.bam")"
@@ -1832,7 +1842,7 @@ function peaks::genrich(){
 				b="$(basename "${b%.*}")"
 
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" -n "${_bams_genrich[${_tidx_genrich[$i]}]}" > "${tdirs[-1]}/$b.bam"
+					samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" -n -o "${tdirs[-1]}/$b.bam" "${_bams_genrich[${_tidx_genrich[$i]}]}"
 				CMD
 
 				f+="$(printf '"%s",' "${tdirs[-1]}/$b.bam")"

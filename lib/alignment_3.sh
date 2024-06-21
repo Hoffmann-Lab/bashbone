@@ -68,17 +68,16 @@ function alignment::mkreplicates(){
 				rf="${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}"
 				o="$odir/$(echo -e "$(basename "$tf")\t$(basename "$rf")" | sed -E 's/(\..+)\t(.+)\1/-\2.pseudopool\1/')"
 
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					samtools merge
 						-f
 						-c
 						-p
 						-@ $ithreads1
-						"$o"
+						--write-index
+						-o "$o##idx##${o%.*}.bai"
 						<(samtools view -@ $(((ithreads1+1)/2)) -u -s 0.5 "$tf")
 						<(samtools view -@ $(((ithreads1+1)/2)) -u -s 0.5 "$rf")
-				CMD
-					samtools index -@ $ithreads1 "$o" "${o%.*}.bai"
 				CMD
 
 				_bams_mkreplicates+=("$o")
@@ -115,10 +114,15 @@ function alignment::mkreplicates(){
 					nrf="${_bams_mkreplicates[${_nridx_mkreplicates[$i]}]}"
 					o="$odir/$(echo -e "$(basename "$nf")\t$(basename "$nrf")" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')"
 
-					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						samtools merge -f -c -p -@ $ithreads2 "$o" "$nf" "$nrf"
-					CMD
-						samtools index -@ $ithreads2 "$o" "${o%.*}.bai"
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+						samtools merge
+							-f
+							-c
+							-p
+							-@ $ithreads2
+							--write-index
+							-o "$o##idx##${o%.*}.bai"
+							"$nf" "$nrf"
 					CMD
 					_bams_mkreplicates+=("$o")
 					$addindex && _nidx_mkreplicates+=($((${#_bams_mkreplicates[@]}-1)))
@@ -126,10 +130,15 @@ function alignment::mkreplicates(){
 					tf="${_bams_mkreplicates[${_tidx_mkreplicates[$i]}]}"
 					rf="${_bams_mkreplicates[${_ridx_mkreplicates[$i]}]}"
 					o="$odir/$(echo -e "$(basename "$tf")\t$(basename "$rf")" | sed -E 's/(\..+)\t(.+)\1/-\2.fullpool\1/')"
-					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						samtools merge -f -c -p -@ $ithreads2 "$o" "$tf" "$rf"
-					CMD
-						samtools index -@ $ithreads2 "$o" "${o%.*}.bai"
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+						samtools merge
+							-f
+							-c
+							-p
+							-@ $ithreads2
+							--write-index
+							-o "$o##idx##${o%.*}.bai"
+							"$tf" "$rf"
 					CMD
 					_bams_mkreplicates+=("$o")
 					$addindex && _pidx_mkreplicates+=($((${#_bams_mkreplicates[@]}-1)))
@@ -162,23 +171,31 @@ function alignment::mkreplicates(){
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 					samtools collate
 						-@ $ithreads1
-						-n $((threads>64?64:threads))
 						-u
 						-O
+						-n 1
 						"$pf" "${tdirs[-1]}/$(basename "${pf%.*}")"
 				CMD
-					samtools view -@ $ithreads1
+					samtools view --no-PG -@ $ithreads1
 				CMD
 					split
 						--numeric-suffixes=1
 						--additional-suffix=.bam
 						-a 1
 						-l \$(( (\$(samtools view -c -@ $ithreads1 "$pf")+1)/2 ))
-						--filter='cat <(samtools view -H "$pf") - | samtools sort -@ $ithreads1 -O BAM -T "${tdirs[-1]}/\$(basename "\${FILE%.*}")" > "\$FILE"'
-						- "$o";
-					samtools index -@ $ithreads1 "${o}1.bam" "${o}1.bai";
-					samtools index -@ $ithreads1 "${o}2.bam" "${o}2.bai";
+						--filter='cat <(samtools view --no-PG -H "$pf") - | samtools sort -@ $ithreads1 -O BAM -T "${tdirs[-1]}/\$(basename "\${FILE%.*}")" --write-index -o "\$FILE##idx##\${FILE%.*}.bai"'
+						- "$o"
 				CMD
+					# split
+					# 	--numeric-suffixes=1
+					# 	--additional-suffix=.bam
+					# 	-a 1
+					# 	-l \$(( (\$(samtools view -c -@ $ithreads1 "$pf")+1)/2 ))
+					# 	--filter='cat <(samtools view -H "$pf") - | samtools sort -@ $ithreads1 -O BAM -T "${tdirs[-1]}/\$(basename "\${FILE%.*}")" > "\$FILE"'
+					# 	- "$o";
+					# samtools index -@ $ithreads1 "${o}1.bam" "${o}1.bai";
+					# samtools index -@ $ithreads1 "${o}2.bam" "${o}2.bai";
+
 				# -n number of temporary files has default 64
 				# -u not equals --output-fmt SAM => a small compression level (optimum: -l 3) reduces amount of data stream through pipe
 				# which finally makes samtools view faster despite of decompression - tested with 650M bam (~1m30 vs ~1m)
@@ -285,28 +302,49 @@ function alignment::strandsplit(){
 				# 146 = poper-pair + second-in-pair + reverse
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					samtools merge
-					-f
-					-c
-					-p
-					-@ $threads
-					"$o.$s.bam"
+						-f
+						-c
+						-p
+						-@ $threads
+						--write-index
+						-o "$o.$s.bam##idx##$o.$s.bai"
 					<(samtools view -@ $(((threads+1)/2)) -u -F 4 -f 98 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R1")
 					<(samtools view -@ $(((threads+1)/2)) -u -F 4 -f 146 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R2")
 				CMD
 			else
 				# 16 = reverse
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					rm -f "${tdirs[-1]}/$b"*
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					samtools view
+						-@ $threads
+						-u
+						-F 4
+						-F 16
+						"$f"
 				CMD
-					samtools view -@ $threads -u -F 4 -F 16 "$f" | samtools sort -O BAM -@ $threads -T "${tdirs[-1]}/$b" > "$o.$s.bam"
+					samtools sort
+						-O BAM
+						-@ $threads
+						-T "${tdirs[-1]}/$b"
+						--write-index
+						-o "$o.$s.bam##idx##$o.$s.bai"
 				CMD
 			fi
 
 			if [[ $gtf ]]; then
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					samtools index -@ $threads "$o.$s.bam" "$o.$s.bai"
+				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					samtools view
+						-@ $threads
+						-u
+						-M
+						-L <(awk -v OFS="\\t" '\$3=="gene" && \$7=="$s"{print \$1,\$4-1,\$5}' "$gtf")
+						"$o.$s.bam"
 				CMD
-					samtools view -@ $threads -u -M -L <(awk -v OFS="\\t" '\$3=="gene" && \$7=="$s"{print \$1,\$4-1,\$5}' "$gtf") "$o.$s.bam" |	samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" > "$o.$s.filtered.bam"
+					samtools sort
+						-@ $threads
+						-O BAM
+						-T "${tdirs[-1]}/$b"
+						--write-index
+						-o "$o.$s.filtered.bam##idx##$o.$s.filtered.bai"
 				CMD
 			fi
 
@@ -316,26 +354,44 @@ function alignment::strandsplit(){
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)")
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					samtools merge
-					-f
-					-c
-					-p
-					-@ $threads
-					"$o.$r.bam"
+						-f
+						-c
+						-p
+						-@ $threads
+						--write-index
+						-o "$o.$r.bam##idx##$o.$r.bai"
 					<(samtools view -@ $(((threads+1)/2)) -u -F 4 -f 82 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R1")
 					<(samtools view -@ $(((threads+1)/2)) -u -F 4 -f 162 "$f" | samtools sort -u -@ $(((threads+1)/2)) -T "${tdirs[-1]}/$b.R2")
 				CMD
 			else
 				# 16 = reverse
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					samtools view -@ $threads -u -F 4 -f 16 "$f" | samtools sort -O BAM -@ $threads -T "${tdirs[-1]}/$b" > "$o.$r.bam"
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					samtools view
+						-@ $threads
+						-u
+						-F 4
+						-f 16
+						"$f"
+				CMD
+					samtools sort
+						-O BAM
+						-@ $threads
+						-T "${tdirs[-1]}/$b"
+						--write-index
+						-o "$o.$r.bam##idx##$o.$r.bai"
 				CMD
 			fi
 
 			if [[ $gtf ]]; then
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					samtools index -@ $threads "$o.$r.bam" "$o.$r.bai"
+				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					samtools view -@ $threads -u -M	-L <(awk -v OFS="\\t" '\$3=="gene" && \$7=="$r"{print \$1,\$4-1,\$5}' "$gtf") "$o.$r.bam"
 				CMD
-					samtools view -@ $threads -u -M	-L <(awk -v OFS="\\t" '\$3=="gene" && \$7=="$r"{print \$1,\$4-1,\$5}' "$gtf") "$o.$r.bam" | samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" > "$o.$r.filtered.bam"
+					samtools sort
+						-@ $threads
+						-O BAM
+						-T "${tdirs[-1]}/$b"
+						--write-index
+						-o "$o.$r.filtered.bam##idx##$o.$r.filtered.bai"
 				CMD
 			fi
 		done
@@ -412,7 +468,7 @@ function alignment::downsample(){
 				CMD
 			else
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					samtools view -@ $threads -b --subsample-seed 1234 -s $(echo $n | awk -v min=$min '{print min/$1}') "$f" > "$o"
+					samtools view -@ $threads -b --subsample-seed 1234 -s $(echo $n | awk -v min=$min '{print min/$1}') -o "$o" "$f"
 				CMD
 			fi
 			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
@@ -427,10 +483,15 @@ function alignment::downsample(){
 		)
 
 		if [[ $merged ]]; then
-			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				samtools merge -@ $threads -f -c -p "$outdir/$m/$merged" $(printf '"%s" ' "${tomerge[@]}")
-			CMD
-				samtools index -@ $threads "$outdir/$m/$merged" "$outdir/$m/${merged%.*}.bai"
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
+				samtools merge
+					-@ $threads
+					-f
+					-c
+					-p
+					--write-index
+					-o "$outdir/$m/$merged##idx##$outdir/$m/${merged%.*}.bai"
+					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 
 			if $delete; then

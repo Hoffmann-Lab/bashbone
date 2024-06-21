@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # (c) Konstantin Riege
 
-function helper::gzindex(){
+function helper::index(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[-2]} usage:
@@ -11,8 +11,8 @@ function helper::gzindex(){
 		return 1
 	}
 
-	local OPTIND arg threads=1 f o tool="bgzip"
-	while getopts 'f:t:o:p' arg; do
+	local OPTIND arg f o
+	while getopts 'f:o:' arg; do
 		case $arg in
 			f)	f="$OPTARG";;
 			o)	o="$OPTARG"; mkdir -p "$(dirname "$o")";;
@@ -22,12 +22,37 @@ function helper::gzindex(){
 	[[ ! $f && ! $o ]] && { _usage || return 0; }
 
 	if [[ $f ]]; then
-		if [[ -e "${f%.*}.rgzi" ]]; then
-			gztool -v 0 -l "$f" && rapidgzip -kcd -P 4 --import-index "${f%.*}.rgzi" "$f" 2> /dev/null | head -1 | grep . &> /dev/null && return 0
+		if readlink -e "$f" | file -b --mime-type -f - | grep -qF 'gzip'; then
+			if rapidgzip --version | sed -E 's/.+\s([0-9]+)\.([0-9]+)\.([0-9]+)$/\1.\2\t\2.\3/' | awk '$1>0.14 || $2>=14.3{exit 0}{exit 1}'; then
+				# test if available index is okay
+				# if [[ -e "${f%.*}.gzi" ]]; then
+				# 	rapidgzip -qkcd -P 1 --import-index "${f%.*}.gzi" "$f" 2> /dev/null | head -1 | grep -q . && return 0 || true
+				# fi
+				rapidgzip -qf -P 1 --index-format gztool-with-lines --export-index "${f%.*}.gzi" "$f"
+			else
+				# test if available index is okay
+				# if [[ -e "${f%.*}.rgzi" ]]; then
+				# 	gztool -v 0 -l "$f" && rapidgzip -kcd -P 2 --import-index "${f%.*}.rgzi" "$f" 2> /dev/null | head -1 | grep -q . && return 0
+				# fi
+				cat "$f" | tee -i >(gztool -v 0 -f -i -x -C -I "${f%.*}.gzi") >(rapidgzip -f -P 2 --export-index "${f%.*}.rgzi") > /dev/null | cat
+			fi
+		else
+			fftool.sh -i -f "$f"
 		fi
-		cat "$f" | tee -i >(gztool -v 0 -f -i -x -C -I "${f%.*}.gzi") >(rapidgzip -P 4 -f --export-index "${f%.*}.rgzi") > /dev/null | cat
 	else
-		tee -i >(gztool -v 0 -f -i -x -C -I "${o%.*}.gzi") >(rapidgzip -P 4 -f --export-index "${o%.*}.rgzi") > "$o" | cat
+		local magic recordsize=1000
+		read -n 2 magic
+		# diff <(echo -n $magic | od -N 2 -t x1) <(echo | gzip -kc | od -N 2 -t x1) &> /dev/null # 0x1f8b
+		if echo -n "$magic" | file -b --mime-type - | grep -qF 'gzip'; then
+			if rapidgzip --version | sed -E 's/.+\s([0-9]+)\.([0-9]+)\.([0-9]+)$/\1.\2\t\2.\3/' | awk '$1>0.14 || $2>=14.3{exit 0}{exit 1}'; then
+				# works from v0.14.3+
+				cat <(echo -n "$magic") - | tee -i >(rapidgzip -qf -P 1 --index-format gztool-with-lines --export-index "${f%.*}.gzi") > "$o" | cat
+			else
+				cat <(echo -n "$magic") - | tee -i >(gztool -v 0 -f -i -x -C -I "${o%.*}.gzi") >(rapidgzip -f -P 2 --export-index "${o%.*}.rgzi") > "$o" | cat
+			fi
+		else
+			cat <(echo -n "$magic") - | fftool.sh -i -o "$o"
+		fi
 	fi
 
 	return 0
@@ -66,20 +91,17 @@ function helper::pgzip(){
 		tool="pigz -p"
 	fi
 
-	# if [[ -x "$(command -v rapidgzip)" ]]; then
-	$tool $threads -k -c "$f" | tee -i >(gztool -v 0 -f -i -x -C -I "${o%.*}.gzi") >(rapidgzip -P 4 -f --export-index "${o%.*}.rgzi") > "$o" | cat
-	# else
-	# 	$tool $threads -k -c "$f" | tee -i "$o" | gztool -v 0 -f -i -x -C -I "${o%.*}.gzi" | cat
-	# fi
+	$tool $threads -k -c "$f" | helper::index -o "$o"
 
 	return 0
 }
 
-function helper::papply(){
+function helper::lapply(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[-2]} usage:
-			-l <lines>   | per record. default: 1
+			-l <lines>   | that make a record. default: 1
+			-d <records> | per thread. default: 5000
 			-t <threads> | number of
 			-o <odir>    | path to. default: TMPDIR
 			-f           | create seekable temporary files. file name is \$FILE
@@ -105,10 +127,11 @@ function helper::papply(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads=1 l=1 params="" odir="${TMPDIR:-/tmp}"
-	while getopts 'l:t:o:rfc' arg; do
+	local OPTIND arg mandatory threads=1 l=1 d=5000 params="" odir="${TMPDIR:-/tmp}"
+	while getopts 'l:d:t:o:rfc' arg; do
 		case $arg in
 			l)	l=$OPTARG;;
+			d)	d=$OPTARG;;
 			t)	threads=$OPTARG;;
 			o)	odir="$OPTARG"; mkdir -p "$odir";;
 			r)	params+=" --round-robin";;
@@ -136,44 +159,46 @@ function helper::papply(){
 	# export -f helper::_papply
 	# parallel --tmpdir "$odir" --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer --pipe -L $l -N $((5000/l)) $params -P $threads helper::_papply "{}" "{#}" "$@"
 
-	parallel --tmpdir "$odir" --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer --pipe -L $l -N $((5000/l)) $params -P $threads "JOB_ID={#}; FILENO={#}; FILE=\"{}\"; if [[ -s \"\$FILE\" ]]; then $*; else read -r l || exit 0; cat <(echo \"\$l\") - | $*; fi"
+	parallel --tmpdir "$odir" --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer --pipe -L $l -N $((d/l)) $params -P $threads "JOB_ID={#}; FILENO={#}; FILE=\"{}\"; if [[ -s \"\$FILE\" ]]; then $*; else read -r l || exit 0; cat <(echo \"\$l\") - | $*; fi"
 
 	return 0
 }
 
-function helper::papply_gzip(){
+function helper::capply(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[-2]} usage:
 			-i <instances> | number of
+			-t <threads>   | number of decompressison threads per instance (default: 1)
 			-f <infile>    | path to
 			-m <modulo>    | chunk size modulo zero. default: 4 (to match fastq file records)
 			-l             | switch from full output buffering and ordered output to immediate line bufferd output
 			-c <cmd>       | and parameters - needs to be last! job id is \$JOB_ID
 
 			example 1:
-			${FUNCNAME[-2]} -i 10 -f file.gz -c cat
+			${FUNCNAME[-2]} -i 10 -f file[.gz] -c cat
 
 			example 2:
 			fun(){
 				cat > $JOB_ID.out
 			}
 			export -f fun
-			${FUNCNAME[-2]} -i 10 -f file.gz -c fun
+			${FUNCNAME[-2]} -i 10 -f file[.gz] -c fun
 
 			example 3:
-			${FUNCNAME[-2]} -i 10 -f file.gz -c "cat > \$JOB_ID.out"
+			${FUNCNAME[-2]} -i 10 -f file[.gz] -c "cat > \\\$JOB_ID.out"
 
 			example 4:
-			${FUNCNAME[-2]} -i 10 -f file.gz -c 'cat > $JOB_ID.out'
+			${FUNCNAME[-2]} -i 10 -f file[.gz] -c 'cat > \$JOB_ID.out'
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory instances=1 m=4 f tdir="${TMPDIR:-/tmp}" params="--keep-order"
-	while getopts 'i:f:m:lc' arg; do
+	local OPTIND arg mandatory instances=1 m=4 f tdir="${TMPDIR:-/tmp}" params="--keep-order" threads=1
+	while getopts 'i:f:t:m:lc' arg; do
 		case $arg in
 			i)	instances=$OPTARG;;
+			t)	threads=$OPTARG;;
 			m)	m=$OPTARG;;
 			l)	params="--line-buffer";;
 			f)	((++mandatory)); f="$OPTARG";;
@@ -183,8 +208,16 @@ function helper::papply_gzip(){
 	done
 	[[ $mandatory -lt 2 ]] && _usage
 
-	local l c i
-	l=$(gztool -l "$f" |& sed -nE 's/.*\s+lines\s+:\s+([0-9]+).*/\1/p')
+	local l c
+	if readlink -e "$f" | file -b --mime-type -f - | grep -qF 'gzip'; then
+		if rapidgzip --version | sed -E 's/.+\s([0-9]+)\.([0-9]+)\.([0-9]+)$/\1.\2\t\2.\3/' | awk '$1>0.14 || $2>=14.3{exit 0}{exit 1}'; then
+			l=$(rapidgzip -P 1 -q --count-lines --import-index "${f%.*}.gzi" "$f")
+		else
+			l=$(gztool -l "$f" |& sed -nE 's/.*\s+lines\s+:\s+([0-9]+).*/\1/p')
+		fi
+	else
+		l=$(tail -1 "${f%.*}.ffi" | cut -f 1)
+	fi
 	c=$((l%instances==0 ? l/instances : l/instances+1))
 	c=$((c%m == 0 ? c : c+m-c%m))
 
@@ -202,9 +235,19 @@ function helper::papply_gzip(){
 	# for i in $(seq 0 $((instances-1))); do
 	# 	echo "gztool -v 0 -L $((i*c+1)) -R $c '$f'"
 	# done | parallel --tmpdir "$tdir" --termseq INT,1000,TERM,0 --halt now,fail=1 --keep-order -P $instances '{= $ENV{JOB_ID}=seq() =}' :::: - ::: " | $*"
+	# for i in $(seq 0 $((instances-1))); do
+	# 	echo "FILENO=\$PARALLEL_SEQ; JOB_ID=\$PARALLEL_SEQ; gztool -v 0 -L $((i*c+1)) -R $c '$f'"
+	# done | parallel --tmpdir "$tdir" --termseq INT,1000,TERM,0 --halt now,fail=1 --keep-order -P $instances {} :::: - ::: " | $*"
+	# v0.14+:
+	# for i in $(seq 0 $((instances-1))); do
+	# 	echo "FILENO=\$PARALLEL_SEQ; JOB_ID=\$PARALLEL_SEQ; rapidgzip -P 1 -kcd --ranges ${c}L@$((i*c))L --import-index '${f%.*}.gzi' '$f'"
+	# done | parallel --tmpdir "$tdir" --termseq INT,1000,TERM,0 --halt now,fail=1 --keep-order -P $instances {} :::: - ::: " | $*"
+	declare -a catcmd
 	for i in $(seq 0 $((instances-1))); do
-		echo "FILENO=\$PARALLEL_SEQ; JOB_ID=\$PARALLEL_SEQ; gztool -v 0 -L $((i*c+1)) -R $c '$f'"
-	done | parallel --tmpdir "$tdir" --termseq INT,1000,TERM,0 --halt now,fail=1 --keep-order -P $instances {} :::: - ::: " | $*"
+		helper::makecatcmd -v catcmd -t $threads -r "${c}L@$((i*c))L" -f "$f"
+		echo "FILENO=\$PARALLEL_SEQ; JOB_ID=\$PARALLEL_SEQ; ${catcmd[*]} '$f'"
+	done | parallel --tmpdir "$tdir" --termseq INT,1000,TERM,0 --halt now,fail=1 $params -P $instances {} :::: - ::: " | $*"
+
 	return 0
 }
 
@@ -282,21 +325,25 @@ function helper::makecatcmd(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[-2]} usage:
-			-c <var>  | obsolete synonym for -v
-			-v <var>  | variable
-			-f <file> | path to
-			-l        | legacy mode without index
+			-c <var>     | obsolete synonym for -v
+			-v <var>     | variable
+			-f <file>    | path to
+			-t <threads> | number of (default: 4)
+			-r <range>   | with format <m|inf>L@<n>L meaning m or infinity lines after n lines (gzip only)
+			-l           | legacy mode without index
 			example:
-			${FUNCNAME[-2]} -c cmd -f [txt|bz2|gz]
+			${FUNCNAME[-2]} -v cmd -f [txt|bz2|gz]
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory f v legacy=false
-	while getopts 'f:c:v:l' arg; do
+	local OPTIND arg mandatory f v legacy=false threads=4 range
+	while getopts 'f:c:v:t:r:l' arg; do
 		case $arg in
 			c)	v=$OPTARG;;
 			v)	v=$OPTARG;;
+			t)	threads=$OPTARG;;
+			r)	range="$OPTARG";;
 			l)	legacy=true;;
 			f)	((++mandatory)); f="$OPTARG";;
 			*)	_usage;;
@@ -316,7 +363,7 @@ function helper::makecatcmd(){
 	# pigz p=2  : 500MB/s
 	# bgzip @=1 : 400MB/s
 	# bgzip @=2 : 400MB/s
-	# rapidgzip P=4 : index or bgzip : 1300MB/s | no index : 800MB/s
+	# rapidgzip P=4 : index or bgzip : 1300MB/s | no index : 800MB/s  <-
 	# rapidgzip P=8 : index or bgzip : 1500MB/s | no index : 1100MB/s
 	### NFS
 	# pigz p=1  : 250MB/s
@@ -327,7 +374,7 @@ function helper::makecatcmd(){
 	# rapidgzip P=4               : index or bgzip : 2500MB/s | no index : 550MB/s (P=1!)
 	# rapidgzip P=8               : index or bgzip : 3800MB/s | no index : 550MB/s (P=1!)
 	# rapidgzip P=12              : index or bgzip : 5500MB/s | no index : 550MB/s (P=1!)
-	# rapidgzip (sequential) P=4  : index or bgzip : 2500MB/s | no index : 2200MB/s
+	# rapidgzip (sequential) P=4  : index or bgzip : 2500MB/s | no index : 2200MB/s       <-
 	# rapidgzip (sequential) P=8  : index or bgzip : 3800MB/s | no index : 3500MB/s
 	# rapidgzip (sequential) P=12 : index or bgzip : 5500MB/s | no index : 5000MB/s
 
@@ -337,38 +384,70 @@ function helper::makecatcmd(){
 
 	case "$(readlink -e "$f" | file -b --mime-type -f - | grep -oF -e 'gzip' -e 'bzip2' || echo cat)" in
 		gzip)
-			local rota=$(
-				rota="$(df --output=source "$(readlink -e "$f")" | tail -1)"
-				lsblk -n -o ROTA "$rota" 2> /dev/null || {
-					rota="$(realpath "/dev/disk/by-label/$(rev <<< "$rota" | xargs basename | rev)")"
-					lsblk -n -o ROTA "$rota" 2> /dev/null || echo 1
-				}
-			)
-			# restrict to 4 threads
-			if [[ $rota -eq 0 ]]; then
-				# ssd
-				if ! $legacy && [[ -e "${f%.*}.rgzi" ]]; then
-					_makecatcmd=("rapidgzip" "-kcd" "-P" "4" "--import-index" "${f%.*}.rgzi")
+			if rapidgzip --version | sed -E 's/.+\s([0-9]+)\.([0-9]+)\.([0-9]+)$/\1.\2\t\2.\3/' | awk '$1>0.14 || $2>=14.3{exit 0}{exit 1}'; then
+				# from v0.14.1+ rapidgzip supports gztool indices and likewise to its default indices gives all the benefits (ie. ISA-L based decoding)
+				# -> no rgzi indices necesseray anymore
+				if [[ $range ]]; then
+					_makecatcmd=("rapidgzip" "-qkcd" "-P" "$threads" "--import-index" "${f%.*}.gzi" "--ranges" "$range")
+				elif ! $legacy && [[ -e "${f%.*}.gzi" ]]; then
+					_makecatcmd=("rapidgzip" "-qkcd" "-P" "$threads" "--import-index")
+					[[ $v ]] && _makecatcmd+=("'${f%.*}.gzi'") || _makecatcmd+=("${f%.*}.gzi")
 				else
-					# bgzip || gzip
-					# params="-P $(gzip -l "$f" | tail -1 | awk '$1>0 && $2==0{print 4; exit}{print 8}')"
-					_makecatcmd=("rapidgzip" "-kcd" "-P" "4")
+					local rota=$(
+						rota="$(df --output=source "$(readlink -e "$f")" | tail -1)"
+						lsblk -n -o ROTA "$rota" 2> /dev/null || {
+							rota="$(realpath "/dev/disk/by-label/$(rev <<< "$rota" | xargs basename | rev)")"
+							lsblk -n -o ROTA "$rota" 2> /dev/null || echo 1
+						}
+					)
+					if [[ $rota -gt 0 ]]; then
+						# hdd/nfs/overlay/...
+						_makecatcmd=("rapidgzip" "-qkcd" "-P" "$threads" "--io-read-method" "sequential")
+					else
+						# bgzip || gzip
+						# params="-P $(gzip -l "$f" | tail -1 | awk '$1>0 && $2==0{print 4; exit}{print 8}')"
+						_makecatcmd=("rapidgzip" "-qkcd" "-P" "$threads")
+					fi
 				fi
 			else
-				# nfs/overlay/...
-				# not necessary to go with 12 threads
-				if ! $legacy && [[ -e "${f%.*}.rgzi" ]]; then
-					_makecatcmd=("rapidgzip" "-kcd" "-P" "4" "--import-index" "${f%.*}.rgzi")
+				# wo avoid non mutable "[Warning] The index only has an effect for parallel decoding"
+				[[ $threads -eq 1 ]] && threads=2
+				if [[ $range ]]; then
+					local l r
+					read -r r l < <(sed -E 's/L@?/ /g' <<< "$range")
+					_makecatcmd=("gztool" "-v" "0" "-L" "$((l+1))" "-R" "$r")
+				elif ! $legacy && [[ -e "${f%.*}.rgzi" ]]; then
+					_makecatcmd=("rapidgzip" "-kcd" "-P" "$threads" "--import-index")
+					[[ $v ]] && _makecatcmd+=("'${f%.*}.rgzi'") || _makecatcmd+=("${f%.*}.rgzi")
 				else
-					_makecatcmd=("rapidgzip" "-kcd" "-P" "4" "--io-read-method" "sequential")
+					local rota=$(
+						rota="$(df --output=source "$(readlink -e "$f")" | tail -1)"
+						lsblk -n -o ROTA "$rota" 2> /dev/null || {
+							rota="$(realpath "/dev/disk/by-label/$(rev <<< "$rota" | xargs basename | rev)")"
+							lsblk -n -o ROTA "$rota" 2> /dev/null || echo 1
+						}
+					)
+					if [[ $rota -gt 0 ]]; then
+						# hdd/nfs/overlay/...
+						_makecatcmd=("rapidgzip" "-kcd" "-P" "$threads" "--io-read-method" "sequential")
+					else
+						# bgzip || gzip
+						# params="-P $(gzip -l "$f" | tail -1 | awk '$1>0 && $2==0{print 4; exit}{print 8}')"
+						_makecatcmd=("rapidgzip" "-kcd" "-P" "$threads")
+					fi
 				fi
 			fi
 		;;
 		bzip2)
 			# bzip2 replaced by faster indexed_bzip2
-			_makecatcmd=("ibzip2" "-kcd" "-P 4")
+			_makecatcmd=("ibzip2" "-qkcd" "-P" "$threads")
 			;;
-		*)	_makecatcmd=("cat");;
+		*)
+			if [[ $range ]]; then
+				_makecatcmd=("fftool.sh" "-r" "$range" "-f")
+			else
+				_makecatcmd=("cat")
+			fi
 	esac
 
 	[[ $v ]] || "${_makecatcmd[@]}" "$f"
@@ -510,9 +589,12 @@ function helper::ishash(){
 	while getopts 'v:' arg; do
 		case $arg in
 			v)	{	declare -p "$OPTARG" &> /dev/null
-					declare -n __="$OPTARG"
-					[[ "$(declare -p ${!__})" =~ ^declare\ \-[Ab-z]+ ]]
+					compgen -A variable -A arrayvar "$OPTARG" | grep -qFx "$OPTARG" && return 1
 				} || return 1
+				# {	declare -p "$OPTARG" &> /dev/null
+				# 	declare -n __="$OPTARG"
+				# 	[[ "$(declare -p ${!__})" =~ ^declare\ \-[Ab-z]+ ]]
+				# } || return 1
 			;;
 			*)	_usage;;
 		esac
@@ -535,9 +617,12 @@ function helper::isarray(){
 	while getopts 'v:' arg; do
 		case $arg in
 			v)	{	declare -p "$OPTARG" &> /dev/null
-					declare -n __="$OPTARG"
-					[[ "$(declare -p ${!__})" =~ ^declare\ \-[a-zB-Z]+ ]]
+					compgen -A arrayvar "$OPTARG" | grep -qFx "$OPTARG"
 				} || return 1
+				# {	declare -p "$OPTARG" &> /dev/null
+				# 	declare -n __="$OPTARG"
+				# 	[[ "$(declare -p ${!__})" =~ ^declare\ \-[a-zB-Z]+ ]]
+				# } || return 1
 			;;
 			*)	_usage;;
 		esac

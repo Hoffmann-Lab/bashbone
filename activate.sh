@@ -64,7 +64,11 @@ if [[ ! $- =~ i ]] && ${BASHBONE_SETSID:-false}; then
 	# exec bash -c 'export PGID=$$; trap "trap \"\" INT TERM; env kill -INT -- -\$PGID" INT; trap "trap \"\" INT TERM; env kill -TERM -- -\$PGID" TERM; setsid --wait env --default-signal=INT,QUIT bash "$0" "$@" & PGID=$!; wait $PGID' "$(realpath -s "$0")" "$@"
 	export BASHBONE_SETSID=false
 	export BASHBONE_REEXEC=true
-	{ trap 'exit 130' INT; exec setsid --wait bash "$(realpath -s "$0")" "$@"; } &
+	if [[ -t 0 ]]; then
+		{ trap 'exit 130' INT; exec setsid --wait bash "$(realpath -s "$0")" "$@"; } &
+	else
+		cat | { trap 'exit 130' INT; exec setsid --wait bash "$(realpath -s "$0")" "$@"; } &
+	fi
 	BASHBONE_PGID=$!
 	# always trap INT to trigger ERR that triggers TERM to implement termination sequence with INT coming first to avoid most termination messages
 	# termination sequence: INT,1000,TERM,0 plus error tracing and cleanup
@@ -80,7 +84,7 @@ export -n BASHBONE_SETSID # unset or remove export property, so that a truely de
 
 #####################################################################################
 
-shopt -s expand_aliases extglob # inevitable for defining wrapper aliases and to source this file which makes use of extglob
+shopt -s expand_aliases extglob progcomp # inevitable for defining wrapper aliases, to source this file which makes use of extglob and use bash completions
 
 export TMPDIR="${TMPDIR:-/tmp}" && mkdir -p "$TMPDIR" || return 1
 
@@ -468,21 +472,24 @@ function bashbone(){
 			done
 			PATH="${PATH/$BASHBONE_PATH/}"
 
-			[[ $- =~ i ]] || _bashbone_reset # already in prompt_command done when interactive
-
-			if [[ ${BASH_VERSINFO[0]} -ge 5 ]]; then
-				complete -r bashbone
-				complete -r -I
-				_bashbone_completion_default
-				if compgen -A arrayvar PROMPT_COMMAND > /dev/null; then
-					l=${#PROMPT_COMMAND[@]}
-					for i in "${!PROMPT_COMMAND[@]}"; do
-						[[ ${PROMPT_COMMAND[$i]} == "_bashbone_completion_default" ]] || PROMPT_COMMAND+=("${PROMPT_COMMAND[$i]}")
-					done
-					PROMPT_COMMAND=("${PROMPT_COMMAND[@]:$l}")
-				else
-					PROMPT_COMMAND="${PROMPT_COMMAND/$'\n'_bashbone_completion_default/}"
+			if [[ $- =~ i ]]; then
+				if [[ ${BASH_VERSINFO[0]} -ge 5 && -r /usr/share/bash-completion/bash_completion ]]; then
+					complete -r bashbone
+					complete -r -I
+					_bashbone_completion_default
+					if compgen -A arrayvar PROMPT_COMMAND > /dev/null; then
+						l=${#PROMPT_COMMAND[@]}
+						for i in "${!PROMPT_COMMAND[@]}"; do
+							[[ ${PROMPT_COMMAND[$i]} == "_bashbone_completion_default" ]] || PROMPT_COMMAND+=("${PROMPT_COMMAND[$i]}")
+						done
+						PROMPT_COMMAND=("${PROMPT_COMMAND[@]:$l}")
+					else
+						PROMPT_COMMAND="${PROMPT_COMMAND/$'\n'_bashbone_completion_default/}"
+					fi
 				fi
+			else
+				# already done in prompt_command done when interactive
+				_bashbone_reset
 			fi
 
 			for f in "${BASHBONE_FUNCNAMES[@]}" bashbone $(compgen -A function _bashbone); do
@@ -506,7 +513,8 @@ function bashbone(){
 }
 
 # activate colon aware _InitialWorD_ completion
-if [[ ${BASH_VERSINFO[0]} -ge 5 ]]; then
+if [[ $- =~ i && ${BASH_VERSINFO[0]} -ge 5 && -r /usr/share/bash-completion/bash_completion ]]; then
+	[[ $BASH_COMPLETION_VERSINFO ]] || source /usr/share/bash-completion/bash_completion
 	function _bashbone_completion(){
 		declare -a args
 		mapfile -d ' ' -t args < <(sed 's/\s*$//'< <(printf '%s' "$COMP_LINE"))

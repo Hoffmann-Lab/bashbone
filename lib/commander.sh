@@ -85,6 +85,7 @@ function commander::makecmd(){
 			${FUNCNAME[-2]} -a cmds -v x -c echo '\$x'
 
 			example 3:
+			x=1
 			${FUNCNAME[-2]} -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 			    perl -sl - -y=\$x <<< '
 			        print "\$x";
@@ -96,7 +97,7 @@ function commander::makecmd(){
 
 			example 4:
 			x=1
-			${FUNCNAME[-2]} -v x -a cmds -c <<-'CMD'
+			${FUNCNAME[-2]} -a cmds -v x -c <<-'CMD'
 			    perl -sl - -y=\$x <<< '
 			        print "\$x";
 			        print "\$y";
@@ -128,7 +129,7 @@ function commander::makecmd(){
 	local fd tmp
 	declare -a mapdata cmd_makecmd # be very careful with references name space
 
-	if [[ $COMMANDER ]]; then # interactive case
+	if [[ $COMMANDER ]]; then
 		for fd in "${COMMANDER[@]}"; do
 			if $multiline; then
 				cmd_makecmd+=("$(< /dev/fd/$fd)")
@@ -140,24 +141,21 @@ function commander::makecmd(){
 		done
 		tmp="${cmd_makecmd[*]/#/$sep }" # concatenate CMD* with separator. do not use $(echo -e ${tmp/#$sep /}) here
 		tmp="${tmp/#$sep /}"
+		_cmds_makecmd+=("$vars$tmp$suffix")
 	else
-		# necessary check for interactive case
-		[[ -t 0 ]] || {
+		if [[ $1 ]]; then
+			_cmds_makecmd+=("$vars$*$suffix")
+		else
 			if $multiline; then
 				tmp="$(< /dev/stdin)"
 			else
 				mapfile -t mapdata /dev/stdin
 				tmp="${mapdata[*]}"
 			fi
-		}
+			_cmds_makecmd+=("$vars$tmp$suffix")
+		fi
 	fi
 	COMMANDER=()
-
-	if [[ $1 ]]; then
-		_cmds_makecmd+=("$vars$* $tmp$suffix")
-	else
-		_cmds_makecmd+=("$vars$tmp$suffix")
-	fi
 
 	return 0
 }
