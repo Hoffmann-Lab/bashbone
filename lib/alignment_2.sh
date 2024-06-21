@@ -106,16 +106,16 @@ function alignment::slice(){
 
 			for bed in "${mapdata[@]}"; do
 				i=$(basename "$bed" .bed | rev | cut -d '.' -f 1 | rev)
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 					samtools view
 						-@ $ithreads
 						-L "$bed"
 						-M
 						-b
+						--no-PG
+						--write-index
+						-o "$o.slice.$i.bam##idx##$o.slice.$i.bai"
 						"$f"
-						> "$o.slice.$i.bam"
-				CMD
-					samtools index -@ $ithreads "$o.slice.$i.bam" "$o.slice.$i.bai"
 				CMD
 			done
 		done
@@ -248,7 +248,7 @@ function alignment::rmduplicates(){
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rmduplicates)")
 
 				if [[ $_umi_rmduplicates ]]; then
-					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD
+					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
 						samtools sort
 							-n
 							-@ $ithreads
@@ -282,11 +282,10 @@ function alignment::rmduplicates(){
 							-@ $ithreads
 							-O BAM
 							-T "${tdirs[-1]}/$(basename "${slice%.*}").rx"
-						> "$slice.rx";
+							--write-index
+							-o "$slice.rx##idx##${slice%.*}.bai";
 					CMD
 						mv "$slice.rx" "$slice";
-					CMD
-						samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 					CMD
 					# alternative 1
 					# picard MergeBamAlignment on input bam and created unaligned_umi.bam
@@ -313,22 +312,23 @@ function alignment::rmduplicates(){
 					if $legacy; then
 						commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 							umi_tools dedup
-							-I "$slice"
-							--log2stderr
-							--temp-dir "${tdirs[-1]}"
-							--extract-umi-method tag
-							--umi-tag RX
-							--method directional
-							--edit-distance-threshold 1
-							--random-seed 12345
-							--no-sort-output
-							$params
+								-I "$slice"
+								--log2stderr
+								--temp-dir "${tdirs[-1]}"
+								--extract-umi-method tag
+								--umi-tag RX
+								--method directional
+								--edit-distance-threshold 1
+								--random-seed 12345
+								--no-sort-output
+								$params
 						CMD
 							samtools sort
+								--no-PG
 								-@ $ithreads
 								-O BAM
 								-T "${tdirs[-1]}/$(basename "${slice%.*}")"
-							> "$slice.rmdup"
+								-o "$slice.rmdup"
 						CMD
 					else
 						commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
@@ -356,7 +356,7 @@ function alignment::rmduplicates(){
 					# alternative: fgbio GroupReadsByUmi --mark-duplicates=true
 				else
 					if [[ $x -gt 0 ]]; then
-						commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
+						commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 							samtools sort
 								-n
 								-@ $ithreads
@@ -374,11 +374,10 @@ function alignment::rmduplicates(){
 								-@ $ithreads
 								-O BAM
 								-T "${tdirs[-1]}/$(basename "${slice%.*}").mc"
-							> "$slice.mc";
+								--write-index
+								-o "$slice.mc##idx##${slice%.*}.bai";
 						CMD
 							mv "$slice.mc" "$slice";
-						CMD
-							samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 						CMD
 					fi
 
@@ -419,13 +418,16 @@ function alignment::rmduplicates(){
 			o="${o%.*}.rmdup.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $othreads
 					-f
 					-c
 					-p
-					"$o"
+					-O BAM
+					--no-PG
+					--write-index
+					-o "$o##idx##${o%.*}.bai"
 					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 
@@ -522,7 +524,7 @@ function alignment::clip(){
 	[[ $x -gt 0 ]] && params+=" --read-two-five-prime=${r25:-0} --read-two-three-prime=${r23:-0}"
 
 	local m i o slice odir x=0
-	declare -a tdirs tomerge cmd1 cmd2 cmd3
+	declare -a tdirs tomerge cmd1 cmd2
 	for m in "${_mapper_clip[@]}"; do
 		declare -n _bams_clip=$m
 		odir="$outdir/$m"
@@ -566,13 +568,9 @@ function alignment::clip(){
 						-@ $mthreads
 						-O BAM
 						-T "${tdirs[-1]}/$(basename "${slice%.*}").clipped"
-						> "$slice.clipped"
-				CMD
-
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+						--write-index
+						-o "$slice.clipped##idx##${slice%.*}.bai";
 					mv "$slice.clipped" "$slice"
-				CMD
-					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 				CMD
 
 				tomerge+=("$slice")
@@ -582,13 +580,16 @@ function alignment::clip(){
 			o="${o%.*}.clipped.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
 					-c
 					-p
-					"$o"
+					-O BAM
+					--no-PG
+					--write-index
+					-o "$o##idx##${o%.*}.bai"
 					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 
@@ -600,11 +601,9 @@ function alignment::clip(){
 	if $skip; then
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
-		commander::printcmd -a cmd3
 	else
 		commander::runcmd -c fgbio -v -b -i $minstances -a cmd1
 		commander::runcmd -v -b -i $instances -a cmd2
-		commander::runcmd -v -b -i $instances -a cmd3
 	fi
 
 	return 0
@@ -699,13 +698,16 @@ function alignment::clipmateoverlaps(){
 			o="${o%.*}.mateclipped.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
 					-c
 					-p
-					"$o"
+					-O BAM
+					--no-PG
+					--write-index
+					-o "$o##idx##${o%.*}.bai"
 					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 
@@ -820,7 +822,10 @@ function alignment::reorder(){
 					-f
 					-c
 					-p
-					"$o"
+					-O BAM
+					--no-PG
+					--write-index
+					-o "$o##idx##${o%.*}.bai"
 					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 
@@ -961,7 +966,10 @@ function alignment::addreadgroup(){
 					-f
 					-c
 					-p
-					"$odir/$o.rg.bam"
+					-O BAM
+					--no-PG
+					--write-index
+					-o "$odir/$o.rg.bam##idx##$odir/$o.rg.bai"
 					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 			_bamslices_addreadgroup["$odir/$o.rg.bam"]="${_bamslices_addreadgroup[${_bams_addreadgroup[$i]}]}"
@@ -1083,7 +1091,10 @@ function alignment::splitncigar(){
 					-f
 					-c
 					-p
-					"$o"
+					-O BAM
+					--no-PG
+					--write-index
+					-o "$o##idx##${o%.*}.bai"
 					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 
@@ -1200,7 +1211,10 @@ function alignment::soft2hardclip(){
 					-f
 					-c
 					-p
-					"$o"
+					-O BAM
+					--no-PG
+					--write-index
+					-o "$o##idx##${o%.*}.bai"
 					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 
@@ -1282,7 +1296,7 @@ function alignment::leftalign(){
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
 
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-					samtools reheader -c "sed -E 's/\tSO:.+/\tSO:undefined/'" "$slice" > "$slice.reheader"
+					samtools reheader --no-PG -c "sed -E 's/\tSO:.+/\tSO:undefined/'" "$slice" > "$slice.reheader"
 				CMD
 					mv "$slice.reheader" "$slice"
 				CMD
@@ -1301,12 +1315,14 @@ function alignment::leftalign(){
 						--tmp-dir "${tdirs[-1]}"
 				CMD
 
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-					rm -f "${tdirs[-1]}/$(basename "${slice%.*}")"*
-				CMD
-					samtools sort -@ $ithreads -O BAM -T "${tdirs[-1]}/$(basename "${slice%.*}")" "$slice.leftaln" > "$slice"
-				CMD
-					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					samtools sort
+						-@ $ithreads
+						-O BAM
+						-T "${tdirs[-1]}/$(basename "${slice%.*}")"
+						--write-index
+						-o "$slice##idx##${slice%.*}.bai"
+						"$slice.leftaln"
 				CMD
 					rm -f "$slice.leftaln"
 				CMD
@@ -1328,7 +1344,10 @@ function alignment::leftalign(){
 					-f
 					-c
 					-p
-					"$o"
+					-O BAM
+					--no-PG
+					--write-index
+					-o "$o##idx##${o%.*}.bai"
 					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 
@@ -1485,7 +1504,10 @@ function alignment::bqsr(){
 					-f
 					-c
 					-p
-					"$o"
+					-O BAM
+					--no-PG
+					--write-index
+					-o "$o##idx##${o%.*}.bai"
 					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 
