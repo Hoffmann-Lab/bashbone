@@ -75,13 +75,18 @@ unset OPTIND
 [[ $- =~ i ]] && source "${BASH_SOURCE[0]}" -h && return 0
 
 if [[ ! $- =~ i ]] && ${BASHBONE_SETSID:-true}; then
-	export BASHBONE_SETSID=false
-	{ trap : INT; exec setsid --wait bash "$(realpath -s "$0")" "$@"; } &
+ 	export BASHBONE_SETSID=false
+ 	if [[ -t 0 ]]; then
+		{ trap 'exit 130' INT; exec setsid --wait bash "$(realpath -s "$0")" "$@"; } &
+	else
+		cat | { trap 'exit 130' INT; exec setsid --wait bash "$(realpath -s "$0")" "$@"; } &
+	fi
 	BASHBONE_PGID=$!
 	trap 'trap "" INT TERM; env kill -INT -- -$BASHBONE_PGID' INT TERM
 	wait $BASHBONE_PGID
 	wait $BASHBONE_PGID
 	BASHBONE_EX=$?
+	trap - EXIT
 	exit $BASHBONE_EX
 fi
 BASHBONE_PGID=$(($(ps -o pgid= -p $BASHPID)))
