@@ -210,6 +210,8 @@ function fusions::arriba(){
 			-S <hardskip>      | true/false return
 			-s <softskip>      | true/false only print commands
 			-5 <skip>          | true/false md5sums, indexing respectively
+			-d <strandness>    | optional. default when used with -s: ?
+			                   | [0|1|2] to define library strandness method to skip auto inference. 0 = unstranded, 1 = stranded/fr second strand or 2 = reversely stranded /fr first strand
 			-t <threads>       | number of
 			-g <genome>        | path to
 			-v <genomeversion> | hg19/hg38/mm10
@@ -222,13 +224,14 @@ function fusions::arriba(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome genomeversion gtf outdir tmpdir="${TMPDIR:-/tmp}" fragmentsize
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome genomeversion gtf outdir tmpdir="${TMPDIR:-/tmp}" fragmentsize default
 	declare -n _fq1_arriba _fq2_arriba
-	while getopts 'S:s:5:t:g:v:a:o:f:1:2:' arg; do
+	while getopts 'S:s:5:t:g:v:a:o:f:1:2:d:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			5)	$OPTARG && skipmd5=true;;
+			d)	default=$OPTARG;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			g)	((++mandatory)); genome="$OPTARG";;
 			v)	genomeversion="$OPTARG";;
@@ -323,6 +326,7 @@ function fusions::arriba(){
 	alignment::inferstrandness \
 		-S false \
 		-s $skip \
+		-d "$default" \
 		-t $threads \
 		-r mapper \
 		-x strandness \
