@@ -293,11 +293,11 @@ function bisulfite::bwa(){
 		o="$outdir/$o"
 
 		readlength=$(helper::cat -f "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%.f",l/(NR/4))}')
-		[[ $readlength -lt $reflength ]] || readlength=$reflength
+		# [[ $readlength -lt $reflength ]] || readlength=$reflength
 		[[ $accuracy ]] && params='--score '$(echo $accuracy | awk -v l=$readlength '{print l-sprintf("%.0d",(1-$1/100)*l+1)*5}')
 
 		if [[ ${_fq2_bwa[$i]} ]]; then
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 				bwameth.py
 					$params
 					--do-not-penalize-chimeras
@@ -306,16 +306,14 @@ function bisulfite::bwa(){
 					--reference "$genome"
 					"${_fq1_bwa[$i]}" "${_fq2_bwa[$i]}"
 			CMD
-				sed 's/\t\t/\t*\t/'
+				sed 's/\t\t/\t*\t/;s@\tYD:Z:f@\tXB:Z:F1/CT\tYD:Z:f@;s@\tYD:Z:r@\tXB:Z:F1/GA\tYD:Z:r@'
 			CMD
-				sed -E -e ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/\tYC:Z:(\S+)/\tHI:i:0\tXD:i:0\tXF:i:0\tXB:Z:F1\/\1\tYZ:Z:0\tYC:Z:\1/'
-			CMD
-				samtools view -@ $threads -b > "$o.bam"
+				samtools view --no-PG -@ $threads -b -o "$o.bam"
 			CMD
 			# tee >(samtools view -@ $((threads/2+1)) -b > "$o.raw.bam")
 			# sed corrects SA and XA tags, which bwameth does not change back from c2t (f+r) chromosomes i.e. (f|r)chr to chr
 		else
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
+			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 				bwameth.py
 					$params
 					--do-not-penalize-chimeras
@@ -324,11 +322,9 @@ function bisulfite::bwa(){
 					--reference "$genome"
 					"${_fq1_bwa[$i]}"
 			CMD
-				sed 's/\t\t/\t*\t/'
+				sed 's/\t\t/\t*\t/;s@\tYD:Z:f@\tXB:Z:F1/CT\tYD:Z:f@;s@\tYD:Z:r@\tXB:Z:F1/GA\tYD:Z:r@'
 			CMD
-				sed -E -e ':a; s/(\s[SX]A:Z\S*[:;])[fr]/\1/; t a' -e 's/\tYC:Z:(\S+)/\tHI:i:0\tXD:i:0\tXF:i:0\tXB:Z:F1\/\1\tYZ:Z:0\tYC:Z:\1/'
-			CMD
-				samtools view -@ $threads -b > "$o.bam"
+				samtools view --no-PG -@ $threads -b -o "$o.bam"
 			CMD
 			# tee >(samtools view -@ $((threads/2+1)) -b > "$o.raw.bam")
 		fi
@@ -430,7 +426,7 @@ function bisulfite::rmduplicates(){
 	[[ $x -gt 0 ]] && params1='--paired' || params2+=' -s'
 	$remove && params2+=' -r'
 
-	declare -a tdirs tomerge cmd1 cmd2 cmd3 cmd4 cmd5
+	declare -a tdirs tomerge cmd1 cmd2 cmd3 cmd4
 	for m in "${_mapper_rmduplicates[@]}"; do
 		declare -n _bams_rmduplicates=$m
 		odir="$outdir/$m"
@@ -442,7 +438,7 @@ function bisulfite::rmduplicates(){
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rmduplicates)")
 
 				if [[ $_umi_rmduplicates ]]; then
-					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD
+					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
 						samtools sort
 							-n
 							-@ $ithreads
@@ -477,11 +473,10 @@ function bisulfite::rmduplicates(){
 							-@ $ithreads
 							-O BAM
 							-T "${tdirs[-1]}/$(basename "${slice%.*}").rx"
-						> "$slice.rx";
+							--write-index
+							-o "$slice.rx##idx##${slice%.*}.bai";
 					CMD
 						mv "$slice.rx" "$slice";
-					CMD
-						samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 					CMD
 
 					# misuse corrected umi group tag (default often MI as corrected barcode tag CB for dupsifter -B == --has-barcodes - searches for CB tag)
@@ -579,13 +574,9 @@ function bisulfite::rmduplicates(){
 						-@ $ithreads
 						-O BAM
 						-T "${tdirs[-1]}/$(basename "${slice%.*}").rmdup"
-					> "$slice.rmdup"
-				CMD
-
-				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+						--write-index
+						-o "$slice.rmdup##idx##${slice%.*}.bai";
 					mv "$slice.rmdup" "$slice"
-				CMD
-					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
 				CMD
 
 				tomerge+=("$slice")
@@ -595,13 +586,16 @@ function bisulfite::rmduplicates(){
 			o="${o%.*}.rmdup.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $othreads
 					-f
 					-c
 					-p
-					"$o"
+					--no-PG
+					-O BAM
+					--write-index
+					-o "$o##idx##${o%.*}.bai"
 					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 
@@ -616,14 +610,12 @@ function bisulfite::rmduplicates(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
-		commander::printcmd -a cmd5
 	else
 		commander::runcmd -v -b -i $sinstances -a cmdsort
 		commander::runcmd -v -b -i $instances -a cmd1
 		commander::runcmd -c umitools -v -b -i $minstances -a cmd2
 		commander::runcmd -c dupsifter -v -b -i $instances -a cmd3
-		commander::runcmd -v -b -i $instances -a cmd4
-		commander::runcmd -v -b -i $oinstances -a cmd5
+		commander::runcmd -v -b -i $oinstances -a cmd4
 	fi
 
 	return 0
@@ -682,13 +674,13 @@ function bisulfite::mecall(){
 		mkdir -p "$odir"
 
 		for f in "${_bams_haarz[@]}"; do
-			o=$(basename $f)
-			o=${o%.*}
+			o="$(basename "$f")"
+			o="${o%.*}"
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.haarz)")
 
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				haarz callmethyl -t $threads -d $genome -b "$f"
+				haarz callmethyl -t $threads -d "$genome" -b "$f"
 			CMD
 				bgzip -k -c -@ $threads > "${tdirs[-1]}/$o.vcf.gz"
 			CMD
@@ -700,20 +692,91 @@ function bisulfite::mecall(){
 				tabix -f -p vcf "$odir/$o.vcf.gz"
 			CMD
 
-			commander::makecmd -a cmd3 -s ' ' -o "$odir/$o.$context.full.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
+			# commander::makecmd -a cmd3 -s ' ' -o "$odir/$o.$context.full.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
+			# 	bcftools view -H "$odir/$o.vcf.gz" |
+			# CMD
+			# 	perl -slane '
+			# 		next unless $F[7]=~/^CS=$s;CC=$c;/;
+			# 		$F[1]-- if $F[7]=~/^CS=-;/;
+			# 		print join"\t",($F[0],$F[1]-1,$F[1],(split/:/,$F[-1])[-3,-4,0])
+			# 	'
+			# CMD
+			# 	-- -c="$context" -s="$([[ $context == "CG" ]] && echo [+-] || echo [+])" |
+			# CMD
+			# 	bedtools merge -d -1 -c 4,5,6 -o sum,sum,max |
+			# CMD
+			# 	perl -lane 'print join"\t",(@F[0..2],$F[3]/$F[4],$F[5])'
+			# CMD
+
+			# new: mimic cytosine report to handle tri-nucleotide context
+			commander::makecmd -a cmd3 -s ' ' -o "$odir/$o.$context.full.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- 'CMD' {COMMANDER[6]}<<- CMD {COMMANDER[7]}<<- 'CMD'
 				bcftools view -H "$odir/$o.vcf.gz" |
 			CMD
 				perl -slane '
-					next unless $F[7]=~/^CS=$s;CC=$c;/;
-					$F[1]-- if $F[7]=~/^CS=-;/;
-					print join"\t",($F[0],$F[1]-1,$F[1],(split/:/,$F[-1])[-3,-4,0])
+					BEGIN{
+						open F,"<$g" or die $!;
+						while(<F>){
+							@l=split/\t/;
+							$m{$l[0]}=$l[1];
+						}
+						close F;
+					}
+					$s=substr($F[7],3,1);
+					if($s eq "+"){
+						$sta=$F[1]-1;
+						$sto=$sta+3;
+						$sto=$sto>$m{$F[0]}?$m{$F[0]}:$sto;
+					}else{
+						$sta=$F[1]-3;
+						$sto=$sta+3;
+						$sta=$sta<0?0:$sta
+					}
+					print join"\t",($F[0],$sta,$sto,".",".",$s,$F[0],$F[1],$s,(split/:/,$F[-1])[-3,-2]);
 				'
 			CMD
-				-- -c="$context" -s="$([[ $context == "CG" ]] && echo [+-] || echo [+])" |
+				-- -g="$genome.fai" | bedtools getfasta -s -bedOut -fi "$genome" -bed - |
 			CMD
-				bedtools merge -d -1 -c 4,5,6 -o sum,sum,max |
+				perl -lane '
+					$F[-1]=uc($F[-1]);
+					$l=length($F[-1]);
+					$F[-1].="N"x(3-$l);
+					if($F[-1]=~/^CG/){
+						$F[-1]="CG\t$F[-1]";
+					}elsif($F[-1]=~/C[ACTN][ACTN]/){
+						$F[-1]="CHH\t$F[-1]";
+					}elsif($F[-1]=~/C[ACT]G/){
+						$F[-1]="CHG\t$F[-1]"
+					}else{
+						$F[-1]="CNN\t$F[-1]";
+					}
+					print join"\t",@F[6..$#F];
+				' |
 			CMD
-				perl -lane 'print join"\t",(@F[0..2],$F[3]/$F[4],$F[5])'
+				tee >(helper::pgzip -t $threads -o "$odir/$o.cytosine_report.tsv.gz") |
+			CMD
+				perl -slane '
+					BEGIN{
+						$c=~s/R/[AG]/g;
+						$c=~s/Y/[CT]/g;
+						$c=~s/S/[GC]/g;
+						$c=~s/W/[AT]/g;
+						$c=~s/K/[GT]/g;
+						$c=~s/M/[AC]/g;
+						$c=~s/B/[CGT]/g;
+						$c=~s/D/[AGT]/g;
+						$c=~s/H/[ACT]/g;
+						$c=~s/V/[ACG]/g;
+						$c=~s/N/[ACGT]/g;
+					}
+					next unless $F[-1]=~/^$c/ && $F[2]=~/$s/;
+					next if $F[3]+$F[4]==0;
+					$F[1]=$F[1]-(length($F[5])-1) if $F[2] eq "-";
+					print join"\t",($F[0],$F[1]-1,$F[1],$F[3],$F[3]+$F[4]);
+				'
+			CMD
+				-- -c="$context" -s="[+-]" | bedtools merge -d -1 -c 4,5 -o sum,sum |
+			CMD
+				perl -lane 'print join"\t",(@F[0..2],$F[3]/$F[4],$F[4])'
 			CMD
 
 			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -786,7 +849,7 @@ function bisulfite::methyldackel(){
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.methyldackel)")
 
-			commander::makecmd -a cmd1 -s ' ' -o "$odir/$o.$context.full.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- 'CMD'
+			commander::makecmd -a cmd1 -s ' ' -o "$odir/$o.$context.full.bed" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- 'CMD'
 				ln -sfn "/dev/stdout" "${tdirs[-1]}/$o.cytosine_report.txt";
 			CMD
 				MethylDackel extract
@@ -797,6 +860,7 @@ function bisulfite::methyldackel(){
 					--ignoreNH
 					-F 0
 					-@ $threads
+					--CHG
 					--CHH
 					--cytosine_report
 					-o "${tdirs[-1]}/$o"
@@ -805,15 +869,26 @@ function bisulfite::methyldackel(){
 				tee >(helper::pgzip -t $threads -o "$odir/$o.cytosine_report.tsv.gz") |
 			CMD
 				perl -slane '
+					BEGIN{
+						$c=~s/R/[AG]/g;
+						$c=~s/Y/[CT]/g;
+						$c=~s/S/[GC]/g;
+						$c=~s/W/[AT]/g;
+						$c=~s/K/[GT]/g;
+						$c=~s/M/[AC]/g;
+						$c=~s/B/[CGT]/g;
+						$c=~s/D/[AGT]/g;
+						$c=~s/H/[ACT]/g;
+						$c=~s/V/[ACG]/g;
+						$c=~s/N/[ACGT]/g;
+					}
 					next unless $F[-1]=~/^$c/ && $F[2]=~/$s/;
 					next if $F[3]+$F[4]==0;
-					$F[1]-- if $F[2] eq "-";
-					print join"\t",($F[0],$F[1]-1,$F[1],$F[3],$F[3]+$F[4])
+					$F[1]=$F[1]-(length($F[5])-1) if $F[2] eq "-";
+					print join"\t",($F[0],$F[1]-1,$F[1],$F[3],$F[3]+$F[4]);
 				'
 			CMD
-				-- -c="$context" -s="$([[ $context == "CG" ]] && echo [+-] || echo [+])" |
-			CMD
-				bedtools merge -d -1 -c 4,5 -o sum,sum |
+				-- -c="$context" -s="[+-]" | bedtools merge -d -1 -c 4,5 -o sum,sum |
 			CMD
 				perl -lane 'print join"\t",(@F[0..2],$F[3]/$F[4],$F[4])'
 			CMD
