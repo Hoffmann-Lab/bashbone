@@ -203,6 +203,8 @@ function alignment::star(){
 			                  | array which contains single or first mate fastq(.gz) paths
 			-2 <fastq2>       | optional
 			                  | array which contains mate pair fastq(.gz) paths
+			-c <convert>      | optional
+			                  | [true|false] convert genomic into transcriptomic alignments
 			-F                | optional
 			                  | force indexing even if md5sums match. ignored upon -5
 			-P <parameter>    | optional
@@ -224,10 +226,10 @@ function alignment::star(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir accuracy=95 insertsize=200000 nosplitaln=false inparams forceidx=false tmpdir="${TMPDIR:-/tmp}"
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf convert=false genomeidxdir outdir accuracy=95 insertsize=200000 nosplitaln=false inparams forceidx=false tmpdir="${TMPDIR:-/tmp}"
 	declare -n _fq1_star _fq2_star _mapper_star
 	declare -g -a star=()
-	while getopts 'S:s:5:t:g:f:x:a:n:i:r:o:1:2:P:Fh' arg; do
+	while getopts 'S:s:5:t:g:f:c:x:a:n:i:r:o:1:2:P:Fh' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -246,6 +248,7 @@ function alignment::star(){
 			;;
 			1)	((++mandatory)); _fq1_star=$OPTARG;;
 			2)	_fq2_star=$OPTARG;;
+			c)	convert="$OPTARG";;
 			P)	inparams="$OPTARG";;
 			F)	forceidx=true;;
 			h)	{ _usage || return 0; };;
@@ -254,6 +257,7 @@ function alignment::star(){
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
+	$convert && nosplitaln=false
 
 	commander::printinfo "mapping star"
 
@@ -275,6 +279,7 @@ function alignment::star(){
 		if $forceidx || [[ "$thisidxversion" != "$idxversion" || "$thismd5genome" != "$md5genome" || ! "$thismd5star" || "$thismd5star" != "$md5star" ]] || [[ "$thismd5gtf" && "$thismd5gtf" != "$md5gtf" ]]; then
 			commander::printinfo "indexing genome for star"
 			#100 = assumend usual read length. tools like arriba use 250 in case of longer reads
+			#TODO ensure --sjdbGTFfeatureExon exon --sjdbGTFtagExonParentTranscript transcript_id --sjdbGTFtagExonParentGene gene_id
 			[[ -s "$gtf" ]] && idxparams+=" --sjdbGTFfile '$gtf' --sjdbOverhang 250"
 			# local genomesize=$(du -sb "$(readlink -e "$genome")" | cut -f 1)
 			local genomesize=$(( $(wc -c "$genome" | cut -d " " -f 1) - $(wc -l "$genome" | cut -d " " -f 1) ))
@@ -312,12 +317,19 @@ function alignment::star(){
 		tdirs+=("$(mktemp -u -d -p "$tmpdir" cleanup.XXXXXXXXXX.star)")
 
 		params="$inparams"
+		if $convert; then
+			grep -m 1 '^sjdbGTFfile' "$genomeidxdir/genomeParameters.txt" | cut -f 2 | grep -qvFw -- -
+			# for salmon or eXpress quantification. switch to IndelSoftclipSingleend for RSEM
+			params+=" --quantMode TranscriptomeSAM --quantTranscriptomeBan Singleend"
+		fi
+
 		helper::makecatcmd -l -v catcmd -f "${_fq1_star[$i]}"
 		[[ $extractcmd != "cat" ]] && params+=" --readFilesCommand '${catcmd[*]}'"
 
 		if [[ ${_fq2_star[$i]} ]]; then
-			$nosplitaln && params+=" --alignMatesGapMax $insertsize --alignIntronMax 1  --alignSJDBoverhangMin 999999" || params+=" --alignMatesGapMax $insertsize --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			$nosplitaln && params+=" --alignMatesGapMax $insertsize --alignIntronMax 1 --alignSJDBoverhangMin 999999" || params+=" --alignMatesGapMax $insertsize --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
+
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 				STAR
 				--runMode alignReads
 				$params
@@ -338,15 +350,12 @@ function alignment::star(){
 				--outSAMstrandField intronMotif
 				--alignInsertionFlush Right
 				--outSAMattrRGline ID:A1 SM:sample1 LB:library1 PU:unit1 PL:illumina
-			CMD
-				mv $o.Aligned.out.bam $o.bam
-			CMD
-				ln -sfnr $o.SJ.out.tab $o.sj
+				--outSAMattributes NH HI AS nM NM MD XS
 			CMD
 			#use unique score 60 instead of default 255 - necessary for gatk implemented MappingQualityAvailableReadFilter
 		else
 			$nosplitaln && params+=' --alignIntronMax 1 --alignSJDBoverhangMin=999999' || params+=" --alignIntronMax $insertsize --alignSJDBoverhangMin 10"
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 				STAR
 				--runMode alignReads
 				$params
@@ -367,19 +376,35 @@ function alignment::star(){
 				--outSAMstrandField intronMotif
 				--alignInsertionFlush Right
 				--outSAMattrRGline ID:A1 SM:sample1 LB:library1 PU:unit1 PL:illumina
-			CMD
-				mv $o.Aligned.out.bam $o.bam
-			CMD
-				ln -sfnr $o.SJ.out.tab $o.sj
+				--outSAMattributes NH HI AS nM NM MD XS MC
 			CMD
 		fi
-		star+=("$o.bam")
+
+		if $convert; then
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				mv "$o.Aligned.out.bam" "$o.bam"
+			CMD
+				mv "$o.Aligned.toTranscriptome.out.bam" "$o.transcriptomic.bam"
+			CMD
+				ln -sfnr "$o.SJ.out.tab" "$o.sj"
+			CMD
+			star+=("$o.transcriptomic.bam")
+		else
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				mv "$o.Aligned.out.bam" "$o.bam"
+			CMD
+				ln -sfnr "$o.SJ.out.tab" "$o.sj"
+			CMD
+			star+=("$o.bam")
+		fi
 	done
 
 	if $skip; then
 		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
 	else
 		commander::runcmd -c star -v -b -i 1 -a cmd1
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0
@@ -467,7 +492,8 @@ function alignment::bwa(){
 
 	commander::printinfo "mapping bwa"
 
-	declare -a cmdchk=("which bwa-mem2 &> /dev/null && echo bwa-mem2 || echo bwa")
+	# use absolute path, because on some maschines sometimes bwa-mem2 aborts with error: prefix is too long
+	declare -a cmdchk=("which bwa-mem2 &> /dev/null && which bwa-mem2 || echo bwa")
 	local bwacmd=$(commander::runcmd -c bwa -a cmdchk)
 
 	if $skipmd5; then
@@ -506,7 +532,7 @@ function alignment::bwa(){
 		o1="$outdir/$o1"
 
 		readlength=$(helper::cat -f "${_fq1_bwa[$i]}" | head -4000 | awk 'NR%4==2{l+=length($0)}END{printf("%.f",l/(NR/4))}')
-		[[ $readlength -lt $reflength ]] || readlength=$reflength
+		# [[ $readlength -lt $reflength ]] || readlength=$reflength # option to force heavily soft-cliped read alignments on short references or to detect adapter content
 		params="$inparams"
 		if $forcemem || [[ $readlength -gt 70 ]]; then
 			# minOUTscore:30 @ MM/indelpenalty:4/6 -> (100-30)/5=~14% errors -> increase minOUTscore
@@ -527,7 +553,7 @@ function alignment::bwa(){
 						"$idxprefix"
 						"${_fq1_bwa[$i]}" "${_fq2_bwa[$i]}"
 				CMD
-					samtools view -@ $threads -b > "$o1.bam"
+					samtools view --no-PG -@ $threads -b -o "$o1.bam"
 				CMD
 			else
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
@@ -541,7 +567,7 @@ function alignment::bwa(){
 						"$idxprefix"
 						"${_fq1_bwa[$i]}"
 				CMD
-					samtools view -@ $threads -b > "$o1.bam"
+					samtools view --no-PG -@ $threads -b -o "$o1.bam"
 				CMD
 			fi
 		else
@@ -573,7 +599,7 @@ function alignment::bwa(){
 						"$o1.sai" "$o2.sai"
 						"${fastq1[$i]}" "${fastq2[$i]}"
 				CMD
-					samtools view -@ $ithreads -b > "$o1.bam"
+					samtools view --no-PG -@ $ithreads -b -o "$o1.bam"
 				CMD
 			else
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
@@ -592,7 +618,7 @@ function alignment::bwa(){
 						"$o1.sai"
 						"${_fq1_bwa[$i]}"
 				CMD
-					samtools view -@ $ithreads -b > "$o1.bam"
+					samtools view --no-PG -@ $ithreads -b -o "$o1.bam"
 				CMD
 			fi
 		fi
@@ -620,7 +646,7 @@ function alignment::postprocess(){
 			-s <softskip>    | optional. default: false
 			                 | [true|false] do nothing but check for files and print commands
 			-j <job>         | mandatory
-			                 | [uniqify|blacklist|sizeselect|sort|index] to be applied on alignments (see -r). index requires coordinate sorted alignment files
+			                 | [uniqify|blacklist|sizeselect|sort|collate|index] to be applied on alignments (see -r). index requires coordinate sorted alignment files
 			-f <path/string> | bedfile of regions or reference/chromosome name to remove alignments from (-j blacklist) or a range of insert sizes to keep (-j sizeselect). default: 0:1000
 			-t <threads>     | mandatory
 			                 | number of threads
@@ -730,9 +756,9 @@ function alignment::postprocess(){
 						-P "$inparams"
 					_bams_process[$i]="$newbam"
 				;;
-				sort)
+				sort|collate)
 					instances=1
-					alignment::_sort \
+					alignment::_$job \
 						-1 cmd1 \
 						-t $threads \
 						-f "${_bams_process[$i]}" \
@@ -823,10 +849,11 @@ function alignment::_uniqify(){
 	readlink -e "$sambam" | file -b --mime-type -f - | grep -qF -e 'gzip' || {
 		commander::makecmd -a _cmds1_uniqify -s '|' -c {COMMANDER[0]}<<- CMD
 			samtools view
+				--no-PG
 				-@ $threads
 				-b
+				-o "$outbase.bam"
 				"$sambam"
-				> "$outbase.bam"
 		CMD
 	}
 
@@ -850,9 +877,10 @@ function alignment::_uniqify(){
 			sed '/^@\S\S\s/!{s/$/\tNH:i:1/}'
 		CMD
 			samtools view
+				--no-PG
 				-@ $threads
 				-b
-				> "$_returnfile_uniqify"
+				-o "$_returnfile_uniqify"
 		CMD
 	else
 		declare -a cmdchk=("samtools --version | head -1 | cut -d '.' -f 2")
@@ -872,9 +900,10 @@ function alignment::_uniqify(){
 				sed -n '/^@\S\S\s/p; /\tNH:i:1\t/p'
 			CMD
 				samtools view
+					--no-PG
 					-@ $threads
 					-b
-					> "$_returnfile_uniqify"
+					-o "$_returnfile_uniqify"
 			CMD
 		else
 			commander::makecmd -a _cmds2_uniqify -s ';' -c {COMMANDER[0]}<<- CMD
@@ -886,8 +915,8 @@ function alignment::_uniqify(){
 					-F 256
 					-F 2048
 					-d NH:1
+					-o "$_returnfile_uniqify"
 					"$sambam"
-				> "$_returnfile_uniqify"
 			CMD
 		fi
 	fi
@@ -971,8 +1000,8 @@ function alignment::_blacklist(){
 		CMD
 
 		# infer SE or PE
-		local params="$inparams"
-		local x=$(samtools view -F 4 "$bam" | head -10000 | cat <(samtools view -H "$bam") - | samtools view -c -f 1)
+		local params params2 x=$(samtools view -F 4 "$bam" | head -10000 | cat <(samtools view -H "$bam") - | samtools view -c -f 1)
+		samtools view "$bam" $(samtools view -H "$bam" | grep -m 1 -F @SQ | cut -f 2 | cut -d : -f 2) 2> /dev/null | head -1 &> /dev/null && params="$inparams -M" || params="$inparams"
 
 		if [[ $x -gt 0 ]]; then
 			# to remove both mates, needs workaraound, because
@@ -988,7 +1017,6 @@ function alignment::_blacklist(){
 					$params
 					-@ $threads
 					-u
-					-M
 					-L "$tmpdir/whitelist.bed"
 					"$bam"
 			CMD
@@ -1006,7 +1034,6 @@ function alignment::_blacklist(){
 					- -
 			CMD
 				samtools view
-					$params
 					-@ $threads
 					-u
 					-f 1
@@ -1015,7 +1042,8 @@ function alignment::_blacklist(){
 					-@ $threads
 					-O BAM
 					-T "$tmpdir/psrt.$(basename "$outbase")"
-				> "$_returnfile_blacklist"
+					--write-index
+					-o "$_returnfile_blacklist##idx##${_returnfile_blacklist%.*}.bai"
 			CMD
 		else
 			commander::makecmd -a _cmds2_blacklist -s ';' -c {COMMANDER[0]}<<- CMD
@@ -1024,19 +1052,19 @@ function alignment::_blacklist(){
 					-@ $threads
 					-b
 					-L "$tmpdir/whitelist.bed"
+					-o "$_returnfile_blacklist"
 					"$bam"
-				> "$_returnfile_blacklist"
 			CMD
 		fi
 	else
 		commander::makecmd -a _cmds2_blacklist -s ';' -c {COMMANDER[0]}<<- CMD
 			samtools view
-				$params
+				$inparams
 				-@ $threads
 				-b
 				-e 'rname!="$blacklist"'
+				-o "$_returnfile_blacklist"
 				"$bam"
-			> "$_returnfile_blacklist"
 		CMD
 	fi
 
@@ -1137,35 +1165,35 @@ function alignment::_sizeselect(){
 		awk -v OFS='\t' '!/^\S*$/{if(p){print \$1,\$2}if(/insert_size/){p=1}}' "$outbase.sizemetrics.txt" > "$outbase.sizemetrics.tsv"
 	CMD
 
-	declare -a cmdchk=("samtools --version | head -1 | cut -d '.' -f 2")
-	local version=$(commander::runcmd -a cmdchk)
-	if [[ $version -lt 12 ]]; then
-		commander::makecmd -a _cmds2_sizeselect -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-			samtools view
-				$params
-				-h
-				-f 2
-				-@ $threads
-				"$bam"
-		CMD
-			awk -F '\t' -v m=$minsize -v x=$maxsize '/^@\S\S\s/ || (\$9 >= 0 && \$9 >= m && \$9 <= x) || (\$9 < 0 && \$9 <= -m && \$9 >= -x)'
-		CMD
-			samtools view
-				-@ $threads
-				-b
-				> "$_returnfile_sizeselect"
-		CMD
-	else
+	# declare -a cmdchk=("samtools --version | head -1 | cut -d '.' -f 2")
+	# local version=$(commander::runcmd -a cmdchk)
+	# if [[ $version -lt 12 ]]; then
+	# 	commander::makecmd -a _cmds2_sizeselect -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+	# 		samtools view
+	# 			$params
+	# 			-h
+	# 			-f 2
+	# 			-@ $threads
+	# 			"$bam"
+	# 	CMD
+	# 		awk -F '\t' -v m=$minsize -v x=$maxsize '/^@\S\S\s/ || (\$9 >= 0 && \$9 >= m && \$9 <= x) || (\$9 < 0 && \$9 <= -m && \$9 >= -x)'
+	# 	CMD
+	# 		samtools view
+	# 			-@ $threads
+	# 			-b
+	# 		> "$_returnfile_sizeselect"
+	# 	CMD
+	# else
 		commander::makecmd -a _cmds2_sizeselect -s ';' -c {COMMANDER[0]}<<- CMD
 			samtools view
 				$params
 				-b
 				-@ $threads
 				-e "(tlen >= 0 && tlen >= $minsize && tlen <= $maxsize) || (tlen < 0 && tlen <= -$minsize && tlen >= -$maxsize)"
+				-o "$_returnfile_sizeselect"
 				"$bam"
-			> "$_returnfile_sizeselect"
 		CMD
-	fi
+	# fi
 
 	return 0
 }
@@ -1232,9 +1260,109 @@ function alignment::_sort(){
 			-@ $threads
 			-O BAM
 			-T "$tmpdir/$(basename "$outbase")"
+			--write-index
+			-o "$_returnfile_sort##idx##${_returnfile_sort%.*}.bai"
 			"$bam"
-			> "$_returnfile_sort"
 	CMD
+
+	return 0
+}
+
+function alignment::_collate(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			${FUNCNAME[-2]} crafts command to collate alignments by read name/id while re-pairing/coupling mate pairs mapped on same reference sequence
+
+			-1 <cmds>      | mandatory
+			               | array to append commands to
+			-t <threads>   | mandatory
+			               | number of threads
+			-f <sam|bam>   | mandatory
+			               | path to alignment in SAM or BAM format
+			-o <outbase>   | mandatory
+			               | path to output directory plus alignment file prefix
+			-p <tmpdir>    | mandatory
+			               | path to temporary directory
+			-r <var>       | optional
+			               | variable to store resulting alignment file path
+			-P <parameter> | optional
+			               | additional samtools view parameter
+
+			example:
+			    declare -a cmds
+			    declare outfile=""
+			    ${FUNCNAME[-2]} -1 cmds -t 16 -i /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -p /path/to/tmpdir -r outfile
+
+			create sorted bam:
+			    commander::printcmd -a cmds # samtools [..] /path/to/alignment.[sam|bam] > /path/to/alignment.sorted.bam
+			    commander::runcmd [..] -a cmds
+
+			access sorted bam:
+			    ls "\$outfile" # /path/to/outdir/alignment.sorted.bam
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory threads bam outbase _returnfile_namesort inparams tmpdir
+	declare -n _cmds1_namesort
+	while getopts '1:t:f:o:p:r:P:h' arg; do
+		case $arg in
+			1)	((++mandatory)); _cmds1_namesort=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			f)	((++mandatory)); bam="$OPTARG";;
+			o)	((++mandatory)); outbase="$OPTARG";;
+			r)	declare -n _returnfile_namesort=$OPTARG;;
+			p)	((++mandatory)); tmpdir="$OPTARG";; # needs to be given here, otherwise a mktemp dir will be deleted upon returning of this function
+			P)	inparams="$OPTARG";;
+			h)	{ _usage || return 0; };;
+			*)	_usage;;
+		esac
+	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
+	[[ $mandatory -lt 5 ]] && _usage
+
+	_returnfile_namesort="$outbase.namesorted.bam"
+	local params="$inparams"
+	local x=$(samtools view -F 4 "$bam" | head -10000 | cat <(samtools view -H "$bam") - | samtools view -c -f 1)
+	local y=$(samtools view -F 4 "$bam" | head -1 | cat <(samtools view -H "$bam") - | samtools view -c -d HI)
+
+	if [[ $y -eq 1 && $x -gt 0 ]]; then
+		# using HI is save but requires collate
+		commander::makecmd -a _cmds1_namesort -s '|' -c {COMMANDER[0]}<<- CMD -c {COMMANDER[1]}<<- CMD
+			{
+				samtools view --no-PG -H "$bam";
+				paste -d '\n'
+					<(samtools view -@ $(((threads+1)/2)) -u -e 'rnext==rname' -f 2 -F 4 -f 64 "$bam" | samtools sort -t HI -n -@ $(((threads+1)/2)) -T "$tmpdir/$(basename "$outbase").nsrtR1" -u | samtools collate -@ $(((threads+1)/2)) -u -O -n 1 - "$tmpdir/$(basename "$outbase").collateR1" | samtools view -@ $(((threads+1)/2)))
+					<(samtools view -@ $(((threads+1)/2)) -u -e 'rnext==rname' -f 2 -F 4 -F 64 "$bam" | samtools sort -t HI -n -@ $(((threads+1)/2)) -T "$tmpdir/$(basename "$outbase").nsrtR2" -u | samtools collate -@ $(((threads+1)/2)) -u -O -n 1 - "$tmpdir/$(basename "$outbase").collateR2" | samtools view -@ $(((threads+1)/2)));
+			}
+		CMD
+			samtools view --no-PG -@ 100 -b -o "$_returnfile_namesort"
+		CMD
+	elif [[ $x -gt 0 ]]; then
+		# name sort seems to work, too - shuffling via collate not necessary i.e. beeing the better name sorting for PE data
+		# -e 'rnext==rname' is mainly a bwa fix for quantification with salmon
+		commander::makecmd -a _cmds1_namesort -s '|' -c {COMMANDER[0]}<<- CMD -c {COMMANDER[1]}<<- CMD
+			{
+				samtools view --no-PG -H "$bam";
+				paste -d '\n'
+					<(samtools view -@ $(((threads+1)/2)) -u -e 'rnext==rname' -f 2 -F 4 -f 64 "$bam" | samtools sort -n -@ $(((threads+1)/2)) -T "$tmpdir/$(basename "$outbase").nsrtR1" -u | samtools collate -@ $(((threads+1)/2)) -u -O -n 1 - "$tmpdir/$(basename "$outbase").collateR1" | samtools view -@ $(((threads+1)/2)))
+					<(samtools view -@ $(((threads+1)/2)) -u -e 'rnext==rname' -f 2 -F 4 -F 64 "$bam" | samtools sort -n -@ $(((threads+1)/2)) -T "$tmpdir/$(basename "$outbase").nsrtR2" -u | samtools collate -@ $(((threads+1)/2)) -u -O -n 1 - "$tmpdir/$(basename "$outbase").collateR2" | samtools view -@ $(((threads+1)/2)));
+			}
+		CMD
+			samtools view --no-PG -@ 100 -b -o "$_returnfile_namesort"
+		CMD
+	else
+		commander::makecmd -a _cmds1_namesort -s ';' -c {COMMANDER[0]}<<- CMD
+			samtools collate
+				--no-PG
+				-l 6
+				-@ $threads
+				--output-fmt BAM
+				-n 1
+				-o "$_returnfile_namesort"
+				"$bam" "$tmpdir/$(basename "$outbase")"
+		CMD
+	fi
 
 	return 0
 }
@@ -1297,8 +1425,7 @@ function alignment::_index(){
 		samtools index
 			$params
 			-@ $threads
-			"$bam"
-			"$bai"
+			"$bam" "$bai"
 	CMD
 
 	return 0
@@ -1466,8 +1593,12 @@ function alignment::inferstrandness(){
 		commander::printinfo "inferring library preparation method"
 	fi
 
-	local tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bed)"
-	declare -a cmd1
+	declare -n _bams_inferstrandness="${_mapper_inferstrandness[0]}"
+	local ithreads instances=$((${#_mapper_inferstrandness[@]}*${#_bams_inferstrandness[@]}))
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
+
+	declare -a cmd1 cmd2 tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.inferstrandness)")
+
 	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 		perl -slane '
 			next if $F[0] eq "MT" || $F[0] eq "chrM";
@@ -1482,7 +1613,7 @@ function alignment::inferstrandness(){
 			exit if $plus>2000 && $minus>2000;
 		'
 	CMD
-		-- -lvl="$level" "$gtf" > "$tmpfile"
+		-- -lvl="$level" "$gtf" > "${tdirs[0]}/features.bed"
 	CMD
 
 	if $skip; then
@@ -1491,23 +1622,41 @@ function alignment::inferstrandness(){
 		commander::runcmd -v -b -i $threads -a cmd1
 	fi
 
-	declare -a cmd2
-	local m f
+	local m f params
 	for m in "${_mapper_inferstrandness[@]}"; do
 		declare -n _bams_inferstrandness=$m
 		for f in "${_bams_inferstrandness[@]}"; do
+
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.inferstrandness)")
+
+			samtools view "$f" $(samtools view -H "$f" | grep -m 1 -F @SQ | cut -f 2 | cut -d : -f 2) 2> /dev/null | head -1 &> /dev/null && params="-M" || params=""
+
 			# requires, sorted, indexed bam
 			# 0 - unstranded
 			# 1 - dUTP ++,-+ (FR stranded)
 			# 2 - dUTP +-,++ (FR, reversely stranded)
-			commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
+				samtools view
+					$params
+					-L "${tdirs[0]}/features.bed"
+					-@ $ithreads
+					-u
+					"$f" |
+			CMD
+				samtools sort
+					-O BAM
+					-@ $ithreads
+					-T "${tdirs[-1]}/$(basename "${f%.*}")"
+					--write-index
+					-o "${tdirs[-1]}/$(basename "${f%.*}").bam##idx##${tdirs[-1]}/$(basename "${f%.*}").bai";
+			CMD
 				{ echo "$f" &&
 					infer_experiment.py
 					-q 0
 					-s 100000
-					-i "$f"
-					-r "$tmpfile";
-				}
+					-i "${tdirs[-1]}/$(basename "${f%.*}").bam"
+					-r "${tdirs[0]}/features.bed";
+				} |
 			CMD
 				perl -lane '
 					BEGIN{
@@ -1677,7 +1826,7 @@ function alignment::bamqc(){
 				samtools flagstat
 					-@ $ithreads
 					"$bam"
-					> "${bam%.*}.flagstat"
+				> "${bam%.*}.flagstat"
 			CMD
 		done
 	done
