@@ -4,7 +4,7 @@
 function quantify::salmon(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} quantifies pre-processed read data in fastq(.gz) format utilizing the quasi-mapping software salmon
+			${FUNCNAME[-2]} quantifies either transcriptomic alignments or pre-processed read data utilizing the quasi-mapping software salmon
 
 			-S <hardskip>     | optional. default: false
 			                  | [true|false] do nothing and return
@@ -16,12 +16,12 @@ function quantify::salmon(){
 			                  | number of threads
 			-M <maxmemory>    | optional. default: all available
 			                  | amount of memory to allocate
-			-c <mapper>       | mandatory
-			                  | array of array names which contain counts paths. salmon will be added.
+			-r <mapper>       | mandatory
+			                  | array of array names which contain alignment paths. salmon will be added unless -1 option
 			                  | mapper+=(salmon); salmon=(/outdir/salmon/1.counts /outdir/salmon/2.counts ..)
-			-r <reference>    | mandatory
+			-g <reference>    | mandatory
 			                  | path to reference in fasta format
-			-g <gtf>          | mandatory unless reference is transcriptomic
+			-a <gtf>          | mandatory unless reference is transcriptomic
 			                  | path to annotation in gtf format
 			-f <feature>      | optional. default: gene
 			                  | feature for which counts should be summed up. gtf needs <feature>_id tag
@@ -33,10 +33,14 @@ function quantify::salmon(){
 			                  | path to salmon or salmonTE genome index
 			-o <outdir>       | mandatory
 			                  | path to output directory. subdirectory salmon will be created
-			-1 <fastq1>       | mandatory
+			-1 <fastq1>       | optional.
 			                  | array which contains single or first mate fastq(.gz) paths
+			                  | unless given, count name sorted, transcriptomic alignments from array of array names which contain alignment paths (see -r)
+			                  | alignments must have been processed by alignment::postprocess -j namesort
 			-2 <fastq2>       | optional
 			                  | array which contains mate pair fastq(.gz) paths
+			-d <strandness>   | optional. default when used with -s: ?
+			                  | [0|1|2] to define library strandness method to skip auto inference. 0 = unstranded, 1 = stranded/fr second strand or 2 = reversely stranded /fr first strand
 			-F                | optional
 			                  | force indexing even if md5sums match. ignored upon -5
 			-P <parameter>    | optional
@@ -46,30 +50,28 @@ function quantify::salmon(){
 	}
 
 	# default regex for ensembl trascript fasta
-	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir forceidx=false inparams feature=gene tmpdir="${TMPDIR:-/tmp}" transcriptome=false maxmemory
+	local OPTIND arg mandatory skip=false skipmd5=false threads genome gtf genomeidxdir outdir forceidx=false countaln=false inparams feature=gene tmpdir="${TMPDIR:-/tmp}" transcriptome=false maxmemory default
 	declare -n _fq1_salmon _fq2_salmon _mapper_salmon
 	declare -g -a salmon=()
-	while getopts 'S:s:5:t:c:g:x:o:1:2:f:r:M:P:i:Fh' arg; do
+	while getopts 'S:s:5:t:g:a:x:d:o:1:2:f:r:M:P:i:Fh' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			5)	$OPTARG && skipmd5=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
-			c)	((++mandatory))
-				_mapper_salmon=$OPTARG
-				_mapper_salmon+=(salmon)
-			;;
-			r)	((++mandatory)); genome="$OPTARG";;
-			g)	gtf="$OPTARG";;
+			r)	((++mandatory)); _mapper_salmon=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
+			a)	gtf="$OPTARG";;
 			x)	((++mandatory)); genomeidxdir="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG/salmon"; mkdir -p "$outdir";;
-			1)	((++mandatory)); _fq1_salmon=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			1)	_fq1_salmon=$OPTARG;;
 			2)	_fq2_salmon=$OPTARG;;
 			f)	feature="$OPTARG";;
 			i)	transcriptome="$OPTARG";;
 			M)	maxmemory=$OPTARG;;
 			P)	inparams="$OPTARG";;
 			F)	forceidx=true;;
+			d)	default=$OPTARG;;
 			h)	{ _usage || return 0; };;
 			*)	_usage;;
 		esac
@@ -78,11 +80,7 @@ function quantify::salmon(){
 	[[ $mandatory -lt 5 ]] && _usage
 	$transcriptome || [[ $gtf ]] || _usage
 
-	local imemory instances=${#_fq1_salmon[@]}
-	read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
-	local ithreads=$((threads/instances))
-
-	commander::printinfo "quantifying reads by salmon through salmon TE"
+	commander::printinfo "quantifying reads by salmon"
 
 	if $skipmd5; then
 		commander::warn "skip checking md5 sums and genome indexing respectively"
@@ -108,7 +106,7 @@ function quantify::salmon(){
 			if $transcriptome; then
 				commander::printinfo "indexing reference for salmon"
 
-				commander::makecmd -a cmdidx -s ' ' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD
 					salmon index -t "$genome" -i "$genomeidxdir" -p $threads
 				CMD
 			else
@@ -130,9 +128,9 @@ function quantify::salmon(){
 					-- -f=$feature "$genomeidxdir/transcriptome.gtf" > "$genomeidxdir/clades.csv";
 				CMD
 					samtools faidx --fai-idx /dev/stdout "$genome" | cut -f 1 > "$genomeidxdir/decoys.txt";
-					cat "$genomeidxdir/transcriptome.gtf" "$gtf" > "$genomeidxdir/transcriptgenome.gtf";
-					cat "$genomeidxdir/transcriptome.fa" "$genome" > "$genomeidxdir/transcriptgenome.fa";
-					salmon index -t "$genomeidxdir/transcriptgenome.fa" -d "$genomeidxdir/decoys.txt" -i "$genomeidxdir" -p $threads
+					cat "$genomeidxdir/transcriptome.gtf" "$gtf" > "$genomeidxdir/decoygenome.gtf";
+					cat "$genomeidxdir/transcriptome.fa" "$genome" > "$genomeidxdir/decoygenome.fa";
+					salmon index -t "$genomeidxdir/decoygenome.fa" -d "$genomeidxdir/decoys.txt" -i "$genomeidxdir" -p $threads
 				CMD
 			fi
 
@@ -146,97 +144,197 @@ function quantify::salmon(){
 	fi
 
 	declare -a tdirs cmd1 cmd2
-	local params="$inparams"
-	if [[ -e "$(dirname "$(which SalmonTE.py)")/reference/$(basename "$genomeidxdir")" ]]; then
-		params+=" --reference='$(basename "$genomeidxdir")'"
-	else
-		tdirs+=("$(mktemp -d -p "$(dirname "$(which SalmonTE.py)")/reference/" "$(basename "$genomeidxdir").XXXXXXXXXX")")
-		ln -sfn "$(realpath -s "$genomeidxdir")/"* "${tdirs[0]}"
-		params+=" --reference='$(basename "${tdirs[0]}")'"
-	fi
+	local o b e i m f x imemory instances ithreads params
 
-	local o b e params
-	for i in "${!_fq1_salmon[@]}"; do
-		helper::basename -f "${_fq1_salmon[$i]}" -o b -e e
-		o="$(realpath -s "$outdir/$b.${feature}counts")"
-		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.salmon)")
+	if [[ $_fq1_salmon ]]; then
+		outdir="$outdir/salmon"
+		mkdir -p "$outdir"
+		_mapper_salmon+=(salmon)
+		cmd1=()
+		cmd2=()
 
-		if [[ ${_fq2_salmon[$i]} ]]; then
-			# --useVBOpt is default in recent version, installed by bashbone compile
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-				cd "${tdirs[-1]}";
-				ln -s "$(realpath -se "${_fq1_salmon[$i]}")" sample_R1.fastq.gz;
-				ln -s "$(realpath -se "${_fq2_salmon[$i]}")" sample_R2.fastq.gz
-			CMD
-				SalmonTE.py quant
-					$params
-					--outpath="${tdirs[-1]}"
-					--num_threads=$threads
-					--exprtype=count
-					sample_R1.fastq.gz
-					sample_R2.fastq.gz
-			CMD
-				sed "s/sample/$b/" MAPPING_INFO.csv
-			CMD
-				cat "sample/quant.sf" | tee >(awk -F '\\t' 'NR>1{printf "%s\\t%0.f\n",\$1,\$NF}' | helper::sort -t $threads -M "$maxmemory" -k1,1 > "$o.htsc") > "$o"
-			CMD
-			# sample/quant.sf is default salmon output. ./EXPR.csv is a joined csv count matrix from salmonTE in case of multiple inputs...
-			# if salmonTE reference is used as input, salmonTE can be further used to test for differential TE expression on consensus family level
-			# (..which is an outdated method. see: 10.1093/bib/bbab417)
-			# therefore, join all jounts (similar to experiments.htsc) into a file called EXPR.csv with header TE,sample1,sample2,..
+		instances=${#_fq1_salmon[@]}
+		read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
+		ithreads=$((threads/instances))
+
+		params="$inparams"
+		if [[ -e "$(dirname "$(which SalmonTE.py)")/reference/$(basename "$genomeidxdir")" ]]; then
+			params+=" --reference='$(basename "$genomeidxdir")'"
 		else
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-				cd "${tdirs[-1]}";
-				ln -s "$(realpath -se "${_fq1_salmon[$i]}")" sample.fastq.gz
-			CMD
-				SalmonTE.py quant
-					$params
-					--outpath="${tdirs[-1]}"
-					--num_threads=$threads
-					--exprtype=count
-					sample.fastq.gz
-			CMD
-				sed "s/sample/$b/" MAPPING_INFO.csv
-			CMD
-				cat "sample/quant.sf" | tee >(awk -F '\\t' 'NR>1{printf "%s\\\t%0.f\n",\$1,\$NF}' | helper::sort -t $threads -M "$maxmemory" -k1,1 > "$o.htsc") > "$o"
-			CMD
+			tdirs+=("$(mktemp -d -p "$(dirname "$(which SalmonTE.py)")/reference/" "$(basename "$genomeidxdir").XXXXXXXXXX")")
+			ln -sfn "$(realpath -s "$genomeidxdir")/"* "${tdirs[0]}"
+			params+=" --reference='$(basename "${tdirs[0]}")'"
 		fi
 
-		salmon+=("$o")
+		for i in "${!_fq1_salmon[@]}"; do
+			helper::basename -f "${_fq1_salmon[$i]}" -o b -e e
+			o="$(realpath -s "$outdir/$b.${feature}counts")"
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.salmon)")
+
+			if [[ ${_fq2_salmon[$i]} ]]; then
+				# --useVBOpt is default in recent version, installed by bashbone compile
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					cd "${tdirs[-1]}";
+					ln -s "$(realpath -se "${_fq1_salmon[$i]}")" sample_R1.fastq.gz;
+					ln -s "$(realpath -se "${_fq2_salmon[$i]}")" sample_R2.fastq.gz
+				CMD
+					SalmonTE.py quant
+						$params
+						--outpath="${tdirs[-1]}"
+						--num_threads=$threads
+						--exprtype=count
+						sample_R1.fastq.gz
+						sample_R2.fastq.gz
+				CMD
+					sed "s/sample/$b/" MAPPING_INFO.csv
+				CMD
+					cat "sample/quant.sf" | tee >(awk -F '\\t' 'NR>1{printf "%s\\t%0.f\n",\$1,\$NF}' | helper::sort -t $threads -M "$maxmemory" -k1,1 > "$o.htsc") > "$o"
+				CMD
+				# sample/quant.sf is default salmon output. ./EXPR.csv is a joined csv count matrix from salmonTE in case of multiple inputs...
+				# if salmonTE reference is used as input, salmonTE can be further used to test for differential TE expression on consensus family level
+				# (..which is an outdated method. see: 10.1093/bib/bbab417)
+				# therefore, join all jounts (similar to experiments.htsc) into a file called EXPR.csv with header TE,sample1,sample2,..
+			else
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					cd "${tdirs[-1]}";
+					ln -s "$(realpath -se "${_fq1_salmon[$i]}")" sample.fastq.gz
+				CMD
+					SalmonTE.py quant
+						$params
+						--outpath="${tdirs[-1]}"
+						--num_threads=$threads
+						--exprtype=count
+						sample.fastq.gz
+				CMD
+					sed "s/sample/$b/" MAPPING_INFO.csv
+				CMD
+					cat "sample/quant.sf" | tee >(awk -F '\\t' 'NR>1{printf "%s\\\t%0.f\n",\$1,\$NF}' | helper::sort -t $threads -M "$maxmemory" -k1,1 > "$o.htsc") > "$o"
+				CMD
+			fi
+
+			salmon+=("$o")
+
+			if [[ $gtf ]]; then
+				commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+					perl -F'\t' -slane '
+						BEGIN{
+							open F,"<$g" or die $!;
+							while(<F>){
+								chomp;
+								@F=split/\t/;
+								next if exists $m{$F[0]};
+								if ($F[-1]=~/${f}_id "([^"]+)/){
+									$m{$F[0]}=$1;
+									$c{$1}=0;
+								}
+							}
+							close F;
+						}
+						next if $.==1;
+						$c{$m{$F[0]}}+=$F[-1];
+						END{
+							printf "%s\t%0.f\n",$_,$c{$_} for keys %c;
+						}
+					'
+				CMD
+					-- -g="$($transcriptome && echo "$gtf" || echo "$genomeidxdir/transcriptome.gtf")" -f="$feature" "$o" | helper::sort -t $ithreads -M $imemory -k1,1 > "$o.htsc"
+				CMD
+			fi
+		done
+
+		if $skip; then
+			commander::printcmd -a cmd1
+			commander::printcmd -a cmd2
+		else
+			commander::runcmd -c salmon -v -b -i 1 -a cmd1
+			commander::runcmd -v -b -i $threads -a cmd2
+		fi
+	elif [[ ${_mapper_salmon[0]} ]]; then
+
+		declare -A strandness
 
 		if [[ $gtf ]]; then
-			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-				perl -F'\t' -slane '
-					BEGIN{
-						open F,"<$g" or die $!;
-						while(<F>){
-							chomp;
-							@F=split/\t/;
-							next if exists $m{$F[0]};
-							if ($F[-1]=~/${f}_id "([^"]+)/){
-								$m{$F[0]}=$1;
-							}
-						}
-						close F;
-					}
-					next if $.==1;
-					$c{$m{$F[0]}}+=$F[-1];
-					END{
-						printf "%s\t%0.f\n",$_,$c{$_} for keys %c;
-					}
-				'
-			CMD
-				-- -g="$($transcriptome && echo "$gtf" || echo "$genomeidxdir/transcriptome.gtf")" -f="$feature" "$o" | helper::sort -t $ithreads -M $imemory -k1,1 > "$o.htsc";
-			CMD
+			alignment::inferstrandness \
+				-S false \
+				-s $skip \
+				-d "$default" \
+				-t $threads \
+				-r _mapper_salmon \
+				-x strandness \
+				-g "$($transcriptome && echo "$gtf" || echo "$genomeidxdir/transcriptgenome.gtf")"
 		fi
-	done
 
-	if $skip; then
-		commander::printcmd -a cmd1
-		commander::printcmd -a cmd2
-	else
-		commander::runcmd -c salmon -v -b -i 1 -a cmd1
-		commander::runcmd -v -b -i $threads -a cmd2
+		declare -n _bams_salmon="${_mapper_salmon[0]}"
+		local instances=$((${#_mapper_salmon[@]}*${#_bams_salmon[@]}))
+		read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
+		ithreads=$((threads/instances))
+
+		for m in "${_mapper_salmon[@]}"; do
+			declare -n _bams_salmon=$m
+			mkdir -p "$outdir/$m"
+			for f in "${_bams_salmon[@]}"; do
+				o="$outdir/$m/$(basename "$f" .bam).${feature}counts"
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.salmon)")
+
+				x=$(samtools view -F 4 "$f" | head -10000 | cat <(samtools view -H "$f") - | samtools view -c -f 1)
+				[[ $x -gt 0 ]] && params="$inparams -l I" || params="$inparams -l "
+
+				case ${strandness["$f"]} in
+					0) params+="U";;
+					1) params+="SF";;
+					2) params+="SR";;
+					*) params="$inparams -l A";;
+				esac
+
+				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					salmon quant
+						$params
+						--discardOrphans
+						--minAssignedFrags 1
+						-a "$f"
+						-t "$($transcriptome && echo "$genome" || echo "$genomeidxdir/transcriptome.fa")"
+						--threads $threads
+						-o "${tdirs[-1]}"
+				CMD
+					cat "${tdirs[-1]}/quant.sf" | tee >(awk -F '\\t' 'NR>1{printf "%s\\\t%0.f\n",\$1,\$NF}' | helper::sort -t $threads -M "$maxmemory" -k1,1 > "$o.htsc") > "$o"
+				CMD
+
+				if [[ $gtf ]]; then
+					commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+						perl -F'\t' -slane '
+							BEGIN{
+								open F,"<$g" or die $!;
+								while(<F>){
+									chomp;
+									@F=split/\t/;
+									next if exists $m{$F[0]};
+									if ($F[-1]=~/${f}_id "([^"]+)/){
+										$m{$F[0]}=$1;
+										$c{$1}=0;
+									}
+								}
+								close F;
+							}
+							next if $.==1;
+							$c{$m{$F[0]}}+=$F[-1];
+							END{
+								printf "%s\t%0.f\n",$_,$c{$_} for keys %c;
+							}
+						'
+					CMD
+						-- -g="$($transcriptome && echo "$gtf" || echo "$genomeidxdir/transcriptome.gtf")" -f="$feature" "$o" | helper::sort -t $ithreads -M $imemory -k1,1 > "$o.htsc"
+					CMD
+				fi
+			done
+		done
+
+		if $skip; then
+			commander::printcmd -a cmd1
+			commander::printcmd -a cmd2
+		else
+			commander::runcmd -c salmon -v -b -i 1 -a cmd1
+			commander::runcmd -v -b -i $threads -a cmd2
+		fi
 	fi
 
 	return 0
@@ -763,7 +861,7 @@ function quantify::bamcoverage(){
 	$fractional && [[ $overlap -eq 0 ]] && [[ "$(echo -e "v2.0.3\n$version" | sort -Vr | head -1)" == "v2.0.3" ]] && _usage
 	[[ "$(echo -e "v2.0.1\n$version" | sort -Vr | head -1)" == "v2.0.1" ]] && version="old" || version="new"
 
-	commander::printinfo "convertig bam to bedg/bw"
+	commander::printinfo "convertig bam to bw"
 
 	local m f params x o e odir
 	[[ $bed || $windowsize -gt 1 ]] && e="coverage" || e="pileup"
@@ -1058,7 +1156,7 @@ function quantify::profiles(){
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.computematrix)")
 			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				cut -f 1-6 $f | helper::papply
+				cut -f 1-6 $f | helper::lapply
 					-t 2
 					-o "${tdirs[-1]}"
 					-f
@@ -1113,7 +1211,7 @@ function quantify::profiles(){
 			# CMD
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.computematrix)")
 			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				awk -F '\t' -v OFS='\t' '\$4="region_"NR' "$f" | cut -f 1-6 $f | helper::papply
+				awk -F '\t' -v OFS='\t' '\$4="region_"NR' "$f" | cut -f 1-6 $f | helper::lapply
 					-t 2
 					-o "${tdirs[-1]}"
 					-f
