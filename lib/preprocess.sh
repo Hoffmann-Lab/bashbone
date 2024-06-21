@@ -645,12 +645,12 @@ function preprocess::rcorrector(){
 						ln -sfn "/dev/fd/12" "$(basename "$o2").$r2.gz"
 					CMD
 						run_rcorrector.pl
-						-1 "$(realpath -se "${_fq1_rcorrector[$i]}")"
-						-2 "$(realpath -se "${_fq2_rcorrector[$i]}")"
-						-od "${tdirs[-1]}"
-						-t $threads
-						11> >(helper::gzindex -o "$o1.$e1.gz")
-						12> >(helper::gzindex -o "$o2.$e2.gz")
+							-1 "$(realpath -se "${_fq1_rcorrector[$i]}")"
+							-2 "$(realpath -se "${_fq2_rcorrector[$i]}")"
+							-od "${tdirs[-1]}"
+							-t $threads
+							11> >(helper::index -o "$o1.$e1.gz")
+							12> >(helper::index -o "$o2.$e2.gz")
 						| cat
 					CMD
 						exec 11>&-; exec 12>&-
@@ -718,167 +718,6 @@ function preprocess::rcorrector(){
 		commander::printcmd -a cmd1
 	else
 		commander::runcmd -c rcorrector -v -b -i 1 -a cmd1
-	fi
-
-	return 0
-}
-
-
-function preprocess::sortmerna_new(){
-	function _usage(){
-		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} usage:
-			-S <hardskip> | true/false return
-			-s <softskip> | true/false only print commands
-			-t <threads>  | number of
-			-o <outdir>   | path to
-			-1 <fastq1>   | array of
-			-2 <fastq2>   | array of
-		EOF
-		return 1
-	}
-
-	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}"
-	declare -n _fq1_sortmerna _fq2_sortmerna
-	while getopts 'S:s:t:i:o:1:2:' arg; do
-		case $arg in
-			S) $OPTARG && return 0;;
-			s) $OPTARG && skip=true;;
-			t) ((++mandatory)); threads=$OPTARG;;
-			o) ((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			1) ((++mandatory)); _fq1_sortmerna=$OPTARG;;
-			2) _fq2_sortmerna=$OPTARG;;
-			*) _usage;;
-		esac
-	done
-	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 3 ]] && _usage
-
-	commander::printinfo "filtering rRNA fragments"
-
-	declare -a tdirs cmd1 cmd2 catcmd
-	local i f o1 o2 e1 e2
-	for i in "${!_fq1_sortmerna[@]}"; do
-		helper::basename -f "${_fq1_sortmerna[$i]}" -o o1 -e e1
-		e1=$(echo $e1 | cut -d '.' -f 1)
-
-		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sortmerna)")
-
-		helper::makecatcmd -v catcmd -f "${_fq1_sortmerna[$i]}"
-
-		if [[ ${_fq2_sortmerna[$i]} ]]; then
-			helper::basename -f "${_fq2_sortmerna[$i]}" -o o2 -e e2
-			e2=$(echo $e2 | cut -d '.' -f 1)
-
-			if [[ "$catcmd" == "cat" ]]; then
-				# exec/ln trick does not work any longer. outfile will be overridden
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					sortmerna
-						--index 0
-						\$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} printf "--ref %q\n" "{}")
-						--idx-dir "\$CONDA_PREFIX/rRNA_databases/index"
-						--workdir "${tdirs[-1]}"
-						--threads $threads
-						--reads "${_fq1_sortmerna[$i]}"
-						--reads "${_fq2_sortmerna[$i]}"
-						--fastx
-						--paired_out
-						--out2
-						--no-best
-						--num_alignments 1
-						--aligned "$outdir/rRNA.$o1"
-						--other "$outdir/$o1"
-				CMD
-
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-					helper::pgzip -t $threads -f "${tdirs[-1]}/${o1}_fwd.fq" -o "$outdir/$o1.$e1.gz"
-				CMD
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-					helper::pgzip -t $threads -f "${tdirs[-1]}/${o1}_rev.fq" -o "$outdir/$o2.$e2.gz"
-				CMD
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-					helper::pgzip -t $threads -f "${tdirs[-1]}/rRNA.${o1}_fwd.fq" -o "$outdir/rRNA.$o1.$e1.gz"
-				CMD
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-					helper::pgzip -t $threads -f "${tdirs[-1]}/rRNA.${o1}_rev.fq" - "$outdir/rRNA.$o2.$e2.gz"
-				CMD
-			else
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					sortmerna
-						--index 0
-						\$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} printf "--ref %q\n" "{}")
-						--idx-dir "\$CONDA_PREFIX/rRNA_databases/index"
-						--workdir "${tdirs[-1]}"
-						--threads $threads
-						--reads "${_fq1_sortmerna[$i]}"
-						--reads "${_fq2_sortmerna[$i]}"
-						--fastx
-						--paired_out
-						--out2
-						--no-best
-						--num_alignments 1
-						--aligned "$outdir/rRNA.$o1"
-						--other "$outdir/$o1"
-				CMD
-					mv "$outdir/${o1}_fwd.fq.gz" "$outdir/$o1.$e1.gz";
-					mv "$outdir/${o1}_rev.fq.gz" "$outdir/$o2.$e2.gz";
-					mv "$outdir/rRNA.${o1}_fwd.fq.gz" "$outdir/rRNA.$o1.$e1.gz";
-					mv "$outdir/rRNA.${o1}_rev.fq.gz" "$outdir/rRNA.$o2.$e2.gz"
-				CMD
-			fi
-
-			_fq1_sortmerna[$i]="$outdir/$o1.$e1.gz"
-			_fq2_sortmerna[$i]="$outdir/$o2.$e2.gz"
-		else
-			if [[ "$catcmd" == "cat" ]]; then
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					sortmerna
-						--index 0
-						\$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} printf "--ref %q\n" "{}")
-						--idx-dir "\$CONDA_PREFIX/rRNA_databases/index"
-						--workdir "${tdirs[-1]}"
-						--threads $threads
-						--reads "${_fq1_sortmerna[$i]}"
-						--fastx
-						--no-best
-						--num_alignments 1
-						--aligned "${tdirs[-1]}/rRNA.$o1"
-						--other "${tdirs[-1]}/$o1"
-				CMD
-
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-					helper::pgzip -t $threads -f "${tdirs[-1]}/$o1.fq" -o "$outdir/$o1.$e1.gz"
-				CMD
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-					helper::pgzip -t $threads -f "${tdirs[-1]}/rRNA.$o1.fq" -o "$outdir/rRNA.$o1.$e1.gz"
-				CMD
-			else
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					sortmerna
-						--index 0
-						\$(ls \$CONDA_PREFIX/rRNA_databases/*.fasta | xargs -I {} printf "--ref %q\n" "{}")
-						--idx-dir "\$CONDA_PREFIX/rRNA_databases/index"
-						--workdir "${tdirs[-1]}"
-						--threads $threads
-						--reads "${_fq1_sortmerna[$i]}"
-						--fastx
-						--no-best
-						--num_alignments 1
-						--aligned "$outdir/rRNA.$o1"
-						--other "$outdir/$o1"
-				CMD
-			fi
-
-			_fq1_sortmerna[$i]="$outdir/$o1.$e1.gz"
-		fi
-	done
-
-	if $skip; then
-		commander::printcmd -a cmd1
-		commander::printcmd -a cmd2
-	else
-		commander::runcmd -c sortmerna -v -b -i 1 -a cmd1
-		commander::runcmd -c sortmerna -v -b -i 1 -a cmd2
 	fi
 
 	return 0
@@ -1031,10 +870,10 @@ function preprocess::sortmerna(){
 				o2="$outdir/$o2.$e2.gz"
 
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					helper::gzindex -f "${_fq1_sortmerna[$i]}"
+					helper::index -f "${_fq1_sortmerna[$i]}"
 				CMD
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					helper::gzindex -f "${_fq2_sortmerna[$i]}"
+					helper::index -f "${_fq2_sortmerna[$i]}"
 				CMD
 
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD {COMMANDER[7]}<<- CMD {COMMANDER[8]}<<- CMD {COMMANDER[9]}<<- CMD {COMMANDER[10]}<<- CMD {COMMANDER[11]}<<- CMD {COMMANDER[12]}<<- CMD {COMMANDER[13]}<<- CMD {COMMANDER[14]}<<- CMD
@@ -1061,19 +900,19 @@ function preprocess::sortmerna(){
 				CMD
 					rm -rf "${tdirs[-1]}/kvdb" "${tdirs[-1]}/out/"*
 				CMD
-					helper::papply_gzip -i $threads -f "${_fq1_sortmerna[$i]}" -c 'bgzip -@ 1 -kc > "${tdirs[-1]}/readb/fwd_\$((JOB_ID-1)).fq.gz"'
+					helper::capply -i $threads -f "${_fq1_sortmerna[$i]}" -c 'bgzip -@ 1 -kc > "${tdirs[-1]}/readb/fwd_\$((JOB_ID-1)).fq.gz"'
 				CMD
-					helper::papply_gzip -i $threads -f "${_fq2_sortmerna[$i]}" -c 'bgzip -@ 1 -kc > "${tdirs[-1]}/readb/rev_\$((JOB_ID-1)).fq.gz"'
+					helper::capply -i $threads -f "${_fq2_sortmerna[$i]}" -c 'bgzip -@ 1 -kc > "${tdirs[-1]}/readb/rev_\$((JOB_ID-1)).fq.gz"'
 				CMD
 					mkfifo "${tdirs[-1]}/out/aligned_fwd_0.fq.gz" "${tdirs[-1]}/out/aligned_rev_0.fq.gz" "${tdirs[-1]}/out/other_fwd_0.fq.gz" "${tdirs[-1]}/out/other_rev_0.fq.gz"
 				CMD
-					{ cat "${tdirs[-1]}/out/aligned_fwd_0.fq.gz" | helper::gzindex -o "$or1" & } 2> /dev/null
+					{ cat "${tdirs[-1]}/out/aligned_fwd_0.fq.gz" | helper::index -o "$or1" & } 2> /dev/null
 				CMD
-					{ cat "${tdirs[-1]}/out/aligned_rev_0.fq.gz" | helper::gzindex -o "$or2" & } 2> /dev/null
+					{ cat "${tdirs[-1]}/out/aligned_rev_0.fq.gz" | helper::index -o "$or2" & } 2> /dev/null
 				CMD
-					{ cat "${tdirs[-1]}/out/other_fwd_0.fq.gz" | helper::gzindex -o "$o1" & } 2> /dev/null
+					{ cat "${tdirs[-1]}/out/other_fwd_0.fq.gz" | helper::index -o "$o1" & } 2> /dev/null
 				CMD
-					{ cat "${tdirs[-1]}/out/other_rev_0.fq.gz" | helper::gzindex -o "$o2" & } 2> /dev/null
+					{ cat "${tdirs[-1]}/out/other_rev_0.fq.gz" | helper::index -o "$o2" & } 2> /dev/null
 				CMD
 					exec {FDAF}<> "${tdirs[-1]}/out/aligned_fwd_0.fq.gz"; exec {FDAR}<> "${tdirs[-1]}/out/aligned_rev_0.fq.gz"; exec {FDOF}<> "${tdirs[-1]}/out/other_fwd_0.fq.gz"; exec {FDOR}<> "${tdirs[-1]}/out/other_rev_0.fq.gz"
 				CMD
@@ -1097,12 +936,15 @@ function preprocess::sortmerna(){
 				CMD
 					rm -rf "${tdirs[-1]}"
 				CMD
+				# needs wait after closing FDs?
+				# { cat "${tdirs[-1]}/out/aligned_fwd_0.fq.gz" | helper::index -o "$or1" & } 2> /dev/null
+				# -> unforunately, we have to de -and re-compress the data to remove intermediate gzip headers, that cause segemehl to process only the first chunk
 
 				_fq1_sortmerna[$i]="$o1"
 				_fq2_sortmerna[$i]="$o2"
 			else
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					helper::gzindex -f "${_fq1_sortmerna[$i]}"
+					helper::index -f "${_fq1_sortmerna[$i]}"
 				CMD
 
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD {COMMANDER[7]}<<- CMD {COMMANDER[8]}<<- CMD {COMMANDER[9]}<<- CMD {COMMANDER[10]}<<- CMD
@@ -1124,13 +966,13 @@ function preprocess::sortmerna(){
 				CMD
 					rm -rf "${tdirs[-1]}/kvdb" "${tdirs[-1]}/out/"*
 				CMD
-					helper::papply_gzip -i $threads -f "${_fq1_sortmerna[$i]}" -c 'bgzip -@ 1 -kc > "${tdirs[-1]}/readb/fwd_\$((JOB_ID-1)).fq.gz"'
+					helper::capply -i $threads -f "${_fq1_sortmerna[$i]}" -c 'bgzip -@ 1 -kc > "${tdirs[-1]}/readb/fwd_\$((JOB_ID-1)).fq.gz"'
 				CMD
 					mkfifo "${tdirs[-1]}/out/aligned_0.fq.gz" "${tdirs[-1]}/out/other_0.fq.gz"
 				CMD
-					{ cat "${tdirs[-1]}/out/aligned_0.fq.gz" | helper::gzindex -o "$or1" & } 2> /dev/null
+					{ cat "${tdirs[-1]}/out/aligned_0.fq.gz" | helper::index -o "$or1" & } 2> /dev/null
 				CMD
-					{ cat "${tdirs[-1]}/out/other_0.fq.gz" | helper::gzindex -o "$o1" & } 2> /dev/null
+					{ cat "${tdirs[-1]}/out/other_0.fq.gz" | helper::index -o "$o1" & } 2> /dev/null
 				CMD
 					exec {FDA}<> "${tdirs[-1]}/out/aligned_0.fq.gz"; exec {FDO}<> "${tdirs[-1]}/out/other_0.fq.gz"
 				CMD
@@ -1151,6 +993,7 @@ function preprocess::sortmerna(){
 				CMD
 					rm -rf "${tdirs[-1]}"
 				CMD
+				# needs wait after closing FDs?
 
 				_fq1_sortmerna[$i]="$o1"
 			fi
