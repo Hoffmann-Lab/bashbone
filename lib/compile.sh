@@ -38,8 +38,8 @@ function compile::_parse(){
 }
 
 function compile::all(){
+	compile::tools "$@" # needs to be first
 	compile::bashbone "$@"
-	compile::tools "$@"
 	compile::conda "$@"
 	compile::conda_tools "$@"
 	compile::java "$@"
@@ -89,12 +89,15 @@ function compile::tools(){
 		ln -sfn "$insdir/$(basename "$i" .tar.gz)/bin" "$insdir/latest/$(basename "$i" | cut -d '-' -f 1)"
 	done
 
+	# BASHBONE_TOOLSDIR set to INSDIR/insdir in setup.sh
+	_bashbone_setpath
+
 	return 0
 }
 
 function compile::upgrade(){
+	compile::tools "$@" # needs to be first
 	compile::bashbone "$@"
-	compile::tools "$@"
 	compile::conda_tools -u true "$@"
 
 	return 0
@@ -140,7 +143,7 @@ function compile::conda(){
 
 	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
 	conda env config vars set MAMBA_NO_BANNER=1
-	mamba update -y mamba # do not update conda!
+	# mamba update -y mamba # better dont for sake of miniconda.sh -u and especially, do not update conda!
 
 	commander::printinfo "conda clean up"
 	mamba clean -y -a
@@ -468,6 +471,8 @@ function compile::conda_tools(){
 
 		declare -a cmdidx
 		local tmp="$(mktemp -d -p "${TMPDIR:-/tmp}" cleanup.XXXXXXXXXX.sortmerna)"
+		rm -f "$insdir/conda/envs/$n/conda-bld/linux-64/$n"*
+
 		commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD {COMMANDER[6]}<<- CMD {COMMANDER[7]}<<- CMD
 			cd "$insdir/conda/envs/$n/src"
 		CMD
@@ -481,7 +486,7 @@ function compile::conda_tools(){
 		CMD
 			conda build --no-anaconda-upload recipes/sortmerna
 		CMD
-			mamba install -y --override-channels -c conda-forge -c bioconda -c defaults "$insdir/conda/envs/$n/conda-bld/linux-64/sortmerna-4.3.7.beta.1-py312hde9dbc4_0.tar.bz2"
+			mamba install -y --override-channels -c conda-forge -c bioconda -c defaults "$insdir/conda/envs/$n/conda-bld/linux-64/sortmerna-4.3.7"*.tar.bz2
 		CMD
 			sortmerna
 				--ref "$insdir/conda/envs/$n/rRNA_databases/smr_v4.3_fast_db.fasta"
@@ -492,6 +497,8 @@ function compile::conda_tools(){
 				--workdir "$tmp/"
 				--idx-dir "$insdir/conda/envs/$n/rRNA_databases/index"
 		CMD
+		# path can be sortmerna-4.3.7.beta.1-py312hde9dbc4_0.tar.bz2 or sortmerna-4.3.7-py312hde9dbc4_0.tar.bz2
+
 		# commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD
 		#	sortmerna
 		#		--ref "$insdir/conda/envs/$n/rRNA_databases/smr_v4.3_fast_db.fasta"
