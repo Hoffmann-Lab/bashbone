@@ -97,9 +97,10 @@ function _bashbone_setpath(){
 	if [[ "$BASHBONE_EXTENSIONDIR" != "$BASHBONE_DIR" && -e "$BASHBONE_EXTENSIONDIR/scripts" ]]; then
 		BASHBONE_PATH+="$BASHBONE_EXTENSIONDIR/scripts:"
 	fi
-	if [[ -e "$BASHBONE_DIR/tools" ]]; then
-		BASHBONE_PATH+="$(realpath -s "$BASHBONE_DIR"/tools/*/bin | xargs -echo | sed 's/ /:/g'):"
-	fi
+	# since tools are shipped compressed, this does not work. ie. gnu parallel needs to be present on target system e.g due to bashbone setup
+	# if [[ -e "$BASHBONE_DIR/tools" ]]; then
+	# 	BASHBONE_PATH+="$(realpath -s "$BASHBONE_DIR"/tools/*/bin | xargs -echo | sed 's/ /:/g'):"
+	# fi
 	if [[ -e "$BASHBONE_TOOLSDIR/latest" ]]; then
 		BASHBONE_PATH+="$(realpath -s "$BASHBONE_TOOLSDIR/latest/"!(java|bashbone) | xargs -echo | sed 's/ /:/g'):"
 	fi
