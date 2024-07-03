@@ -136,7 +136,7 @@ git checkout $(git describe --tags)
 ## Do's and don'ts
 [&#x25B2; back to top](#bashbone)
 
-When used, in a script, bashbone is meant to be sourced at the very top to handle positional arguments and to re-execute (`-r true`) the script under its own process group id in order to take care of proper termination (`-a "$@"`). It will enable error stack tracing and subprocess handling globally by setting traps for `EXIT` `ERR` `RETURN` `INT`. So, don't override them. In case your script intends to spawn deamons use `setsid` or disable bashbone first.
+When used, in a script, bashbone is meant to be sourced at the very top to handle positional arguments and to re-execute (`-r true`) the script under its own process group id in order to take care of proper termination (`-a "$@"`). It will enable error stack tracing and sub-process handling globally by setting traps for `EXIT` `ERR` `RETURN` `INT`. So, don't override them. In case your script intends to spawn deamons use `setsid` or disable bashbone first.
 
 ```bash
 #!/usr/bin/env bash
@@ -148,7 +148,7 @@ bashbone -x
 deamon2 &
 ```
 
-If bashbone libray is not required in your script, except for error tracing, proper subprocess termination upon exit or error and cleanup of temporary files, `bashbone_lite` functions as an in-line replacement.
+If bashbone library is not required in your script, except for error tracing, proper sub-process termination upon exit or error and cleanup of temporary files, `bashbone_lite` functions as an in-line replacement.
 
 ```bash
 #!/usr/bin/env bash
@@ -177,29 +177,32 @@ To get all third-party tools set-upped and subsequently all biobash bashbone fun
 - [Installation](#installation)
 - [Biobash library usage (requires installation)](#biobash-library-usage-requires-installation)
 
-Load the library and list available quick start functions in an interactive terminal session.
+Load the bashbone library in an interactive terminal session. Note, that **none of your environment settings will be modified**. Each function, which can be auto-completed when using bash v5 or later, comes with its own usage.
 
 ```bash
+# shows activate usage
+source ./activate.sh -h
+
+# activates bashbone
 source ./activate.sh
+
+# shows bashbone usage
 bashbone -h
+
+# list developer function
 bashbone -d
 
-# will print
-commander::makecmd        commander::print                commander::printcmd             commander::printerr
-commander::printinfo      commander::qalter               commander::qstat                commander::qsubcmd
-commander::runalter       commander::runalter_xargs       commander::runcmd               commander::runstat
-commander::warn           commander::_test                configure::instances_by_memory  configure::instances_by_threads
-configure::jvm            configure::memory_by_instances  helper::addmemberfunctions      helper::basename
-helper::isarray           helper::ishash                  helper::join                    helper::makecatcmd
-helper::multijoin         helper::pgzip                   helper::ps2pdf                  helper::sort
-helper::vcfsort           helper::_basename               helper::_dirname                helper::_get
-helper::_idxs             helper::_join                   helper::_lastidx                helper::_lc
-helper::_lcfirst          helper::_length                 helper::_pop                    helper::_print
-helper::_println          helper::_push                   helper::_replace                helper::_replaceprefix
-helper::_replacesuffix    helper::_shift                  helper::_slice                  helper::_sort
-helper::_substring        helper::_sum                    helper::_test                   helper::_trimprefix
-helper::_trimprefixfirst  helper::_trimsuffix             helper::_trimsuffixfirst        helper::_uc
-helper::_ucfirst          helper::_uniq                   progress::log
+commander::makecmd              commander::print                 commander::printcmd  commander::printerr
+commander::printinfo            commander::qalter                commander::qstat     commander::qsubcmd
+commander::runalter             commander::runcmd                commander::runstat   commander::warn
+configure::instances_by_memory  configure::instances_by_threads  configure::jvm       configure::memory_by_instances
+helper::addmemberfunctions      helper::basename                 helper::capply       helper::cat
+helper::index                   helper::isarray                  helper::ishash       helper::join
+helper::lapply                  helper::makecatcmd               helper::multijoin    helper::pgzip
+helper::ps2pdf                  helper::sort                     helper::vcfsort      progress::log
+
+# shows function usage
+
 ```
 
 To unset bashbone functions in your interactive shell or to revert changes made to the environment when used in a script, do
@@ -215,7 +218,7 @@ When bashbone is used within a script, which makes use of positional arguments, 
 
 ```bash
 #! /usr/bin/env bash
-source <path/to/bashbone>/activate.sh -a "$@"
+source <path/to/bashbone>/activate.sh -r true -a "$@"
 ```
 
 ## Developers centerpiece
@@ -229,9 +232,45 @@ commander::printcmd
 commander::runcmd
 commander::runstat
 commander::runalter
+
+# truncated usage of commander::makecmd
+
+easily compose and store command in an array for later execution
+
+-a <cmds>          | mandatory. array to append the command onto
+-v <variable>      | optional. env variable(s) necessary for command. can be used multiple times
+-s <separator>     | optional. character to separate command chunks, when file descriptor array COMMANDER is used. default: '\n'
+-m                 | force multi line support in case of activated bashbone legacy mode, which inerts line breaks
+-o <outfile>       | optional. redirect stdout to output file
+-O <outfile>       | optional. append stdout to output file
+-c <cmd|{fd[0]}..> | ALWAYS LAST OPTION. command line string(s) and or here-documents or file descriptor array COMMANDER
+
+
+# usage commander::runcmd
+
+orchestrates the execution of commands stored within an array by utilizing GNU parallel
+
+-v             | optional. toggle on verbose mode which will print the commands prior to their execution
+-b             | optional. toggle on benchmarking run time and peak memory consumption
+-c <env>       | optional. activate a bashbone conda environment prior to command execution
+-i <instances> | optional. number of parallel instances. see also commander::runalter. default: 1
+-t <instances> | optional. obsolete synonym for -i
+-s <idx[:idx]> | optional. restrict the execution of commands by array index start or range. default: 1
+-n <name>      | optional. prefix for logs and job scripts
+-o <path>      | optional. output directory for logs, job scripts and exit codes
+-r             | optional. override existing logs. default: append
+-a <cmds>      | mandatory. array of commands. see also commander::makecmd
+
+example 1:
+cmds=("echo job1" "echo job2" "echo job3")
+cmds+=("sleep 2; echo job4")
+commander::runcmd -v -b -i 2 -a cmds
+
+example 2:
+commander::runcmd -i 2 -n current -o ~/jobs -r -a cmds
 ```
 
-Parallel task execution is also possible by submitting commands as an array job to the workload manager SUN Grid Engine or Son of Grid Engine fork (SGE) via the in-line replacement functions
+Parallel task execution is also possible by submitting commands as an array job to the workload manager Sun Grid Engine or Son of Grid Engine fork (SGE) via the in-line replacement functions
 
 ```bash
 commander::qsubcmd
@@ -277,13 +316,13 @@ for i in sun mercury venus earth mars jupiter saturn uranus neptune pluto; do
 done
 ```
 
-**Solution 1** relies on variable reference(s) via `-v <var>` and an un-interpreted Here-document. The content of each Here-document will be stored as a single command string in a de-referenced array (`-a cmds`).
+**Solution 1** relies on variable reference(s) via `-v <var>` and an uninterpreted Here-document. The content of each Here-document will be stored as a single command string in a de-referenced array (`-a cmds`).
 
 ```bash
 declare -a cmds
 for i in sun mercury venus earth mars jupiter saturn uranus neptune pluto; do
   commander::makecmd -a cmds -v i -c <<-'EOF'
-   echo "$i" | awk '{print "hello "$1}'
+    echo "$i" | awk '{print "hello "$1}'
   EOF
 done
 ```
@@ -360,7 +399,7 @@ arr.sort # d rld
 arr.uc # D RLD
 arr.print # D RLD
 arr.length # 2
-# see more available arr.* member functions via auto completion
+# see more available arr.* member functions via auto-completion
 ```
 
 ### Multithreaded implementations
@@ -374,20 +413,45 @@ helper::sort
 helper::vcfsort
 ```
 
+When a gzip file was not created via `helper::pgzip`, or if a plain text flat file should be indexed, utilize `helper::index`. The index can be used for random access to apply a command or pipeline parallelized on stdin of equal sized data chunks. Each process, chunk respectively, can be addressed by its `JOB_ID`.
+
+```bash
+helper::index
+helper::capply
+
+# example
+helper::capply -i 10 -f <file[.gz]> -c 'cat > $JOB_ID.out'
+```
+
+An other method, which does not require any index, allows to apply a command or pipeline parallelized on stdin line records or seekable temporary files. The number of total processes executed is the number lines divided by number of (adjustable) records or can be set to a specified number of instances. The latter will operate on line records in round robin mode. Each process can be addressed by its `JOB_ID`. Temporary file names can be addressed using `FILE` variable.
+
+```bash
+helper::lapply
+
+# example
+cat <file> | helper::lapply -f -t 10 -c 'cat $FILE > $JOB_ID.out'
+```
+
+Determining file mime-type for ultra fast printing of a its content thanks to multi-threaded decompression of gzip and bzip files, can be achieved using
+
+```
+helper::makecatcmd
+helper::cat
+```
+
 ### Misc
 [&#x25B2; back to top](#bashbone)
 
-Join multiple files by unique ids in the first column, given the separator (`-s '\t'`) and NA character (-e '.') via
+Left outer join multiple files by unique ids in the first column, given the separator (`-s '\t'`) and NA character (-e '.') via
 
 ```bash
 helper::multijoin
 ```
 
-To infer the basename and the de-compression command of a gzip or bzip file, utilize
+To return the basename stripping off a single or two file extensions in case of compressed data and optionally report the suffix as well, use
 
 ```bash
 helper::basename
-helper::makecatcmd
 ```
 
 ## Extending the library
@@ -425,13 +489,12 @@ hello mars
 cmd_that_fails: command not found
 :ERROR: in <path/to/custom>/lib/fun.sh (function: mars) @ line 8: cmd_that_fails
 :ERROR: in <path/to/custom>/lib/fun.sh (function: world) @ line 3: mars
-:ERROR: exit code 143
 ```
 
 ### Local cleanup
 [&#x25B2; back to top](#bashbone)
 
-Each bashbone procedure, function from a custom extension respectively, gets a local, temporary script assigned. This bash script will be **reversely** executed upon return (success or failure) of the function. The path to the script is kept in the `$BASHBONE_CLEANUP` variable. When `mktemp` is used within the function, a removal command of this path will be automatically added to the cleanup script. For sure, custom commands can be added, too.
+Each bashbone procedure, function from a custom extension respectively, gets a local, temporary cleanup script assigned. This bash script will be **reversely** executed upon return (success or failure) of the function. The path to the script is kept in the `$BASHBONE_CLEANUP` variable. When `mktemp` is used within the function, a removal command of this path will be automatically added to the cleanup script. For sure, custom commands can be added, too.
 
 ```bash
 cd <path/to/custom>
@@ -491,17 +554,22 @@ ls /tmp/tmptest*
 When using the `-g` switch (**recommended**), the setup routine will create conda environments or setups software from source according to enclosed configuration files, URLs respectively. Without `-g` switch, software is installed in latest available version, which may lead to unexpected behavior and errors. During setup, current configuration files will be written to `<path/of/installation/config>`.
 
 ```bash
+# shows usage
 scripts/setup.sh -h
 
 scripts/setup.sh -g -i all -d <path/to/installation>
-source <path/of/installation>/latest/bashbone/activate.sh
-bashbone -h
+```
+
+When bashbone was successfully installed, it is recommended to activate bashbone along with its conda environment to ensure all biobash functions to operate as expected. The conda environment can be stopped and (re-)started by the `bashbone -c` switch.
+
+```
+source <path/of/installation>/latest/bashbone/activate.sh -c true
 ```
 
 ## Upgrade to a newer release
 [&#x25B2; back to top](#bashbone)
 
-Use the `-g` switch, in order to also upgrade conda environments that fail the comparison with the supplied configuration files. **Attention**: This switch will downgrade tools, if the initial installation was done for cutting edge tools i.e. without `-g`.
+Use the `-g` switch, in order to also upgrade biobash conda environments that fail the comparison with the supplied configuration files. **Attention**: This switch will downgrade tools, if the initial installation was done for cutting edge tools i.e. without `-g`.
 
 ```bash
 scripts/setup.sh -g -i upgrade -d <path/of/installation>
@@ -510,7 +578,7 @@ scripts/setup.sh -g -i upgrade -d <path/of/installation>
 ## Update tools
 [&#x25B2; back to top](#bashbone)
 
-Trimmomatic, segemehl, STAR-Fusion, GEM, mdless and gztool will be installed next to the conda environments. Their latest versions and download URLs will be automatically inferred.
+Trimmomatic, segemehl, STAR-Fusion, GEM, mdless and gztool will be installed next to the biobash conda environments. Their latest versions and download URLs will be automatically inferred.
 
 ```bash
 scripts/setup.sh -i trimmomatic,segemehl,starfusion,gem,mdless,gztool -d <path/of/installation>
@@ -528,7 +596,8 @@ Load the library and list available functions.
 
 ```bash
 source <path/of/installation>/latest/bashbone/activate.sh
-bashbone -h
+
+# list biobash user function
 bashbone -f
 
 # will print
@@ -558,7 +627,7 @@ variants::platypus         variants::tree              variants::vardict        
 variants::varscan          variants::vcfnorm           visualize::venn
 ```
 
-In order to make use of bashbone conda environments, which ensures all supplied scripts to work as expected, activate bashbone with conda enabled
+In order to make use of biobash conda environments, which ensures all supplied scripts to work as expected, activate bashbone with conda enabled
 
 ```bash
 source <path/of/installation>/latest/bashbone/activate.sh -c true
@@ -587,18 +656,19 @@ Bashbone is shipped with a couple of scripts to be used stand alone (experimenta
 bashbone -s
 
 # will print
-dlgenome.sh      rrbsMspIselection.sh  sra-dump.sh              mergefq.sh
-shufnsplitfq.sh  mergexons.sh          genome2transcriptome.pl  annotate.pl
-id2length.pl     fpkm.pl               tpm.pl                   vcfixuniq.pl
-pileup2fastq.pl  mergexons.pl          vcfix.pl                 deseq2.R
-pca.R            wgcna.R               survival.R               vizco.R
-revigo.R         volcano.R             heatmap.R                pca_deseq.R
+annotate.pl           canonicals.pl    deseq2.R                 dlgenome.sh
+fftool.sh             fpkm.pl          genome2transcriptome.pl  heatmap.R
+id2length.pl          mergefq.sh       mergexons.pl             mergexons.sh
+pca.R                 pca_deseq.R      pileup2fastq.pl          revigo.R
+rrbsMspIselection.sh  shufnsplitfq.sh  sra-dump.sh              survival.R
+tpm.pl                vcfix.pl         vcfixuniq.pl             vizco.R
+volcano.R             wgcna.R
 ```
 
 ### Retrieve SRA datasets
 [&#x25B2; back to top](#bashbone)
 
-Use the enclosed script to fetch sequencing data from SRA
+Use the enclosed script to fetch sequencing data and meta information from NCBI SRA in a parallelized fashion, given SRA or GEO accession number or to convert local sra files.
 
 ```bash
 sra-dump.sh -h
@@ -607,16 +677,16 @@ sra-dump.sh -h
 ### Retrieve genomes
 [&#x25B2; back to top](#bashbone)
 
-Use the enclosed script to fetch human hg19/hg38 or mouse mm10/mm11 genomes, gene and ontology annotations plus dbSNP and MSigDB. The Plug-n-play CTAT genome resource, made for gene fusion detection and shipped with STAR index, can be selected optionally.
+Use the enclosed script to fetch human hg19/hg38 or mouse mm10/mm11 genomes, gene and ontology annotations plus dbSNP and MSigDB. The Plug-n-play CTAT genome resource, made for gene fusion detection and shipped with STAR index, can be also selected optionally.
 
 ```bash
 dlgenome.sh -h
 ```
 
-The genome, using annotation information, can be converted into a transcriptome or transcript-genome.
+The genome, using annotation information, can be converted into a transcriptome, transcript-genome or transcript-chromosome.
 
 ```bash
-genome2transcriptome.pl
+genome2transcriptome.pl -h
 ```
 
 ### Merge/collate features
@@ -640,7 +710,7 @@ shufnsplitfq.sh -h
 ## Sample info file
 [&#x25B2; back to top](#bashbone)
 
-In order to perform desired comparative tasks, some functions require a sample info file.
+In order to perform desired comparative tasks, some functions require a sample design info file.
 
 Assume this input:
 <br>
@@ -719,14 +789,16 @@ declare -a fastqs=(<path/to/fastq/files> [..<path/to/fastq/files])) # can be com
 threads=16
 memory=64000
 
-preprocess::fastqc -t $threads -o results/qualities/raw -1 fastqs
-preprocess::trimmomatic -t $threads -o results/trimmed -1 fastqs
-preprocess::cutadapt -t $threads -o results/adapterclipped -a adapters -1 fastqs
-preprocess::rmpolynt -t $threads -o results/polyntclipped -1 fastqs
-preprocess::rcorrector -t $threads -o results/corrected -p /tmp -1 fastqs
-preprocess::sortmerna -t $threads -o results/rrnafiltered -p /tmp -1 fastqs
+declare -a adapter
+preprocess::fastqc -t $threads -M $memory -o results/qualities/raw -a adapter -1 fastqs
+preprocess::trimmomatic -t $threads -M $memory -o results/trimmed -1 fastqs
+preprocess::cutadapt -t $threads -o results/adapterclipped -a adapter -1 fastqs
 
-fusions::arriba -t $threads -g $genome -a $gtf -o results/fusions -1 fastqs
+preprocess::rcorrector -t $threads -o results/corrected -1 fastqs
+preprocess::sortmerna -t $threads -o results/rrnafiltered -1 fastqs
+
+fragmentsize=200
+fusions::arriba -t $threads -g $genome -a $gtf -o results/fusions -f $fragmentsize -1 fastqs
 fusions::starfusion -t $threads -g $genome -g $gtf -o results/fusions -1 fastqs
 
 declare -a mapped
@@ -734,17 +806,17 @@ alignment::segemehl -t $threads -g $genome -x $genomeidx -o results/mapped -1 fa
 
 alignment::postprocess -j uniqify -t $threads -o results/mapped -r mapped
 alignment::postprocess -r sort -t $threads -o results/mapped -r mapped
-alignment::postprocess -r index -t $threads -o results/mapped -r mapped
 
 declare -A strandness
 alignment::inferstrandness -t $threads -g $gtf -r mapped -x strandness
-quantify::featurecounts -t $threads -g $gtf -o results/counted -r mapped -x strandness
+quantify::featurecounts -t $threads -M $memory -g $gtf -o results/counted -r mapped -x strandness
 quantify::tpm -t $threads -g $gtf -o results/counted -r mapped
 
 declare -a comparisons=(<path/to/sample-info/files> [..<path/to/sample-info/files>])
 expression::diego -t $threads -g $gtf -c comparisons -i results/counted -o results/diffexonjunctions -r mapped -x strandness
 expression::deseq -t $threads -g $gtf -c comparisons -i results/counted -o results/diffgenes -r mapped
-cluster::coexpression -t $threads -g $gtf -i results/counted -o results/coexpressed -r mapped
+expression::join_deseq -t $threads -g $gtf -c comparisons -i results/counted -j results/diffgenes -o results/counted
+cluster::coexpression -t $threads -M $memory -g $gtf -i results/counted -o results/coexpressed -r mapped
 
 go=<path/to/gtf.go>
 enrichment::go -t $threads -r mapper -c comparisons -l coexpressions -g $go -i results/deseq
@@ -784,12 +856,14 @@ enrichment::go -t $threads -r mapper -c comparisons -l coexpressions -g $go -i r
 | GoPeaks       | <https://github.com/maxsonBraunLab/gopeaks>                         | 10.1186/s13059-022-02707-w |
 | GoSemSim      | <http://bioconductor.org/packages/release/bioc/html/GOSemSim.html>  | 10.1093/bioinformatics/btq064 |
 | GSEABase      | <https://bioconductor.org/packages/release/bioc/html/GSEABase.html> | NA |
+| HOMER         | <http://homer.ucsd.edu/homer>                                       | 10.1016/j.molcel.2010.05.004 |
 | HTSeq         | <https://htseq.readthedocs.io>                                      | 10.1093/bioinformatics/btu638 |
 | IDR           | <https://github.com/nboley/idr>                                     | 10.1214/11-AOAS466 |
 | IGV           | <http://software.broadinstitute.org/software/igv>                   | 10.1038/nbt.1754 |
 | Intervene     | <https://github.com/asntech/intervene>                              | 10.1186/s12859-017-1708-7 |
 | kent/UCSC utilities | <https://hgdownload.soe.ucsc.edu/downloads.html#utilities_downloads> | 10.1093/bioinformatics/btq351 |
 | khmer         | <https://khmer.readthedocs.io>                                      | 10.12688/f1000research.6924.1 |
+| KMC           | <https://github.com/refresh-bio/KMC>                                | 10.1186/1471-2105-14-160 |
 | m6aViewer     | <http://dna2.leeds.ac.uk/m6a/>                                      | 10.1261/rna.058206.116 |
 | Macs2         | <https://github.com/macs3-project/MACS>                             | 10.1186/gb-2008-9-9-r137 |
 | MethylDackel  | <https://github.com/dpryan79/MethylDackel>                          | NA |
