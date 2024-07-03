@@ -66,27 +66,28 @@ function commander::make(){
 function commander::makecmd(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} usage:
-			-a <cmds>          | array of
-			-v <variable>      | env variable to pass to command
-			-s <separator>     | string for
-			-m                 | allow multi line support in case of active bashbone legacy mode, which inerts line breaks
-			-o <outfile>       | stdout redirection to
-			-O <outfile>       | stdout appended to
-			-c <cmd|{fd[0]}..> | ALWAYS LAST OPTION
-			                     command line string(s) and or here-doc or
-			                     file descriptor array COMMANDER
+			commander::makecmd
+
+			easily compose and store command in an array for later execution
+
+			-a <cmds>          | mandatory. array to append the command onto
+			-v <variable>      | optional. env variable(s) necessary for command. can be used multiple times
+			-s <separator>     | optional. character to separate command chunks, when file descriptor array COMMANDER is used. default: '\n'
+			-m                 | force multi line support in case of activated bashbone legacy mode, which inerts line breaks
+			-o <outfile>       | optional. redirect stdout to output file
+			-O <outfile>       | optional. append stdout to output file
+			-c <cmd|{fd[0]}..> | ALWAYS LAST OPTION. command line string(s) and or here-documents or file descriptor array COMMANDER
 
 			example 1:
-			${FUNCNAME[-2]} -a cmds -c perl -le \''print "foo"'\'
+			commander::makecmd -a cmds -c perl -le \''print "foo"'\'
 
 			example 2:
 			x=1
-			${FUNCNAME[-2]} -a cmds -v x -c echo '\$x'
+			commander::makecmd -a cmds -v x -c echo '\$x'
 
 			example 3:
 			x=1
-			${FUNCNAME[-2]} -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+			commander::makecmd -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 			    perl -sl - -y=\$x <<< '
 			        print "\$x";
 			        print "\\\$y";
@@ -97,7 +98,7 @@ function commander::makecmd(){
 
 			example 4:
 			x=1
-			${FUNCNAME[-2]} -a cmds -v x -c <<-'CMD'
+			commander::makecmd -a cmds -v x -c <<-'CMD'
 			    perl -sl - -y=\$x <<< '
 			        print "\$x";
 			        print "\$y";
@@ -163,9 +164,11 @@ function commander::makecmd(){
 function commander::printcmd(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} usage:
-			-a <cmds> | array of
-			-m        | allow multi line support in case of active bashbone legacy mode, which inerts line breaks
+			commander::printcmd
+
+			prints the commands stored in an array
+
+			-a <cmds> | mandatory. array of commands to be printed
 		EOF
 		return 1
 	}
@@ -198,21 +201,28 @@ function commander::run(){
 function commander::runcmd(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} usage:
-			-v             | verbose on
-			-b             | benchmark on
-			-c <env>       | run with conda
-			-i <instances> | number of parallel
-			-t <instances> | obsolete synonym for -i
-			-s <idx[:idx]> | execute only jobs from cmds array starting from given index or range (default: 1)
-			-n <name>      | optional. prefix of logs and jobs - should be unique
-			-o <path>      | optional. for scripts, logs and exit codes
-			-r             | optional. override existing logs
-			-a <cmds>      | array of
-			example:
-			${FUNCNAME[-2]} -v -b -i 2 -a cmd
-			example2:
-			${FUNCNAME[-2]} -i 2 -n current -o ~/jobs -r -a cmd
+			commander::runcmd
+
+			orchestrates the execution of commands stored within an array by utilizing GNU parallel
+
+			-v             | optional. toggle on verbose mode which will print the commands prior to their execution
+			-b             | optional. toggle on benchmarking run time and peak memory consumption
+			-c <env>       | optional. activate a bashbone conda environment prior to command execution
+			-i <instances> | optional. number of parallel instances. see also commander::runalter. default: 1
+			-t <instances> | optional. obsolete synonym for -i
+			-s <idx[:idx]> | optional. restrict the execution of commands by array index start or range. default: 1
+			-n <name>      | optional. prefix for logs and job scripts
+			-o <path>      | optional. output directory for logs, job scripts and exit codes
+			-r             | optional. override existing logs. default: append
+			-a <cmds>      | mandatory. array of commands. see also commander::makecmd
+
+			example 1:
+			cmds=("echo job1" "echo job2" "echo job3")
+			cmds+=("sleep 2; echo job4")
+			commander::runcmd -v -b -i 2 -a cmds
+
+			example 2:
+			commander::runcmd -i 2 -n current -o ~/jobs -r -a cmds
 		EOF
 		return 1
 	}
@@ -318,59 +328,63 @@ function commander::runcmd(){
 	return 0
 }
 
-function commander::runalter_xargs(){
-	function _usage(){
-		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} usage:
-			-i <instances> | number of parallel
-			-p <id|name>   | xargs process id or job name
-		EOF
-		return 1
-	}
+# old code from times, when jobs were executed via xargs instead of gnu parallel. may it be useful for someone stumbling across
+# function commander::runalter_xargs(){
+# 	function _usage(){
+# 		commander::print {COMMANDER[0]}<<- EOF
+# 			${FUNCNAME[-2]} usage:
+# 			-i <instances> | number of parallel
+# 			-p <id|name>   | xargs process id or job name
+# 		EOF
+# 		return 1
+# 	}
 
-	local OPTIND arg mandatory pid instances
-	while getopts 'p:i:' arg; do
-		case $arg in
-			p)	((++mandatory)); pid=$OPTARG;;
-			i)	((++mandatory)); instances=$OPTARG;;
-			*)	_usage;;
-		esac
-	done
-	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 2 ]] && _usage
+# 	local OPTIND arg mandatory pid instances
+# 	while getopts 'p:i:' arg; do
+# 		case $arg in
+# 			p)	((++mandatory)); pid=$OPTARG;;
+# 			i)	((++mandatory)); instances=$OPTARG;;
+# 			*)	_usage;;
+# 		esac
+# 	done
+# 	[[ $# -eq 0 ]] && { _usage || return 0; }
+# 	[[ $mandatory -lt 2 ]] && _usage
 
-	BASHBONE_ERROR="no such job name: $pid"
-	[[ $pid =~ ^[0-9]+$ ]] || pid=$(($(ps -o pgid= -p $(pgrep -o -f "job.$pid.*.sh"))))
-	BASHBONE_ERROR="not a valid job id: $pid"
-	[[ "$(ps -o comm= -p $pid)" == xargs ]]
+# 	BASHBONE_ERROR="no such job name: $pid"
+# 	[[ $pid =~ ^[0-9]+$ ]] || pid=$(($(ps -o pgid= -p $(pgrep -o -f "job.$pid.*.sh"))))
+# 	BASHBONE_ERROR="not a valid job id: $pid"
+# 	[[ "$(ps -o comm= -p $pid)" == xargs ]]
 
-	local i=$(pgrep -c -P $pid)
-	i=$((i-instances))
-	[[ $i -eq 0 ]] && return 0
+# 	local i=$(pgrep -c -P $pid)
+# 	i=$((i-instances))
+# 	[[ $i -eq 0 ]] && return 0
 
-	if [[ $i -gt 0 ]]; then
-		# decrement
-		while [[ $((i--)) -gt 0 ]]; do
-			kill -USR2 $pid
-			sleep 0.1
-		done
-	else
-		# increment
-		while [[ $((i++)) -lt 0 ]]; do
-			kill -USR1 $pid
-			sleep 0.1
-		done
-	fi
+# 	if [[ $i -gt 0 ]]; then
+# 		# decrement
+# 		while [[ $((i--)) -gt 0 ]]; do
+# 			kill -USR2 $pid
+# 			sleep 0.1
+# 		done
+# 	else
+# 		# increment
+# 		while [[ $((i++)) -lt 0 ]]; do
+# 			kill -USR1 $pid
+# 			sleep 0.1
+# 		done
+# 	fi
 
-	return 0
-}
+# 	return 0
+# }
 
 function commander::runalter(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} usage:
-			-i <instances> | number of parallel
-			-p <id|name>   | gnu parallel process id or job name
+			commander::runalter
+
+			increment or decrement the number of parallel running instances of a GNU parallel process
+
+			-i <instances> | mandatory. number of new parallel instances
+			-p <id|name>   | mandatory. GNU parallel process id or job name. see also commander::runstat
 		EOF
 		return 1
 	}
@@ -399,9 +413,12 @@ function commander::runalter(){
 function commander::runstat(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} usage:
-			-p <id|name>   | gnu parallel process id or job name
-			-u <name>      | user
+			commander::runstat
+
+			inspect currently running GNU parallel processes
+
+			-p <id|name>   | optional. GNU parallel process id or job name
+			-u <name>      | optional. user name
 		EOF
 		return 1
 	}
@@ -442,24 +459,34 @@ function commander::qsub(){
 function commander::qsubcmd(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} usage:
-			-v             | verbose on
-			-w             | do wait for jobs and receive a non-null exit code if a single job fails
-			-b             | benchmark on if do wait
-			-n <name>      | prefix of logs and jobs to wait for - should be unique
-			-c <env>       | run with conda
-			-l <complex>   | sge digestable list of consumables as key="value" pairs (see qconf -sc or qconf -mc)
-			-o <path>      | shared among machines for scripts, logs and exit codes
-			-r             | override existing logs
-			-i <instances> | number of parallel instances (in- or decrease afterwards via qalter -tc <instances> <name>)
-			-q <queue>     | name of sge queue
-			-p <env>       | name of parallel sge environment
-			-t <threads>   | to be allocated per instance in parallel environment
-			-s <idx[:idx]> | submit only jobs from cmds array starting from given index or range (default: 1)
-			-d <jobid|name>| depends on and start after
-			-a <cmds>      | array of
-			example:
-			${FUNCNAME[-2]} -v -l hostname="!bcl102&!bcl103" -l mem_free="50G" -c base -p threads -t 4 -i 2 -w -o ~/logs -a cmd
+			commander::qsubcmd
+
+			orchestrates the execution of commands stored within an array by submitting them as tasks of an array job into the specified queue, parallel environment repectively, of a Sun Grid Engine/Son of Grid Engine (SGE)
+
+			-v             | optional. toggle on verbose mode which will print the commands prior to their execution
+			-b             | optional. given -w option, toggles on benchmarking run time and peak memory consumption
+			-w             | optional. wait for the completion of all job tasks and receive a non-null exit code if a single one fails
+			-n <name>      | optional. prefix for logs and job scripts
+			-c <env>       | optional. activate a bashbone conda environment prior to command execution
+			-l <complex>   | optional. list of consumables as key="value" pairs. can be used multiple times. (see 'qconf -sc' or 'qconf -mc')
+			-o <path>      | mandatory. output directory for logs, job scripts and exit codes. needs to be accessible by all machines
+			-r             | optional. override existing logs. default: append
+			-i <instances> | optional. number of parallel instances/tasks. see also commander::qalter. default: all
+			-q <queue>     | mandatory unless -p option is used. name of the SGE queue, the job will be submitted to
+			-p <env>       | mandatory unless -q option is used. name of the SGE parallel environment, the job will be submitted to
+			-t <threads>   | optional. given the -p option, the number of threads equatable to number of cpus/sockets to be allocated per instance. default: 1
+			-s <idx[:idx]> | optional. restrict the execution of commands by array index start or range. default: 1
+			-d <jobid|name>| optional. the job which is going to be submitted depends on results of a currently running job and will be put on halt. see also commander::qstat
+			-a <cmds>      | mandatory. array of commands. see also commander::makecmd
+
+			example 1:
+			cmds=("echo job1" "echo job2" "echo job3")
+			cmds+=("sleep 2; echo job4")
+			commander::qsubcmd -v -q all.q -i 2 -w -b -o ~/logs -a cmds
+
+			example 2:
+			commander::qsubcmd -v -l hostname="!server1&!server2" -l mem_free="150G" -p all.pe -i 2 -r -n first -o ~/logs -a cmds1
+			commander::qsubcmd -v -l hostname="server1|server2" -p all.pe -t 4 -r -n second -r -o ~/logs -a cmds2 -d first
 		EOF
 		return 1
 	}
@@ -602,10 +629,13 @@ function commander::qsubcmd(){
 function commander::qalter(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} usage:
-			-i <instances> | number of parallel
-			-l <complex>   | sge digestable list of consumables as key="value" pairs (see qconf -sc or qconf -mc)
-			-p <id|name>   | xargs process id or job name
+			commander::qalter
+
+			increment or decrement the number of parallel running jobs within a task of a Sun Grid Engine/Son of Grid Engine (SGE) and/or change other consumables
+
+			-i <instances> | mandatory. number of new parallel instances
+			-l <complex>   | optional. list of consumables as key="value" pairs. can be used multiple times. (see 'qconf -sc' or 'qconf -mc')
+			-p <id|name>   | mandatory. SGE task id or name. see also commander::qstat
 		EOF
 		return 1
 	}
@@ -630,9 +660,12 @@ function commander::qalter(){
 function commander::qstat(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} usage:
-			-p <id|name>   | job id or job name
-			-u <name>      | user
+			commander::qstat
+
+			inspect currently running tasks and jobs of a Sun Grid Engine/Son of Grid Engine (SGE)
+
+			-p <id|name>   | optional. job id or job name
+			-u <name>      | optional. user name
 		EOF
 		return 1
 	}
