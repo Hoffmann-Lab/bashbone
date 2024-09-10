@@ -329,9 +329,9 @@ function _bashbone_wrapper(){
 	fi
 	BASHBONE_SET_ENV=false
 
-	local f l s BASHBONE_LEGACY=$BASHBONE_LEGACY
-	read -r f l s < <(declare -F $BASHBONE_FUNCNAME)
-	if [[ "$s" == "$BASHBONE_DIR/lib/"* ]]; then
+	local f_bashbone_wrapper l_bashbone_wrapper s_bashbone_wrapper BASHBONE_LEGACY=$BASHBONE_LEGACY
+	read -r f_bashbone_wrapper l_bashbone_wrapper s_bashbone_wrapper < <(declare -F $BASHBONE_FUNCNAME)
+	if [[ "$s_bashbone_wrapper" == "$BASHBONE_DIR/lib/"* ]]; then
 		[[ "$BASHBONE_FUNCNAME" == commander::* || "$BASHBONE_FUNCNAME" == progress::* ]] || BASHBONE_LEGACY=true
 	else
 		BASHBONE_LEGACY=false
