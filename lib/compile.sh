@@ -60,6 +60,15 @@ function compile::all(){
 	return 0
 }
 
+function compile::lite(){
+	compile::tools "$@" # needs to be first
+	compile::bashbone "$@"
+	compile::gztool "$@"
+	compile::mdless "$@"
+
+	return 0
+}
+
 function compile::bashbone(){
 	local insdir threads cfg version src="$(dirname "$(dirname "$(readlink -e "$0")")")"
 	commander::printinfo "installing bashbone"
@@ -88,6 +97,7 @@ function compile::tools(){
 		tar -xzf "$i" -C "$insdir"
 		ln -sfn "$insdir/$(basename "$i" .tar.gz)/bin" "$insdir/latest/$(basename "$i" | cut -d '-' -f 1)"
 	done
+	echo -e 'will cite' | "$insdir/latest/parallel/parallel" --citation &> /dev/null || true
 
 	# BASHBONE_TOOLSDIR set to INSDIR/insdir in setup.sh
 	_bashbone_setpath
@@ -120,6 +130,7 @@ function compile::conda_old(){
 	# as of 2023 fails with latest conda
 	# conda install -y --override-channels -c conda-forge mamba 'python_abi=*=*cp*'
 	# conda env config vars set MAMBA_NO_BANNER=1
+	# conda config --set changeps1 False
 	# alternative use conda with mamba solver
 	conda install -y --override-channels -c conda-forge conda-libmamba-solver
 	conda config --set solver libmamba
@@ -135,7 +146,7 @@ function compile::conda(){
 	local insdir threads cfg url
 	commander::printinfo "installing conda"
 	compile::_parse -r insdir -s threads -f cfg "$@"
-	url="https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh"
+	url="https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"
 	wget -q --show-progress --progress=bar:force -O "$insdir/miniconda.sh" "$url"
 	mkdir -p "$insdir/conda"
 	bash "$insdir/miniconda.sh" -b -u -f -p "$insdir/conda"
@@ -143,6 +154,7 @@ function compile::conda(){
 
 	source "$insdir/conda/bin/activate" base # base necessary, otherwise fails due to $@ which contains -i and -t
 	conda env config vars set MAMBA_NO_BANNER=1
+	# conda config --set changeps1 False
 	# mamba update -y mamba # better dont for sake of miniconda.sh -u and especially, do not update conda!
 
 	commander::printinfo "conda clean up"
@@ -198,14 +210,15 @@ function compile::conda_tools(){
 			# -> too many channels and too many tools slow down and/or break the solver
 			# -> may add --strict-channel-priority ,but there is no strict option available for creating env from config file
 			# => just keep r channel (bashbone only)
+			# yet unresolved bgzip performance drop from 1.17+ https://github.com/samtools/htslib/issues/1767
 			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c r \
 				gcc_linux-64 gxx_linux-64 gfortran_linux-64 \
 				glib pkg-config make automake cmake \
-				bzip2 pbzip2 \
+				zlib bzip2 pbzip2 \
 				git wget curl ghostscript dos2unix \
-				sra-tools entrez-direct cgpbigwig \
+				sra-tools entrez-direct cgpbigwig ucsc-bigwiginfo wiggletools \
 				datamash samtools bedtools ucsc-facount khmer \
-				libdeflate htslib htseq bcftools vcflib vt vcftools \
+				libdeflate "htslib<=1.16" htseq bcftools vcflib vt vcftools \
 				perl perl-app-cpanminus perl-list-moreutils perl-try-tiny perl-xml-parser perl-dbi perl-db-file "perl-bioperl>=1.7" perl-bio-eutilities \
 				java-jdk \
 				nlopt "r-base>=4" \
@@ -467,6 +480,7 @@ function compile::conda_tools(){
 		mkdir -p "$insdir/conda/envs/$n/rRNA_databases/index" "$insdir/conda/envs/$n/src"
 		wget -q --show-progress --progress=bar:force "https://github.com/biocore/$n/releases/download/v4.3.4/database.tar.gz" -O "$insdir/conda/envs/$n/rRNA_databases/database.tar.gz"
 		tar -xzf "$insdir/conda/envs/$n/rRNA_databases/database.tar.gz" -C "$insdir/conda/envs/$n/rRNA_databases"
+		chmod 666 "$insdir/conda/envs/$n/rRNA_databases/"*.fasta
 		rm -f "$insdir/conda/envs/$n/rRNA_databases/database.tar.gz"
 
 		declare -a cmdidx
@@ -709,7 +723,8 @@ function compile::conda_tools(){
 			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
-			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults ucsc-wigtobigwig samtools scipy "r-base>=4" $(awk '!/^\s*#/{print $1}' "$insdir/latest/danpos/requirements.txt")
+			# ucsc from v400 does not allow stdin anymore
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults wiggletools samtools scipy "r-base>=4" $(awk '!/^\s*#/{print $1}' "$insdir/latest/danpos/requirements.txt")
 		fi
 
 		mkdir -p "$insdir/config"
@@ -791,13 +806,12 @@ function compile::java(){
 		url=$(cat "$src")
 	else
 		url='https://download.oracle.com/otn-pub/java/jdk/15.0.1%2B9/51f4f36ad4ef43e39d0dfdbaf6549e32/jdk-15.0.1_linux-x64_bin.tar.gz'
-		url='https://download.oracle.com/java/17/latest/jdk-17_linux-x64_bin.tar.gz'
+		url='https://download.oracle.com/java/17/archive/jdk-17.0.12_linux-x64_bin.tar.gz'
+		url=$(wget -q --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O - 'https://www.oracle.com/java/technologies/downloads' | grep -oE 'https[^"]+latest/jdk-[0-9.]+_linux-x64_bin.tar.gz' | sort -Vr | head -1)
 	fi
 	mkdir -p "$insdir/config"
 	echo "$url" > "$insdir/config/java.url"
-
-	wget -q --show-progress --progress=bar:force --no-cookies --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" -O "$insdir/java.tar.gz" "$url"
-	version=$(echo "$url" | perl -lane '$_=~/jdk-([^-_]+)/; print $1')
+	wget -q --show-progress --progress=bar:force --no-check-certificate --header "Cookie: oraclelicense=accept-securebackup-cookie" "$url" -O "$insdir/java.tar.gz"
 	tar -xzf "$insdir/java.tar.gz" -C "$insdir"
 	rm "$insdir/java.tar.gz"
 	mkdir -p "$insdir/latest"
