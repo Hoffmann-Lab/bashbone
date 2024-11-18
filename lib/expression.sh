@@ -307,9 +307,10 @@ function expression::deseq(){
 
 					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
 						helper::multijoin
+							-e 0
 							-h "$(echo -e "$header")"
 							-o "$odir/$c-vs-$t/experiments.tpm"
-							-f $(printf '"%s" ' "${tojoin[@]}");
+							$(printf '"%s" ' "${tojoin[@]}");
 					CMD
 						echo -e "$meanheader" > "$odir/$c-vs-$t/experiments.mean.tpm";
 					CMD
@@ -657,9 +658,10 @@ function expression::join_deseq(){
 
 			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
 				helper::multijoin
+					-e 0
 					-h "$(echo -e "$header")"
 					-o "$odir/experiments.$e"
-					-f $f;
+					$f;
 			CMD
 				echo -e "$meanheader" > "$odir/experiments.mean.$e";
 			CMD
@@ -811,7 +813,7 @@ function expression::join(){
 
 	declare -a cmd1 cmd2 cmd3 cmd4 mapdata tojoin
 	declare -A visited
-	local m f i c t e header meanheader cf sample condition library replicate factors
+	local m f i c t e odir header meanheader cf sample condition library replicate factors
 	for m in "${_mapper_join[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
@@ -844,9 +846,10 @@ function expression::join(){
 
 			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
 				helper::multijoin
+					-e 0
 					-h "$(echo -e "$header")"
 					-o "$odir/experiments.$e"
-					-f $f;
+					$f;
 			CMD
 				echo -e "$meanheader" > "$odir/experiments.mean.$e";
 			CMD
