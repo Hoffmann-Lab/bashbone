@@ -139,7 +139,7 @@ function alignment::rmduplicates(){
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-k             | keep marked duplicates in bam
-			-l             | true/false legacy mode. true:MarkDuplikates/UMI-tools, false: MarkDuplicatesWithMateCigar/UmiAwareMarkDuplicatesWithMateCigar - for SE or PE DNA-seq only! (default: true)
+			-l             | true/false legacy mode. true:MarkDuplikates/UMI-tools, false (for SE or PE DNA-seq only!): MarkDuplicatesWithMateCigar/UmiAwareMarkDuplicatesWithMateCigar (default: true)
 			-t <threads>   | number of
 			-m <memory>    | amount of
 			-M <maxmemory> | amount of
@@ -174,7 +174,7 @@ function alignment::rmduplicates(){
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
-	commander::printinfo "removing duplicates"
+	commander::printinfo "removing alignment duplicates"
 
 	local sinstances sthreads smemory minstances mthreads jmem jgct jcgct
 	read -r sinstances sthreads smemory jgct jcgct < <(configure::jvm -i ${#_umi_rmduplicates[@]} -T $threads -m $memory -M "$maxmemory")
@@ -195,7 +195,7 @@ function alignment::rmduplicates(){
 	# to get MC tags use a mapper like bwa or
 	# samtools sort -n | samtools fixmate or
 	# picard FixMateInformation
-	declare -a cmdsort
+	declare -a cmdsort umi_rmduplicates
 	if [[ $_umi_rmduplicates ]]; then
 		for i in "${!_umi_rmduplicates[@]}"; do
 			helper::basename -f "${_umi_rmduplicates[$i]}" -o o -e e
@@ -213,7 +213,7 @@ function alignment::rmduplicates(){
 			CMD
 				helper::pgzip -t $sthreads -o "$o"
 			CMD
-			_umi_rmduplicates[$i]="$o"
+			umi_rmduplicates[$i]="$o"
 		done
 
 		if $legacy; then # umitools for SE and PE. handles large split reads since simple 5' position based dedup
@@ -247,8 +247,8 @@ function alignment::rmduplicates(){
 			while read -r slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rmduplicates)")
 
-				if [[ $_umi_rmduplicates ]]; then
-					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
+				if [[ $umi_rmduplicates ]]; then
+					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
 						samtools sort
 							-n
 							-@ $ithreads
@@ -262,21 +262,9 @@ function alignment::rmduplicates(){
 							-O SAM
 							- -
 					CMD
-						| perl -slane '
-							BEGIN{
-								open(F, "pigz -p 1 -cd \"$f\" | paste - - - - |")
-							}
-							if(/^@\S\S\s/){print; next}
-							while($l[0] ne $F[0]){
-								$l=<F>;
-								exit unless defined $l;
-								@l=split(/\t/,$l);
-								$l[0]=~s/^.//
-							}
-							print join"\t",(@F,"RX:Z:$l[1]")
-						'
+						| awk -v f=<(helper::cat -f "${umi_rmduplicates[$i]}" | paste - - - -)
 					CMD
-						-- -f="${_umi_rmduplicates[$i]}"
+						-v OFS='\t' '/^@\S\S\s/{print; next}{l=$0; r="@"$1; getline < f; while(r!=$1){getline < f} print l,"RX:Z:"$(NF-2)}'
 					CMD
 						| samtools sort
 							-@ $ithreads
@@ -301,7 +289,7 @@ function alignment::rmduplicates(){
 					# 		-s true
 					# 		-t RX
 					# 		-i "$slice.nsorted"
-					# 		-f "${_umi_rmduplicates[$i]}"
+					# 		-f "${umi_rmduplicates[$i]}"
 					# 		-o "$slice"
 					# CMD
 					# inefficient piece of shit even if name sorted input complains about offending records and uses >10gb ram
