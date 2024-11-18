@@ -4,57 +4,81 @@
 declare -a COMMANDER
 
 function commander::print(){
-	[[ $* ]] && echo ":INFO: $*"
-	local fd
-	declare -a mapdata
-	for fd in "${COMMANDER[@]}"; do
-		mapfile -u $fd -t mapdata
-		printf '%s\n' "${mapdata[@]}"
-		# while read -u $fd -r tmp; do
-		# 	echo ":INFO: $tmp"
-		# done
-	done
-	COMMANDER=()
+	if [[ $COMMANDER ]]; then
+		local fd
+		declare -a mapdata
+		for fd in "${COMMANDER[@]}"; do
+			mapfile -u $fd -t mapdata
+			printf '%s\n' "${mapdata[@]}"
+		done
+		COMMANDER=()
+	else
+		if [[ $1 ]]; then
+			echo "$*"
+		else
+			cat
+		fi
+	fi
 
 	return 0
 }
 
 function commander::printinfo(){
-	[[ $1 ]] && echo ":INFO: $*"
-	local fd
-	declare -a mapdata
-	for fd in "${COMMANDER[@]}"; do
-		mapfile -u $fd -t mapdata
-		printf ':INFO: %s\n' "${mapdata[@]}"
-	done
-	COMMANDER=()
+	if [[ $COMMANDER ]]; then
+		local fd
+		declare -a mapdata
+		for fd in "${COMMANDER[@]}"; do
+			mapfile -u $fd -t mapdata
+			printf ':INFO: %s\n' "${mapdata[@]}"
+		done
+		COMMANDER=()
+	else
+		if [[ $1 ]]; then
+			echo ":INFO: $*"
+		else
+			awk '{print ":INFO: "$0}'
+		fi
+	fi
 
 	return 0
 }
 
 function commander::warn(){
-	[[ $1 ]] && echo ":WARNING: $*"
-	local fd
-	declare -a mapdata
-	for fd in "${COMMANDER[@]}"; do
-		mapdata
-		mapfile -u $fd -t mapdata
-		printf ':WARNING: %s\n' "${mapdata[@]}"
-	done
-	COMMANDER=()
+	if [[ $COMMANDER ]]; then
+		local fd
+		declare -a mapdata
+		for fd in "${COMMANDER[@]}"; do
+			mapfile -u $fd -t mapdata
+			printf ':WARNING: %s\n' "${mapdata[@]}"
+		done
+		COMMANDER=()
+	else
+		if [[ $1 ]]; then
+			echo ":WARNING: $*"
+		else
+			awk '{print ":WARNING: "$0}'
+		fi
+	fi
 
 	return 0
 }
 
 function commander::printerr(){
-	[[ $1 ]] && echo ":ERROR: $*" >&2
-	local fd
-	declare -a mapdata
-	for fd in "${COMMANDER[@]}"; do
-		mapfile -u $fd -t mapdata
-		printf ':ERROR: %s\n' "${mapdata[@]}" >&2
-	done
-	COMMANDER=()
+	if [[ $COMMANDER ]]; then
+		local fd
+		declare -a mapdata
+		for fd in "${COMMANDER[@]}"; do
+			mapfile -u $fd -t mapdata
+			printf ':ERROR: %s\n' "${mapdata[@]}" >&2
+		done
+		COMMANDER=()
+	else
+		if [[ $1 ]]; then
+			echo ":ERROR: $*" >&2
+		else
+			awk '{print ":ERROR: "$0}' >&2
+		fi
+	fi
 
 	return 0
 }
@@ -65,7 +89,7 @@ function commander::make(){
 
 function commander::makecmd(){
 	function _usage(){
-		commander::print {COMMANDER[0]}<<- EOF
+		commander::print <<- 'EOF'
 			commander::makecmd
 
 			easily compose and store command in an array for later execution
@@ -83,26 +107,26 @@ function commander::makecmd(){
 
 			example 2:
 			x=1
-			commander::makecmd -a cmds -v x -c echo '\$x'
+			commander::makecmd -a cmds -v x -c echo '$x'
 
 			example 3:
 			x=1
 			commander::makecmd -a cmds -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
-			    perl -sl - -y=\$x <<< '
-			        print "\$x";
-			        print "\\\$y";
+			    perl -sl - -y=$x <<< '
+			        print "$x";
+			        print "\$y";
 			    '
 			CMD
-			    awk '{print \$0}'
+			    awk '{print $0}'
 			CMD
 
 			example 4:
 			x=1
 			commander::makecmd -a cmds -v x -c <<-'CMD'
-			    perl -sl - -y=\$x <<< '
-			        print "\$x";
-			        print "\$y";
-			    ' | awk '{print \$0}'
+			    perl -sl - -y=$x <<< '
+			        print "$x";
+			        print "$y";
+			    ' | awk '{print $0}'
 			CMD
 		EOF
 		return 1
@@ -163,7 +187,7 @@ function commander::makecmd(){
 
 function commander::printcmd(){
 	function _usage(){
-		commander::print {COMMANDER[0]}<<- EOF
+		commander::print <<- EOF
 			commander::printcmd
 
 			prints the commands stored in an array
@@ -200,7 +224,7 @@ function commander::run(){
 
 function commander::runcmd(){
 	function _usage(){
-		commander::print {COMMANDER[0]}<<- EOF
+		commander::print <<- EOF
 			commander::runcmd
 
 			orchestrates the execution of commands stored within an array by utilizing GNU parallel
@@ -287,7 +311,7 @@ function commander::runcmd(){
 		echo '#!/usr/bin/env bash' > "$sh"
 		echo "_on_exit(){ :; }" >> "$sh"
 		echo "exit::$jobname.$id(){" >> "$sh"
-		echo "    echo \"$jobname.$id (\$((\$(ps -o ppid= -p \$\$ 2> /dev/null)))) exited with exit code \$1\" >> '$ex'" >> "$sh"
+		echo "    echo \"$jobname.$id (\$((\$(ps -o ppid= -p \$\$ 2> /dev/null)))) exited on \$HOSTNAME with exit code \$1\" >> '$ex'" >> "$sh"
 		echo "    _on_exit \$1" >> "$sh"
 		echo '}' >> "$sh"
 		if [[ $cenv ]]; then
@@ -306,7 +330,6 @@ function commander::runcmd(){
 		scripts+=("$(realpath -se "$sh")") # necessary for runstat
 	done
 
-	echo -e 'will cite' | parallel --citation &> /dev/null || true
 	if $benchmark; then
 		# solution1: setsid xargs, and send termination sequence to its PGID upon receiving INT via ctr+c e.g. by using return trap
 		# needs also termination sequence on PGID in exit function to kill all sibling processes upon error
@@ -320,7 +343,7 @@ function commander::runcmd(){
 		printf '%q\n' "${scripts[@]}" | env PARALLEL_SHELL="$tmpdir/shell.$jobname" time -f ":BENCHMARK: runtime %E [hours:]minutes:seconds\n:BENCHMARK: memory %M Kbytes" parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P "$tmpdir/instances.$jobname" -I {} bash {}
 		# time: is also a bash shell keyword which works differently and does not record memory usage
 		# due to set -E based error tracing, command time may leads to *** longjmp causes uninitialized stack frame ***: bash terminated
-		# workaround: use full path, which, env or $(command -v time) <- prefer env to use env bash too
+		# workaround: use full path, which, env or command -v <- prefer env to use env bash too
 	else
 		printf '%q\n' "${scripts[@]}" | PARALLEL_SHELL="$tmpdir/shell.$jobname" parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P "$tmpdir/instances.$jobname" -I {} bash {}
 	fi | stdbuf -o L awk  '/^:BASE64[0-9]*:/{sub(":BASE64",":CMD",$1); print $1" start"; while(("echo "$2" | base64 -d" | getline l)){print l} print $1" end"; next} /^:STDERR:/{sub(/^:STDERR:/, "", $0); print > "/dev/stderr"; next} {print}'
@@ -378,7 +401,7 @@ function commander::runcmd(){
 
 function commander::runalter(){
 	function _usage(){
-		commander::print {COMMANDER[0]}<<- EOF
+		commander::print <<- EOF
 			commander::runalter
 
 			increment or decrement the number of parallel running instances of a GNU parallel process
@@ -412,7 +435,7 @@ function commander::runalter(){
 
 function commander::runstat(){
 	function _usage(){
-		commander::print {COMMANDER[0]}<<- EOF
+		commander::print <<- EOF
 			commander::runstat
 
 			inspect currently running GNU parallel processes
@@ -458,10 +481,10 @@ function commander::qsub(){
 
 function commander::qsubcmd(){
 	function _usage(){
-		commander::print {COMMANDER[0]}<<- EOF
+		commander::print <<- EOF
 			commander::qsubcmd
 
-			orchestrates the execution of commands stored within an array by submitting them as tasks of an array job into the specified queue, parallel environment repectively, of a Sun Grid Engine/Son of Grid Engine (SGE)
+			orchestrates the execution of commands stored within an array by submitting them as tasks of an array job into the specified queue, parallel environment repectively, of a Univa/Sun Grid Engine/Son of Grid Engine (SGE)
 
 			-v             | optional. toggle on verbose mode which will print the commands prior to their execution
 			-b             | optional. given -w option, toggles on benchmarking run time and peak memory consumption
@@ -563,13 +586,13 @@ function commander::qsubcmd(){
 		echo '#!/usr/bin/env bash' > "$sh"
 		echo "_on_exit(){ :; }" >> "$sh"
 		echo "exit::$jobname.$id(){" >> "$sh"
-		echo "    echo \"$jobname.$id (\$JOB_ID) exited with exit code \$1\" >> '$ex'" >> "$sh"
+		echo "    echo \"$jobname.$id (\$JOB_ID) exited on \$HOSTNAME with exit code \$1\" >> '$ex'" >> "$sh"
 		echo "    _on_exit \$1" >> "$sh"
 		[[ "$dowait" == "y" ]] && echo '    [[ $1 -gt 0 ]] && qdel $JOB_ID &> /dev/null || true' >> "$sh"
 		echo '}' >> "$sh"
 		# re-execution via setsid required!
 		# 1 so that any SGE version that sends kill to PID or PGID lets bashbone kill its BASHBONE_PGID and thereby performs cleanup via exit trap before getting cut from terminal/pty
-		# 2 sournal can be executed explicitly, so that no fork runs in backround that will be killed otherwise and thus leaves unlogged write events
+		# 2 shournal can be executed explicitly, so that no fork runs in backround that will be killed otherwise and thus leaves unlogged write events
 		if [[ $cenv ]]; then
 			echo "source '$BASHBONE_DIR/activate.sh' -l ${BASHBONE_LEGACY:-true} -s '$BASHBONE_EXTENSIONDIR' -c true -r true -x exit::$jobname.$id -i $BASHBONE_TOOLSDIR" >> "$sh"
 			echo "conda activate --no-stack $cenv" >> "$sh"
@@ -591,7 +614,7 @@ function commander::qsubcmd(){
 				jobid=$(cut -d '.' -f 1 <<< $l)
 				echo "qdel $jobid &> /dev/null" >> "$BASHBONE_CLEANUP"
 			fi
-		done < <(echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -terse -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(command -v bash)" -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
+		done < <(echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -terse -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(which bash)" -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
 		# done < <(echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -terse -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$logdir/shell.$jobname" -V -cwd -o "$log" -j y -N $jobname 2> /dev/null || true)
 
 		# use command/env qstat in case someone like me makes use of an alias :)
@@ -620,7 +643,7 @@ function commander::qsubcmd(){
 		fi
 		return $ex
 	else
-		echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(command -v bash)" -cwd -o "$log" -j y -N $jobname
+		echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$(which bash)" -cwd -o "$log" -j y -N $jobname
 		# echo "\"$logdir/job.$jobname.\$SGE_TASK_ID.sh\"" | qsub -sync $dowait $params ${complexes[@]} -t $startid-$stopid -tc $instances -S "$logdir/shell.$jobname" -V -cwd -o "$log" -j y -N $jobname
 		return 0
 	fi
@@ -628,10 +651,10 @@ function commander::qsubcmd(){
 
 function commander::qalter(){
 	function _usage(){
-		commander::print {COMMANDER[0]}<<- EOF
+		commander::print <<- EOF
 			commander::qalter
 
-			increment or decrement the number of parallel running jobs within a task of a Sun Grid Engine/Son of Grid Engine (SGE) and/or change other consumables
+			increment or decrement the number of parallel running jobs within a task of a Univa/Sun Grid Engine/Son of Grid Engine (SGE) and/or change other consumables
 
 			-i <instances> | mandatory. number of new parallel instances
 			-l <complex>   | optional. list of consumables as key="value" pairs. can be used multiple times. (see 'qconf -sc' or 'qconf -mc')
@@ -659,10 +682,10 @@ function commander::qalter(){
 
 function commander::qstat(){
 	function _usage(){
-		commander::print {COMMANDER[0]}<<- EOF
+		commander::print <<- EOF
 			commander::qstat
 
-			inspect currently running tasks and jobs of a Sun Grid Engine/Son of Grid Engine (SGE)
+			inspect currently running tasks and jobs of a Univa/Sun Grid Engine/Son of Grid Engine (SGE)
 
 			-p <id|name>   | optional. job id or job name
 			-u <name>      | optional. user name
