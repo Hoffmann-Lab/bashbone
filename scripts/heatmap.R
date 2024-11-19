@@ -6,7 +6,7 @@ args = commandArgs(TRUE)
 if(length(args)<7){
   cat("locally/globally clustered heatmap by condition\n")
   cat("\n")
-  cat("usage parameter: <b:local-clustering> <i:plot-width> <i:plot-height> <f:experiments> <f:matrix> <s:legend-label> <s:title>\n")
+  cat("usage parameter: <b:local-clustering> <i:plot-width> <i:plot-height> <f:experiments|0> <f:matrix> <s:legend-label> <s:title>\n")
   cat('example: TRUE 8 20 "/path/to/experiments.csv" "/path/to/matrix.tsv" "Z-scores" "Top 50 features"\n')
   cat("\n")
   cat("matrix: tab separated with header and feature ids/label. sample order have to match order of experiments rows\n")
@@ -14,7 +14,7 @@ if(length(args)<7){
   cat("feature1 value1  value2  value3  ..\n")
   cat("..\n")
   cat("\n")
-  cat("experiments: comma separated with header. 3 or more columns. column 2 ignored.\n")
+  cat("experiments (reqired for local clustering or matrix sample subsets): comma separated with header. 3 or more columns. column 2 ignored.\n")
   cat("sample,foo,condition[,..]\n")
   cat("sample1,foo,condition1[,..]\n")
   cat("sample2,foo,condition1[,..]\n")
@@ -36,9 +36,12 @@ cluster = as.logical(args[1])
 # ggplot default is 7x7
 w = as.integer(args[2])
 h = as.integer(args[3])
-experiments = read.table(args[4], header = T, sep = ',', stringsAsFactors=F, check.names=F, quote="")
-colnames(experiments)[1:3] = c("sample","countfile","condition")
-#experiments = data.frame(condition = df$condition, sample = df$sample)
+if(args[4]==0){
+  experiments=data.frame()
+} else {
+  experiments = read.table(args[4], header = T, sep = ',', stringsAsFactors=F, check.names=F, quote="")
+  colnames(experiments)[1:3] = c("sample","countfile","condition")
+}
 io = args[5]
 input = read.table(io, header = T, sep = '\t', stringsAsFactors=F, check.names=F, quote="")
 colnames(input)[1] = c("id")
