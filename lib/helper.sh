@@ -568,7 +568,7 @@ function helper::makecatcmd(){
 					local l r
 					read -r r l < <(sed -E 's/L@?/ /g' <<< "$range")
 					# attention: sometimes complains about corrupt file, altough it is not?! rapidgzip --ranges works with same gztool index
-					# https://github.com/circulosmeos/gztool/issues/20
+					# https://github.com/circulosmeos/gztool/issues/20 solved as of version 1.7.0 i.e. actually no requirement for -p switch any more
 					_makecatcmd=("gztool" "-v" "0" "-p" "-L" "$((l+1))" "-R" "$r")
 				elif ! $legacy && [[ -e "${f%.*}.rgzi" ]]; then
 					_makecatcmd=("rapidgzip" "-kcd" "-P" "$threads" "--import-index")
