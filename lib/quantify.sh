@@ -120,7 +120,7 @@ function quantify::salmon(){
 				CMD
 					perl -F'\t' -slane '
 						BEGIN{print "name,class,clade"}
-						next unless $F[2] eq "gene";
+						next unless $F[2] eq $f;
 						$F[-1]=~/${f}_id "([^"]+)/;
 						print "$F[0],$1,$f"
 					'
@@ -611,751 +611,427 @@ function quantify::bamcoverage(){
 
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			description:
-			assign reads to bins or bed/bed-like file given features and write counts plus TPM/BPM normalized to bigWig files
-			- all reads are counted! including:
-			- singletons, duplicated, multi-mapped, bad-quality, cross-chromosome, circular and highly mismatched ones
-			in case of ATAC data with the intention to quantify mono-nucleosome positions
-			- reads will be centered
-			- when give, nucleosome free regions will be subtracted
-			to maintain orignal/unmerged bins/windows when convertig bigWig to BedGraph, utilize cgpBigWig bwcat
+			quantify::bamcoverage assigns reads to bins, bed files, or piles them up to report TPM/BPM (and input-) normalized bigWig files
+			in case of ATAC data with the intention to quantify mono-nucleosome positions or TF ChIP-seq experiments
+			- reads can be centered
+			- nucleosome free regions or any other input background can be subtracted
 
-			${FUNCNAME[-2]} usage:
 			-S <hardskip>     | true/false return
 			-s <softskip>     | true/false only print commands
-			-t <threads>      | number of
-			-M <maxmemory>    | amount of
+			-t <threads>      | number of cpus. default: 1
 			-r <mapper>       | array of bams within array of
-			-x <strandness>   | hash per bam of. default: 0
-			                    0 - unstranded
-			                    1 - stranded
-			                    2 - reversely stranded
 			-o <outdir>       | path to
-			-O <overlap>      | of a read, that spans multiple features, which assigns it to one or multiple feature. default: 1
-			                    0   - largest
-			                    0-1 - fraction
-			                    1-N - basepairs
-			-w <windowsize>   | for bins to be quantified, unless given a bed/bed-like file by -b option. default: 100
-			                    NOTE: when using -w 1, deepTools bamCoverage will be utilized to create a pileup (see also -e, ignores -x -O -f -u -p)
-			-c <feature>      | use with -w oder -b to output HTSeq-count (htsc) files using feature name instead of bigWig files
-			-e <fragmentsize> | when using -w 1 or -m, extend paired-end reads to fragment size and single-end or singleton reads to given fragmentsize
-			-b <bed>          | or bed-like file with 3 or 6 columns. latter for strand-specific quantification (see also -x, mutually exclusive to -w)
-			-i                | first reference base index of -b option given bed-like file is 1 and not 0 (e.g. gtf, gff)
-			-f                | count reads fractional if, according to -o option, they can be assigned to multiple features (+1/n)
-			                    NOTE: not supported for version < 2.0.4, when combined with -O 0
-			-u                | only unambiguously assigend reads will be counted
-			-p                | count read-pairs/fragments instead of reads (experimental!)
-			                    NOTE1: +1 instead of +2 is counted only if mates are unambiguously assigned to same feature, else +1,+1
-			                    NOTE2: fractional quantification is not available
-			                    NOTE3: unless -o option corresponds to basepairs, assignment is derived from the sum of both mate lengths
-			-m <monoidx>      | array of MNase or mono-nucleosome filtered bam idices within -r
-			                    NOTE: deepTools bamCoverage will be utilized and reads will be centered (ignores -x -O -w -b -1 -f -u -p -d)
-			-n <nfridx>       | array of nucleosome free region filtered or any other background bam idices within -r (requires also -m)
-			                    NOTE: DANPOS will be utilized and reads will be centered (ignores -x -O -w -b -1 -f -u -p -d)
+
+			WINDOW/PILEUP MODE
+			-w <windowsize>   | pileup a bam file or count reads within equal sized bins. default: 1 (pileup)
+			-e <fragmentsize> | extends reads to fragment size
+			-c                | for paired-end data, centers reads using inferred fragment size, 150nt otherwise (adjust via -e option)
+			-i <tidx>         | array of IP* bam idices within -r or any other treatment like MNase or mono-nucleosome filtered regions
+			-a <nidx>         | array of normal bam idices within -r or any other background to be subtracted like nucleosome free regions
+			-m <memory>       | estimate of memory usage per chunk when using -a option. determines parallel jobs (see -M). default: 10000
+			-M <maxmemory>    | amount of total memory allowed to use when using -a option. default: all available
+
+			WINDOW MODE
+			-w <windowsize>   | count reads within equal sized bins
+			-e <fragmentsize> | extends reads to fragment size
+			-O <overlap>      | overlap strategy for how to assign reads spanning multiple features. default: 1
+			                    0   - largest overlap
+			                    0-1 - fraction overlap
+			                    1-N - basepair overlap
+			-f                | count reads fractional if, according to -O option, they can be assigned to multiple features (+1/n)
+			                    NOTE: not supported for featureCounts version < 2.0.4, when combined with -O 0
+			-u                | count only unambiguously assigend reads
+			-n <feature>      | triggers switch from bigWig to HTSeq-count (htsc) format with given name as prefix for output files
+
+			BED MODE
+			-b <bed>          | bed file with 3 or 6 columns, latter for strand-specific quantification
+			-x <strandness>   | associative array of strandness information per bam file to do strand-specific quantification. default: 0
+			                  | 0 = unstranded, 1 = stranded/fr second strand or 2 = reversely stranded /fr first strand
+			-O <overlap>      | overlap strategy for how to assign reads spanning multiple features. default: 1
+			                    0   - largest overlap
+			                    0-1 - fraction overlap
+			                    1-N - basepair overlap
+			-f                | count reads fractional if, according to -O option, they can be assigned to multiple features (+1/n)
+			                    NOTE: not supported for featureCounts version < 2.0.4, when combined with -O 0
+			-u                | count only unambiguously assigend reads
+			-n <feature>      | triggers switch from bigWig to HTSeq-count (htsc) format with given feature name as prefix for output files
 		EOF
 		return 1
 	}
+	# -p | count read-pairs/fragments instead of reads (experimental!)
+	# NOTE1: +1 instead of +2 is counted only if mates are unambiguously assigned to same feature, else +1,+1
+	# NOTE2: fractional quantification is not available
+	# NOTE3: unless -o option corresponds to basepairs, assignment is derived from the sum of both mate lengths
 
-	local OPTIND arg mandatory skip=false tmpdir="${TMPDIR:-/tmp}" threads overlap=1 windowsize=100 bed index=0 fractional=false unambiguous=false pairs=false outdir fragmentsize maxmemory feature
-	declare -n _mapper_bam2bedg _strandness_bam2bedg _nidx_bam2bedg _midx_bam2bedg
-	while getopts 'S:s:t:M:r:x:o:O:w:b:e:n:m:c:ifup' arg; do
+	local OPTIND arg mandatory skip=false tmpdir="${TMPDIR:-/tmp}" threads=1 overlap=1 windowsize=1 bed index=0 fractional=false unambiguous=false pairs=false outdir fragmentsize maxmemory feature center=false smooth=0 memory
+	declare -n _mapper_bamcoverage _strandness_bamcoverage _nidx_bamcoverage _tidx_bamcoverage
+	while getopts 'S:s:t:m:M:r:x:o:O:w:b:e:n:a:i:cfup' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
-			t)	((++mandatory)); threads=$OPTARG;;
-			r)	((++mandatory)); _mapper_bam2bedg=$OPTARG;;
+			t)	threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_bamcoverage=$OPTARG;;
+			m)	memory=$OPTARG;;
 			M)	maxmemory=$OPTARG;;
-			x)	_strandness_bam2bedg=$OPTARG;;
+			x)	_strandness_bamcoverage=$OPTARG;;
 			o)	outdir="$OPTARG"; mkdir -p "$outdir";;
 			O)	overlap=$OPTARG;;
 			w)	windowsize=$OPTARG;;
 			b)	bed="$OPTARG";;
-			i)	index=1;;
 			f)	fractional=true;;
 			u)	unambiguous=true;;
 			p)	pairs=true;;
 			e)	fragmentsize=$OPTARG;;
-			n)	_nidx_bam2bedg=$OPTARG;;
-			m)	_midx_bam2bedg=$OPTARG;;
-			c)	feature=$OPTARG;;
+			a)	_nidx_bamcoverage=$OPTARG;;
+			i)	_tidx_bamcoverage=$OPTARG;;
+			n)	feature=$OPTARG;;
+			c)	center=true;;
 			*) _usage;;
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 2 ]] && _usage
-	[[ $_nidx_bam2bedg ]] && [[ ! $_midx_bam2bedg ]] && _usage
+	[[ $mandatory -lt 1 ]] && _usage
+	[[ $_nidx_bamcoverage ]] && [[ ! $_tidx_bamcoverage ]] && _usage
 
-	if [[ $_midx_bam2bedg ]]; then
-		local m i f n params x o odir e="pileup"
+	commander::printinfo "converting bam to bw"
 
-		declare -n _bams_bam2bedg=${_mapper_bam2bedg[0]}
-		x=$(samtools view -F 4 "${_bams_bam2bedg[0]}" | head -10000 | cat <(samtools view -H "${_bams_bam2bedg[0]}") - | samtools view -c -f 1)
-		[[ $x -gt 0 ]] && params="--paired 1" || params="--frsz ${fragmentsize:-200}"
-		local minstances mthreads memory=$(samtools view -H "${_bams_bam2bedg[0]}" | sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}' | awk '{i+=$2}END{i=i/100000*3; if(i<1000){print 1000}else{printf "%0.f\n",i}}')
-		read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
-
-		declare -a tdirs cmd1 cmd2 cmd3 cmd4
-		for m in "${_mapper_bam2bedg[@]}"; do
-			declare -n _bams_bam2bedg=$m
-			for i in "${!_midx_bam2bedg[@]}"; do
-				f="${_bams_bam2bedg[${_midx_bam2bedg[$i]}]}"
-				o="$(basename "${f%.*}")"
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bam2bedg)")
-				odir="$outdir/$m"
-				[[ $outdir ]] || odir="$(dirname "$f")"
-				mkdir -p "$odir"
-
-				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-					samtools view -H "$f"
-				CMD
-					sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}'
-				CMD
-					helper::sort -t $threads -M "$maxmemory" -k1,1 > "${tdirs[-1]}/chr.sizes"
-				CMD
-
-				if [[ ${_nidx_bam2bedg[$i]} ]]; then
-					n="${_bams_bam2bedg[${_nidx_bam2bedg[$i]}]}"
-					# region and peak calling after nucleosome position estimation from subtracted data not necessary here
-					# for position calling (danpos.py dpos) robert was using -jd 20 i.e. minimum distance of two nucleosome centers before merging into one histone signal
-					# should be 147/+147/2. assuming that tn5 can bind nucleosome surface 120/2+120/2 or if conservative 100/2+100/2 which is danpos default..
-					#
-					# --extend $fragmentsize in case of TF or chip possible. default is 80 (publication mentions 74 as 147/2)
-					# whereas bamCoverage --MNase uses only 3! and --center only read length
-					#
-					# howto save memory or speedup: Split!the!data!by!chromosomes!and!run!a!subset!of!chromosomes!each!time
-
-					mkdir -p "${tdirs[-1]}/counts" "${tdirs[-1]}/tpm"
-					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-						ln -sn "$(realpath -se "$f")" "${tdirs[-1]}/counts/nucleosome.bam"; ln -sn "$(realpath -se "${f%.*}.bai")" "${tdirs[-1]}/counts/nucleosome.bai"
-					CMD
-						ln -sn "$(realpath -se "$n")" "${tdirs[-1]}/counts/background.bam"; ln -sn "$(realpath -se "${n%.*}.bai")" "${tdirs[-1]}/counts/background.bai"
-					CMD
-						danpos.py dtriple
-							"${tdirs[-1]}/counts/nucleosome.bam"
-							-b "${tdirs[-1]}/counts/background.bam"
-							-a 1
-							-o "${tdirs[-1]}/counts"
-							-n N
-							--extend 74
-							-r 0
-							-k 0
-							-j 0
-							$params
-					CMD
-						wigToBigWig "${tdirs[-1]}/counts/pooled/nucleosome.bgsub.smooth.wig" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.counts.bw"
-					CMD
-
-					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-						ln -sn "$(realpath -se "$f")" "${tdirs[-1]}/tpm/nucleosome.bam"; ln -sn "$(realpath -se "${f%.*}.bai")" "${tdirs[-1]}/tpm/nucleosome.bai"
-					CMD
-						ln -sn "$(realpath -se "$n")" "${tdirs[-1]}/tpm/background.bam"; ln -sn "$(realpath -se "${n%.*}.bai")" "${tdirs[-1]}/tpm/background.bai"
-					CMD
-						danpos.py dtriple
-							"${tdirs[-1]}/tpm/nucleosome.bam"
-							-b "${tdirs[-1]}/tpm/background.bam"
-							-jd 20
-							-a 1
-							-o "${tdirs[-1]}/tpm"
-							-n F
-							--extend 74
-							-r 0
-							-k 0
-							-j 0
-							$params
-					CMD
-						wigToBigWig "${tdirs[-1]}/tpm/pooled/nucleosome.bgsub.smooth.wig" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.tpm.bw"
-					CMD
-
-					# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					# 	wigToBigWig "${tdirs[-1]}/counts/pooled/nucleosome.bgsub.smooth.wig" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.counts.bw"
-					# CMD
-					# 	bigWigToBedGraph "$odir/$o.$e.counts.bw" "$odir/$o.$e.counts.bed"
-					# CMD
-					# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					# 	wigToBigWig "${tdirs[-1]}/tpm/pooled/nucleosome.bgsub.smooth.wig" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.tpm.bw"
-					# CMD
-					# 	bigWigToBedGraph "$odir/$o.$e.tpm.bw" "$odir/$o.$e.tpm.bed"
-					# CMD
-				else
-					# to ensure compatibility with ucsc tools, that require chromosome order to be sorted lexicographical
-					# -> better use cgpbigwig and direct bigwig output
-					# commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-					# 	rm -f "$odir/$o.$e.counts.bed"
-					# CMD
-					# 	mapfile -t chr < <(cut -f 1 "${tdirs[-1]}/chr.sizes")
-					# CMD
-					# 	for r in "\${chr[@]}"; do
-					# 		bamCoverage
-					# 			-r \$r
-					# 			-b "$f"
-					# 			-bs 1
-					# 			-p $threads
-					# 			--maxFragmentLength 200000
-					# 			--normalizeUsing None
-					# 			--outFileFormat bedgraph
-					# 			--extendReads ${fragmentsize:-200}
-					# 			--centerReads
-					# 			-o "${tdirs[-1]}/$e.counts.bed";
-					# 		cat "${tdirs[-1]}/$e.counts.bed" >> "$odir/$o.$e.counts.bed";
-					# 	done
-					# CMD
-					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-						bamCoverage
-							-b "$f"
-							-bs 1
-							-p $threads
-							--maxFragmentLength 200000
-							--normalizeUsing None
-							--extendReads ${fragmentsize:-200}
-							--centerReads
-							-o "$odir/$o.$e.counts.bw"
-					CMD
-
-					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-						bamCoverage
-							-b "$f"
-							-bs 1
-							-p $threads
-							--maxFragmentLength 200000
-							--exactScaling
-							--normalizeUsing CPM
-							--outFileFormat bedgraph
-							--extendReads ${fragmentsize:-200}
-							--centerReads
-							-o "$odir/$o.$e.tpm.bw"
-					CMD
-
-					# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-					# 	bedGraphToBigWig "$odir/$o.$e.counts.bed" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.counts.bw"
-					# CMD
-					# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-					# 	bedGraphToBigWig "$odir/$o.$e.tpm.bed" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.tpm.bw"
-					# CMD
-				fi
-			done
-		done
-
-		if $skip; then
-			commander::printcmd -a cmd1
-			commander::printcmd -a cmd2
-			commander::printcmd -a cmd3
-			# commander::printcmd -a cmd4
-		else
-			commander::runcmd -v -b -i 1 -a cmd1
-			commander::runcmd -c danpos -v -b -i $minstances -a cmd2
-			commander::runcmd -c deeptools -v -b -i 1 -a cmd3
-			# commander::runcmd -c danpos -v -b -i $threads -a cmd4
-		fi
-
-		return 0
+	declare -n _bams_bamcoverage=${_mapper_bamcoverage[0]}
+	if [[ ! $_nidx_bamcoverage && ! $_tidx_bamcoverage ]]; then
+		declare -a tidx_bamcoverage=("${!_bams_bamcoverage[@]}") # use all bams as unpaired input unless -a and -i
+		_tidx_bamcoverage=tidx_bamcoverage
 	fi
 
-	declare -n _bams_bam2bedg="${_mapper_bam2bedg[0]}"
-	local instances ithreads i=$((${#_mapper_bam2bedg[@]}*${#_bams_bam2bedg[@]}))
-	read -r instances ithreads < <(configure::instances_by_threads -i $i -t 64 -T $threads)
-	[[ $instances -lt $i && $ithreads -gt 64 ]] && ((++instances)) && ithreads=$((threads/instances))
-	[[ $ithreads -gt 64 ]] && ithreads=64
+	local chrsizes="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.sizes)" saf="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.regions)"
+	local x readlength e m f c params o odir
+	declare -a cmd1 cmd2 cmd3 cmd4 cmd5 cmd6 tdirs chrs tomerge
 
-	declare -a cmdchk=("featureCounts -v |& grep -oE 'v[.0-9]+'")
-	local version=$(commander::runcmd -c subread -a cmdchk)
-	$fractional && [[ $overlap -eq 0 ]] && [[ "$(echo -e "v2.0.3\n$version" | sort -Vr | head -1)" == "v2.0.3" ]] && _usage
-	[[ "$(echo -e "v2.0.1\n$version" | sort -Vr | head -1)" == "v2.0.1" ]] && version="old" || version="new"
+	x=$(samtools view -F 4 "${_bams_bamcoverage[0]}" | head -10000 | cat <(samtools view -H "${_bams_bamcoverage[0]}") - | samtools view -c -f 1)
+	readlength=$(samtools view "${_bams_bamcoverage[0]}" | head -10000 | awk -F '\t' '{l=length($10);ml=ml<l?l:ml}END{print ml}')
+	samtools view -H "${_bams_bamcoverage[0]}" | sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}' > "$chrsizes"
+	mapfile -t chrs < <(cut -f 1 "$chrsizes")
 
-	commander::printinfo "convertig bam to bw"
+	if [[ $bed || $windowsize -gt 1 ]]; then
+		memory=${memory:-5000}
+		e="coverage"
+		if [[ $bed ]]; then
+			commander::makecmd -a cmd5 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+				helper::sort -f "$bed" -t $threads -M "$maxmemory" -k1,1 -k2,2n -k3,3n
+			CMD
+				| awk -F '\t' '{f+=FNR==1?1:0} f==1{id=$1":"$2"-"$3; if($4){id=$4}; s="."; if($6){s=$6}; o[$1]=o[$1]id"\t"$1"\t"$2+1"\t"$3"\t.\t.\t"s"\n"} f==2{printf o[$1]}'
+			CMD
+				- "$chrsizes" > "$saf"
+			CMD
+			# commander::makecmd -a cmd5 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+			# 	awk -v OFS='\t' '{id=$1":"$2"-"$3; if($4){id=$4}; s="."; if($6){s=$6}; print id,$1,$2+1,$3,".",".",s}'
+			# CMD
+			# 	"$bed" > "$saf"
+			# CMD
+		else
+			commander::makecmd -a cmd5 -s '|' -o "$saf" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
+				bedtools makewindows -w $windowsize -g "$chrsizes"
+			CMD
+				awk -v OFS='\t' '{id=$1":"$2"-"$3; print id,$1,$2+1,$3,".",".","."}'
+			CMD
+		fi
+	else
+		memory=${memory:-10000}
+		e="pileup"
+	fi
 
-	local m f params x o e odir
-	[[ $bed || $windowsize -gt 1 ]] && e="coverage" || e="pileup"
+	local instances ithreads instances2 ithreads2 i=$((${#_mapper_bamcoverage[@]}*${#_bams_bamcoverage[@]}))
+	read -r instances ithreads < <(configure::instances_by_threads -t 10 -T $threads)
+	read -r instances2 ithreads2 < <(configure::instances_by_memory -m "$memory" -M "$maxmemory" -T $threads)
+	read -r instances3 ithreads3 < <(configure::instances_by_threads -i $i -t 64 -T $threads)
+	[[ $instances3 -lt $i && $ithreads3 -gt 64 ]] && ((++instances3)) && ithreads3=$((threads/instances3))
+	[[ $ithreads3 -gt 64 ]] && ithreads3=64
 
-	declare -a cmd1 cmd2 cmd3 cmd4 tdirs
-	for m in "${_mapper_bam2bedg[@]}"; do
-		declare -n _bams_bam2bedg=$m
-		for f in "${_bams_bam2bedg[@]}"; do
+	for m in "${_mapper_bamcoverage[@]}"; do
+		declare -n _bams_bamcoverage=$m
+		# odir="$outdir/$m"
+		# mkdir -p "$odir"
+		for i in "${!_tidx_bamcoverage[@]}"; do
+			f="${_bams_bamcoverage[${_tidx_bamcoverage[$i]}]}"
+			[[ $outdir ]] && odir="$outdir/$m" && mkdir -p "$odir" || odir="$(dirname "$f")"
 			o="$(basename "${f%.*}")"
-			# tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bam2bedg)")
-			odir="$outdir/$m"
-			[[ $outdir ]] || odir="$(dirname "$f")"
-			mkdir -p "$odir"
-			if [[ $bed || $windowsize -gt 1 ]]; then
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bam2bedg)")
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bamcoverage)")
 
-				if [[ $bed ]]; then
-					commander::makecmd -a cmd1 -s ' ' -o "${tdirs[-1]}/regions.saf" -c {COMMANDER[0]}<<- CMD {COMMANDER[2]}<<- 'CMD'
-						samtools view -H "$f" | sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}' | helper::sort -t $threads -M "$maxmemory" -k1,1 > "${tdirs[-1]}/chr.sizes";
-						helper::sort -f "$bed" -t $threads -M "$maxmemory" -k1,1 -k2,2n -k3,3n | awk -v i=$index -v OFS='\t'
-					CMD
-						'BEGIN{i=i==1?0:1}{id=$1":"$2"-"$3; if($4){id=$4}; s="."; if($6){s=$6}; print id,$1,$2+i,$3,".",".",s}'
-					CMD
-				else
-					commander::makecmd -a cmd1 -s '|' -o "${tdirs[-1]}/regions.saf" -c {COMMANDER[0]}<<- CMD {COMMANDER[2]}<<- 'CMD'
-						samtools view -H "$f" | sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}' | helper::sort -t $threads -M "$maxmemory" -k1,1 > "${tdirs[-1]}/chr.sizes";
-						bedtools makewindows -w $windowsize -g "${tdirs[-1]}/chr.sizes"
-					CMD
-						awk -v OFS='\t' '{id=$1":"$2"-"$3; print id,$1,$2+1,$3,".",".","."}'
-					CMD
-				fi
+			if $center; then
+				# MNase-seq or mono-nucleosome filtered ATAC-seq or TF ChIP-seq
+				# for the latter, extend size should actually be fragmentsize/2 but number bp wrapping a histone (~147) is also fine
+				# info: not really recommended for SE data
 
-				params=''
-				$unambiguous || params+=" -O"
-				$fractional && params+=" --fraction"
-				params+=" $(echo $overlap | awk '{if($1==0){print "--largestOverlap"}else{print $1<1? "--fracOverlap "$1 : "--minOverlap "$1}}')"
-				if [[ $version == "old" ]]; then
-					$pairs && params+=" -p"
-				else
-					x=$(samtools view -F 4 "$f" | head -10000 | cat <(samtools view -H "$f") - | samtools view -c -f 1)
-					if [[ $x -gt 0 ]]; then
-						params+=" -p"
-						$pairs && params+=" --countReadPairs"
-					fi
-				fi
+				if [[ $_nidx_bamcoverage ]]; then
+					n="${_bams_bamcoverage[${_nidx_bamcoverage[$i]}]}"
+					[[ $x -gt 0 ]] && params="--paired 1" || params="--frsz ${fragmentsize:-150}"
 
-				if [[ $feature ]]; then
-					commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
-						featureCounts
-							$params
-							-Q 0
-							--maxMOp 999
-							-s $(declare -p _strandness_bam2bedg | grep -q '=' && echo ${_strandness_bam2bedg["$f"]} || echo 0)
-							-T $ithreads
-							-f
-							-M
-							--ignoreDup
-							--tmpDir "${tdirs[-1]}"
-							-F SAF
-							-a "${tdirs[-1]}/regions.saf"
-							-o /dev/stdout
-							"$f"
+					# danpos finds center using PE tlen infered frsz or given frsz (for SE) and extends center in both directions by extend/2 (default: --extend 80)
+					# without given -b for subtraction, outfile will be "${tdirs[-1]}/pooled/$(basename "${f%.*}").smooth.wig"
+					# without smooth, outfile will be "${tdirs[-1]}/pooled/$(basename "${f%.*}").bgsub.wig"
+					# trailing zeroes are not reported! -> apply wiggletools
+					tomerge=()
+					cmd5=()
+					for c in "${chrs[@]}"; do
+						commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+							{	samtools view -@ $ithreads -H "$f" | grep -E "^@SQ\s+SN:$c\s+";
+								samtools view -@ $ithreads "$f" $c;
+							} | samtools view -@ $ithreads --write-index -o "${tdirs[-1]}/$c.bam##idx##${tdirs[-1]}/$c.bai"
+						CMD
+							{	samtools view -@ $ithreads -H "$n" | grep -E "^@SQ\s+SN:$c\s+";
+								samtools view -@ $ithreads "$n" $c;
+							} | samtools view -@ $ithreads --write-index -o "${tdirs[-1]}/$c.bg.bam##idx##${tdirs[-1]}/$c.bg.bai"
+						CMD
+
+						commander::makecmd -a cmd2 -s ' ' -c <<- CMD
+							cd "${tdirs[-1]}";
+							read -r size reads < <(samtools idxstats "$c.bam" | head -1 | cut -f 2-3);
+							if [[ \$reads -eq 0 ]]; then
+								echo -e "$c\t0\t\$size\t0" > "$c.bedg";
+							else
+								mkdir -p pooled;
+								exec 11>&1;
+								ln -sn /dev/fd/11 "pooled/$c.bgsub.wig";
+								danpos.py dtriple
+									"$c.bam"
+									-b "$c.bg.bam"
+									--extend $((${fragmentsize:-150}/2))
+									-a $windowsize
+									-o "${tdirs[-1]}"
+									-n F
+									-jd 20
+									-z $smooth
+									-r 0
+									-k 0
+									-j 0
+									$params
+								11> >(wiggletools cat - | sed -E "\\\${s/\S+\t([0\.]+)\\\$/\$size\t\1/;t;p;s/\S+\t(\S+)\t\S+\\\$/\1\t\$size\t0/}" > "$c.bedg") | cat;
+								exec 11>&-;
+								rm "$c.bam" "$c.bg.bam";
+							fi
+						CMD
+
+						tomerge+=("${tdirs[-1]}/$c.bedg")
+					done
+					# bigWigMerge much faster than bwjoin -f "${tdirs[-1]}/chr.sizes" -p "${tdirs[-1]}" -o "$odir/$o.$e.tpm.bw"
+					# and slightly faster than wiggletools sum
+					# in any case this requires 11> >(wigToBigWig /dev/stdin "$c.size" "$c.bw") | cat;
+					# -> drawback: reordering of chromosomes by bigWigMerge -threshold=-1 $(printf '"%s" ' "${tomerge[@]}") /dev/stdout
+					# -> use bedgraph files
+					commander::makecmd -a cmd3 -c <<- CMD
+						cat $(printf '"%s" ' "${tomerge[@]}") | bg2bw -i /dev/stdin -c "$chrsizes" -o "$odir/$o.$e.tpm.bw"
 					CMD
-						| tee -i >(cat > "$odir/$o.${feature}counts") >(awk -v OFS='\t' 'NR>2{print \$1,sprintf("%d",\$7==int(\$7)?\$7:\$7+1)}' > "$odir/$o.${feature}counts.htsc")
-					CMD
-						| awk '
-							NR>2{
-								o[NR-3]=$1;
-								v[NR-3]=sprintf("%d",$7==int($7)?$7:$7+1)/$6;
-								sum=sum+v[NR-3];
-							}
-							END{
-								sum=sum/1000000;
-								for(i=0;i<=NR-3;i++){
-									print o[i]"\t"v[i]/sum;
-								}
-							}
-						'
-					CMD
-						> "$odir/$o.${feature}counts.htsc.tpm"
-					CMD
+
+					# alternative, but due to low value range, coverage gets saw like shapes, which looks very unnatural, even with smoothing
+					# plus log2 ratio produces negative values
+					# likewise to bamCoverage, bamCompare centers reads by tlen inferred frzs and does not extend them. in case of singletons or SE fallback to given frzs
+					# commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+					# 	TMPDIR="${tdirs[-1]}" bamCompare
+					# 		-b1 "$f"
+					# 		-b2 "$n"
+					# 		-bs $windowsize
+					# 		-p $threads
+					# 		--normalizeUsing BPM
+					# 		--exactScaling
+					# 		--extendReads ${fragmentsize:-150}
+					# 		--centerReads
+					# 		--maxFragmentLength 1000
+					# 		--scaleFactorsMethod None
+					# 		--smoothLength 10
+					# 		--outFileFormat bigwig
+					# 		-o "${tdirs[-1]}/$o.$e.tpm.bw"
+					# CMD
+					# commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					# 	bwcat -i "${tdirs[-1]}/$o.pileup.tpm.bw"
+					# CMD
+					# 	awk -v OFS='\t' '$NF<0{$NF=0}{print}'
+					# CMD
+					# 	bg2bw -i /dev/stdin -c "$chrsizes" -o "$odir/$o.$e.tpm.bw"
+					# CMD
 				else
-					commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
-						featureCounts
-							$params
-							-Q 0
-							--maxMOp 999
-							-s $(declare -p _strandness_bam2bedg | grep -q '=' && echo ${_strandness_bam2bedg["$f"]} || echo 0)
-							-T $ithreads
-							-f
-							-M
-							--ignoreDup
-							--tmpDir "${tdirs[-1]}"
-							-F SAF
-							-a "${tdirs[-1]}/regions.saf"
-							-o /dev/stdout
-							"$f"
-					CMD
-						tee -i >(awk -v OFS='\t' 'NR>2{print \$2,\$3-1,\$4,sprintf("%d",\$7==int(\$7)?\$7:\$7+1)}' | bg2bw -i /dev/stdin -o "$odir/$o.$e.counts.bw" -c "${tdirs[-1]}/chr.sizes")
-					CMD
-						awk '
-							NR>2{
-								o[NR-3]=$1;
-								v[NR-3]=sprintf("%d",$7==int($7)?$7:$7+1)/$6;
-								sum=sum+v[NR-3];
-							}
-							END{
-								sum=sum/1000000;
-								for(i=0;i<=NR-3;i++){
-									print o[i]"\t"v[i]/sum;
-								}
-							}
-						'
-					CMD
-						bg2bw -i /dev/stdin -o "$odir/$o.$e.tpm.bw" -c "${tdirs[-1]}/chr.sizes"
+					# --exactScaling ??
+					# --smoothLength $smooth
+					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+						TMPDIR="${tdirs[-1]}" bamCoverage
+							-b "$f"
+							-bs $windowsize
+							-p $threads
+							--normalizeUsing BPM
+							--extendReads ${fragmentsize:-150}
+							--centerReads
+							--maxFragmentLength 1000
+							--outFileFormat bigwig
+							-o "$odir/$o.$e.tpm.bw"
 					CMD
 				fi
 			else
-				# commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-				# 	samtools view -H "$f"
-				# CMD
-				# 	sed -nE '/^@SQ/{s/.*SN:(\S+).*LN:(\S+)\s*.*/\1\t\2/p}'
-				# CMD
-				# 	helper::sort -t $threads -M "$maxmemory" -k1,1 > "${tdirs[-1]}/chr.sizes"
-				# CMD
+				# no centering
+				if [[ $_nidx_bamcoverage ]]; then
+					n="${_bams_bamcoverage[${_nidx_bamcoverage[$i]}]}"
 
-				[[ $fragmentsize ]] && params="--extendReads $fragmentsize" || params=''
+					tomerge=()
+					cmd5=()
+					for c in "${chrs[@]}"; do
+						commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+							{	samtools view -@ $ithreads -H "$f" | grep -E "^@SQ\s+SN:$c\s+";
+								samtools view -@ $ithreads "$f" $c;
+							} | samtools view -@ $ithreads --write-index -o "${tdirs[-1]}/$c.bam##idx##${tdirs[-1]}/$c.bai"
+						CMD
+							{	samtools view -@ $ithreads -H "$n" | grep -E "^@SQ\s+SN:$c\s+";
+								samtools view -@ $ithreads "$n" $c;
+							} | samtools view -@ $ithreads --write-index -o "${tdirs[-1]}/$c.bg.bam##idx##${tdirs[-1]}/$c.bg.bai"
+						CMD
 
-				# commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-				# 	rm -f "$odir/$o.$e.counts.bed"
-				# CMD
-				# 	mapfile -t chr < <(cut -f 1 "${tdirs[-1]}/chr.sizes")
-				# CMD
-				# 	for r in "\${chr[@]}"; do
-				# 		bamCoverage
-				# 			$params
-				# 			-r \$r
-				# 			-b "$f"
-				# 			-bs $windowsize
-				# 			-p $threads
-				# 			--maxFragmentLength 200000
-				# 			--normalizeUsing None
-				# 			--outFileFormat bedgraph
-				# 			-o "${tdirs[-1]}/$e.counts.bed";
-				# 		cat "${tdirs[-1]}/$e.counts.bed" >> "$odir/$o.$e.counts.bed";
-				# 	done
-				# CMD
+						# in case of given fragment length, i.e. to pileup broad signals, extend to frsz
+						commander::makecmd -a cmd2 -s ' ' -c <<- CMD
+							cd "${tdirs[-1]}";
+							read -r size reads < <(samtools idxstats "$c.bam" | head -1 | cut -f 2-3);
+							if [[ \$reads -eq 0 ]]; then
+								echo -e "$c\t0\t\$size\t0" > "$c.bedg";
+							else
+								mkdir -p pooled;
+								exec 11>&1;
+								ln -sn /dev/fd/11 "pooled/$c.bgsub.wig";
+								danpos.py dtriple
+									"$c.bam"
+									-b "$c.bg.bam"
+									--frsz $readlength
+									--extend ${fragmentsize:-$readlength}
+									-a $windowsize
+									-o "${tdirs[-1]}"
+									-n F
+									-jd 20
+									-z $smooth
+									-r 0
+									-k 0
+									-j 0
+								11> >(wiggletools cat - | sed -E "\\\${s/\S+\t([0\.]+)\\\$/\$size\t\1/;t;p;s/\S+\t(\S+)\t\S+\\\$/\1\t\$size\t0/}" > "$c.bedg") | cat;
+								exec 11>&-;
+								rm "$c.bam" "$c.bg.bam";
+							fi
+						CMD
 
-				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-					bamCoverage
-						$params
-						-b "$f"
-						-bs $windowsize
-						-p $threads
-						--maxFragmentLength 200000
-						--normalizeUsing None
-						-o "$odir/$o.$e.counts.bw"
-				CMD
+						tomerge+=("${tdirs[-1]}/$c.bedg")
+					done
 
-				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-					bamCoverage
-						$params
-						-b "$f"
-						-bs $windowsize
-						-p $threads
-						--maxFragmentLength 200000
-						--exactScaling
-						--normalizeUsing CPM
-						-o  "$odir/$o.$e.tpm.bw"
-				CMD
+					commander::makecmd -a cmd3 -c <<- CMD
+						cat $(printf '"%s" ' "${tomerge[@]}") | bg2bw -i /dev/stdin -c "$chrsizes" -o "$odir/$o.$e.tpm.bw"
+					CMD
+				else
+					if [[ ! $bed && $windowsize -eq 1 ]]; then
+						# in case of given fragment length, i.e. to pileup broad signals, extend to frsz
+						[[ $fragmentsize ]] && params=" --extendReads $fragmentsize" || params=""
+						# --exactScaling ??
+						# --smoothLength $smooth
+						commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+							TMPDIR="${tdirs[-1]}" bamCoverage
+								$params
+								-b "$f"
+								-bs $windowsize
+								-p $threads
+								--normalizeUsing BPM
+								--maxFragmentLength 1000
+								--outFileFormat bigwig
+								-o "$odir/$o.$e.tpm.bw"
+						CMD
+					else
+						local version
+						if [[ ! $version ]]; then
+							declare -a cmdchk=("featureCounts -v |& grep -oE 'v[.0-9]+'")
+							version=$(commander::runcmd -c subread -a cmdchk)
+							# $fractional && [[ $overlap -eq 0 ]] && [[ "$(echo -e "v2.0.3\n$version" | sort -Vr | head -1)" == "v2.0.3" ]] && _usage
+							[[ "$(echo -e "v2.0.1\n$version" | sort -Vr | head -1)" == "v2.0.1" ]] && version="old" || version="new"
+						fi
+
+						# in case of given fragment length, i.e. to pileup broad signals, extend to frsz
+						[[ $fragmentsize ]] && params="--readExtension3 $((fragmentsize-readlength))" || params=""
+						$unambiguous || params+=" -O"
+						$fractional && params+=" --fraction"
+						params+=" $(echo $overlap | awk '{if($1==0){print "--largestOverlap"}else{print $1<1? "--fracOverlap "$1 : "--minOverlap "$1}}')"
+						if [[ $version == "old" ]]; then
+							$pairs && params+=" -p"
+						else
+							# ATTENTION: from v2.0.3 on, no SE quantification possible if data is PE due to internal PE checker that leads to termination
+							x=$(samtools view -F 4 "$f" | head -10000 | cat <(samtools view -H "$f") - | samtools view -c -f 1)
+							if [[ $x -gt 0 ]]; then
+								params+=" -p"
+								$pairs && params+=" --countReadPairs"
+							fi
+						fi
+
+						if [[ $feature ]]; then
+							commander::makecmd -a cmd6 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
+								featureCounts
+									$params
+									-Q 0
+									--maxMOp 999
+									-s $(declare -p _strandness_bamcoverage | grep -q '=' && echo ${_strandness_bamcoverage["$f"]} || echo 0)
+									-T $ithreads3
+									-f
+									-M
+									--ignoreDup
+									--tmpDir "${tdirs[-1]}"
+									-F SAF
+									-a "$saf"
+									-o /dev/stdout
+									"$f"
+							CMD
+								| tee -i >(cat > "$odir/$o.${feature}counts") >(awk -v OFS='\t' 'NR>2{print \$1,sprintf("%d",\$7==int(\$7)?\$7:\$7+1)}' > "$odir/$o.${feature}counts.htsc")
+							CMD
+								| awk '
+									NR>2{
+										o[NR-3]=$1;
+										v[NR-3]=sprintf("%d",$7==int($7)?$7:$7+1)/$6;
+										sum=sum+v[NR-3];
+									}
+									END{
+										sum=sum/1000000;
+										for(i=0;i<=NR-3;i++){
+											print o[i]"\t"v[i]/sum;
+										}
+									}
+								'
+							CMD
+								> "$odir/$o.${feature}counts.htsc.tpm"
+							CMD
+						else
+							commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
+								featureCounts
+									$params
+									-Q 0
+									--maxMOp 999
+									-s $(declare -p _strandness_bamcoverage | grep -q '=' && echo ${_strandness_bamcoverage["$f"]} || echo 0)
+									-T $ithreads3
+									-f
+									-M
+									--ignoreDup
+									--tmpDir "${tdirs[-1]}"
+									-F SAF
+									-a "$saf"
+									-o /dev/stdout
+									"$f"
+							CMD
+								tee -i >(awk -v OFS='\t' 'NR>2{print \$2,\$3-1,\$4,sprintf("%d",\$7==int(\$7)?\$7:\$7+1)}' | bg2bw -i /dev/stdin -o "$odir/$o.$e.counts.bw" -c "$chrsizes")
+							CMD
+								awk '
+									NR>2{
+										o[NR-3]=$2"\t"$3-1"\t"$4;
+										v[NR-3]=sprintf("%d",$7==int($7)?$7:$7+1)/$6;
+										sum=sum+v[NR-3];
+									}
+									END{
+										sum=sum/1000000;
+										for(i=0;i<=NR-3;i++){
+											print o[i]"\t"v[i]/sum;
+										}
+									}
+								'
+							CMD
+								bg2bw -i /dev/stdin -o "$odir/$o.$e.tpm.bw" -c "$chrsizes"
+							CMD
+						fi
+					fi
+				fi
 			fi
-
-			# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-			# 	bedGraphToBigWig "$odir/$o.$e.counts.bed" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.counts.bw"
-			# CMD
-			# commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-			# 	bedGraphToBigWig "$odir/$o.$e.tpm.bed" "${tdirs[-1]}/chr.sizes" "$odir/$o.$e.tpm.bw"
-			# CMD
 		done
-	done
-
-	if $skip; then
-		commander::printcmd -a cmd1
-		commander::printcmd -a cmd2
-		commander::printcmd -a cmd3
-		# commander::printcmd -a cmd4
-	else
-		commander::runcmd -v -b -i 1 -a cmd1
-		commander::runcmd -c subread -v -b -i $instances -a cmd2
-		commander::runcmd -c deeptools -v -b -i 1 -a cmd3
-		# commander::runcmd -v -b -i $threads -a cmd4
-	fi
-
-	return 0
-}
-
-function quantify::profiles(){
-	function _usage(){
-		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} usage:
-			-S <hardskip> | true/false return
-			-s <softskip> | true/false only print commands
-			-t <threads>  | number of
-			-r <mapper>   | array of bams within array of
-			-c <bwdir>    | path to pileup bigwig files
-			-g <gtf>      | path to with transcript feature (and transcript_id feature tag) for TSS and transcript profiling. mutually exclusive to -b
-			-b <bedfiles> | array of paths to bed or bed-like files e.g. narrowPeak. mutually exclusive to -g
-			-o <outdir>   | path to
-			-p            | pearson correlation plot of coverage files
-			-a            | restrict gtf based profiling to canonical transcripts (default: all protein-coding and lncRNA transcripts)
-		EOF
-		return 1
-	}
-
-	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" gtf bed bwdir pearson=false maxmemory canonicals=false
-	declare -n _mapper_profiles _strandness_profiles _bedfiles_profiles
-	while getopts 'S:s:t:r:g:b:c:o:M:pa' arg; do
-		case $arg in
-			S)	$OPTARG && return 0;;
-			s)	$OPTARG && skip=true;;
-			t)	((++mandatory)); threads=$OPTARG;;
-			r)	((++mandatory)); _mapper_profiles=$OPTARG;;
-			g)	gtf="$OPTARG";;
-			b)	_bedfiles_profiles=$OPTARG;;
-			M)	maxmemory=$OPTARG;;
-			c)	((++mandatory)); bwdir="$OPTARG";;
-			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
-			p)	pearson=true;;
-			a)	canonicals=true;;
-			*)	_usage;;
-		esac
-	done
-	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 4 ]] && _usage
-	[[ ! $_bedfiles_profiles && ! $gtf ]] && _usage
-
-	declare -p _bedfiles_profiles | grep -q '=' || {
-		unset _bedfiles_profiles
-		declare -a _bedfiles_profiles
-	}
-
-	declare -a tdirs cmd1 cmd2 cmd3 cmd4 coverages pileups toprofile tomerge
-	local m f b e odir imemory instances="${#_mapper_profiles[@]}"
-	read -r instances imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
-	local ithreads=$((threads/instances))
-
-	for m in "${_mapper_profiles[@]}"; do
-		declare -n _bams_profiles=$m
-		odir="$outdir/$m"
-		mkdir -p "$odir"
-		coverages=()
-		pileups=()
-		toprofile=("${_bedfiles_profiles[@]}")
-		tomerge=()
-
-		for f in "${_bams_profiles[@]}"; do
-			$pearson && coverages+=("$(find -L "$bwdir/$m" -maxdepth 1 -name "$(basename ${f%.*}).coverage.tpm.bw" -print -quit | grep .)")
-			pileups+=("$(find -L "$bwdir/$m" -maxdepth 1 -name "$(basename ${f%.*}).pileup.tpm.bw" -print -quit | grep .)")
-		done
-
-		[[ ${#pileups[@]} -gt 1 ]] && e="$(echo -e "${pileups[0]}\t${pileups[1]}" | sed -E 's/(.+)\t.*\1/\t\1/' | cut -f 2)" || e=".pileup.tpm.bw"
-
-		if [[ $gtf ]]; then
-			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-				{ $canonicals && grep -Fw -f <(canonicals.pl "$gtf" exon gene_id | cut -f 2) $gtf || cat $gtf; }
-			CMD
-				perl -F'\t' -lane '
-					next if $F[0] eq "chrM" || $F[0] eq "MT" || $F[0]=~/^\s*#/;
-					next unless $F[2] eq "transcript";
-					if ($F[-1]=~/gene_biotype "([^"]+)/){
-						$b=$1;
-						next if $b=~/(ribozyme|overlapping|non_coding)/;
-						if ($b=~/RNA/){next unless $b=~/lncRNA|lincNRA/};
-					}
-					$t=$F[0].":".($F[3]-1)."-".$F[4];
-					next if exists $m{$t};
-					$m{$t}=1;
-					if ($F[-1]=~/transcript_id "([^"]+)/){
-						$t=$1;
-					}
-					print join"\t",($F[0],$F[3]-1,$F[4],$t,0,$F[6])
-				'
-			CMD
-				helper::sort -t $ithreads -M "$imemory" -k1,1 -k2,2n -k3,3n > "$odir/transcripts.bed"
-			CMD
-
-			toprofile=("$odir/transcripts.bed")
-		fi
-
-		for f in "${toprofile[@]}"; do
-			b="$(basename "${f%.*}")"
-
-			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.computematrix)")
-			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				cut -f 1-6 $f | helper::lapply
-					-t 2
-					-o "${tdirs[-1]}"
-					-f
-					-c '
-					computeMatrix reference-point
-						-p $(((threads+1)/2))
-						-S $(printf '"%s" ' "${pileups[@]}")
-						-R "\$FILE"
-						-bs 1
-						--beforeRegionStartLength 3000
-						--afterRegionStartLength 3000
-						--skipZeros
-						--missingDataAsZero
-						-o "\$FILE.matrix.gz"
-				' 2> >(sed -un '/^Skipping/!p' >&2) | cat;
-			CMD
-				pigz -p 1 -cd "${tdirs[-1]}"/*.matrix.gz | grep -v '^@' | helper::pgzip -t $threads -o "${tdirs[-1]}/data.gz";
-				n=\$(gztool -l "${tdirs[-1]}/data.gz" |& sed -nE '/Number of lines/{s/.*:\s+([0-9]+).*/\1/p}');
-				pigz -p 1 -cd "${tdirs[-1]}"/*.matrix.gz | head -1 | sed -E 's/"group_boundaries":\[[0-9,]+\]/"group_boundaries":[0,'\$n']/' | pigz -p 1 -kc > "$odir/$b.tss.matrix.gz";
-				cat "${tdirs[-1]}/data.gz" >> "$odir/$b.tss.matrix.gz";
-			CMD
-			# extremely slow and memory hungry: computeMatrixOperations rbind -m "${tdirs[-1]}"/*.matrix.gz -o "$odir/tss.matrix.gz"
-			# not necessary when using deeptools plotHeatmap: computeMatrixOperations sort -m "${tdirs[-1]}/tss.matrix.gz" -R "$odir/transcripts.bed" -o "$odir/tss.matrix.gz"
-			# use unbuffered sed to avoid "skipping <id> due to being absent in the computeMatrix output" warnings
-
-			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-				plotHeatmap
-					-m "$odir/$b.tss.matrix.gz"
-					-o "$odir/$b.tss.heatmap.pdf"
-					--plotFileFormat pdf
-					--colorMap RdBu
-					--refPointLabel TSS
-					--samplesLabel $(basename -a "${pileups[@]/%$e/}" | xargs -I {} printf "'%s' " {})
-			CMD
-
-			# multithreading capacities limited. parallel instances are much faster and according to
-			# https://janbio.home.blog/2021/03/19/speed-up-deeptools-computematrix/
-			# runtime sweet spot is at 5000 chunks
-			# -> split into threads-fold chunks
-
-			# commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-			# 	computeMatrix scale-regions
-			# 		-p $threads
-			# 		-S $(printf '"%s" ' "${pileups[@]}")
-			# 		-R "$odir/transcripts.bed"
-			# 		-bs 1
-			# 		--beforeRegionStartLength 3000
-			# 		--regionBodyLength 8000
-			# 		--afterRegionStartLength 3000
-			# 		--skipZeros
-			# 		-o "$odir/transcripts.matrix.gz"
-			# CMD
-			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.computematrix)")
-			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				awk -F '\t' -v OFS='\t' '\$4="region_"NR' "$f" | cut -f 1-6 $f | helper::lapply
-					-t 2
-					-o "${tdirs[-1]}"
-					-f
-					-c '
-						computeMatrix scale-regions
-						-p $(((threads+1)/2))
-						-S $(printf '"%s" ' "${pileups[@]}")
-						-R "\$FILE"
-						-bs 1
-						--beforeRegionStartLength 3000
-						--regionBodyLength 8000
-						--afterRegionStartLength 3000
-						--skipZeros
-						--missingDataAsZero
-						-o "\$FILE.matrix.gz"
-				' 2> >(sed -un '/^Skipping/!p' >&2) | cat;
-			CMD
-				pigz -p 1 -cd "${tdirs[-1]}"/*.matrix.gz | grep -v '^@' | helper::pgzip -t $threads -o "${tdirs[-1]}/data.gz";
-				n=\$(gztool -l "${tdirs[-1]}/data.gz" |& sed -nE '/Number of lines/{s/.*:\s+([0-9]+).*/\1/p}');
-				pigz -p 1 -cd "${tdirs[-1]}"/*.matrix.gz | head -1 | sed -E 's/"group_boundaries":\[[0-9,]+\]/"group_boundaries":[0,'\$n']/' | pigz -p 1 -kc > "$odir/$b.matrix.gz";
-				cat "${tdirs[-1]}/data.gz" >> "$odir/$b.matrix.gz";
-			CMD
-
-			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-				plotProfile
-					-m "$odir/$b.matrix.gz"
-					--outFileNameData "$odir/$b.profile.tsv"
-					-o "$odir/$b.profile.pdf"
-					--plotFileFormat pdf
-					--numPlotsPerRow 2
-					--samplesLabel $(basename -a "${pileups[@]/%$e/}" | xargs -I {} printf "'%s' " {})
-			CMD
-		done
-
-		if [[ ${#toprofile[@]} -gt 1 ]]; then
-			commander::makecmd -a cmd3 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-				{	for f in $(printf '"%s" ' "${toprofile[@]}"); do
-						b="\$(basename "\${f%.*}")";
-						pigz -p 1 -cd "$odir/\$b.tss.matrix.gz" | head -1 | paste <(echo \$b) -;
-			CMD
-					done | perl -F'\t' -lane '
-						BEGIN{
-							@b=(0);
-						}
-						push @n,"\"$F[0]\"";
-						/group_boundaries":\[\d+,(\d+)\]/;
-						push @b,$b[-1]+$1;
-						$l=$F[1];
-						END{
-							$b=join(",",@b);
-							$l=~s/"group_boundaries":\[[0-9,]+\]/"group_boundaries":[$b]/;
-							$n=join(",",@n);
-							$l=~s/"group_labels":\[[^]]+\]/"group_labels":[$n]/;
-							print $l;
-						}
-					';
-			CMD
-					for f in $(printf '"%s" ' "${toprofile[@]}"); do
-						b="\$(basename "\${f%.*}")";
-						pigz -p 1 -kcd "$odir/\$b.tss.matrix.gz" | grep -v ^@;
-					done;
-				} | helper::pgzip -t $threads -o "$odir/tss.matrix.gz"
-			CMD
-
-			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-				plotHeatmap
-					-m "$odir/tss.matrix.gz"
-					-o "$odir/tss.heatmap.pdf"
-					--plotFileFormat pdf
-					--colorMap RdBu
-					--refPointLabel TSS
-					--samplesLabel $(basename -a "${pileups[@]/%$e/}" | xargs -I {} printf "'%s' " {})
-					--regionsLabel $(basename -a "${toprofile[@]%.*}" | xargs -I {} printf "'%s' " {})
-			CMD
-
-			commander::makecmd -a cmd3 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-				{	for f in $(printf '"%s" ' "${toprofile[@]}"); do
-						b="\$(basename "\${f%.*}")";
-						pigz -p 1 -cd "$odir/\$b.matrix.gz" | head -1 | paste <(echo \$b) -;
-			CMD
-					done | perl -F'\t' -lane '
-						BEGIN{
-							@b=(0);
-						}
-						push @n,"\"$F[0]\"";
-						/group_boundaries":\[\d+,(\d+)\]/;
-						push @b,$b[-1]+$1;
-						$l=$F[1];
-						END{
-							$b=join(",",@b);
-							$l=~s/"group_boundaries":\[[0-9,]+\]/"group_boundaries":[$b]/;
-							$n=join(",",@n);
-							$l=~s/"group_labels":\[[^]]+\]/"group_labels":[$n]/;
-							print $l;
-						}
-					';
-			CMD
-					for f in $(printf '"%s" ' "${toprofile[@]}"); do
-						b="\$(basename "\${f%.*}")";
-						pigz -p 1 -kcd "$odir/\$b.matrix.gz" | grep -v ^@;
-					done;
-				} | helper::pgzip -t $threads -o "$odir/matrix.gz"
-			CMD
-
-			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-				plotProfile
-					-m "$odir/matrix.gz"
-					--outFileNameData "$odir/profile.tsv"
-					-o "$odir/profile.pdf"
-					--plotFileFormat pdf
-					--numPlotsPerRow 2
-					--samplesLabel $(basename -a "${pileups[@]/%$e/}" | xargs -I {} printf "'%s' " {})
-					--regionsLabel $(basename -a "${toprofile[@]%.*}" | xargs -I {} printf "'%s' " {})
-			CMD
-		fi
-
-		if [[ ${#coverages[@]} -gt 1 ]]; then
-			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.correlation)")
-
-			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bwcat -i "${coverages[0]}" | cut -f 1-3 > "${tdirs[-1]}/regions.bed"
-			CMD
-				multiBigwigSummary BED-file
-					-p $threads
-					--bwfiles $(printf '"%s" ' "${coverages[@]}")
-					--BED "${tdirs[-1]}/regions.bed"
-					-out "$odir/coverage.npz"
-			CMD
-
-			e="$(echo -e "${coverages[0]}\t${coverages[1]}" | sed -E 's/(.+)\t.*\1/\t\1/' | cut -f 2)"
-			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-				plotCorrelation
-					-in "$odir/coverage.npz"
-					--corMethod pearson
-					--skipZeros
-					--plotTitle "Pearson Correlation of TPM normalized counts"
-					--whatToPlot heatmap
-					--colorMap RdBu_r
-					-o "$odir/coverage.correlation.pearson.pdf"
-					--outFileCorMatrix "$odir/coverage.correlation.pearson.tsv"
-					--plotFileFormat pdf
-					--labels $(basename -a "${coverages[@]/%$e/}" | xargs -I {} printf "'%s' " {})
-			CMD
-		fi
 	done
 
 	if $skip; then
@@ -1363,12 +1039,15 @@ function quantify::profiles(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
+		commander::printcmd -a cmd5
+		commander::printcmd -a cmd6
 	else
 		commander::runcmd -v -b -i $instances -a cmd1
-		commander::runcmd -c deeptools -v -b -i 1 -a cmd2
-		commander::runcmd -v -b -i 1 -a cmd3
+		commander::runcmd -c danpos -v -b -i $instances2 -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
 		commander::runcmd -c deeptools -v -b -i 1 -a cmd4
-		# plotting heavily consumes memory!!
+		commander::runcmd -v -b -i 1 -a cmd5
+		commander::runcmd -c subread -v -b -i $instances3 -a cmd6
 	fi
 
 	return 0
