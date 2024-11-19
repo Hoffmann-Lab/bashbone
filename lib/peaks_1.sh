@@ -212,7 +212,7 @@ function peaks::macs(){
 		# in case of missing control, dont use local background to not miss broad peaks due to gapped peaks in local vicinity
 		# https://github.com/macs3-project/MACS/issues/467
 		# -> alternative increase by 4 times --slocal 1000 -> 4000 and increase --llocal 10000 -> 40000
-		[[ $_nidx_macs ]] || $pointy || params+=' --nolambda'
+		[[ $_nidx_macs ]] || $pointy || params+=' --nolambda' # for cutNtag i.e. braod and point with nidx params+=' --fe-cutoff 8'
 		broad="broadPeak"
 		mult=4
 	else
@@ -235,6 +235,7 @@ function peaks::macs(){
 			#params+=" --max-gap $((fragmentsize/2))"
 			params+=" --max-gap 100"
 			params2="$params --nomodel --shift -$((fragmentsize/2)) --extsize $fragmentsize"
+			# params2+=' --fe-cutoff 5' # for atac
 		fi
 	else
 		#params+=" --max-gap $((fragmentsize/2))"
@@ -282,12 +283,14 @@ function peaks::macs(){
 				# 	pigz -p $ithreads -k -c > "${tdirs[-1]}/$(basename "$nf").bed.gz"
 				# CMD
 				# nf="-c '${tdirs[-1]}/$(basename "$nf").bed.gz'"
+
+				# add ctrl suffix in case files are named identically
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bedtools bamtobed -split -i "$nf"
 				CMD
-					pigz -p $ithreads -k -c > "$odir/$o/$(basename "${nf%.*}").bed.gz"
+					helper::pgzip -t $ithreads -o "$odir/$o/$(basename "${nf%.*}").ctrl.bed.gz"
 				CMD
-				nf="-c '$odir/$o/$(basename "${nf%.*}").bed.gz'"
+				nf="-c '$odir/$o/$(basename "${nf%.*}").ctrl.bed.gz'"
 			else
 				unset nf
 				o="$(basename "$f")"
@@ -307,7 +310,7 @@ function peaks::macs(){
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				bedtools bamtobed -split -i "$f"
 			CMD
-				pigz -p $ithreads -k -c > "$odir/$o/$(basename "${f%.*}").bed.gz"
+				helper::pgzip -t $ithreads -o "$odir/$o/$(basename "${f%.*}").bed.gz"
 			CMD
 			f="$odir/$o/$(basename "${f%.*}").bed.gz"
 
@@ -522,9 +525,9 @@ function peaks::seacr(){
 				# CMD
 				# nf="$(basename "$nf").bedg"
 				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
-					bedtools genomecov -bg -ibam "$nf" > "${tdirs[-1]}/$(basename "${nf%.*}").bedg"
+					bedtools genomecov -bg -ibam "$nf" > "${tdirs[-1]}/$(basename "${nf%.*}").ctrl.bedg"
 				CMD
-				nf="$(basename "${nf%.*}").bedg"
+				nf="$(basename "${nf%.*}").ctrl.bedg"
 				$strict && params="stringent" || params="relaxed"
 			else
 				# value between 0 and 1 as top x% of regions by area under the curve (AUC)
@@ -807,9 +810,7 @@ function peaks::gem(){
 		[[ $mandatory -lt 6 ]] && _usage
 	fi
 	[[ $_nidx_gem ]] && [[ ! $_tidx_gem ]] && _usage
-
-	$ripseq && [[ ${#_strandness_gem[@]} -eq 0 ]] && _usage
-	[[ $_nidx_gem ]] && [[ ! $_tidx_gem ]] && _usage
+	# $ripseq && [[ ${#_strandness_gem[@]} -eq 0 ]] && _usage
 
 	declare -n _bams_gem=${_mapper_gem[0]}
 	if [[ ! $_nidx_gem && ! $_tidx_gem ]]; then
@@ -1076,9 +1077,6 @@ function peaks::homer(){
 	fi
 	[[ $_nidx_homer ]] && [[ ! $_tidx_homer ]] && _usage
 
-	$ripseq && [[ ${#_strandness_homer[@]} -eq 0 ]] && _usage
-	[[ $_nidx_homer ]] && [[ ! $_tidx_homer ]] && _usage
-
 	declare -n _bams_homer=${_mapper_homer[0]}
 	if [[ ! $_nidx_homer && ! $_tidx_homer ]]; then
 		declare -a tidx_homer=("${!_bams_homer[@]}") # use all bams as unpaired input unless -a and -i
@@ -1139,7 +1137,7 @@ function peaks::homer(){
 	#	-> must: PeakID	chr	start	end	strand	Normalized Tag Count	region size	findPeaks Score	Fold Change vs Local	p-value vs Local	Total Tags (normalized to Control Experiment)	Control Tags	Fold Change vs Control	p-value vs Control
 	# if input is missing: -fdr 0.00001
 
-	local params='' params2='' strandness=0 minsize=50 maxsize=400
+	local params='' params2='' strandness=0 minsize=50 maxsize=400 mindist=100
 	if [[ $(wc -l < "$genome.fai") -gt 100 ]]; then
 		# create single tags.tsv to favor nfs at cost of higher memory consuption
 		params+=' -single'
@@ -1169,25 +1167,19 @@ function peaks::homer(){
 
 		if $pointy; then
 			maxsize=200
-			#params2+=" -minDist $((fragmentsize/4))"
-			params2+=" -minDist 50"
-		else
-			# atac
-			# params2+=" -minDist $((fragmentsize/2))"
-			params2+=" -minDist 100"
-			fragmentsize=0
+			mindist=50
 		fi
-	else
-		if $broad; then
-			minsize=150
-			maxsize=1000
-			#params2+=" -minDist $((fragmentsize/2*4))"
-			params2+=" -minDist 400"
-		else
-			#params2+=" -minDist $((fragmentsize/2))"
-			params2+=" -minDist 100"
-		fi
+		# prevents shifting
+		fragmentsize=0
 	fi
+	if $broad; then
+		minsize=150
+		maxsize=1000
+		params2+=" -minDist 400"
+	else
+		params2+=" -minDist $mindist"
+	fi
+
 	if [[ $_nidx_homer ]]; then
 		if $strict; then
 			params2+=' -fdr 0.001' # default
@@ -1280,8 +1272,12 @@ function peaks::homer(){
 				CMD
 					bedtools merge -s -i - -c 4,5,6,10,11 -o distinct,max,distinct,max,min
 				CMD
-					awk -v OFS='\t' '{$4="peak_"NR; $6="."; if($8==0){$8=999}else{$8=-log($8)/log(10)} print $0,-1,-1}'
+					awk -v OFS='\t' '{$4="peak_"NR; $6="."; p=-log($8)/log(10); if(p=="inf"){$8=999}else{$8=p} print $0,-1,-1}'
 				CMD
+				# after awk:
+				# (chr	start	end)	name	findPeaks_Score	strand	Normalized_Tag_Count	region_size	findPeaks_Score	Fold_Change_vs_Local	p-value_vs_Local	Total_Tags_(normalized_to_Control_Experiment)	Control_Tags	Fold_Change_vs_Control	p-value_vs_Control
+				# after merge
+				# (chr	start	end)	name	findPeaks_Score	strand	Fold_Change_vs_Local	p-value_vs_Local
 			else
 				commander::makecmd -a cmd3 -s '|' -o "$odir/$o/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- 'CMD'
 					grep -v '^#' "$odir/$o/size_"*.tsv
@@ -1294,7 +1290,7 @@ function peaks::homer(){
 				CMD
 					bedtools merge -s -i - -c 4,5,6,10,11 -o distinct,max,distinct,max,min
 				CMD
-					awk -v OFS='\t' '{$4="peak_"NR; if($8==0){$8=999}else{$8=-log($8)/log(10)} print $0,-1,-1}'
+					awk -v OFS='\t' '{$4="peak_"NR; p=-log($8)/log(10); if(p=="inf"){$8=999}else{$8=p} print $0,-1,-1}'
 				CMD
 			fi
 
@@ -1755,27 +1751,14 @@ function peaks::genrich(){
 	# filter relaxed for poiny & ! ripsec i.e sparse cutntag data
 
 	if $pairwise || [[ ${#_tidx_genrich[@]} -eq 1 ]]; then
-		if $ripseq; then
-			#params="-l 50 -j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))"
-			params="-l 50 -j -D -d 100 -g 50"
-			params+=' -a 100'
-		else
-			#$broad && params="-l 150 -g $((fragmentsize/2*4))" || params="-l 50 -g $((fragmentsize/2))"
-			$broad && params="-l 150 -g 400" || params="-l 50 -g 100"
-			params+=' -a 100'
-			# $pointy && params+=' -a 100' || params+=' -a 200'
-		fi
+		$ripseq && params="-a 100 -j -D -d 100" || params="-a 100"
 	else
-		if $ripseq; then
-			#params="-l 50 -j -D -d $((fragmentsize/2)) -g $((fragmentsize/4))"
-			params="-l 50 -j -D -d 100 -g 50"
-			params+=' -a 200'
-		else
-			#$broad && params="-l 150 -g $((fragmentsize/2*4))" || params="-l 50 -g $((fragmentsize/2))"
-			$broad && params="-l 150 -g 400" || params="-l 50 -g 100"
-			# $pointy && params+=' -a 200' || params+=' -a 400'
-			params+=' -a 400'
-		fi
+		$ripseq && params="-a 200 -j -D -d 100" || params="-a 400"
+	fi
+	if $broad; then
+		params+=" -l 150 -g 400"
+	else
+		$ripseq && params=" -l 50 -g 50" || params=" -l 50 -g 100"
 	fi
 	$strict && params+=' -p 0.01' || params+=' -p 0.05'
 
@@ -1796,10 +1779,10 @@ function peaks::genrich(){
 					b="$(basename "${nf%.*}")"
 
 					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-						samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" -n -o "${tdirs[-1]}/$b.bam" "$nf"
+						samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" -n -o "${tdirs[-1]}/$b.ctrl.bam" "$nf"
 					CMD
 
-					nf="-c '${tdirs[-1]}/$b.bam'"
+					nf="-c '${tdirs[-1]}/$b.ctrl.bam'"
 				else
 					unset nf
 					o="$(basename "$f")"
@@ -1821,10 +1804,10 @@ function peaks::genrich(){
 					b="$(basename "${b%.*}")"
 
 					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-						samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" -n -o "${tdirs[-1]}/$b.bam" "${_bams_genrich[${_nidx_genrich[$i]}]}"
+						samtools sort -@ $threads -O BAM -T "${tdirs[-1]}/$b" -n -o "${tdirs[-1]}/$b.ctrl.bam" "${_bams_genrich[${_nidx_genrich[$i]}]}"
 					CMD
 
-					nf+="$(printf '"%s",' "${tdirs[-1]}/$b.bam")"
+					nf+="$(printf '"%s",' "${tdirs[-1]}/$b.ctrl.bam")"
 				done
 				nf="${nf:0:-1}"
 				a="${_bams_genrich[${_nidx_genrich[0]}]}"
@@ -1972,7 +1955,7 @@ function peaks::m6aviewer(){
 			commander::makecmd -a cmd2 -s '|' -o "$odir/$o" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
 				cat "$odir/results_$(basename "$f").txt"
 			CMD
-				awk -v OFS='\t' '!/^\s*$/ && NR>2{ if($5==0){logp=999}else{logp=log($5)/log(10)*-1}; print $3,$4-75,$4+76,".",0,".",$6,logp,-1,75}'
+				awk -v OFS='\t' '!/^\s*$/ && NR>2{p=-log($5)/log(10); print $3,$4-75,$4+76,".",0,".",$6,$5,-1,75}'
 			CMD
 				sort -k1,1 -k2,2n -k3,3n
 			CMD
