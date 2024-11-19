@@ -98,6 +98,11 @@ suppressMessages({
 			DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM, fitType="mean")
 		}
 	)
+	# for new deseq versions, that use local as fallback without throwing an error if parametric cannot be applied
+	fit = attr(dispersionFunction(dds), "fitType")
+	if(fit != "parametric" && fit != "mean"){
+		dds = DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM, fitType="mean")
+	}
 })
 save(dds, file = file.path(outdir,"dds.RData"))
 
