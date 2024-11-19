@@ -59,6 +59,7 @@ mysurvplot = function(clinical,surv,path){
       # tsvx=data.frame(cbind(tsvx$surv,tsvx$time))
       # colnames(tsvx)=c(groups,"time")
   cox = summary(cox)
+  saveRDS(cox,file=paste(path,"cox_summary.rds",sep="."))
   # OR KM fit
   fit = survfit(surv~group, data=clinical)
   tsv = summary(fit)
