@@ -10,10 +10,9 @@ A bash and biobash library for workflow and pipeline design within but not restr
     - [Covered Tasks](#covered-tasks)
 - [License](#license)
 - [Download](#download)
-- [Bash library usage (without installation)](#bash-library-usage-without-installation)
+- [Bash library usage (without full installation)](#bash-library-usage-without-full-installation)
   - [Do's and don'ts](#dos-and-donts)
   - [Quick start](#quick-start)
-  - [Positional arguments](#positional-arguments)
   - [Developers centerpiece](#developers-centerpiece)
     - [Example](#example)
     - [Cleanup](#cleanup)
@@ -34,6 +33,7 @@ A bash and biobash library for workflow and pipeline design within but not restr
     - [Retrieve genomes](#retrieve-genomes)
     - [Merge/collate features](#mergecollate-features)
     - [Generate pseudo replicates](#generate-pseudo-replicates)
+    - [Index and random access flat files](#index-and-random-access-flat-files)
   - [Sample info file](#sample-info-file)
   - [Adapter sequences](#adapter-sequences)
   - [Pipeline example](#pipeline-example)
@@ -44,25 +44,28 @@ A bash and biobash library for workflow and pipeline design within but not restr
 ## For developers - bash library
 [&#x25B2; back to top](#bashbone)
 
+- Get a full bash error stack trace in interactive shells or within scripts
 - Write command line code in your favorite programming language via Here-documents for later orchestrated execution
 - Add object-oriented programming (oop) like syntactic sugar to bash variables and arrays to avoid complex parameter-expansions, variable-expansions and brace-expansions
 - Execute commands in parallel on your machine or submit them as jobs to a workflow manager like sun grid engine (SGE) and log stdout, stderr and exit codes per job
 - Benchmark runtime and memory usage
 - Infer number of parallel instances according to targeted memory consumption or targeted threads per instance
-- Get a full bash error stack trace in interactive shells or within scripts
 - Log execution of bash functions at different verbosity levels
 - Extend the library by custom bash functions which will inherit
   - Stack trace
   - Termination of all function related (sub-)processes, including asynchronous background jobs upon error/exit or when reaching prompt-command (interactive shell)
   - Removal of temporary files created via `mktemp` and execution of custom cleanup commands upon error/exit or when reaching prompt-command (interactive shell)
 - Profit from helper functions that implement
-  - Joining of multiple files
+  - Multi-threaded joining of multiple files
   - Multi-threaded sorting
+  - Multi-threaded de-compression
   - Multi-threaded compression plus indexing for random access by byte offset or line number without noticeable overhead
+  - Multi-threaded application of commands on an compressed and indexed or flat file on per-line or per-chunk basis
 
 ## For users - biobash library
 [&#x25B2; back to top](#bashbone)
 
+- Get a full bash error stack trace in interactive shells or within scripts
 - Easily design multi-threaded pipelines to perform NGS related tasks
 - Use many best-practice parameterized and heavily run-time tweaked software wrappers
 - Most software related parameters will be inferred directly from input data, so that all functions require just a minimal set of input arguments
@@ -130,7 +133,7 @@ cd bashbone
 git checkout $(git describe --tags)
 ```
 
-# Bash library usage (without installation)
+# Bash library usage (without full installation)
 [&#x25B2; back to top](#bashbone)
 
 ## Do's and don'ts
@@ -146,13 +149,6 @@ source <path/to/bashbone>/activate.sh -r true -a "$@"
 setsid deamon1 &
 bashbone -x
 deamon2 &
-```
-
-If bashbone library is not required in your script, except for error tracing, proper sub-process termination upon exit or error and cleanup of temporary files, `bashbone_lite` functions as an in-line replacement.
-
-```bash
-#!/usr/bin/env bash
-source <path/to/bashbone>/bashbone_lite.sh -a "$@"
 ```
 
 Please note, that error tracing in bash is circumvented by using `||` or '&&' constructs. Therefore, avoid them in any context of function calls.
@@ -177,19 +173,93 @@ To get all third-party tools set-upped and subsequently all biobash bashbone fun
 - [Installation](#installation)
 - [Biobash library usage (requires installation)](#biobash-library-usage-requires-installation)
 
-Load the bashbone library in an interactive terminal session. Note, that **none of your environment settings will be modified**. Each function, which can be auto-completed when using bash v5 or later, comes with its own usage.
+For a lite installation that gets you the minimum required tools (`GNU parallel`, `gztool`, `mdless`) in order to make use of developer functions, execute
 
 ```bash
-# shows activate usage
-source ./activate.sh -h
+scripts/setup.sh -i lite -d <path/to/installation>
+```
 
-# activates bashbone
-source ./activate.sh
+To see the usage, do
 
-# shows bashbone usage
+```bash
+scripts/setup.sh -h
+
+DESCRIPTION
+Bashbone setup routine
+
+SYNOPSIS
+setup.sh -i [all|upgrade] -d [path]
+
+OPTIONS
+-i | --install [lite|all|upgrade] : install into given directory
+-g | --use-config                 : use supplied yaml files and URLs instead of cutting edge tools
+-d | --directory [path]           : installation path
+-t | --threads [value]            : threads - predicted default: 32
+-l | --log [path]                 : log file - default: [-d]/install.log
+-v | --verbose                    : enable verbose mode
+-h | --help                       : prints this message
+
+DEVELOPER OPTIONS
+-s | --source [path,..]           : source file(s) to overload compile::[lite|all|upgrade|<tool>] functions
+-i | --install [<tool>,..]        : install into given directory
+```
+
+Now load the bashbone library in an interactive terminal session. Note, that **none of your environment settings will be modified**.
+
+```bash
+source <path/of/installation>/latest/bashbone/activate.sh
+```
+
+To see the activate script usage, do
+
+```bash
+source <path/of/installation>/latest/bashbone/activate.sh -h
+
+This is bashbone activation script.
+
+To see lists of available options and functions, source me and execute bashbone -h
+
+Usage:
+-h              | this help
+-l <legacymode> | true/false let commander inerts line breaks, thus crafts one-liners from makecmd here-documents
+                  default: false
+-i <path>       | to installation root <path>/latest
+                  default: inferred from script location
+                  hint: run activation from source code, indeed enables basic functions, but will fail on executing tools
+-p <path>       | to temporary directory. default: $TMPDIR or /tmp
+-c <activate>   | true/false conda from [-i]/conda/bin and prepend bashbone installed tools to PATH
+                  default: false
+-x <string>     | a function or command string to be called upon EXIT signal. this function or command will receive the exit code as last positional argument
+-s <path>       | extend/overload bashbone functions by libraries at <path>/lib and via -c option also add <path>/scripts to PATH
+-r <re-execute> | true/false the script that implements activate.sh under a new process group to not bubble up INT/TERM or kill a pipeline upon exit
+-a <optarg>     | use as last option in case bashbone is sourced in a script wich makes use of positional arguments (optargs)
+```
+
+Listing available functions, scripts, access to this documentation, and deactivation can be performed via
+
+```bash
 bashbone -h
 
-# list developer function
+Bashbone v1.4.0
+
+Is a bash/biobash library for workflow and pipeline design within, but not restricted to, the scope of Next Generation Sequencing (NGS) data analyses.
+
+Usage:
+-h        | this help
+-l        | enable or disable legacy mode
+-r        | open readme
+-c        | activate bashbone conda environment or deactivate conda
+-s        | list bashbone scripts
+-f <name> | list all functions or if <name> is supplied, execute it
+-d        | list bashbone developer functions
+-e        | list installed tools and versions
+-x        | exit bashbone i.e. remove functions and disable conda. within scripts also restores environment i.e. traps and shell options
+
+```
+
+Each function, which can be auto-completed when using bash v5 or later, comes with its own usage. Without full installation, only developer functions will work and can be listed this way
+
+```bash
 bashbone -d
 
 commander::makecmd              commander::print                 commander::printcmd  commander::printerr
@@ -200,10 +270,23 @@ helper::addmemberfunctions      helper::basename                 helper::capply 
 helper::index                   helper::isarray                  helper::ishash       helper::join
 helper::lapply                  helper::makecatcmd               helper::multijoin    helper::pgzip
 helper::ps2pdf                  helper::sort                     helper::vcfsort      progress::log
-
-# shows function usage
-
 ```
+
+Now, for example, inspect the usage of
+```bash
+helper::sort
+
+helper::sort wraps GNU sort in a parallelized fashion as drop-in replacement
+-f <infile>    | optional. default: stdin
+               | path to input file
+-o <outfile>   | optional. default: stdout
+               | path to output file
+-t <threads>   | mandatory
+               | number of threads
+-M <maxmemory> | optional. default: all available
+               | amount of memory in megabytes to allocate
+```
+
 
 To unset bashbone functions in your interactive shell or to revert changes made to the environment when used in a script, do
 
@@ -211,14 +294,11 @@ To unset bashbone functions in your interactive shell or to revert changes made 
 bashbone -x
 ```
 
-## Positional arguments
-[&#x25B2; back to top](#bashbone)
-
-When bashbone is used within a script, which makes use of positional arguments, hand them over to bashbone activation script.
+When bashbone should be used within a script, which may uses positional arguments, hand them over to bashbone activation script by adding this snipped to the very top of your script
 
 ```bash
 #! /usr/bin/env bash
-source <path/to/bashbone>/activate.sh -r true -a "$@"
+source <path/of/installation>/latest/bashbone/activate.sh -r true -a "$@"
 ```
 
 ## Developers centerpiece
@@ -351,6 +431,7 @@ commander::runcmd -v -b -i $instances -a cmds
 ```
 
 ### Cleanup
+[&#x25B2; back to top](#bashbone)
 
 When commands are crafted for later execution, bashbone allows for multiple cleanup strategies to be applied on exit (success or failure). A **reversely** executed, temporary script, which is accessible through the `$BASHBONE_CLEANUP` variable. An overloaded `mktemp` function, that automatically adds removal commands to the cleanup script. An after all called `_on_exit` function, which holds the job scripts exit code in the first positional argument.
 
@@ -370,7 +451,9 @@ commander::makecmd -a cmds -c <<-'EOF'
 EOF
 
 commander::runcmd -a cmds -i 1
-ls /tmp/tmptest* # should fail
+
+ls: cannot access '/tmp/tmptest*': No such file or directory
+:ERROR: in job.1.sh line 8: ls /tmp/tmptest*
 ```
 
 ## Helper functions
@@ -405,15 +488,20 @@ arr.length # 2
 ### Multithreaded implementations
 [&#x25B2; back to top](#bashbone)
 
-In order to speed up gzip compression (including indexing for random access via byte offset or line number) or sorting a (vcf) file, from stdin respectively, utilize
+To execute GNU sort in a multi-threaded way, either as in-line replacement or adjusted to work for VCF files, use 
 
 ```bash
-helper::pgzip
 helper::sort
 helper::vcfsort
 ```
 
-When a gzip file was not created via `helper::pgzip`, or if a plain text flat file should be indexed, utilize `helper::index`. The index can be used for random access to apply a command or pipeline parallelized on stdin of equal sized data chunks. Each process, chunk respectively, can be addressed by its `JOB_ID`.
+In order to achieve fast gzip compression including indexing for random access via line number, utilize
+
+```bash
+helper::pgzip
+```
+
+When a gzip file was not created via `helper::pgzip` and needs to be indexed or if a plain text flat file should be indexed, utilize `helper::index`. The index in turn can be used for random access in order to apply a command or pipeline on a per-chunk parallelized fashion. Each process, job respectively, can be addressed by its `JOB_ID`. The following example will access the file at 10 equally distributed positions in parallel to apply the `cat` command.
 
 ```bash
 helper::index
@@ -423,43 +511,53 @@ helper::capply
 helper::capply -i 10 -f <file[.gz]> -c 'cat > $JOB_ID.out'
 ```
 
-An other method, which does not require any index, allows to apply a command or pipeline parallelized on stdin line records or seekable temporary files. The number of total processes executed is the number lines divided by number of (adjustable) records or can be set to a specified number of instances. The latter will operate on line records in round robin mode. Each process can be addressed by its `JOB_ID`. Temporary file names can be addressed using `FILE` variable.
+An other method, which does not require any index, allows to apply a command or pipeline parallelized on each line of a file supplied via stdin - either directly on the stream or by creating seekable temporary files. The number of total processes executed is the number of lines divided by number of records or a fixed number of instances to which the input is streamed round robin wise. Each process can be addressed by its `JOB_ID`. Temporary file names can be addressed using `FILE` variable. The next example shows 10 parallel running processes in which the `cat` command is applied on a temporary file built from a chunk of 10000 lines. After termination of a command, a new process will be spawned handling the next chunk.
 
 ```bash
 helper::lapply
 
 # example
-cat <file> | helper::lapply -f -t 10 -c 'cat $FILE > $JOB_ID.out'
+cat <file> | helper::lapply -f -r 10000 -t 10 -c 'cat $FILE > $JOB_ID.out'
 ```
 
-Determining file mime-type for ultra fast printing of a its content thanks to multi-threaded decompression of gzip and bzip files, can be achieved using
+Ultra fast printing of a files content, thanks to multi-threaded decompression of gzip and bzip files, including mime-type identification, can be achieved using
 
 ```
-helper::makecatcmd
-helper::cat
+helper::cat -f <file>
+```
+
+Do a parallelized full join of multiple sorted files by unique ids in the first column(s) or of positional sorted bed files, given a separator, header and NA character can be done via
+
+```bash
+helper::multijoin <file> <file> [<file> ..]
 ```
 
 ### Misc
 [&#x25B2; back to top](#bashbone)
 
-Left outer join multiple files by unique ids in the first column, given the separator (`-s '\t'`) and NA character (-e '.') via
+To get the basename of a file with stripped off extension (two extensions in case of compressed data), and optionally report the suffix as well, use
 
 ```bash
-helper::multijoin
+helper::basename -f <file> -o base -e ex
+echo $base
+echo $ex
 ```
 
-To return the basename stripping off a single or two file extensions in case of compressed data and optionally report the suffix as well, use
+If unsure about the data type of a variable, check it via exit/return codes of
 
 ```bash
-helper::basename
+declare -a arr=(1 2 3)
+declare -A hash=([a]=1 [b]=2)
+helper::isarray -v arr
+helper::ishash -v hash
 ```
 
 ## Extending the library
 [&#x25B2; back to top](#bashbone)
 
-To get a full bash error stack trace for your interactively used bash functions, to add proper handling of sub-process termination and to run cleanup procedures upon error or when reaching script end, prompt-command respectively (interactive shell), simply extend bashbone functions by your own library.
+To get a full bash error stack trace for custom bash functions also when interactive, to add proper handling of sub-process termination and to run cleanup procedures upon error or when reaching script end, prompt-command respectively (interactive shell), simply extend bashbone functions by your own library.
 
-I.e. store a set of bash functions that **require** the `function` keyword in a `lib` directory and files with `.sh` suffix to be sourced along with the bashbone library afterwards.
+I.e. store a set of bash functions that **require** the `function` keyword in a `lib` directory and files with a `.sh` suffix to be sourced along with the bashbone library afterwards.
 
 ```bash
 cd <path/to/custom>
@@ -480,7 +578,7 @@ EOF
 Now hand over the parent directory to `activate.sh`.
 
 ```bash
-source <path/to/bashbone>/activate.sh -s "$PWD"
+source <path/to/bashbone>/activate.sh -s <path/to/custom>
 world
 
 # will print
@@ -508,12 +606,14 @@ cat <<-'EOF' > lib/fun.sh
   }
 EOF
 
-source <path/to/bashbone>/activate.sh -s $PWD
+source <path/to/bashbone>/activate.sh -s <path/to/custom>
 tmptest
-ls /tmp/tmptest* # should fail
+
+ls: cannot access '/tmp/tmptest*': No such file or directory
+:ERROR: in <path/to/custom>/lib/tmptest.sh (function: mars) @ line 4: ls /tmp/tmptest*
 ```
 
-As an alternative, functions can be wrapped manually. Therefore, define an alias before its actual definition.
+As an alternative to sourcing files from a custom library directory, functions can be defined and wrapped on the fly. Therefore, define an alias like this **before** its actual definition.
 
 ```bash
 alias myfun="_bashbone_wrapper myfun"
@@ -521,6 +621,8 @@ alias myfun="_bashbone_wrapper myfun"
 function myfun(){
   # do stuff
 }
+
+myfun
 ```
 
 ### Global cleanup
@@ -578,10 +680,10 @@ scripts/setup.sh -g -i upgrade -d <path/of/installation>
 ## Update tools
 [&#x25B2; back to top](#bashbone)
 
-Trimmomatic, segemehl, STAR-Fusion, GEM, mdless and gztool will be installed next to the biobash conda environments. Their latest versions and download URLs will be automatically inferred.
+Trimmomatic, STAR-Fusion, GEM, mdless and gztool will be installed next to the biobash conda environments. Their latest versions and download URLs will be automatically inferred.
 
 ```bash
-scripts/setup.sh -i trimmomatic,segemehl,starfusion,gem,mdless,gztool -d <path/of/installation>
+scripts/setup.sh -i trimmomatic,starfusion,gem,mdless,gztool -d <path/of/installation>
 ```
 
 # Biobash library usage (requires installation)
@@ -592,39 +694,55 @@ To get all third-party tools set-upped and subsequently all biobash bashbone fun
 - [Installation](#installation)
 - [Do's and don'ts](#dos-and-donts)
 
-Load the library and list available functions.
+Load the library and list available functions run
 
 ```bash
 source <path/of/installation>/latest/bashbone/activate.sh
 
-# list biobash user function
 bashbone -f
 
-# will print
-alignment::add4stats       alignment::addreadgroup     alignment::bamqc             alignment::bqsr
-alignment::bulkindex       alignment::bwa              alignment::clip              alignment::clipmateoverlaps
-alignment::downsample      alignment::inferstrandness  alignment::leftalign         alignment::mkreplicates
-alignment::postprocess     alignment::qcstats          alignment::reorder           alignment::rmduplicates
-alignment::segemehl        alignment::slice            alignment::soft2hardclip     alignment::splitncigar
-alignment::star            alignment::strandsplit      alignment::tn5clip           alignment::tobed
-bisulfite::bwa             bisulfite::haarz            bisulfite::join              bisulfite::mecall
-bisulfite::methyldackel    bisulfite::metilene         bisulfite::mspicut           bisulfite::rmduplicates
-bisulfite::segemehl        cluster::coexpression       cluster::coexpression_deseq  cluster::wgcna
-cluster::wgcna_deseq       enrichment::go              expression::deseq            expression::diego
-expression::join           expression::join_deseq      fusions::arriba              fusions::join
-fusions::starfusion        genome::indexgtf            genome::mkdict               genome::mkgodb
-genome::view               peaks::gem                  peaks::gem_idr               peaks::genrich
-peaks::genrich_idr         peaks::gopeaks              peaks::gopeaks_idr           peaks::m6aviewer
-peaks::m6aviewer_idr       peaks::macs                 peaks::macs_idr              peaks::matk
-peaks::matk_idr            peaks::peakachu             peaks::peakachu_idr          peaks::seacr
-peaks::seacr_idr           preprocess::add4stats       preprocess::cutadapt         preprocess::dedup
-preprocess::fastqc         preprocess::qcstats         preprocess::rcorrector       preprocess::rmpolynt
-preprocess::sortmerna      preprocess::trimmomatic     quantify::bamcoverage        quantify::featurecounts
-quantify::normalize        quantify::profiles          quantify::salmon             quantify::tpm
-survival::gettcga          survival::ssgsea            variants::bcftools           variants::freebayes
-variants::haplotypecaller  variants::makepondb         variants::mutect             variants::panelofnormals
-variants::platypus         variants::tree              variants::vardict            variants::vardict_threads
-variants::varscan          variants::vcfnorm           visualize::venn
+alignment::add4stats     alignment::addreadgroup      alignment::bamqc           alignment::bqsr
+alignment::bulkindex     alignment::bwa               alignment::clip            alignment::clipmateoverlaps
+alignment::downsample    alignment::inferstrandness   alignment::leftalign       alignment::mkreplicates
+alignment::postprocess   alignment::qcstats           alignment::reorder         alignment::rmduplicates
+alignment::segemehl      alignment::slice             alignment::soft2hardclip   alignment::splitncigar
+alignment::star          alignment::strandsplit       alignment::tn5clip         alignment::tobed
+------------------------------------------------------------------------------------------------------------
+bigwig::apply            bigwig::profiles
+------------------------------------------------------------------------------------------------------------
+bisulfite::bwa           bisulfite::haarz             bisulfite::join            bisulfite::mecall
+bisulfite::methyldackel  bisulfite::metilene          bisulfite::mspicut         bisulfite::rmduplicates
+bisulfite::segemehl      
+------------------------------------------------------------------------------------------------------------
+cluster::coexpression    cluster::coexpression_deseq  cluster::wgcna             cluster::wgcna_deseq
+------------------------------------------------------------------------------------------------------------
+enrichment:go
+------------------------------------------------------------------------------------------------------------
+expression::deseq        expression::diego            expression::join           expression::join_deseq
+------------------------------------------------------------------------------------------------------------
+fusions::arriba          fusions::join                fusions::starfusion
+------------------------------------------------------------------------------------------------------------
+genome::indexgtf         genome::mkdict               genome::mkgodb             genome::view
+------------------------------------------------------------------------------------------------------------
+peaks::gem               peaks::gem_idr               peaks::genrich             peaks::genrich_idr
+peaks::gopeaks           peaks::gopeaks_idr           peaks::m6aviewer           peaks::m6aviewer_idr 
+peaks::macs              peaks::macs_idr              peaks::matk                peaks::matk_idr
+peaks::peakachu          peaks::peakachu_idr          peaks::seacr               peaks::seacr_idr           
+------------------------------------------------------------------------------------------------------------
+preprocess::add4stats    preprocess::cutadapt         preprocess::dedup          preprocess::fastqc
+preprocess::qcstats      preprocess::rcorrector       preprocess::rmpolynt       preprocess::sortmerna
+preprocess::trimmomatic   
+------------------------------------------------------------------------------------------------------------
+quantify::bamcoverage    quantify::featurecounts      quantify::normalize        quantify::profiles
+quantify::salmon         quantify::tpm
+------------------------------------------------------------------------------------------------------------
+survival::gettcga        survival::ssgsea            
+------------------------------------------------------------------------------------------------------------
+variants::bcftools       variants::freebayes          variants::haplotypecaller  variants::makepondb
+variants::mutect         variants::panelofnormals     variants::platypus         variants::tree
+variants::vardict        variants::vardict_threads    variants::varscan          variants::vcfnorm
+------------------------------------------------------------------------------------------------------------
+visualize::venn
 ```
 
 In order to make use of biobash conda environments, which ensures all supplied scripts to work as expected, activate bashbone with conda enabled
@@ -633,11 +751,11 @@ In order to make use of biobash conda environments, which ensures all supplied s
 source <path/of/installation>/latest/bashbone/activate.sh -c true
 ```
 
-Or activate conda at a later timepoint
+Or activate/deactivate conda at a later timepoint
 
 ```bash
 source <path/of/installation>/latest/bashbone/activate.sh
-# enable/disable conda
+
 bashbone -c
 ```
 
@@ -650,12 +768,11 @@ commander::runcmd -c bashbone -a cmds
 ## Enclosed scripts
 [&#x25B2; back to top](#bashbone)
 
-Bashbone is shipped with a couple of scripts to be used stand alone (experimental, when bashbone is not installed and activated) or being part of the biobash functions. They can be listed via
+Bashbone is shipped with a couple of scripts to be used stand alone (experimental, when bashbone is not installed and activated) or being part of the biobash functions. They comprise volcano, PCA plot and heatmap generation as well as running `DESeq2` for differential expression or `WGCNA` for co-expression analysis, an annotate.pl script to add gene names to tables and postscript files that contain gene ids and scripts for normalizing expression values (TPM, FPKM) among others. They all have their own usage and can be listed via
 
 ```bash
 bashbone -s
 
-# will print
 annotate.pl           canonicals.pl    deseq2.R                 dlgenome.sh
 fftool.sh             fpkm.pl          genome2transcriptome.pl  heatmap.R
 id2length.pl          mergefq.sh       mergexons.pl             mergexons.sh
@@ -668,25 +785,141 @@ volcano.R             wgcna.R
 ### Retrieve SRA datasets
 [&#x25B2; back to top](#bashbone)
 
-Use the enclosed script to fetch sequencing data and meta information from NCBI SRA in a parallelized fashion, given SRA or GEO accession number or to convert local sra files.
+Use the enclosed script to fetch sequencing data and meta information from NCBI SRA or EBI in a parallelized fashion, given SRA or GEO accession number or to convert local sra files.
 
 ```bash
 sra-dump.sh -h
+
+DESCRIPTION
+sra-dump.sh retrieves fastq data from ncbi sra based on GSM, SRR or SRX accession numbers
+  - support for parallel download instances
+  - if installed, sra-toolkit via ncbi gov resource is priorized over retrieval via ebi uk mirror
+  - ebi uk mirror can be defined as fallback upon fastq-dump errors
+
+VERSION
+0.4.0
+
+REQUIREMENTS
+Depends on chosen options
+  - esearch (for non-SRR identifiers, from eutilities https://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/)
+  - pigz (for compression threads > 1)
+  - wget or curl or fastq-dump (from stra-toolkit https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/)
+
+SYNOPSIS
+sra-dump.sh [OPTIONS] [GSM|SRR|SRX|SRP] [..]
+sra-dump.sh -l [OPTIONS] [SRA] [..]
+
+OPTIONS
+-d [path] : download into this directory (default: "/u/people/kriege/workspace/bash/bashbone")
+-p [num]  : number of maximum parallel download instances (default: 2)
+-t [num]  : pigz compression threads per fastq-dump download instance (default: no pigz)
+            HINT1: single threaded gzip compression may be a bottleneck regarding download speed
+-m [path] : path to temporary directory (default: "/u/people/kriege/workspace/bash/bashbone/tmp.XXXXXXXXXX.sradump")
+-l        : convert local sra files to compressed fastq files
+-s        : show received meta information for given accession numbers and exit
+-r        : do not fetch meta information for given SRR* accession numbers
+-o [file] : additionally write information for given accession numbers to file
+-a [list] : fetch all, biological and technical reads, and reassign mate ids according to a comma separated list e.g. 1,3,2
+-w        : unless -a, download from ebi uk mirror utilizing wget
+            HINT1: outperformes fastq-dump but uses less stable connections which may requires additional runs
+            HINT2: use -p 1 in a final run to ensure all files were downloaded correctly
+-c        : unless -a, download from ebi uk mirror utilizing curl
+            HINT1: experimental!
+-f        : unless -a, use ebi uk mirror as fallback upon fastq-dump failures. requires -w or -c
+-z        : unless -a, download sra file from amazon aws utilizing awscli
+            HINT1: uses -p 1 due to download of multiple chunks
+            HINT2: use -l in a final run to convert sra files
+
+EXAMPLES
+sra-dump.sh -p 2 -t 4 -m /tmp GSM1446883 SRR1528586 SRX663213
+sra-dump.sh -l -p 2 -t 4 -m /tmp /path/to/SRR1528586.sra /path/to/SRR1528588.sra
 ```
 
 ### Retrieve genomes
 [&#x25B2; back to top](#bashbone)
 
-Use the enclosed script to fetch human hg19/hg38 or mouse mm10/mm11 genomes, gene and ontology annotations plus dbSNP and MSigDB. The Plug-n-play CTAT genome resource, made for gene fusion detection and shipped with STAR index, can be also selected optionally.
+Use the enclosed script to fetch human hg19/hg38 or mouse mm10/mm11 genomes, gene and ontology annotations, orthologs, dbSNP, MSigDB, Enrichr data. The Plug-n-play CTAT genome resource, made for gene fusion detection and shipped with STAR index, can be also selected optionally.
 
 ```bash
 dlgenome.sh -h
+
+DESCRIPTION
+dlgenome.sh downloads most recent human or mouse genome and annotation including gene ontology plus orthologs and optionally dbSNP
+
+VERSION
+0.7.0
+
+SYNOPSIS
+dlgenome.sh -r [hg19|hg38|mm10] -g -a -d -s -n
+
+INPUT OPTIONS
+-h | --help               : prints this message
+-t | --threads [value]    : threads - predicted default: 32
+-o | --out [path]         : output directory - default: /u/people/kriege/workspace/bash/bashbone
+-r | --reference [string] : choose hg19 hg38 mm10 mm11
+-g | --genome             : download Ensembl genome
+-c | --ctat               : switch to CTAT genome and indices (~30GB)
+-a | --annotation         : download Ensembl gtf
+-d | --descriptions       : download Ensembl gene description and Ensembl ontology information (requires R in PATH)
+-m | --msigdb             : download Ensembl gene description, MSigDB gene ontology information and other collections (requires R in PATH)
+-e | --enrichr            : download Ensembl gene description and Enrichr gene ontology and other collections (requires R in PATH)
+                          : NOTE: for mouse data, genes will be substituted by Ensembl orthologs if possible
+-s | --dbsnp              : download Ensembl dbSNP
+-n | --ncbi               : switch to NCBI dbSNP
 ```
 
-The genome, using annotation information, can be converted into a transcriptome, transcript-genome or transcript-chromosome.
+The genome, using annotation information, can be converted into a STAR transcritome output and salmon compatible transcriptome, transcript-genome or transcript-chromosome.
 
 ```bash
 genome2transcriptome.pl -h
+
+DESCRIPTION
+
+Convert a genome and its annotation into an gtf input ordered
+- transcriptome - i.e. each fasta sequence is a single transcript in 5' to 3' orientation
+- transcriptgenome - i.e. each fasta sequence is a single transcript in genomic orientation
+- transcriptchromosome - i.e. a fake chromosome fasta sequence containing all transcripts in genomic orientation separated by 1000 Ns
+(c) Konstantin Riege - konstantin{.}riege{a}leibniz-fli{.}de
+
+EXAMPLE
+
+a chromosomal input gtf with
+
+pos   i                    j
+.....[====....====..========]..   transcript and exons
+        --    ----  ----          and CDS (optional)
+
+will be converted into
+
+ 1                j-i
+[==================]   transcript and gene
+ ====|====|========    exons
+   --|----|----        CDS (if CDS in input)
+ uu            uuuu    UTR (if CDS in input, 3'UTR includes STOP)
+
+PARAMETER
+
+-h | --help      print this
+-v | --verbose   report progress
+-t | --tmpdir    path to temporary directory (default: $TMPDIR or /tmp)
+-f | --fasta     path to fasta input file
+-g | --gtf       path to gtf input file
+-o | --outdir    path to output directory
+
+REQUIREMENTS
+
+gtf with features:
+  transcript
+  exon (at least one per transcript, even for ncRNAs)
+  CDS (optional)
+and info fields:
+  gene_id
+  transcript_id
+
+RESULTS
+output gtf @ outdir/transcriptome.gtf outdir/transcriptgenome.gtf outdir/transcriptchromosome.gtf
+output fasta @ outdir/transcriptome.fa outdir/transcriptgenome.fa outdir/transcriptchromosome.fa
+
 ```
 
 ### Merge/collate features
@@ -696,6 +929,29 @@ Use the enclosed script to merge e.g. exons of multiple transcripts of a gene wi
 
 ```bash
 mergexons.sh -h
+
+usage:
+mergexons.sh <gtf> <fasta|fai|bam|sam> [<exon|gene> [+|-]<offset>]
+
+version:
+0.3.0
+
+description:
+- given a gtf file, this script merges exons on transcript level and prints exons, introns, genes, and intergenic regions in gtf format to stdout
+- a fasta or fasta index (fai) or any matching bam/sam file is used to infer chromosome sizes
+- optionally an offset first elongates gene or exon features up (-) and/or downstream (+) by optional [+|-] offset prefix
+
+output:
+- merged exons of multiple transcripts per gene
+- introns according to merged exons
+- genes according to merged exons
+- intergenic regions according to merged genes
+
+requirements:
+- input file paths must not include white spaces or other special characters!
+- needs mergexons.pl script next to this script
+- needs bedtools to be in PATH (check: ok)
+- needs samtools to be in PATH in case of sam/bam input (check: ok)
 ```
 
 ### Generate pseudo replicates
@@ -705,6 +961,48 @@ To shuffle and split NGS raw data in fastq format into two pseudo-replicates, us
 
 ```bash
 shufnsplitfq.sh -h
+
+DESCRIPTION
+shufnsplitfq.sh shuffle and split single or paired fastq(.gz|.bz2) files into two pseudo-replicate fastq(.gz) files
+
+VERSION
+0.1.0
+
+SYNOPSIS
+shufnsplitfq.sh -1 <fastq> [-2 <fastq>] -o <prefix> [-p <tmpdir> -t <threads> -z]
+
+OPTIONS
+-h          | this help
+-1 <path>   | input SE or first mate fastq(.gz|.bz2)
+-2 <path>   | input mate pair fastq(.gz|.bz2)
+-z          | compress output using pigz with [-t] threads (fallback: gzip)
+-t <value>  | compression threads (default: 32)
+-o <path>   | prefix of output fastq, extended by [1|2].(R1.|R2.)fastq(.gz)
+-p <path>   | temp directory (default: /tmp)
+```
+
+### Index and random access flat files
+[&#x25B2; back to top](#bashbone)
+
+The following script is designed to index flat files for random access by line number
+
+```bash
+DESCRIPTION
+fftool.sh flat file index or random access
+
+VERSION
+0.1.0
+
+SYNOPSIS
+fftool.sh [-i] [-f <file>] [-o <file>]
+
+OPTIONS
+-h           | this help
+-i           | index input file (see -f) or from stdin (requires -o)
+-f <infile>  | path to file to be indexed (see -i) or accessed (requires -f). default: stdin (requires -o)
+-o <outfile> | if input comes from stdin, path to output file (mutual exclusive to -f)
+-r <range>   | for random data access. format: <#|inf>L@<#>L i.e. get a certain number of lines, all until EOF by inf keyword respectively, after skipping a certain number of lines.
+             | example: 5L@20L means get 5 lines after skipping 20 lines
 ```
 
 ## Sample info file
@@ -770,8 +1068,6 @@ TruSeq full length DNA & RNA R1: AGATCGGAAGAGCACACGTCTGAACTCCAGTCA R2: AGATCGGAA
 TruSeq full length DNA MethC R1: AGATCGGAAGAGCACACGTCTGAAC R2: AGATCGGAAGAGCGTCGTGTAGGGA
 
 TruSeq Small RNA 3': TGGAATTCTCGGGTGCCAAGG
-
-TruSeq Small RNA 5': GTTCAGAGTTCTACAGTCCGACGATC
 
 Ovation Methyl-Seq R1: AGATCGGAAGAGC R2: AAATCAAAAAAAC
 
@@ -895,6 +1191,7 @@ enrichment::go -t $threads -r mapper -c comparisons -l coexpressions -g $go -i r
 | vcflib        | <https://github.com/vcflib/vcflib>                                  | 10.1371/journal.pcbi.1009123 |
 | Vt            | <https://genome.sph.umich.edu/wiki/Vt>                              | 10.1093/bioinformatics/btv112 |
 | WGCNA         | <https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA> | 10.1186/1471-2105-9-559 |
+| WiggleTools   | <https://github.com/Ensembl/WiggleTools>                            | 10.1093/bioinformatics/btt737 |
 
 # Supplementary information
 [&#x25B2; back to top](#bashbone)
