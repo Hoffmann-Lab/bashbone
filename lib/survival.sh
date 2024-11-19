@@ -15,15 +15,13 @@ function survival::gettcga(){
 	}
 
 	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}"
-	declare -a ids;
+	declare -n _ids_gettcga
 	while getopts 'S:s:t:i:o:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
-			i)	declare -n _ids_getfpkm=$OPTARG
-				ids=("${_ids_getfpkm[@]}")
-			;;
+			i)	_ids_gettcga=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
@@ -32,7 +30,11 @@ function survival::gettcga(){
 	[[ $mandatory -lt 2 ]] && _usage
 
 	commander::printinfo "downloading tcga datasets"
-	[[ ! $ids ]] && ids=($(Rscript - <<< 'library(TCGAbiolinks); tcga.cdr=TCGAbiolinks:::getGDCprojects()$id; cat(tcga.cdr[grep("TCGA-",tcga.cdr)])'))
+
+	declare -p _ids_gettcga | grep -q '=' || {
+		unset _ids_gettcga
+		declare -a _ids_gettcga=($(Rscript - <<< 'library(TCGAbiolinks); tcga.cdr=TCGAbiolinks:::getGDCprojects()$id; cat(tcga.cdr[grep("TCGA-",tcga.cdr)])'))
+	}
 
 	# gdc_manifest.TCGA-HNSC.2020-07-08.txt
 	# gdc-client download --manifest gdc_manifest.TCGA-HNSC.2020-07-08.txt --log-file HNSC/gdc.log -d HNSC/ -n 8 --retry-amount 10 --wait-time 5
@@ -59,10 +61,10 @@ function survival::gettcga(){
 	# https://gdc.cancer.gov/resources-tcga-users/tcga-code-tables/sample-type-codes
 	# to get rid of ENGS.._PAR_Y use !duplicated, counts are always 0. otherwise sum or mean or max via dplyr: group_by(df,gene_id) %>% summarise_all(sum)
 
-	declare -a cmd1
+	declare -a cmd1 cmd2 tdirs
 	local i
-	local tdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.tcga)"
-	for i in "${ids[@]}"; do
+	for i in "${_ids_gettcga[@]}"; do
+		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.tcga)")
 		commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 			Rscript - <<< '
 				suppressMessages({library(TCGAbiolinks);
@@ -70,7 +72,7 @@ function survival::gettcga(){
 					library(SummarizedExperiment);
 				});
 				args <- commandArgs(TRUE);
-				odir <- file.path(args[2],"TCGA");
+				odir <- file.path(args[2]);
 				p <- args[3];
 
 				setwd(args[1]);
@@ -127,28 +129,46 @@ function survival::gettcga(){
 				clinTp53 <- clinTp53[!clinTp53$patient %in% clinTp53$patient[duplicated(clinTp53$patient)],];
 
 				write.table(clin, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.full.tsv")), quote=F, sep="\t");
-				write.table(clinT, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.tumor.tsv")), quote=F, sep="\t");
 				write.table(clinTuniq, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.tsv")), quote=F, sep="\t");
-				write.table(clinTp53, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.p53.tsv")), quote=F, sep="\t");
 
 				df <- as.data.frame(assays(counts)$tpm_unstrand);
 				df$gene_id <- sapply(strsplit(rownames(df),split="\\."),function(x){x[1]});
 				df <- df[!duplicated(df$gene_id),];
 
-				write.table(df, row.names=F, file=file.path(odir,paste0(p,".TPM.full.tsv")), quote=F, sep="\t");
-				write.table(df[,colnames(df) %in% c("gene_id",clinT$barcode)], row.names=F, file=file.path(odir,paste0(p,".TPM.tumor.tsv")), quote=F, sep="\t");
-				write.table(df[,colnames(df) %in% c("gene_id",clinTuniq$barcode)], row.names=F, file=file.path(odir,paste0(p,".TPM.tsv")), quote=F, sep="\t");
-				write.table(df[,colnames(df) %in% c("gene_id",clinTp53$barcode)], row.names=F, file=file.path(odir,paste0(p,".TPM.p53.tsv")), quote=F, sep="\t");
+				write.table(df[,c("gene_id",clin$barcode)], row.names=F, file=file.path(odir,paste0(p,".TPM.full.tsv")), quote=F, sep="\t");
+				write.table(df[,c("gene_id",clinTuniq$barcode)], row.names=F, file=file.path(odir,paste0(p,".TPM.tsv")), quote=F, sep="\t");
 			'
 		CMD
-			"$tdir" "$(realpath -se "$outdir")" "$i"
+			"${tdirs[-1]}" "$(realpath -se "$outdir")" "$i"
 		CMD
+		# write.table(clinT, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.tumor.tsv")), quote=F, sep="\t");
+		# write.table(clinTp53, row.names=F, file=file.path(odir,paste0(p,".CLINICAL.p53.tsv")), quote=F, sep="\t");
+		#
+		# write.table(df[,c("gene_id",clinT$barcode)], row.names=F, file=file.path(odir,paste0(p,".TPM.tumor.tsv")), quote=F, sep="\t");
+		# write.table(df[,c("gene_id",clinTp53$barcode)], row.names=F, file=file.path(odir,paste0(p,".TPM.p53.tsv")), quote=F, sep="\t");
 	done
+
+	if [[ ${#_ids_gettcga[@]} -gt 1 ]]; then
+		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.join)")
+		commander::makecmd -a cmd2 -m -c <<- CMD
+			datamash transpose < "$outdir/${_ids_gettcga[0]}.CLINICAL.tsv" | helper::sort -t $threads -k1,1 > "${tdirs[-1]}/tmp1"
+			for f in $(printf '"%s" ' "${_ids_gettcga[@]:1}"); do
+				datamash transpose < "$outdir/\$f.CLINICAL.tsv" | helper::sort -t $threads -k1,1 > "${tdirs[-1]}/tmp2"
+				helper::multijoin -o "${tdirs[-1]}/joined" "${tdirs[-1]}/tmp1" "${tdirs[-1]}/tmp2"
+				mv "${tdirs[-1]}/joined" "${tdirs[-1]}/tmp1"
+			done
+			datamash transpose < "${tdirs[-1]}/tmp1" > "$outdir/TCGA-PANCANCER.CLINICAL.tsv"
+			paste $(printf '"%s.TPM.tsv" ' "${_ids_gettcga[@]/#/$outdir/}") | sed -E 's/\t(ENSG[0-9]+|gene_id)//g' > "$outdir/TCGA-PANCANCER.TPM.tsv"
+		CMD
+		# too slow: helper::multijoin -o "$outdir/TCGA-PANCANCER.TPM.tsv" $(printf '"%s.TPM.tsv" ' "${_ids_gettcga[@]/#/$outdir/}")
+	fi
 
 	if $skip; then
 		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
 	else
 		commander::runcmd -v -b -i $threads -a cmd1
+		commander::runcmd -v -b -i 1 -a cmd2
 	fi
 
 	return 0

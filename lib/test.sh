@@ -2,6 +2,17 @@
 # (c) Konstantin Riege
 
 function test::makecmd(){
+	declare -a cmds1 cmds2
+	cmds1=("sleep 4; false")
+	cmds2=("echo must not show > /tmp/FOO")
+
+	for i in 1 2 3; do
+		commander::runcmd -v -i 1 -a cmds1
+	done
+	commander::runcmd -v -i 1 -a cmds2
+}
+
+function test::stacked(){
 	declare -a cmds
 	for i in {1..20}; do
 		commander::makecmd -m -a cmds -s ";" -c {COMMANDER[0]}<<- CMD
@@ -38,15 +49,15 @@ function test::test(){
 	done
 	commander::printinfo "running test::test"
 	echo "echo test::test cleanup" >> "$BASHBONE_CLEANUP"
-	declare -a cmd=('sleep 2')
+	declare -a cmd=('sleep 2; echo test::test is alive >&2')
 	commander::runcmd -v -b -i 1 -a cmd
 }
 
 function test::start(){
 	echo test::start under $BASHPID >&2
-	cat <(test::inner; echo mut not show test::start >&2)
-	# test::inner
-	echo mut not show test::start >&2
+	# cat <(test::inner; echo mut not show test::start >&2)
+	test::inner
+	echo $? mut not show test::start >&2
 }
 
 function test::inner(){
@@ -58,14 +69,15 @@ function test::inner(){
 
 function test::error(){
 	echo test::error under $BASHPID >&2
+	# sleep 4
 	# cat sdfdsfdf
 	# (cat sdfdsfdf; echo mut not show test::error >&2)
-	x=$(cat sdfdsfdf; echo mut not show test::error >&2)
-	# cat <(cat sdfdsfdf; echo mut not show test::error >&2)
+	# x=$(cat sdfdsfdf; echo mut not show test::error >&2)
+	cat <(cat sdfdsfdf; echo mut not show test::error >&2)
 	# { cat sdfdsfdf; echo mut not show test::error >&2; } &
 	# wait $!
 	# dont capture tests! # if [[ $(cat sdfdsfdf) == foo ]]; then echo mut not show test::error >&2; fi
 	# for i in $(cat sdfdsfdf; exit 1); do sleep 10; echo mut not show test::error loop >&2; done
-	sleep 10
+	# sleep 11
 	echo mut not show test::error >&2
 }

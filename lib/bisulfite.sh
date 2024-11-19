@@ -357,24 +357,28 @@ function bisulfite::rmduplicates(){
 			-3 <fastqUMI>  | array of
 			-c <sliceinfo> | array of
 			-o <outdir>    | path to
+			-l             | true/false legacy mode. true:MarkDuplikates/UMI-tools, false: dupsifter/UMI-tools (default: false)
+			-x <regex>     | of read name identifier with grouped tile information used in legacy mode. default: \S+:(\d+):(\d+):(\d+)\s*.*
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory genome outdir remove=true tmpdir="${TMPDIR:-/tmp}"
-	declare -n _mapper_rmduplicates _bamslices_rmduplicates _umi_rmduplicates
-	while getopts 'S:s:t:m:M:g:r:3:c:o:k' arg; do
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome outdir regex remove=true legacy=false tmpdir="${TMPDIR:-/tmp}"
+	declare -n _mapper_bsrmduplicates _bamslices_bsrmduplicates _umi_bsrmduplicates
+	while getopts 'S:s:t:m:M:x:g:r:3:c:o:l:k' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			k)	remove=false;;
+			l)	legacy=$OPTARG;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			m)	((++mandatory)); memory=$OPTARG;;
 			M)	maxmemory=$OPTARG;;
+			x)	regex="$OPTARG";;
 			g)	((++mandatory)); genome="$OPTARG";;
-			r)	((++mandatory)); _mapper_rmduplicates=$OPTARG;;
-			3)	_umi_rmduplicates=$OPTARG;;
-			c)	((++mandatory)); _bamslices_rmduplicates=$OPTARG;;
+			r)	((++mandatory)); _mapper_bsrmduplicates=$OPTARG;;
+			3)	_umi_bsrmduplicates=$OPTARG;;
+			c)	((++mandatory)); _bamslices_bsrmduplicates=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			*)	_usage;;
 		esac
@@ -382,33 +386,49 @@ function bisulfite::rmduplicates(){
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 
-	commander::printinfo "removing duplicates"
+	if $legacy; then
+		alignment::rmduplicates \
+			-s $skip \
+			-k $remove \
+			-l true \
+			-t $threads \
+			-m $memory \
+			-M "$maxmemory" \
+			-r _mapper_bsrmduplicates \
+			-3 _umi_bsrmduplicates \
+			-c _bamslices_bsrmduplicates \
+			-x "$regex" \
+			-o "$outdir"
+		return 0
+	fi
+
+	commander::printinfo "removing alignment duplicates"
 
 	local sinstances sthreads smemory minstances mthreads jmem jgct jcgct
-	read -r sinstances sthreads smemory jgct jcgct < <(configure::jvm -i ${#_umi_rmduplicates[@]} -T $threads -m $memory -M "$maxmemory")
+	read -r sinstances sthreads smemory jgct jcgct < <(configure::jvm -i ${#_umi_bsrmduplicates[@]} -T $threads -m $memory -M "$maxmemory")
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
 	local m i o e slice instances ithreads odir params1 params2 x=0 oinstances othreads
-	for m in "${_mapper_rmduplicates[@]}"; do
-		declare -n _bams_rmduplicates=$m
-		i=$(wc -l < "${_bamslices_rmduplicates[${_bams_rmduplicates[0]}]}")
-		((instances+=i*${#_bams_rmduplicates[@]}))
-		((oinstances+=${#_bams_rmduplicates[@]}))
+	for m in "${_mapper_bsrmduplicates[@]}"; do
+		declare -n _bams_bsrmduplicates=$m
+		i=$(wc -l < "${_bamslices_bsrmduplicates[${_bams_bsrmduplicates[0]}]}")
+		((instances+=i*${#_bams_bsrmduplicates[@]}))
+		((oinstances+=${#_bams_bsrmduplicates[@]}))
 	done
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 	read -r oinstances othreads < <(configure::instances_by_threads -i $oinstances -t 10 -T $threads)
 
 	declare -a cmdsort
-	if [[ $_umi_rmduplicates ]]; then
+	if [[ $_umi_bsrmduplicates ]]; then
 		params2='-B'
 
-		for i in "${!_umi_rmduplicates[@]}"; do
-			helper::basename -f "${_umi_rmduplicates[$i]}" -o o -e e
+		for i in "${!_umi_bsrmduplicates[@]}"; do
+			helper::basename -f "${_umi_bsrmduplicates[$i]}" -o o -e e
 			e=$(echo $e | cut -d '.' -f 1)
 			o="$tmpdir/$o.$e.gz"
 
 			commander::makecmd -a cmdsort -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
-				helper::cat -f "${_umi_rmduplicates[$i]}" | paste - - - -
+				helper::cat -f "${_umi_bsrmduplicates[$i]}" | paste - - - -
 			CMD
 				awk -v OFS='\t' '{print $1,$(NF-2),$(NF-1),$NF}'
 			CMD
@@ -418,27 +438,27 @@ function bisulfite::rmduplicates(){
 			CMD
 				helper::pgzip -t $sthreads -o "$o"
 			CMD
-			_umi_rmduplicates[$i]="$o"
+			_umi_bsrmduplicates[$i]="$o"
 		done
 	fi
 
-	x=$(samtools view -F 4 "${_bams_rmduplicates[0]}" | head -10000 | cat <(samtools view -H "${_bams_rmduplicates[0]}") - | samtools view -c -f 1)
+	x=$(samtools view -F 4 "${_bams_bsrmduplicates[0]}" | head -10000 | cat <(samtools view -H "${_bams_bsrmduplicates[0]}") - | samtools view -c -f 1)
 	[[ $x -gt 0 ]] && params1='--paired' || params2+=' -s'
 	$remove && params2+=' -r'
 
 	declare -a tdirs tomerge cmd1 cmd2 cmd3 cmd4
-	for m in "${_mapper_rmduplicates[@]}"; do
-		declare -n _bams_rmduplicates=$m
+	for m in "${_mapper_bsrmduplicates[@]}"; do
+		declare -n _bams_bsrmduplicates=$m
 		odir="$outdir/$m"
 		mkdir -p "$odir"
 
-		for i in "${!_bams_rmduplicates[@]}"; do
+		for i in "${!_bams_bsrmduplicates[@]}"; do
 			tomerge=()
 			while read -r slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rmduplicates)")
 
-				if [[ $_umi_rmduplicates ]]; then
-					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
+				if [[ $_umi_bsrmduplicates ]]; then
+					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
 						samtools sort
 							-n
 							-@ $ithreads
@@ -453,21 +473,9 @@ function bisulfite::rmduplicates(){
 							-O SAM
 							- -
 					CMD
-						| perl -slane '
-							BEGIN{
-								open(F, "pigz -p 1 -cd \"$f\" | paste - - - - |")
-							}
-							if(/^@\S\S\s/){print; next}
-							while($l[0] ne $F[0]){
-								$l=<F>;
-								exit unless defined $l;
-								@l=split(/\t/,$l);
-								$l[0]=~s/^.//
-							}
-							print join"\t",(@F,"RX:Z:$l[1]")
-						'
+						| awk -v f=<(helper::cat -f "${umi_bsrmduplicates[$i]}" | paste - - - -)
 					CMD
-						-- -f="${_umi_rmduplicates[$i]}"
+						-v OFS='\t' '/^@\S\S\s/{print; next}{l=$0; r="@"$1; getline < f; while(r!=$1){getline < f} print l,"RX:Z:"$(NF-2)}'
 					CMD
 						| samtools sort
 							-@ $ithreads
@@ -549,7 +557,8 @@ function bisulfite::rmduplicates(){
 				# dupsifter handles only sam v 1.3 not extended cigar by X and =
 				# solution: replace X and = by M, store extended cigar as EC tag and afterwards sqeeze back in
 
-				# between fixmate and dupsifter no conversion from sam 1.3 to sam >1.4 extended cigar not necessary any longer from v 1.2.1
+				# from v 1.2.1 between fixmate and dupsifter no conversion from sam 1.3 to sam >1.4 (extended cigar) necessary any longer
+				# from PR lead to v1.3.0 deduplication for single-end misusing barcode tag for umi_tools corrected UMIs works
 				commander::makecmd -a cmd3 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
 					samtools sort
 						-@ $ithreads
@@ -580,9 +589,9 @@ function bisulfite::rmduplicates(){
 				CMD
 
 				tomerge+=("$slice")
-			done < "${_bamslices_rmduplicates[${_bams_rmduplicates[$i]}]}"
+			done < "${_bamslices_bsrmduplicates[${_bams_bsrmduplicates[$i]}]}"
 
-			o="$odir/$(basename "${_bams_rmduplicates[$i]}")"
+			o="$odir/$(basename "${_bams_bsrmduplicates[$i]}")"
 			o="${o%.*}.rmdup.bam"
 
 			# slices have full sam header info used by merge to maintain the global sort order
@@ -599,8 +608,8 @@ function bisulfite::rmduplicates(){
 					$(printf '"%s" ' "${tomerge[@]}")
 			CMD
 
-			_bamslices_rmduplicates["$o"]="${_bamslices_rmduplicates[${_bams_rmduplicates[$i]}]}"
-			_bams_rmduplicates[$i]="$o"
+			_bamslices_bsrmduplicates["$o"]="${_bamslices_bsrmduplicates[${_bams_bsrmduplicates[$i]}]}"
+			_bams_bsrmduplicates[$i]="$o"
 		done
 	done
 
@@ -931,7 +940,7 @@ function bisulfite::metilene(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads genome mecalldir outdir min=0.8 cap=999999 context=CG
+	local OPTIND arg mandatory skip=false threads genome mecalldir outdir min=0.8 cap=999999 context=CG tmpdir="${TMPDIR:-/tmp}"
 	declare -a tools
 	declare -n _mapper_metilene _cmpfiles_metilene
 	while getopts 'S:s:t:c:m:u:x:r:i:o:d:' arg; do
@@ -956,9 +965,9 @@ function bisulfite::metilene(){
 
 	commander::printinfo "differential methylation analyses"
 
-	declare -a cmd1 cmd2 cmd3 mapdata tojoin
+	declare -a cmd1x cmd2 cmd3 mapdata tojoin tdirs
 
-	local m f i c t odir header sample condition library replicate factors crep trep tool
+	local m f i c t r odir header sample condition library replicate factors crep trep tool
 	for m in "${_mapper_metilene[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
@@ -985,11 +994,26 @@ function bisulfite::metilene(){
 							header+="\t${condition}_$replicate"
 						done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 
-						commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-							echo -e "$header" > "$odir/merates.bedg"
-						CMD
-							bedtools unionbedg -filler . -i $(printf '"%s" ' "${tojoin[@]}") | cut -f 1,3- >> "$odir/merates.bedg"
-						CMD
+						# commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+						# 	echo -e "$header" > "$odir/merates.bedg"
+						# CMD
+						# 	bedtools unionbedg -filler . -i $(printf '"%s" ' "${tojoin[@]}") | cut -f 1,3- >> "$odir/merates.bedg"
+						# CMD
+
+						for r in $(seq 0 $(echo ${#tojoin[@]} | awk '{h=log($1+1)/log(2); h=h>int(h)?int(h)+1:h; print h-1}')); do
+							declare -a cmd1x$r
+							cmd1x[$r]=cmd1x$r
+						done
+						tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.join)")
+						helper::multijoin \
+							-1 cmd1x \
+							-e "." \
+							-h "$header" \
+							-p "${tdirs[-1]}" \
+							-o "$odir/merates.bedg" \
+							-r 1,3- \
+							-b \
+							"${tojoin[@]}"
 
 						bisulfite::_metilene \
 							-1 cmd2 \
@@ -1008,11 +1032,15 @@ function bisulfite::metilene(){
 	done
 
 	if $skip; then
-		commander::printcmd -a cmd1
+		for c in "${cmd1x[@]}"; do
+			commander::printcmd -a $c
+		done
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -i $threads -a cmd1
+		for c in "${cmd1x[@]}"; do
+			commander::runcmd -v -b -i $threads -a $c
+		done
 		commander::runcmd -c metilene -v -b -i 1 -a cmd2
 		commander::runcmd -v -b -i $threads -a cmd3
 	fi
@@ -1103,7 +1131,7 @@ function bisulfite::join(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads mecalldir outdir context=CG
+	local OPTIND arg mandatory skip=false threads mecalldir outdir context=CG tmpdir="${TMPDIR:-/tmp}"
 	declare -a tools
     declare -n _mapper_join _cmpfiles_join
 	while getopts 'S:s:t:r:c:x:i:o:f:d:' arg; do
@@ -1126,9 +1154,9 @@ function bisulfite::join(){
 
 	commander::printinfo "joining methylation rates, zscores"
 
-	declare -a cmd1 cmd2 cmd3 cmd4 mapdata tojoin
+	declare -a cmd1x cmd2 cmd3 mapdata tojoin joined tdirs
 	declare -A visited
-	local m f i c t e header meanheader cf sample condition library replicate factors
+	local m f i c t e r o header meanheader cf sample condition library replicate factors tdir
 
 	for tool in "${tools[@]}"; do
 		for m in "${_mapper_join[@]}"; do
@@ -1155,75 +1183,129 @@ function bisulfite::join(){
 				done
 			done
 
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				echo -e "$header" > "$odir/merates.bedg"
-			CMD
-				bedtools unionbedg -filler . -i $(printf '"%s" ' "${tojoin[@]}") | cut -f 1,3- >> "$odir/merates.bedg"
-			CMD
+			# filler legacy char was "."
+			# commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			# 	echo -e "$header" > "$odir/merates.bedg"
+			# CMD
+			# 	bedtools unionbedg -filler NA -i $(printf '"%s" ' "${tojoin[@]}") | cut -f 1,3- > "$odir/merates.bedg"
+			# CMD
+
+			# parallelize pairwise full joins for a 5x to 10x speedup
+			# complete binary tree has height of ceil[log2(#leaves)] -> echo $n | awk '{h=log($1+1)/log(2); h=h>int(h)?int(h)+1:h; print h}'
+			# declare local arrays here
+			for r in $(seq 0 $(echo ${#tojoin[@]} | awk '{h=log($1+1)/log(2); h=h>int(h)?int(h)+1:h; print h-1}')); do
+				declare -a cmd1x$r
+				cmd1x[$r]=cmd1x$r
+			done
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.join)")
+			helper::multijoin \
+				-1 cmd1x \
+				-e "NA" \
+				-h "$header" \
+				-p "${tdirs[-1]}" \
+				-o "$odir/merates.bedg" \
+				-r 1,3- \
+				-b \
+				"${tojoin[@]}"
 
 			# allow for Rscript | head without getting SIGPIPE error. redirection to file possible via sink()
 			# println = function(F, sep="\t"){ tryCatch({cat(F,sep=sep); cat("\n");}, error=function(e){quit("no")}); };
+			# commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+			# 	echo -e "$header" > "$odir/merates.bedg.zscores";
+			# CMD
+			# 	Rscript - <<< '
+			# 		options(warn=-1);
+			# 		args = commandArgs(TRUE);
+			# 		conin = file(args[1], open="r", raw=T);
+			# 		conz = file(args[2], open="a");
+			# 		conmean = file(args[3], open="w");
+			# 		conmeanz = file(args[4], open="w");
 
-			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-				echo -e "$header" > "$odir/merates.bedg.zscores";
+			# 		readln = function(con, sep="\t"){ unlist(strsplit(readLines(con, n=1), split=sep)); };
+
+			# 		header = readln(conin);
+			# 		l=length(header);
+			# 		nfo=header[1:2];
+			# 		header=header[3:l];
+			# 		meanheader = unique(header);
+
+			# 		writeLines(paste(c(nfo,meanheader), collapse="\t"), conmean);
+			# 		writeLines(paste(c(nfo,meanheader), collapse="\t"), conmeanz);
+
+			# 		while (length(F <- readln(conin))>0){
+			# 			nfo = F[1:2];
+			# 			F = as.numeric(F[3:l]);
+
+			# 			Z = log(F+1);
+			# 			Z = Z-mean(Z, na.rm=T);
+			# 			Z = Z/sd(Z, na.rm=T);
+			# 			Z[is.nan(Z) | is.na(Z)] = ".";
+			# 			writeLines(paste(c(nfo,Z), collapse="\t"), conz);
+
+			# 			means = tapply(F, header, mean, na.rm=T)[meanheader];
+			# 			means[is.nan(means) | is.na(means)] = ".";
+			# 			writeLines(paste(c(nfo,means), collapse="\t"), conmean);
+
+			# 			F = as.numeric(means);
+			# 			Z = log(F+1);
+			# 			Z = Z-mean(Z, na.rm=T);
+			# 			Z = Z/sd(Z, na.rm=T);
+			# 			Z[is.nan(Z)] = 0;
+			# 			Z[is.na(Z)] = ".";
+			# 			writeLines(paste(c(nfo,Z), collapse="\t"), conmeanz);
+			# 		};
+			# 		close(conin);
+			# 		close(conz);
+			# 		close(conmean);
+			# 		close(conmeanz);
+			# 	'
+			# CMD
+			# 	<(echo -e "$meanheader"; tail -n +2 "$odir/merates.bedg") "$odir/merates.bedg.zscores" "$odir/merates.mean.bedg" "$odir/merates.mean.bedg.zscores"
+			# CMD
+
+			# Rscript too slow: 8MB/s throughput only. use lapply for a 20x to 25x sppedup
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.join)")
+			tdir="${tdirs[-1]}"
+			commander::makecmd -m -a cmd2 -v odir -v meanheader -v threads -v tdir -c <<- 'CMD'
+				means(){
+					local JOB_NR=$(wc -l < "$FILE")
+					paste <(cut -f 1-2 "$FILE") <( { echo -e "$1"; cat "$FILE"; } | cut -f 3- | datamash transpose | datamash --narm groupby 1 mean 2-$((JOB_NR+1)) | datamash transpose | tail -n +2 | sed 's/\<nan\>/NA/g') | cat
+				}
+				export -f means
+				echo -e "$meanheader" | datamash transpose | datamash rmdup 1 | datamash transpose > "$odir/merates.mean.bedg"
+				tail -n +2 "$odir/merates.bedg" | helper::lapply -o "$tdir" -d 20000 -t $threads -f -k -c means "'$meanheader'" >> "$odir/merates.mean.bedg"
 			CMD
-				Rscript - <<< '
-					options(warn=-1);
-					args = commandArgs(TRUE);
-					conin = file(args[1], open="r", raw=T);
-					conz = file(args[2], open="a");
-					conmean = file(args[3], open="w");
-					conmeanz = file(args[4], open="w");
 
-					readln = function(con, sep="\t"){ unlist(strsplit(readLines(con, n=1), split=sep)); };
+			for f in "$odir/merates" "$odir/merates.mean"; do
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.join)")
+				tdir="${tdirs[-1]}"
+				commander::makecmd -m -a cmd3 -v odir -v f -v threads -v tdir -c <<- 'CMD'
+					zscores(){
+						local JOB_NR=$(wc -l < "$FILE")
+						cut -f 3- "$FILE" | awk -v OFS='\t' '{for(i=1;i<=NF;i++) $i=$i=="NA"?"NA":log($i+1); print}' | datamash transpose | datamash --narm mean 1-$JOB_NR sstdev 1-$JOB_NR > "$FILE.stats"
+						paste <(cut -f 1-$JOB_NR "$FILE.stats" | datamash transpose) <(cut -f $((JOB_NR+1))- "$FILE.stats" | datamash transpose) "$FILE" | awk -v OFS='\t' '{m=$1; s=$2=="nan"?0:$2; for(i=5;i<=NF;i++){ if($i!="NA"){$i=s==0?0:(log($i+1)-m)/s} } print}' | cut -f 3-
+					}
+					export -f zscores
+					head -1 "$f.bedg" > "$f.zscores.bedg"
+					tail -n +2 "$f.bedg" | helper::lapply -o "$tdir" -d 20000 -t $threads -f -k -c zscores >> "$f.zscores.bedg"
+				CMD
+			done
 
-					header = readln(conin);
-					l=length(header);
-					nfo=header[1:2];
-					header=header[3:l];
-					meanheader = unique(header);
-
-					writeLines(paste(c(nfo,meanheader), collapse="\t"), conmean);
-					writeLines(paste(c(nfo,meanheader), collapse="\t"), conmeanz);
-
-					while (length(F <- readln(conin))>0){
-						nfo = F[1:2];
-						F = as.numeric(F[3:l]);
-
-						Z = log(F+1);
-						Z = Z-mean(Z, na.rm=T);
-						Z = Z/sd(Z, na.rm=T);
-						Z[is.nan(Z) | is.na(Z)] = ".";
-						writeLines(paste(c(nfo,Z), collapse="\t"), conz);
-
-						means = tapply(F, header, mean, na.rm=T)[meanheader];
-						means[is.nan(means) | is.na(means)] = ".";
-						writeLines(paste(c(nfo,means), collapse="\t"), conmean);
-
-						F = as.numeric(means);
-						Z = log(F+1);
-						Z = Z-mean(Z, na.rm=T);
-						Z = Z/sd(Z, na.rm=T);
-						Z[is.nan(Z) | is.na(Z)] = ".";
-						writeLines(paste(c(nfo,Z), collapse="\t"), conmeanz);
-					};
-					close(conin);
-					close(conz);
-					close(conmean);
-					close(conmeanz);
-				'
-			CMD
-				<(echo -e "$meanheader"; tail -n +2 "$odir/merates.bedg") "$odir/merates.bedg.zscores" "$odir/merates.mean.bedg" "$odir/merates.mean.bedg.zscores"
-			CMD
 		done
 	done
 
 	if $skip; then
-		commander::printcmd -a cmd1
+		for c in "${cmd1x[@]}"; do
+			commander::printcmd -a $c
+		done
 		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -i $threads -a cmd1
-		commander::runcmd -v -b -i $threads -a cmd2
+		for c in "${cmd1x[@]}"; do
+			commander::runcmd -v -b -i $threads -a $c
+		done
+		commander::runcmd -v -b -i 1 -a cmd2
+		commander::runcmd -v -b -i 1 -a cmd3
 	fi
 
 	return 0

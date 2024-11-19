@@ -6,13 +6,14 @@ args = commandArgs(TRUE)
 if(length(args)<2){
   cat("volcano plot from annotated DESeq2 results table\n")
   cat("\n")
-  cat("usage parameter: <f:matrix> <f:outfile>\n")
-  cat('example: "/path/to/matrix.tsv" "/path/to/plot.pdf"\n')
+  cat("usage parameter: <f:matrix> <f:outfile> [<f:idlist>] [<s:title>]\n")
+  cat('example: "/path/to/matrix.tsv" "plot.pdf"\n')
   cat("\n")
   cat("matrix: tab separated with header containing at least the columns: id log2FoldChange padj name\n")
   cat("id baseMean log2FoldChange lfcSE stat pvalue padj name\n")
   cat("feature1 value1 value2 value3  ..\n")
   cat("..\n")
+  cat("idlist: ids to highlight\n")
   quit("no",1)
 }
 
@@ -25,6 +26,10 @@ suppressMessages({
 
 ddsr = args[1]
 outfile = args[2]
+title = "Volcano plot"
+if(!is.na(args[4])){
+  title = as.character(args[4])
+}
 
 df = read.table(ddsr, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="")
 if (is.null(df$name)){
@@ -57,22 +62,51 @@ df = rbind(e,df)
 
 nups=10
 ndowns=10
+df = df[order(df$log2FoldChange),]
+
+if(is.na(args[3])){
+  ups=sum(!is.na(df$padj) & df$padj<0.05 & df$log2FoldChange > 0)
+  downs=sum(!is.na(df$padj) & df$padj<0.05 & df$log2FoldChange < 0)
+  if (ups < downs){
+    if (downs > 0 && ups/downs*100 < 20) nups=5
+  } else {
+    if (ups > 0 && downs/ups*100 < 20) ndowns=5
+  }
+
+  topidx = head(which(! is.na(df$padj) & df$padj<0.05),n=ndowns)
+  got=topidx
+  df[topidx,]$label = df[topidx,]$name
+  topidx = tail(which(! is.na(df$padj) & df$padj<0.05),n=nups)
+  got=unique(c(got,topidx))
+  df[topidx,]$label = df[topidx,]$name
+  df = df[order(df$padj,na.last = T),]
+  topidx = head(which(! df$id %in% df$id[got] & ! is.na(df$padj) & df$padj<0.05),n=10)
+  df[topidx,]$label = df[topidx,]$name
+} else {
+  idlist = scan(args[3], character(), quote="", quiet=T)
+  df$Regulation[df$id %in% idlist] = "highlight"
+
+  ups=sum(df$id %in% idlist & ! is.na(df$padj) & df$padj<0.05 & df$log2FoldChange > 0)
+  downs=sum(df$id %in% idlist & ! is.na(df$padj) & df$padj<0.05 & df$log2FoldChange < 0)
+  if (ups < downs){
+    if (downs > 0 && ups/downs*100 < 20) nups=5
+  } else {
+    if (ups > 0 && downs/ups*100 < 20) ndowns=5
+  }
+
+  topidx = head(which(df$id %in% idlist & ! is.na(df$padj) & df$padj<0.05),n=ndowns)
+  got=topidx
+  df[topidx,]$label = df[topidx,]$name
+  topidx = tail(which(df$id %in% idlist & ! is.na(df$padj) & df$padj<0.05),n=nups)
+  got=unique(c(got,topidx))
+  df[topidx,]$label = df[topidx,]$name
+  df = df[order(df$padj,na.last = T),]
+  topidx = head(which(! df$id %in% df$id[got] & df$id %in% idlist & ! is.na(df$padj) & df$padj<0.05),n=10)
+
+  df[topidx,]$label = df[topidx,]$name
+}
 ups=sum(!is.na(df$padj) & df$padj<0.05 & df$log2FoldChange > 0)
 downs=sum(!is.na(df$padj) & df$padj<0.05 & df$log2FoldChange < 0)
-if (ups < downs){
-  if (downs > 0 && ups/downs*100 < 20) nups=5
-} else {
-  if (ups > 0 && downs/ups*100 < 20) ndowns=5
-}
-
-df = df[order(df$log2FoldChange),]
-topidx = head(which(! is.na(df$padj) & df$padj<0.05),n=ndowns)
-df[topidx,]$label = df[topidx,]$name
-topidx = tail(which(! is.na(df$padj) & df$padj<0.05),n=nups)
-df[topidx,]$label = df[topidx,]$name
-df = df[order(df$padj,na.last = T),]
-topidx = head(which(! is.na(df$padj) & df$padj<0.05),n=10)
-df[topidx,]$label = df[topidx,]$name
 
 # kick out low signals and outliers (analogous to padj based volcano plots)
 df = df[! is.na(df$padj),]
@@ -85,10 +119,11 @@ myxlim=max(abs(df$log2FoldChange))+0.5
 ggplot(df, aes(x=log2FoldChange, y=-log10(pvalue), col=Regulation, label=label)) +
   geom_point(alpha=0.65) + 
   theme_classic() +
-  scale_color_manual(values=c("blue","darkgrey","red")) +
+  # scale_color_manual(values=c("blue","darkgrey","red","#00c200")) +
+  scale_color_manual(values=c("Down" = "blue", "n.s." = "darkgrey", "Up" = "red", "highlight" = "#00c200"), breaks=c("Down","NA","Up")) +
   geom_vline(xintercept=c(-0.5, 0.5), col="black", linetype="longdash") +
   geom_hline(yintercept=-log10(0.05), col="black", linetype="longdash") +
-  ggtitle("Volcano plot") +
+  ggtitle(title) +
   xlab("log2 FoldChange") +
   ylab("-log10(p-value)") +
   annotate("text", x=myxlim, y=myylim, color="red", label= paste0(ups,paste0(rep(" ",10-nchar(ups)),collapse="") )) +

@@ -13,10 +13,10 @@ cleanup(){
 usage(){
 	cat <<- EOF
 		DESCRIPTION
-		$(basename $0) downloads most recent human or mouse genome and annotation including gene ontology and optionally dbSNP
+		$(basename $0) downloads most recent human or mouse genome and annotation including gene ontology plus orthologs and optionally dbSNP
 
 		VERSION
-		0.6.2
+		0.7.0
 
 		SYNOPSIS
 		$(basename $0) -r [hg19|hg38|mm10] -g -a -d -s -n
@@ -29,9 +29,10 @@ usage(){
 		-g | --genome             : download Ensembl genome
 		-c | --ctat               : switch to CTAT genome and indices (~30GB)
 		-a | --annotation         : download Ensembl gtf
-		-d | --descriptions       : download Ensembl gene description and Ensembl gene ontology information (requires R in PATH)
+		-d | --descriptions       : download Ensembl gene description and Ensembl ontology information (requires R in PATH)
 		-m | --msigdb             : download Ensembl gene description, MSigDB gene ontology information and other collections (requires R in PATH)
-		-e | --enrichr            : download Ensembl gene description and Enrichr human gene ontology information (requires R in PATH)
+		-e | --enrichr            : download Ensembl gene description and Enrichr gene ontology and other collections (requires R in PATH)
+		                          : NOTE: for mouse data, genes will be substituted by Ensembl orthologs if possible
 		-s | --dbsnp              : download Ensembl dbSNP
 		-n | --ncbi               : switch to NCBI dbSNP
 
@@ -62,8 +63,12 @@ dlgenome::_go.ensembl(){
 			}
 			library("biomaRt")
 			v <- "$version"
-			if ("$version" == "latest") v <- listEnsemblArchives()\$version[2]
-			ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			if ("$version" == "latest"){
+				ensembl <- useEnsembl(biomart="genes", dataset="$dataset")
+				v <- v <- listEnsemblArchives()\$version[2]
+			} else {
+				ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			}
 			goids <- data.frame()
 			descriptions <- data.frame()
 			for (chr in grep("^(MT|X|Y|\\\d+)$",listFilterOptions(mart = ensembl, filter = "chromosome_name"), value=T, perl=T)){
@@ -74,6 +79,18 @@ dlgenome::_go.ensembl(){
 			descriptions[,2][descriptions[2]==""] <- descriptions[,1][descriptions[2]==""]
 			write.table(goids,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.go")
 			write.table(descriptions,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.info")
+
+			for (v in as.vector(na.omit(as.integer(listEnsemblArchives()\$version)))){
+				tryCatch(
+					{	ensembl_Hs <- useEnsembl(biomart="genes", dataset="hsapiens_gene_ensembl", version=v)
+						ensembl_Mm <- useEnsembl(biomart="genes", dataset="mmusculus_gene_ensembl", version=v)
+						df <- getLDS(mart = ensembl_Hs, martL = ensembl_Mm, attributes = c("ensembl_gene_id","external_gene_name"), attributesL = c("ensembl_gene_id","external_gene_name"))
+						break
+					}, error = function(e){}
+				)
+			}
+			write.table(df,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.orthologs")
+
 			sink("$out.go.README")
 			cat("$(date)\n")
 			cat("$USER\n")
@@ -90,8 +107,12 @@ dlgenome::_go.ensembl(){
 			}
 			library("biomaRt")
 			v <- "$version"
-			if ("$version" == "latest") v <- listEnsemblArchives()\$version[2]
-			ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			if ("$version" == "latest"){
+				ensembl <- useEnsembl(biomart="genes", dataset="$dataset")
+				v <- v <- listEnsemblArchives()\$version[2]
+			} else {
+				ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			}
 			goids <- data.frame()
 			descriptions <- data.frame()
 			for (chr in grep("^(MT|X|Y|\\\d+)$",listFilterOptions(mart = ensembl, filter = "chromosome_name"), value=T, perl=T)){
@@ -102,6 +123,18 @@ dlgenome::_go.ensembl(){
 			descriptions[,2][descriptions[2]==""] <- descriptions[,1][descriptions[2]==""]
 			write.table(goids,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.go")
 			write.table(descriptions,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.info")
+
+			for (v in as.vector(na.omit(as.integer(listEnsemblArchives()\$version)))){
+				tryCatch(
+					{	ensembl_Hs <- useEnsembl(biomart="genes", dataset="hsapiens_gene_ensembl", version=v)
+						ensembl_Mm <- useEnsembl(biomart="genes", dataset="mmusculus_gene_ensembl", version=v)
+						df <- getLDS(mart = ensembl_Hs, martL = ensembl_Mm, attributes = c("ensembl_gene_id","external_gene_name"), attributesL = c("ensembl_gene_id","external_gene_name"))
+						break
+					}, error = function(e){}
+				)
+			}
+			write.table(df,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.orthologs")
+
 			sink("$out.go.README")
 			cat("$(date)\n")
 			cat("$USER\n")
@@ -113,6 +146,12 @@ dlgenome::_go.ensembl(){
 
 	echo ":INFO: downloading gene ontology and descriptions"
 	Rscript "$outdir/tmp/download.R"
+
+	awk -F '\t' -v OFS='\t' '$2~/\S/ && $4~/\S/ && tolower($2)==tolower($4) {print $1,$3}' "$out.orthologs" > "$outdir/tmp/orthologs"
+	cut -f 1 "$outdir/tmp/orthologs" | sort | uniq -c | awk '$1==1{print $2}' | grep -Fw -f - "$outdir/tmp/orthologs" | cut -f 2 | sort | uniq -c | awk '$1==1{print $2}' | grep -Fw -f - "$outdir/tmp/orthologs" > "$out.orthologs.unique"
+	cut -f 1 "$out.orthologs.unique" | grep -vFw -f - "$out.orthologs" | grep -vFw -f <(cut -f 2 "$out.orthologs.unique") | cut -f 1,3 > "$outdir/tmp/orthologs"
+	cut -f 1 "$outdir/tmp/orthologs" | sort | uniq -c | awk '$1==1{print $2}' | grep -Fw -f - "$outdir/tmp/orthologs" | cut -f 2 | sort | uniq -c | awk '$1==1{print $2}' | grep -Fw -f - "$outdir/tmp/orthologs" >> "$out.orthologs.unique"
+
 	return 0
 }
 
@@ -130,8 +169,12 @@ dlgenome::_go.enrichr(){
 			}
 			library("biomaRt")
 			v <- "$version"
-			if ("$version" == "latest") v <- listEnsemblArchives()\$version[2]
-			ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			if ("$version" == "latest"){
+				ensembl <- useEnsembl(biomart="genes", dataset="$dataset")
+				v <- v <- listEnsemblArchives()\$version[2]
+			} else {
+				ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			}
 			descriptions <- data.frame()
 			for (chr in grep("^(MT|X|Y|\\\d+)$",listFilterOptions(mart = ensembl, filter = "chromosome_name"), value=T, perl=T)){
 				cat(paste0("downloading datasets of chr",chr,", please wait...\n"))
@@ -139,6 +182,17 @@ dlgenome::_go.enrichr(){
 			}
 			descriptions[,2][descriptions[2]==""] <- descriptions[,1][descriptions[2]==""]
 			write.table(descriptions,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.info")
+
+			for (v in as.vector(na.omit(as.integer(listEnsemblArchives()\$version)))){
+				tryCatch(
+					{	ensembl_Hs <- useEnsembl(biomart="genes", dataset="hsapiens_gene_ensembl", version=v)
+						ensembl_Mm <- useEnsembl(biomart="genes", dataset="mmusculus_gene_ensembl", version=v)
+						df <- getLDS(mart = ensembl_Hs, martL = ensembl_Mm, attributes = c("ensembl_gene_id","external_gene_name"), attributesL = c("ensembl_gene_id","external_gene_name"))
+						break
+					}, error = function(e){}
+				)
+			}
+			write.table(df,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.orthologs")
 		EOF
 	} || {
 		cat <<- EOF > $outdir/tmp/download.R
@@ -149,8 +203,12 @@ dlgenome::_go.enrichr(){
 			}
 			library("biomaRt")
 			v <- "$version"
-			if ("$version" == "latest") v <- listEnsemblArchives()\$version[2]
-			ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			if ("$version" == "latest"){
+				ensembl <- useEnsembl(biomart="genes", dataset="$dataset")
+				v <- v <- listEnsemblArchives()\$version[2]
+			} else {
+				ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			}
 			descriptions <- data.frame()
 			for (chr in grep("^(MT|X|Y|\\\d+)$",listFilterOptions(mart = ensembl, filter = "chromosome_name"), value=T, perl=T)){
 				cat(paste0("downloading datasets of chr",chr,", please wait...\n"))
@@ -158,21 +216,56 @@ dlgenome::_go.enrichr(){
 			}
 			descriptions[,2][descriptions[2]==""] <- descriptions[,1][descriptions[2]==""]
 			write.table(descriptions,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.info")
+
+			for (v in as.vector(na.omit(as.integer(listEnsemblArchives()\$version)))){
+				tryCatch(
+					{	ensembl_Hs <- useEnsembl(biomart="genes", dataset="hsapiens_gene_ensembl", version=v)
+						ensembl_Mm <- useEnsembl(biomart="genes", dataset="mmusculus_gene_ensembl", version=v)
+						df <- getLDS(mart = ensembl_Hs, martL = ensembl_Mm, attributes = c("ensembl_gene_id","external_gene_name"), attributesL = c("ensembl_gene_id","external_gene_name"))
+						break
+					}, error = function(e){}
+				)
+			}
+			write.table(df,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.orthologs")
 		EOF
 	}
 
 	echo ":INFO: downloading gene ontology and descriptions"
 	Rscript "$outdir/tmp/download.R"
 
+	awk -F '\t' -v OFS='\t' '$2~/\S/ && $4~/\S/ && tolower($2)==tolower($4) {print $1,$3}' "$out.orthologs" > "$outdir/tmp/orthologs"
+	cut -f 1 "$outdir/tmp/orthologs" | sort | uniq -c | awk '$1==1{print $2}' | grep -Fw -f - "$outdir/tmp/orthologs" | cut -f 2 | sort | uniq -c | awk '$1==1{print $2}' | grep -Fw -f - "$outdir/tmp/orthologs" > "$out.orthologs.unique"
+	cut -f 1 "$out.orthologs.unique" | grep -vFw -f - "$out.orthologs" | grep -vFw -f <(cut -f 2 "$out.orthologs.unique") | cut -f 1,3 > "$outdir/tmp/orthologs"
+	cut -f 1 "$outdir/tmp/orthologs" | sort | uniq -c | awk '$1==1{print $2}' | grep -Fw -f - "$outdir/tmp/orthologs" | cut -f 2 | sort | uniq -c | awk '$1==1{print $2}' | grep -Fw -f - "$outdir/tmp/orthologs" >> "$out.orthologs.unique"
+
 	wget -O "$outdir/tmp/ncbi.info.gz" -c -q --show-progress --progress=bar:force --waitretry=10 --tries=10 --retry-connrefused --timestamping "https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz"
 	gzip -dc "$outdir/tmp/ncbi.info.gz" | perl -lanE 'next unless $F[5]=~/Ensembl:(ENSG\d+)/; say "$F[2]\t$1"' > "$outdir/tmp/ncbi.info"
 
+	cat <<-EOF > "$out.go.README"
+		$(date)
+		$USER
+	EOF
+
+	[[ "$msig" == "Hs" ]] && msig="Human" || msig="Mouse"
 	rm -f "$out.go"
-	for domain in Biological_Process Molecular_Function Cellular_Component; do
+	for collection in GO_Biological_Process GO_Molecular_Function GO_Cellular_Component Reactome GWAS_Catalog ChEA CellMarker WikiPathways KEGG; do
 		version=$(date +%Y)
-		while :; do	wget -O "$outdir/tmp/$domain.gmt" -c -q --show-progress --progress=bar:force --waitretry=10 --tries=10 --retry-connrefused --timestamping "https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=GO_${domain}_$version" && break || ((version--)); done
+		while :; do
+			url="https://maayanlab.cloud/Enrichr/geneSetLibrary?mode=text&libraryName=${collection}_$version"
+			echo loading $collection $version
+			[[ "$collection" =~ ^(WikiPathways|KEGG) ]] && url+="_$msig"
+			wget -O "$outdir/tmp/$collection.gmt" -c -q --show-progress --progress=bar:force --waitretry=10 --tries=10 --retry-connrefused --timestamping "$url" && break
+			((version--))
+		done
 		perl -F'\t' -slanE '
 			BEGIN{
+				open F,"<$ortho" or die $!;
+				while(<F>){
+					chomp;
+					@F=split/\t/;
+					$h2m{$F[0]}=$F[1];
+				}
+				close F;
 				open F,"<$info" or die $!;
 				while(<F>){
 					chomp;
@@ -181,20 +274,22 @@ dlgenome::_go.enrichr(){
 				}
 				close F;
 			}
-			$F[0]=~s/\s+\((GO:\d+)\)$//;
+			$n=$F[0];
+			if($F[0]=~s/\s+\((GO:\d+)\)$//){
+				$n=$1;
+				$collection=lc($collection=~s/^GO_//r);
+			}
 			for (@F[2..$#F]){
 				$i=$g2i{$_};
 				next unless $i;
-				say join"\t",($i,$1,$domain,$F[0]);
+				$i=$h2m{$i} if $species eq "Mouse";
+				next unless $i;
+				say join"\t",($i,$n=~s/\s+/_/gr,$collection,$F[0]);
 			}
-		' -- -info="$outdir/tmp/ncbi.info" -domain="${domain,,}" "$outdir/tmp/$domain.gmt" >> "$out.go"
+		' -- -info="$outdir/tmp/ncbi.info" -species="$msig" -ortho="$out.orthologs.unique" -collection="$collection" "$outdir/tmp/$collection.gmt" >> "$out.go"
+		echo "Enrichr $collection v$version" >> "$out.go.README"
 	done
 
-	cat <<-EOF > "$out.go.README"
-		$(date)
-		$USER
-		Enrichr go v$version
-	EOF
 	return 0
 }
 
@@ -212,8 +307,12 @@ dlgenome::_go.msigdb(){
 			}
 			library("biomaRt")
 			v <- "$version"
-			if ("$version" == "latest") v <- listEnsemblArchives()\$version[2]
-			ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			if ("$version" == "latest"){
+				ensembl <- useEnsembl(biomart="genes", dataset="$dataset")
+				v <- v <- listEnsemblArchives()\$version[2]
+			} else {
+				ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			}
 			descriptions <- data.frame()
 			for (chr in grep("^(MT|X|Y|\\\d+)$",listFilterOptions(mart = ensembl, filter = "chromosome_name"), value=T, perl=T)){
 				cat(paste0("downloading datasets of chr",chr,", please wait...\n"))
@@ -221,8 +320,20 @@ dlgenome::_go.msigdb(){
 			}
 			descriptions[,2][descriptions[2]==""] <- descriptions[,1][descriptions[2]==""]
 			write.table(descriptions,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.info")
+
+			for (v in as.vector(na.omit(as.integer(listEnsemblArchives()\$version)))){
+				tryCatch(
+					{	ensembl_Hs <- useEnsembl(biomart="genes", dataset="hsapiens_gene_ensembl", version=v)
+						ensembl_Mm <- useEnsembl(biomart="genes", dataset="mmusculus_gene_ensembl", version=v)
+						df <- getLDS(mart = ensembl_Hs, martL = ensembl_Mm, attributes = c("ensembl_gene_id","external_gene_name"), attributesL = c("ensembl_gene_id","external_gene_name"))
+						break
+					}, error = function(e){}
+				)
+			}
+			write.table(df,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.orthologs")
 		EOF
 	} || {
+		# does not work anymore. use default: NULL. if ("$version" == "latest") v <- NULL
 		cat <<- EOF > $outdir/tmp/download.R
 			if (!requireNamespace("biomaRt", quietly = TRUE)) {
 				if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager", repos="http://cloud.r-project.org", Ncpus=$threads, clean=T)
@@ -231,8 +342,12 @@ dlgenome::_go.msigdb(){
 			}
 			library("biomaRt")
 			v <- "$version"
-			if ("$version" == "latest") v <- listEnsemblArchives()\$version[2]
-			ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			if ("$version" == "latest"){
+				ensembl <- useEnsembl(biomart="genes", dataset="$dataset")
+				v <- v <- listEnsemblArchives()\$version[2]
+			} else {
+				ensembl <- useEnsembl(biomart="genes", dataset="$dataset", version=v)
+			}
 			descriptions <- data.frame()
 			for (chr in grep("^(MT|X|Y|\\\d+)$",listFilterOptions(mart = ensembl, filter = "chromosome_name"), value=T, perl=T)){
 				cat(paste0("downloading datasets of chr",chr,", please wait...\n"))
@@ -240,11 +355,27 @@ dlgenome::_go.msigdb(){
 			}
 			descriptions[,2][descriptions[2]==""] <- descriptions[,1][descriptions[2]==""]
 			write.table(descriptions,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.info")
+
+			for (v in as.vector(na.omit(as.integer(listEnsemblArchives()\$version)))){
+				tryCatch(
+					{	ensembl_Hs <- useEnsembl(biomart="genes", dataset="hsapiens_gene_ensembl", version=v)
+						ensembl_Mm <- useEnsembl(biomart="genes", dataset="mmusculus_gene_ensembl", version=v)
+						df <- getLDS(mart = ensembl_Hs, martL = ensembl_Mm, attributes = c("ensembl_gene_id","external_gene_name"), attributesL = c("ensembl_gene_id","external_gene_name"))
+						break
+					}, error = function(e){}
+				)
+			}
+			write.table(df,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.orthologs")
 		EOF
 	}
 
 	echo ":INFO: downloading gene ontology and descriptions"
 	Rscript "$outdir/tmp/download.R"
+
+	awk -F '\t' -v OFS='\t' '$2~/\S/ && $4~/\S/ && tolower($2)==tolower($4) {print $1,$3}' "$out.orthologs" > "$outdir/tmp/orthologs"
+	cut -f 1 "$outdir/tmp/orthologs" | sort | uniq -c | awk '$1==1{print $2}' | grep -Fw -f - "$outdir/tmp/orthologs" | cut -f 2 | sort | uniq -c | awk '$1==1{print $2}' | grep -Fw -f - "$outdir/tmp/orthologs" > "$out.orthologs.unique"
+	cut -f 1 "$out.orthologs.unique" | grep -vFw -f - "$out.orthologs" | grep -vFw -f <(cut -f 2 "$out.orthologs.unique") | cut -f 1,3 > "$outdir/tmp/orthologs"
+	cut -f 1 "$outdir/tmp/orthologs" | sort | uniq -c | awk '$1==1{print $2}' | grep -Fw -f - "$outdir/tmp/orthologs" | cut -f 2 | sort | uniq -c | awk '$1==1{print $2}' | grep -Fw -f - "$outdir/tmp/orthologs" >> "$out.orthologs.unique"
 
 	version=$(curl -s https://data.broadinstitute.org/gsea-msigdb/msigdb/release/ | grep -oE ">[0-9][^<]+($msig)" | sed 's/^>//' | sort -Vr | head -1)
 	[[ "$msig" == "Hs" ]] && msig="human" || msig="mouse"

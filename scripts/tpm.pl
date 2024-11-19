@@ -42,9 +42,9 @@ while(<F>){
 	$l[-1]=~/transcript_id\s+(\S+)/;
 	my $t = $1 ? $1 : 'transcript';
 	$t=~s/("|;)//g;
-	if ($l[-1]=~/tag\s+\"CCDS\"/) {
+	if ($l[-1]=~/tag\s+\"(CCDS|\S+_canonical)\"/) {
 		$m{$g}{1}{$t} += $l[4]-$l[3]+1;
-	} elsif ($l[2] eq 'ensembl_havana') {
+	} elsif ($l[2] eq 'ensembl_havana' || $l[2] eq 'HAVANA') {
 		$m{$g}{2}{$t} += $l[4]-$l[3]+1;
 	} else{
 		$m{$g}{3}{$t} += $l[4]-$l[3]+1;
@@ -68,6 +68,10 @@ open F, "<".$ARGV[3] or die $!;
 while(<F>){
 	chomp;
 	my @l = split /\s+/;
+	unless(exists $id2len{$l[0]}){
+		warn "$ARGV[0] does not contain $l[0]";
+		next;
+	}
 	push @ids,$l[0];
 	my $c = $l[1]/($id2len{$l[0]}/1000);
 	$id2count{$l[0]} = $c;

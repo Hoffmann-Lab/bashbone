@@ -35,7 +35,7 @@ function preprocess::dedup(){
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
 
-	commander::printinfo "umi based de-duplication"
+	commander::printinfo "removing read duplicates"
 
 	declare -a cmd1
 	local i o1 e1 o2 e2 instances memory
@@ -69,6 +69,18 @@ function preprocess::dedup(){
 			_fq1_dedup[$i]="$o1"
 			_fq2_dedup[$i]="$o2"
 		else
+			# paste can not be used if files differ in length and join needs alnum sorting. and pay attention to added info not added to umi read ids
+			# -> solution works, but fastq deduplication should actually not applied on trimmed/clipped/... data
+			# commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
+			# 	awk -v f=<(helper::cat -f "${_umi_dedup[$i]}" | paste - - - - | awk -v OFS='\t' '{print \$1,\$0}') -F '\t' '{getline l < f; split(l,a,FS); while(\$1!=a[1]){getline l < f; split(l,a,FS)} print \$3""a[3],\$2,\$3,\$4,\$5}' <(helper::cat -f "${_fq1_dedup[$i]}" | paste - - - - | awk -v OFS='\t' '{print \$1,\$0}')
+			# CMD
+			# 	LC_ALL=C sort --parallel=$threads -S ${memory}M -T "$tmpdir" -k1,1
+			# CMD
+			# 	awk -F '\t' -v OFS='\n' '{if($1!=s){print $2,$3,$4,$5}; s=$1}'
+			# CMD
+			# 	helper::pgzip -t $threads -o "$o1"
+			# CMD
+
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
 				paste <(helper::cat -f "${_fq1_dedup[$i]}" | paste - - - -) <(helper::cat -f "${_umi_dedup[$i]}" | paste - - - -)
 			CMD
@@ -144,43 +156,47 @@ function preprocess::fastqc(){
 	for f in {"${_fq1_fastqc[@]}","${_fq2_fastqc[@]}"}; do
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.fastqc)")
 
+		# also possible: cat fastq | fastqc -o <outdir> stdin:<basename>
+		# Illumina Small RNA 5' Adapter	GATCGTCGGACT
 		commander::makecmd -m -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD
 			cat <<- EOF | MALLOC_ARENA_MAX=4 fastqc -a /dev/stdin -t $ithreads -d "${tdirs[-1]}" -outdir "$outdir" "$f" 2>&1 | sed -u '/Exception/{q 1};\${/Analysis complete/!{q 1}}'
 				Illumina Universal Adapter	AGATCGGAAGAGC
-				Illumina Small RNA 3' Adapter	TGGAATTCTCGG
-				Illumina Small RNA 5' Adapter	GATCGTCGGACT
 				Nextera Transposase Sequence	CTGTCTCTTATA
 				SOLID Small RNA Adapter	CGCCTTGGCCGT
-				Tecan NuGEN Methyl-Seq Adapter	AAATCAAAAAAAC
 				10x Genomics TSO	CCCATGTACTCTGCGTTGATACCACTGCTT
+				Illumina Small RNA 3' Adapter	TGGAATTCTCGG
+				Tecan NuGEN Methyl-Seq Adapter	AAATCAAAAAAAC
 			EOF
 		CMD
 
 		helper::basename -f "$f" -o b -e e
 		e=$(echo $e | cut -d '.' -f 1) # if e == fastq or fq : check for ${b}_fastqc.zip else $b.${e}_fastqc.zip
 		[[ $e == "fastq" || $e == "fq" ]] && f="${b}_fastqc.zip" || f="$b.${e}_fastqc.zip"
-		# attention: nugen adapter search causes low false positive rates in R2 seqeunces
+		# attention: nugen adapter search causes low false positive rates in R2 seqeunces (<0.1) likewise Small RNA adapter in R1 (<0.01)
 		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 			unzip -c "$outdir/$f" "${f%.*}/fastqc_data.txt" | tac
 		CMD
 			perl -F'\t' -M'List::Util q(max)' -M'Switch' -lane '{
 				next unless /^\d+/;
-				$m=max(@F[1..5]);
+				$m=max(@F[1..4]);
 				if($m>=0.001){
-					$i=(grep {$F[$_]==$m} 1..5)[0];
+					$i=(grep {$F[$_]==$m} 1..4)[0];
 				} else {
-					$m=max(@F[6..$#F]);
-					exit if $m<0.1;
-					$i=(grep {$F[$_]==$m} 6..$#F)[0];
+					$m=max(@F[5..$#F]);
+					$i=(grep {$F[$_]==$m} 5..$#F)[0];
+					if ($i==5){
+						exit if $m<0.01;
+					} else {
+						exit if $m<0.1;
+					}
 				}
 				switch($i){
 					case 1 {print "AGATCGGAAGAGC"}
-					case 2 {print "TGGAATTCTCGGGTGCCAAGG"}
-					case 3 {print "GTTCAGAGTTCTACAGTCCGACGATC"}
-					case 4 {print "CTGTCTCTTATACACATCT"}
-					case 5 {print "CGCCTTGGCCGT"}
+					case 2 {print "CTGTCTCTTATACACATCT"}
+					case 3 {print "CGCCTTGGCCGT"}
+					case 4 {print "CCCATGTACTCTGCGTTGATACCACTGCTT"}
+					case 5 {print "TGGAATTCTCGGGTGCCAAGG"}
 					case 6 {print "AAATCAAAAAAAC"}
-					case 7 {print "CCCATGTACTCTGCGTTGATACCACTGCTT"}
 				}
 				exit
 			}'
@@ -814,7 +830,7 @@ function preprocess::sortmerna(){
 				_fq1_sortmerna[$i]="$o1"
 				_fq2_sortmerna[$i]="$o2"
 			else
-				helper::makecatcmd -v catcmd -f "${_fq1_sortmerna[$i]}"
+				helper::makecatcmd -a catcmd -f "${_fq1_sortmerna[$i]}"
 
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
 					if [[ "$catcmd" == "cat" ]]; then ln -sfn "${_fq1_sortmerna[$i]}" "$tmp.$e1"; else helper::cat -f "${_fq1_sortmerna[$i]}" > "$tmp.$e1"; fi

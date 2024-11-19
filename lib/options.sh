@@ -10,17 +10,17 @@ function options::usage(){
 		setup.sh -i [all|upgrade] -d [path]
 
 		OPTIONS
-		-i | --install [all|upgrade] : install into given directory
-		-g | --use-config            : use supplied yaml files and URLs instead of cutting edge tools
-		-d | --directory [path]      : installation path
-		-t | --threads [value]       : threads - predicted default: $THREADS
-		-l | --log [path]            : log file - default: [-d]/install.log
-		-v | --verbose               : enable verbose mode
-		-h | --help                  : prints this message
+		-i | --install [lite|all|upgrade] : install into given directory
+		-g | --use-config                 : use supplied yaml files and URLs instead of cutting edge tools
+		-d | --directory [path]           : installation path
+		-t | --threads [value]            : threads - predicted default: $THREADS
+		-l | --log [path]                 : log file - default: [-d]/install.log
+		-v | --verbose                    : enable verbose mode
+		-h | --help                       : prints this message
 
 		DEVELOPER OPTIONS
-		-s | --source [path,..]      : source file(s) to overload compile::[all|upgrade|<tool>] functions
-		-i | --install [<tool>,..]   : install into given directory
+		-s | --source [path,..]           : source file(s) to overload compile::[lite|all|upgrade|<tool>] functions
+		-i | --install [<tool>,..]        : install into given directory
 
 		REFERENCES
 		(c) Konstantin Riege

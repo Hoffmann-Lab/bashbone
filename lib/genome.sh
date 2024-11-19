@@ -293,6 +293,7 @@ function genome::view(){
 		SAM.ALIGNMENT_SCORE_THRESHOLD=0
 		SAM.QUALITY_THRESHOLD=0
 		SAM.COLOR_BY=FIRST_OF_PAIR_STRAND
+		CHART.AUTOSCALE=true
 		DETAILS_BEHAVIOR=CLICK
 		DEFAULT_GENOME_KEY=current
 
@@ -339,13 +340,13 @@ function genome::view(){
 				      format: "gtf",
 				      indexed: false,
 				      hidden: true
-                    }
-                  ]
+				    }
+				  ]
 			EOF
 		else
 			cat <<- EOF >> "$igvdir/genomes/current.json"
-			    }
-			  ]
+				    }
+				  ]
 			EOF
 		fi
 	fi

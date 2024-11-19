@@ -323,7 +323,7 @@ function alignment::star(){
 			params+=" --quantMode TranscriptomeSAM --quantTranscriptomeBan Singleend"
 		fi
 
-		helper::makecatcmd -l -v catcmd -f "${_fq1_star[$i]}"
+		helper::makecatcmd -l -a catcmd -f "${_fq1_star[$i]}"
 		[[ $extractcmd != "cat" ]] && params+=" --readFilesCommand '${catcmd[*]}'"
 
 		if [[ ${_fq2_star[$i]} ]]; then
@@ -1087,7 +1087,7 @@ function alignment::_sizeselect(){
 			-x <maxsize>   | mandatory
 			               | maximum fragment size
 			-f <sam|bam>   | mandatory
-			               | path to alignment in SAM or BAM format
+			               | path to sorted alignment in SAM or BAM format
 			-o <outbase>   | mandatory
 			               | path to output directory plus alignment file prefix
 			-p <tmpdir>    | mandatory
@@ -1190,7 +1190,8 @@ function alignment::_sizeselect(){
 				-b
 				-@ $threads
 				-e "(tlen >= 0 && tlen >= $minsize && tlen <= $maxsize) || (tlen < 0 && tlen <= -$minsize && tlen >= -$maxsize)"
-				-o "$_returnfile_sizeselect"
+				--write-index
+				-o "$_returnfile_sizeselect##idx##${_returnfile_sizeselect%.*}.bai"
 				"$bam"
 		CMD
 	# fi
@@ -1271,7 +1272,7 @@ function alignment::_sort(){
 function alignment::_collate(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} crafts command to collate alignments by read name/id while re-pairing/coupling mate pairs mapped on same reference sequence
+			${FUNCNAME[-2]} crafts command to shuffle and collate alignments while re-pairing/coupling mate pairs mapped on same reference sequence
 
 			-1 <cmds>      | mandatory
 			               | array to append commands to
@@ -1303,15 +1304,15 @@ function alignment::_collate(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads bam outbase _returnfile_namesort inparams tmpdir
-	declare -n _cmds1_namesort
+	local OPTIND arg mandatory threads bam outbase _returnfile_collate inparams tmpdir
+	declare -n _cmds1_collate
 	while getopts '1:t:f:o:p:r:P:h' arg; do
 		case $arg in
-			1)	((++mandatory)); _cmds1_namesort=$OPTARG;;
+			1)	((++mandatory)); _cmds1_collate=$OPTARG;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			f)	((++mandatory)); bam="$OPTARG";;
 			o)	((++mandatory)); outbase="$OPTARG";;
-			r)	declare -n _returnfile_namesort=$OPTARG;;
+			r)	declare -n _returnfile_collate=$OPTARG;;
 			p)	((++mandatory)); tmpdir="$OPTARG";; # needs to be given here, otherwise a mktemp dir will be deleted upon returning of this function
 			P)	inparams="$OPTARG";;
 			h)	{ _usage || return 0; };;
@@ -1321,14 +1322,14 @@ function alignment::_collate(){
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
-	_returnfile_namesort="$outbase.namesorted.bam"
+	_returnfile_collate="$outbase.collated.bam"
 	local params="$inparams"
 	local x=$(samtools view -F 4 "$bam" | head -10000 | cat <(samtools view -H "$bam") - | samtools view -c -f 1)
 	local y=$(samtools view -F 4 "$bam" | head -1 | cat <(samtools view -H "$bam") - | samtools view -c -d HI)
 
 	if [[ $y -eq 1 && $x -gt 0 ]]; then
 		# using HI is save but requires collate
-		commander::makecmd -a _cmds1_namesort -s '|' -c {COMMANDER[0]}<<- CMD -c {COMMANDER[1]}<<- CMD
+		commander::makecmd -a _cmds1_collate -s '|' -c {COMMANDER[0]}<<- CMD -c {COMMANDER[1]}<<- CMD
 			{
 				samtools view --no-PG -H "$bam";
 				paste -d '\n'
@@ -1336,12 +1337,12 @@ function alignment::_collate(){
 					<(samtools view -@ $(((threads+1)/2)) -u -e 'rnext==rname' -f 2 -F 4 -F 64 "$bam" | samtools sort -t HI -n -@ $(((threads+1)/2)) -T "$tmpdir/$(basename "$outbase").nsrtR2" -u | samtools collate -@ $(((threads+1)/2)) -u -O -n 1 - "$tmpdir/$(basename "$outbase").collateR2" | samtools view -@ $(((threads+1)/2)));
 			}
 		CMD
-			samtools view --no-PG -@ 100 -b -o "$_returnfile_namesort"
+			samtools view --no-PG -@ 100 -b -o "$_returnfile_collate"
 		CMD
 	elif [[ $x -gt 0 ]]; then
 		# name sort seems to work, too - shuffling via collate not necessary i.e. beeing the better name sorting for PE data
 		# -e 'rnext==rname' is mainly a bwa fix for quantification with salmon
-		commander::makecmd -a _cmds1_namesort -s '|' -c {COMMANDER[0]}<<- CMD -c {COMMANDER[1]}<<- CMD
+		commander::makecmd -a _cmds1_collate -s '|' -c {COMMANDER[0]}<<- CMD -c {COMMANDER[1]}<<- CMD
 			{
 				samtools view --no-PG -H "$bam";
 				paste -d '\n'
@@ -1349,17 +1350,17 @@ function alignment::_collate(){
 					<(samtools view -@ $(((threads+1)/2)) -u -e 'rnext==rname' -f 2 -F 4 -F 64 "$bam" | samtools sort -n -@ $(((threads+1)/2)) -T "$tmpdir/$(basename "$outbase").nsrtR2" -u | samtools collate -@ $(((threads+1)/2)) -u -O -n 1 - "$tmpdir/$(basename "$outbase").collateR2" | samtools view -@ $(((threads+1)/2)));
 			}
 		CMD
-			samtools view --no-PG -@ 100 -b -o "$_returnfile_namesort"
+			samtools view --no-PG -@ 100 -b -o "$_returnfile_collate"
 		CMD
 	else
-		commander::makecmd -a _cmds1_namesort -s ';' -c {COMMANDER[0]}<<- CMD
+		commander::makecmd -a _cmds1_collate -s ';' -c {COMMANDER[0]}<<- CMD
 			samtools collate
 				--no-PG
 				-l 6
 				-@ $threads
 				--output-fmt BAM
 				-n 1
-				-o "$_returnfile_namesort"
+				-o "$_returnfile_collate"
 				"$bam" "$tmpdir/$(basename "$outbase")"
 		CMD
 	fi
@@ -1964,8 +1965,8 @@ function alignment::qcstats(){
 
 	commander::printinfo "plotting mapping stats"
 
-	local filter b o all a s c odir
-	declare -a cmd1 tojoin header
+	local filter b o all a s c odir r
+	declare -a cmd1x cmd2 tojoin header tdirs
 	for m in "${_mapper_bamstats[@]}"; do
 		declare -n _bams_bamstats=$m
 		odir="$outdir/$m"
@@ -2013,7 +2014,7 @@ function alignment::qcstats(){
 		done
 
 		if [[ $(wc -l < "$odir/mapping.barplot.tsv") -gt 2 ]]; then
-			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 				Rscript - <<< '
 					suppressMessages(library("ggplot2"));
 					suppressMessages(library("scales"));
@@ -2039,7 +2040,7 @@ function alignment::qcstats(){
 		fi
 
 		if [[ ${#tojoin[@]} -eq 1 ]]; then
-			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 				{	echo -e "$header";
 					cat "$tojoin";
 				} >  "$odir/insertsizes.histogram.tsv";
@@ -2059,13 +2060,19 @@ function alignment::qcstats(){
 				"$odir/insertsizes.histogram.tsv" "$odir/insertsizes.histogram.pdf"
 			CMD
 		elif [[ ${#tojoin[@]} -gt 1 ]]; then
-			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-				helper::multijoin
-					-e 'NA'
-					-h "$(echo -e "$header")"
-					-o "$odir/insertsizes.histogram.tsv"
-					-f $(printf '"%s" ' "${tojoin[@]}");
-			CMD
+			for r in $(seq 0 $(echo ${#tojoin[@]} | awk '{h=log($1+1)/log(2); h=h>int(h)?int(h)+1:h; print h-1}')); do
+				declare -a cmd1x$r
+				cmd1x[$r]=cmd1x$r
+			done
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.multijoin)")
+			helper::multijoin \
+				-1 cmd1x \
+				-p "${tdirs[-1]}" \
+				-h "$(echo -e "$header")" \
+				-o "$odir/insertsizes.histogram.tsv" \
+				"${tojoin[@]}"
+
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 				Rscript - <<< '
 					suppressMessages(library("ggpubr"));
 					suppressMessages(library("tidyr"));
@@ -2084,9 +2091,15 @@ function alignment::qcstats(){
 	done
 
 	if $skip; then
-		commander::printcmd -a cmd1
+		for c in "${cmd1x[@]}"; do
+			commander::printcmd -a $c
+		done
+		commander::printcmd -a cmd2
 	else
-		commander::runcmd -v -b -i $threads -a cmd1
+		for c in "${cmd1x[@]}"; do
+			commander::runcmd -v -b -i $threads -a $c
+		done
+		commander::runcmd -v -b -i $threads -a cmd2
 	fi
 
 	return 0

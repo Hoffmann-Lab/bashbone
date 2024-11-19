@@ -22,7 +22,7 @@ while getopts 'i:p:c:x:s:r:l:ah' arg; do
 		c)	BASHBONE_CONDA="$OPTARG";;
 		x)	BASHBONE_EXITFUN="$OPTARG";;
 		s)	BASHBONE_EXTENSIONDIR="$OPTARG";;
-		r)	BASHBONE_SETSID=${BASHBONE_SETSID:-$OPTARG}; BASHBONE_REEXEC=$BASHBONE_SETSID;; # use exported state upon restart to not recurse
+		r)	BASHBONE_SETSID=${BASHBONE_SETSID:-$OPTARG};; # use exported state upon restart to not recurse
 		l)	BASHBONE_LEGACY="$OPTARG";;
 		a)	shift $((OPTIND-1)); break;;
 		h)	cat <<- 'EOF'
@@ -49,6 +49,7 @@ while getopts 'i:p:c:x:s:r:l:ah' arg; do
 				source activate.sh -i <path> -c true -x "<fun> [<arg>..]" -a "$@"
 				bashbone -h
 			EOF
+			unset OPTIND
 			return 0
 		;;
 	esac
@@ -57,13 +58,12 @@ unset OPTIND
 
 #####################################################################################
 
-if [[ ! $- =~ i ]] && ${BASHBONE_SETSID:-false}; then
+if [[ ! $- == *i* ]] && ${BASHBONE_SETSID:-false}; then
 	# re-run under own pgid via setsid, to be able to kill process group when kill signal is send to pid only e.g. by SGE/PBE qdel or xargs
 	# do not set sid when executed with gnu parallel!
 
 	# exec bash -c 'export PGID=$$; trap "trap \"\" INT TERM; env kill -INT -- -\$PGID" INT; trap "trap \"\" INT TERM; env kill -TERM -- -\$PGID" TERM; setsid --wait env --default-signal=INT,QUIT bash "$0" "$@" & PGID=$!; wait $PGID' "$(realpath -s "$0")" "$@"
 	export BASHBONE_SETSID=false
-	export BASHBONE_REEXEC=true
 	if [[ -t 0 ]]; then
 		{ trap 'exit 130' INT; exec setsid --wait bash "$(realpath -s "$0")" "$@"; } &
 	else
@@ -89,7 +89,6 @@ shopt -s expand_aliases extglob progcomp # inevitable for defining wrapper alias
 export TMPDIR="${TMPDIR:-/tmp}" && mkdir -p "$TMPDIR" || return 1
 
 function _bashbone_setpath(){
-	# PATH="${PATH/$BASHBONE_PATH/}"
 	export BASHBONE_PATH=""
 	if [[ -e "$BASHBONE_DIR/scripts" ]]; then
 		BASHBONE_PATH+="$(realpath -s "$BASHBONE_DIR/scripts" | xargs -echo | sed 's/ /:/g'):"
@@ -97,14 +96,14 @@ function _bashbone_setpath(){
 	if [[ "$BASHBONE_EXTENSIONDIR" != "$BASHBONE_DIR" && -e "$BASHBONE_EXTENSIONDIR/scripts" ]]; then
 		BASHBONE_PATH+="$BASHBONE_EXTENSIONDIR/scripts:"
 	fi
-	if [[ -e "$BASHBONE_DIR/tools" ]]; then
-		BASHBONE_PATH+="$(realpath -s "$BASHBONE_DIR"/tools/*/bin | xargs -echo | sed 's/ /:/g'):"
-	fi
+	# since tools are shipped compressed, this does not work. ie. gnu parallel needs to be present on target system e.g due to bashbone setup
+	# if [[ -e "$BASHBONE_DIR/tools" ]]; then
+	# 	BASHBONE_PATH+="$(realpath -s "$BASHBONE_DIR"/tools/*/bin | xargs -echo | sed 's/ /:/g'):"
+	# fi
 	if [[ -e "$BASHBONE_TOOLSDIR/latest" ]]; then
 		BASHBONE_PATH+="$(realpath -s "$BASHBONE_TOOLSDIR/latest/"!(java|bashbone) | xargs -echo | sed 's/ /:/g'):"
 	fi
 	[[ ":$PATH:" == *":$BASHBONE_PATH"* ]] || PATH="$BASHBONE_PATH$PATH"
-	# PATH="$BASHBONE_PATH$PATH"
 }
 
 if ${BASHBONE_CONDA:-false}; then
@@ -115,22 +114,44 @@ fi
 #####################################################################################
 
 function _bashbone_reset(){
-	# trap ':' TERM; PROMPT_COMMAND='trap - TERM'; kill $$ -> kills shell!
-	# defined TERM can not be resetted via PROMPT_COMMAND nor USR traps and propably more. trap -p lies!
-	# see also { trap -p; ..} & bug where trap -p permanently sets SIGIGN to ingore INT
+	trap "" INT ERR
 
-	# trap "" INT ERR
-	trap "" INT
-	trap - RETURN
-	# when in PROMPT_COMMAND: in case cleanup was already triggered by ERR, use atomic mkdir which will block if lock dir exists or if tmpdir already removed
-	mkdir "$BASHBONE_TMPDIR/.lock4" &> /dev/null && {
-		find -L "$BASHBONE_TMPDIR" -type f -name "cleanup.*.sh" -exec bash -c 'tac "$1" | bash || true; rm -f "$1"' bash {} \;
-		"${BASHBONE_EXITFUN:-:}" $1
-		rm -rf "$BASHBONE_TMPDIR"
-	}
+	# disabled for now -> see wait based solution in _wrapper
+	if [[ $- == *i* ]]; then
+		local key
+		# close unused FD and try to read <- which is blocking until EOF comes in
+		exec {BASHBONE_FDW}<&-
+		read key <&$BASHBONE_FDR
+		exec {BASHBONE_FDR}<&-
+
+		# when in a script, daemons will be slayed within on_exit, taking care of if being part of pipeline
+		# when interactive, being part of a pipeline (i.e. subprocess) and exitcode is 0, never reached, because PROMPT_COMMAND of shell PID not set
+		# when interactive, being part of a pipeline and exitcode is not 0, whole pipeline is going to be killed, which may lead to dataloss
+		# test::error 2>&1 | cat <- cat gets killed by INT, so no error messages will be displayed
+		[[ $1 -eq 0 ]] && env kill -INT -- -$p &> /dev/null
+		sleep 0.1
+		env kill -TERM -- -$p &> /dev/null
+	fi
+
+	[[ -e "$BASHBONE_TMPDIR/trace" ]] && tac "$BASHBONE_TMPDIR/trace" | awk '!a[$0]{a[$0]=1;print}' | tac >&2
+	find -L "$BASHBONE_TMPDIR" -type f -name "cleanup.*.sh" -exec bash -c 'tac "$1" | bash || true; rm -f "$1"' bash {} \;
+	"${BASHBONE_EXITFUN:-:}" $1
+	rm -rf "$BASHBONE_TMPDIR"
 
 	set -m +o pipefail +o errtrace +o functrace
-	trap - RETURN INT ABRT TERM ERR EXIT
+	# trap - INT RETURN ERR EXIT
+	# trap bugs
+	# 1) set +m; { trap -p; trap 'echo got int >&2' INT; sleep 2; } & sleep 1; kill -INT -- -$$ -> initial trap -p permanently sets SIGIGN to ingore INT
+	# -> reported Jan 2023
+	# 2) prompt command cannot reset traps in bash v4
+	# trap ':' TERM; PROMPT_COMMAND='trap - TERM'; kill $$ -> kills shell!
+	# trap ':' INT; PROMPT_COMMAND='trap - INT'; kill -INT $$ -> kills shell!
+	# compared to v5, in bash v4:
+	# - only INT can be resetted: PROMPT_COMMAND='trap "trap - INT" INT; kill -INT $$'
+	# - this script, needs an other signal. INT gets ignored ¯\_(ツ)_/¯
+	trap 'trap - INT USR1 RETURN ERR EXIT' USR1
+	env kill -USR1 $BASHPID
+
 	source <(IFS=; echo "$BASHBONE_BAK_TRAPS")
 	source <(printf '%s\n' "${BASHBONE_BAK_CMD_NOT_FOUND[@]}")
 	source <(printf '%s\n' "${BASHBONE_BAK_SHOPT[@]}")
@@ -138,31 +159,30 @@ function _bashbone_reset(){
 	source <(printf '%s\n' "${BASHBONE_BAK_ALIASES[@]}")
 	${BASHBONE_CONDA:-false} || PATH="${PATH/$BASHBONE_PATH/}"
 	if compgen -A arrayvar BASHBONE_BAK_PROMPT_CMD > /dev/null; then
-	# if [[ "$(declare -p BASHBONE_BAK_PROMPT_CMD 2> /dev/null)" == "declare -a BASHBONE_BAK_PROMPT_CMD="* ]]; then
 		mapfile -t PROMPT_COMMAND < <(printf "%s\n" "${BASHBONE_BAK_PROMPT_CMD[@]}")
 	else
 		PROMPT_COMMAND="$BASHBONE_BAK_PROMPT_CMD"
 	fi
 
 	# remove all non-exported variables
-	local v
+	local v p=$BASHBONE_PGID
 	for v in COMMANDER $(compgen -A variable BASHBONE_ | grep -vFx -f <(compgen -A export BASHBONE_)); do
-	# for v in COMMANDER $(declare -p | grep -E '^declare -[^x] BASHBONE_' | cut -d ' ' -f 3 | cut -d '=' -f 1); do
 		unset $v
 	done
+
 	return 0
 }
+
 
 function _bashbone_on_return(){
 	if [[ $1 -eq 0 && "$2" != "source" && "$2" != "." && "$BASHBONE_FUNCNAME" == "${FUNCNAME[1]}" ]]; then
 		COMMANDER=()
-		# avoid race condition between reset, that on error/exit executes/removes all cleanup files and returning background jobs like progress::_log
-		# done via default return trap in asynchronous progress::_log function. check for lock4 is not enough
-		if [[ ! -e "$BASHBONE_TMPDIR/.lock4" && -e "$BASHBONE_CLEANUP" ]]; then
+		[[ -e "$BASHBONE_CLEANUP" ]] && {
 			tac "$BASHBONE_CLEANUP" | bash || true
 			rm -f "$BASHBONE_CLEANUP"
-		fi
+		}
 	fi
+
 	return 0
 }
 
@@ -171,58 +191,37 @@ function _bashbone_on_exit(){
 	# when stacked i.e. bash -c 'activate; echo fin lvl1; bash -c "activate; echo fin lvl2";' kill at lvl1 only
 	# check also if any stdin/out/err fd is still connected, to not kill a pipe i.e. script_with_bashbone.sh | wc -l . wc runs under same pgid unless script is re-executed via setsid
 	# && -t 0 && -t 1 && -t 2 does not work when re-directed into file and when script_with_bashbone.sh is used in a wrapper script like a job script for a workload manager (which may not use tty at all)
-	if [[ $$ -eq $BASHBONE_PGID ]]; then
-		# no need to check for $1 -eq 0 since killing is conducted upon error anyways
-		! [[ -t 1 && -t 2 ]] && [[ ! $BASHBONE_REEXEC ]] && {
-			commander::warn "Bashbone detected a pipeline. Not killing PGID $BASHBONE_PGID may leads to orphan processes." >&2
-			commander::warn "Consider to run your script under own PGID utilizing re-execution option '-r true' upon sourcing activate.sh." >&2
-		} || {
-			{ env kill -INT -- -$BASHBONE_PGID & wait $!; } &> /dev/null
+
+	if [[ $1 -eq 0 ]] && ! [[ -t 1 && -t 2 ]]; then
+		if [[ ! $BASHBONE_SETSID ]]; then
+			commander::warn "Bashbone detected a pipeline and will not sent termination signals to PGID $BASHBONE_PGID" >&2
+			commander::warn "Consider to run your script under an exclusive PGID via activate.sh re-execution option '-r true' to avoid orphan processes" >&2
+		fi
+	else
+		if [[ $$ -eq $BASHBONE_PGID ]]; then
+			env kill -INT -- -$BASHBONE_PGID
 			sleep 0.1
-			{ env kill -TERM -- -$BASHBONE_PGID & wait $!; } &> /dev/null
-		}
+			env kill -TERM -- -$BASHBONE_PGID
+		fi
 	fi
 	_bashbone_reset $1
 	eval "$(trap -p EXIT | sed 's/^trap -- .//;s/. EXIT$//')"
+	return 0
 }
 
 function _bashbone_on_error(){
+	# ignore PIPE e.e.g thrown by samtools view | head
 	[[ $1 -eq 141 ]] && return 0
 
 	trap "" INT
-
-	if [[ $- =~ i ]]; then
-		# echo ERRRRRROR1 $BASHBONE_PGID $BASHBONE_PID $BASHBONE_BPID $BASHPID ${FUNCNAME[*]/_bashbone_wrapper/} $1 $2 #$LINENO LLL ${BASH_LINENO[*]} >&2
-		if [[ $BASHBONE_PID -eq $BASHBONE_BPID ]]; then
-			_bashbone_trace_interactive $1 $2
-			mkdir "$BASHBONE_TMPDIR/.lock3" &> /dev/null && [[ -e "$BASHBONE_TMPDIR/trace" ]] && awk '!a[$0]{a[$0]=1;print}' "$BASHBONE_TMPDIR/trace" >&2
-			# spawn suicide job with new PGID, which cleans up
-			# this allows calling functions interactively via process substitution, where PROMPT_COMMAND is not set to perform cleanup and reset under PGID e.g. cat <(fun)
-			# send int in case of error in for loop header
-			set -m
-			{ env kill -TERM -- -$BASHBONE_PGID; sleep 0.1; env kill -INT -- -$BASHBONE_PGID; _bashbone_reset 143; } &
-			set +m
-			wait $!
-			# _bashbone_reset to trigger cleanup when in a loop
-			_bashbone_reset 143
-		else
-			if [[ $BASHBONE_BPID -eq $BASHPID ]]; then
-				mkdir "$BASHBONE_TMPDIR/.lock1" &> /dev/null && _bashbone_trace_interactive $1 $2 "$BASHBONE_TMPDIR/trace"
-			else
-				mkdir "$BASHBONE_TMPDIR/.lock2" &> /dev/null && _bashbone_trace_interactive $1 $2 "$BASHBONE_TMPDIR/trace"
-			fi
-			# do not use INT here, when interactive, INT not trapped in cat <(bashbone_function) commands
-			env kill -ABRT $BASHBONE_BPID
-		fi
+	if [[ $- == *i* ]]; then
+		_bashbone_trace_interactive $1 $2 "$BASHBONE_TMPDIR/trace" &> /dev/null
+		mkdir "$BASHBONE_TMPDIR/.killed" &> /dev/null && env kill -INT -- -$BASHBONE_PGID
 	else
-		mkdir "$BASHBONE_TMPDIR/.lock3" &> /dev/null && _bashbone_trace $1
-		set -m
-		{ env kill -TERM -- -$BASHBONE_PGID; _bashbone_reset 143; } &
-		set +m
-		wait $!
+		mkdir "$BASHBONE_TMPDIR/.killed" &> /dev/null && _bashbone_trace $1 && env kill -INT -- -$BASHBONE_PGID
 	fi
 
-	return 143
+	return 130
 }
 
 function _bashbone_trace(){
@@ -238,11 +237,16 @@ function _bashbone_trace(){
 			if [[ $fun && "$fun" != "main" ]]; then
 				read -r f l src < <(declare -F "$fun")
 			fi
-			cmd=$(awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+			if [[ "$src" == "environment" ]]; then
+				line=$((line+3))
+				cmd=$(declare -f $fun | awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+			else
+				cmd=$(awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+			fi
 			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main}) @ line $line: $cmd" >&2
 		fi
 	done
-	# echo ":ERROR: exit code 143" >&2
+
 	return 0
 }
 
@@ -269,7 +273,7 @@ function _bashbone_trace_interactive(){
 			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main}) @ line $l: $cmd" >> "$o"
 		fi
 	done
-	# echo ":ERROR: exit code 143" >&2
+
 	return 0
 }
 
@@ -286,10 +290,13 @@ function _bashbone_wrapper(){
 		mapfile -t BASHBONE_BAK_ALIASES < <(declare -p BASH_ALIASES | sed 's/^declare/declare -g/') # squeeze in global paramater otherwise _bashbone_reset function call declares BASH_ALIASES locally
 		mapfile -t BASHBONE_BAK_CMD_NOT_FOUND < <(declare -f command_not_found_handle)
 		if compgen -A arrayvar PROMPT_COMMAND > /dev/null; then
-		# if [[ "$(declare -p PROMPT_COMMAND 2> /dev/null)" == "declare -a PROMPT_COMMAND="* ]]; then
 			mapfile -t BASHBONE_BAK_PROMPT_CMD < <(printf "%s\n" "${PROMPT_COMMAND[@]}")
+			# use to reset temporary env changes when interactive
+			# in bash v4 there is a bug where PROMPT_COMMAND is triggered under BASHPID of an async process substitution (test::error @ cat <(cat noexist))
+			PROMPT_COMMAND=('[[ $BASHPID -eq $$ ]] || exit; _bashbone_reset $?',"${PROMPT_COMMAND[@]}")
 		else
 			BASHBONE_BAK_PROMPT_CMD="$PROMPT_COMMAND"
+			PROMPT_COMMAND='[[ $BASHPID -eq $$ ]] || exit; _bashbone_reset $?; '"$PROMPT_COMMAND"
 		fi
 
 		# +m turns off job control i.e. subshells will not run under own pgid anymore and thus do not ignore int signal (see also setsid)
@@ -300,9 +307,6 @@ function _bashbone_wrapper(){
 		shopt -s expand_aliases extdebug extglob globstar
 		[[ $BASH_VERSINFO -gt 4 ]] && shopt -u localvar_inherit
 		ulimit -n $(ulimit -Hn)
-
-		# use to reset temporary env changes when interactive
-		PROMPT_COMMAND='_bashbone_reset $?'
 
 		BASHBONE_PID=$BASHPID
 		BASHBONE_PGID=$(($(ps -o pgid= -p $BASHPID)))
@@ -325,48 +329,55 @@ function _bashbone_wrapper(){
 			echo "$tmp"
 			return 0
 		}
+
+		if [[ $- == *i* ]]; then
+			# hack to let reset, triggered in parent shell only, to wait for termination of all started async. processes including double forks
+			# open fifo read-writable, writebale only and read only. FDs will be inherited by tasks.
+			# upon reading from FD in reset function, it will block until last task terminated to receive EOF.
+			# -> see also on_reset
+			# wait only waits for all direct child processes, but this may be sufficient, because less chances to get into deadlock where also a child waits for parent
+			# -> see bash v4 bug below, where async. process can trigger PROMPT_COMMAND execution so parent function and PROMPT_COMMAND both running on_reset waiting for file descriptors
+			mkfifo "$BASHBONE_TMPDIR/lock"
+			exec {BASHBONE_FD}<>"$BASHBONE_TMPDIR/lock"
+			exec {BASHBONE_FDR}<"$BASHBONE_TMPDIR/lock"
+			exec {BASHBONE_FD}<&-
+			exec {BASHBONE_FDW}>"$BASHBONE_TMPDIR/lock"
+			trap '_bashbone_on_error 130 $LINENO; _bashbone_reset 130; return 130 &> /dev/null' INT
+			# trap 'wait; _bashbone_on_error 130 $LINENO; _bashbone_reset 130; return 130 &> /dev/null' INT
+			trap '_bashbone_on_error $? $LINENO || { [[ $BASHPID -ne $BASHBONE_PID ]] && { return 130 &> /dev/null || exit 130; } || return 130 &> /dev/null; }' ERR
+		else
+			trap '_bashbone_on_error 130 $LINENO; exit 130 &> /dev/null' INT
+			trap '_bashbone_on_error $? $LINENO || { [[ $BASHPID -ne $BASHBONE_PGID ]] && { return 130 &> /dev/null || exit 130; } || exit 130 &> /dev/null; }' ERR
+			trap '_bashbone_on_exit $?' EXIT
+		fi
+		trap '_bashbone_on_return $? "${BASH_COMMAND%% *}"' RETURN
+	else
+		# necessary to be implemented in order to trigger ERR->TERM and not EXIT directly in case of hidden exit bit thrown e.g. by sleep
+		# INT is further triggered in subshells to return and cleanup under PGID in case of e.g. fun(){ cat <(error); echo end; }
+		[[ $- == *i* ]] && trap '(exit 130)' INT
 	fi
 	BASHBONE_SET_ENV=false
-
-	local f l s BASHBONE_LEGACY=$BASHBONE_LEGACY
-	read -r f l s < <(declare -F $BASHBONE_FUNCNAME)
-	if [[ "$s" == "$BASHBONE_DIR/lib/"* ]]; then
-		[[ "$BASHBONE_FUNCNAME" == commander::* || "$BASHBONE_FUNCNAME" == progress::* ]] || BASHBONE_LEGACY=true
-	else
-		BASHBONE_LEGACY=false
-	fi
-
 	# reset COMMANDER and execute function specific/local $BASHBONE_CLEANUP script
-	trap '_bashbone_on_return $? "${BASH_COMMAND%% *}"' RETURN
-	# necessary to be implemented in order to trigger ERR->TERM and not EXIT directly in case of hidden exit bit thrown e.g. by sleep
-	# INT is further triggered in subshells to return and cleanup under PGID in case of e.g. fun(){ cat <(error); echo end; }
-	trap '(exit 130)' INT
-	trap '(exit 143)' ABRT
 
-	if [[ $- =~ i ]]; then
-		# pass though LINENO which is more often correct than ${BASH_LINENO[0]} when interactive
-		trap '_bashbone_on_error $? $LINENO || return 143' ERR
-		# just in case TERM is defined by user
-		trap - TERM
+	if [[ $BASHBONE_FUNCNAME ]]; then
+		local f_bashbone_wrapper l_bashbone_wrapper s_bashbone_wrapper BASHBONE_LEGACY=$BASHBONE_LEGACY
+		read -r f_bashbone_wrapper l_bashbone_wrapper s_bashbone_wrapper < <(declare -F $BASHBONE_FUNCNAME) || true
+		if [[ "$s_bashbone_wrapper" == "$BASHBONE_DIR/lib/"* ]]; then
+			[[ "$BASHBONE_FUNCNAME" == commander::* || "$BASHBONE_FUNCNAME" == progress::* ]] || BASHBONE_LEGACY=true
+		else
+			BASHBONE_LEGACY=false
+		fi
+		local BASHBONE_BPID=$BASHPID
+		local BASHBONE_CLEANUP="$(command mktemp -p "$BASHBONE_TMPDIR" cleanup.XXXXXXXXXX.sh)"
+		$BASHBONE_FUNCNAME "$@"
 	else
-		trap '_bashbone_on_error $? $LINENO || exit 143' ERR
+		# allow user to use bashbone cleanup ie auto-cleanup upon mktemp usage and to append their cleanup commands to $BASHBONE_CLEANUP
+		# further, users can override _on_exit() when defining qsub/runcmd jobs
+		BASHBONE_CLEANUP="$(command mktemp -p "$BASHBONE_TMPDIR" cleanup.XXXXXXXXXX.sh)"
 	fi
-
-	local BASHBONE_BPID=$BASHPID
-	local BASHBONE_CLEANUP="$(command mktemp -p "$BASHBONE_TMPDIR" cleanup.XXXXXXXXXX.sh)"
-	$BASHBONE_FUNCNAME "$@"
 	return $?
 }
-
-# to capture non-function error
-[[ $- =~ i ]] || {
-	_bashbone_wrapper true
-	# allow user to use bashbone cleanup ie auto-cleanup upon mktemp usage and to append their cleanup commands to $BASHBONE_CLEANUP
-	# further, users can override _on_exit() when defining qsub/runcmd jobs
-	BASHBONE_CLEANUP="$(command mktemp -p "$BASHBONE_TMPDIR" cleanup.XXXXXXXXXX.sh)"
-	trap 'exit 143' TERM
-	trap '_bashbone_on_exit $?' EXIT
-}
+[[ $- == *i* ]] || _bashbone_wrapper
 
 #####################################################################################
 
@@ -409,10 +420,10 @@ function bashbone(){
 			-r        | open readme
 			-c        | activate bashbone conda environment or deactivate conda
 			-s        | list bashbone scripts
-			-f <name> | list or execute bashbone functions
+			-f <name> | list all functions or if <name> is supplied, execute it
 			-d        | list bashbone developer functions
 			-e        | list installed tools and versions
-			-x        | remove bashbone functions and within scripts, restore environment (traps and shell options)
+			-x        | exit bashbone i.e. remove functions and disable conda. within scripts also restores environment i.e. traps and shell options
 		EOF
 		return 0
 	}
@@ -472,9 +483,9 @@ function bashbone(){
 			done
 			PATH="${PATH/$BASHBONE_PATH/}"
 
-			if [[ $- =~ i ]]; then
+			if [[ $- == *i* ]]; then
 				if [[ ${BASH_VERSINFO[0]} -ge 5 && -r /usr/share/bash-completion/bash_completion ]]; then
-					complete -r bashbone
+					complete -r bashbone samtools bcftools bedtools picard conda mamba datamash bam
 					complete -r -I
 					_bashbone_completion_default
 					if compgen -A arrayvar PROMPT_COMMAND > /dev/null; then
@@ -489,7 +500,7 @@ function bashbone(){
 				fi
 			else
 				# already done in prompt_command done when interactive
-				_bashbone_reset
+				_bashbone_reset 0
 			fi
 
 			for f in "${BASHBONE_FUNCNAMES[@]}" bashbone $(compgen -A function _bashbone); do
@@ -513,7 +524,7 @@ function bashbone(){
 }
 
 # activate colon aware _InitialWorD_ completion
-if [[ $- =~ i && ${BASH_VERSINFO[0]} -ge 5 && -r /usr/share/bash-completion/bash_completion ]]; then
+if [[ $- == *i* && ${BASH_VERSINFO[0]} -ge 5 && -r /usr/share/bash-completion/bash_completion ]]; then
 	[[ $BASH_COMPLETION_VERSINFO ]] || source /usr/share/bash-completion/bash_completion
 	function _bashbone_completion(){
 		declare -a args
@@ -563,4 +574,77 @@ if [[ $- =~ i && ${BASH_VERSINFO[0]} -ge 5 && -r /usr/share/bash-completion/bash
 
 	complete -F _bashbone_completion_init -c -W "${BASHBONE_FUNCNAMES[*]}" -I
 	complete -F _bashbone_completion bashbone
+
+	_bashbone_completion_samtools(){
+		local cur prev words cword
+		_init_completion
+		if [[ $cword -eq 1 && -x "$(which samtools)" ]]; then
+			COMPREPLY=($(compgen -W "$(samtools --help | sed -nE 's/^\s{5,5}(\S+).*/\1/p' | xargs echo)" -- "$cur"))
+		fi
+	}
+
+	_bashbone_completion_bcftools(){
+		local cur prev words cword
+		_init_completion
+		if [[ $cword -eq 1 && -x "$(which bcftools)" ]]; then
+			COMPREPLY=($(compgen -W "$(bcftools --help | sed -nE '1,/Plugins/{s/^\s{4,4}(\S+).*/\1/p}' | xargs echo)" -- "$cur"))
+		fi
+	}
+
+	_bashbone_completion_bedtools(){
+		local cur prev words cword
+		_init_completion
+		if [[ $cword -eq 1 && -x "$(which bedtools)" ]]; then
+			COMPREPLY=($(compgen -W "$(bedtools --help | sed -nE '/--/!{s/^\s{4,4}(\S+).*/\1/p}' | xargs echo)" -- "$cur"))
+		fi
+	}
+
+	_bashbone_completion_picard(){
+		local cur prev words cword
+		_init_completion
+		if [[ $cword -eq 1 && -x "$(which picard)" ]]; then
+			COMPREPLY=($(compgen -W "$({ picard || true; } |& sed -nE 's/[[:cntrl:]]\[[0-9]{1,3}m//g;s/^\s{4,4}(\S+).*/\1/p' | xargs echo)" -- "$cur"))
+		fi
+	}
+
+	_bashbone_completion_conda(){
+		local cur prev words cword
+		_init_completion
+		if [[ $cword -eq 1 && -x "$(which conda)" ]]; then
+			COMPREPLY=($(compgen -W "$(conda --help | sed -nE 's/^\s{4,4}(\S+).*/\1/p' | xargs echo)" -- "$cur"))
+		fi
+	}
+
+	_bashbone_completion_mamba(){
+		local cur prev words cword
+		_init_completion
+		if [[ $cword -eq 1 && -x "$(which mamba)" ]]; then
+			COMPREPLY=($(compgen -W "$(mamba --help | sed -nE 's/^\s{4,4}(\S+).*/\1/p' | xargs echo)" -- "$cur"))
+		fi
+	}
+
+	_bashbone_completion_datamash(){
+		local cur prev words cword
+		_init_completion
+		if [[ $cword -eq 1 && -x "$(which datamash)" ]]; then
+			COMPREPLY=($(compgen -W "$(datamash --help | sed -nE '1,/Options/{/^\s{2,2}/{s/,//gp}}' | xargs echo)" -- "$cur"))
+		fi
+	}
+
+	_bashbone_completion_bam(){
+		local cur prev words cword
+		_init_completion
+		if [[ $cword -eq 1 && -x "$(which bam)" ]]; then
+			COMPREPLY=($(compgen -W "$(bam help | sed -nE 's/^\s(\S+).*/\1/p' | xargs echo)" -- "$cur"))
+		fi
+	}
+
+	complete -o default -F _bashbone_completion_samtools samtools
+	complete -o default -F _bashbone_completion_bcftools bcftools
+	complete -o default -F _bashbone_completion_bedtools bedtools
+	complete -o default -F _bashbone_completion_picard picard
+	complete -o default -F _bashbone_completion_conda conda
+	complete -o default -F _bashbone_completion_mamba mamba
+	complete -o default -F _bashbone_completion_datamash datamash
+	complete -o default -F _bashbone_completion_bam bam
 fi

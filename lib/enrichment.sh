@@ -145,7 +145,7 @@ function enrichment::_ora(){
 							ggtitle(paste0(domain," (Top ",n,")")) +
 							ylab("-log10 padj") +
 							xlab(NULL);
-						suppressMessages(ggsave(file.path(odir,"barplot.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3));
+						suppressMessages(ggsave(file.path(odir,"barplot.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3+1));
 
 						n <- nrow(df.ora);
 						df <- df.ora;
@@ -158,7 +158,7 @@ function enrichment::_ora(){
 							ggtitle(paste0(domain," (",n,")")) +
 							ylab("-log10 padj") +
 							xlab(NULL);
-						suppressMessages(ggsave(file.path(odir,"barplot.full.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3,limitsize = F));
+						suppressMessages(ggsave(file.path(odir,"barplot.full.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3+1,limitsize = F));
 
 						df.ora <- df.ora[c("ID","setSize","Count","pvalue","p.adjust","NES","Description","geneID")];
 					} else {
@@ -303,7 +303,7 @@ function enrichment::_gsea(){
 							ggtitle(paste0(domain," (Top ",n,")")) +
 							ylab("-log10 padj") +
 							xlab(NULL);
-						suppressMessages(ggsave(file.path(odir,"barplot.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3));
+						suppressMessages(ggsave(file.path(odir,"barplot.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3+1));
 
 						n <- nrow(df.gsea);
 						df <- df.gsea;
@@ -316,7 +316,7 @@ function enrichment::_gsea(){
 							ggtitle(paste0(domain," (",n,")")) +
 							ylab("-log10 padj") +
 							xlab(NULL);
-						suppressMessages(ggsave(file.path(odir,"barplot.full.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3,limitsize = F));
+						suppressMessages(ggsave(file.path(odir,"barplot.full.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3+1,limitsize = F));
 
 						dir.create(file.path(odir,"gsea_plots"), recursive = T, showWarnings = F);
 						for (i in 1:length(gsea$Description)){
@@ -436,7 +436,7 @@ function enrichment::_reducego(){
 						ggtitle(paste0(domain," (",n,")")) +
 						ylab("-log10 padj") +
 						xlab(NULL);
-					suppressMessages(ggsave(file.path(odir,"barplot_reduced.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3));
+					suppressMessages(ggsave(file.path(odir,"barplot_reduced.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3+1));
 
 					n <- nrow(df.reduced);
 					df <- df.reduced;
@@ -459,7 +459,7 @@ function enrichment::_reducego(){
 						ggtitle(paste0(domain," (",n,")")) +
 						ylab("-log10 padj") +
 						xlab(NULL);
-					suppressMessages(ggsave(file.path(odir,"barplot_reduced.full.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3,limitsize = F));
+					suppressMessages(ggsave(file.path(odir,"barplot_reduced.full.pdf"), width=max(nchar(as.character(df$Description)))/5,height=n/3+1,limitsize = F));
 
 					df.ora <- df.ora[c("ID","parent","parentSimScore","setSize","Count","pvalue","p.adjust","NES","Description","core_enrichment")];
 					colnames(df.ora) <- c("id","parent","simscore","setsize","count","pval","padj","score","description","enrichment");

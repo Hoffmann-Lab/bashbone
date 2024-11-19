@@ -302,8 +302,8 @@ function cluster::coexpression(){
 
 	commander::printinfo "inferring coexpression"
 
-	declare -a cmd1 cmd2 tojoin
-	local m f e odir suff header sample countfile csv
+	declare -a cmd1x cmd2 cmd3 tojoin tdirs
+	local m f e odir suff header sample countfile csv c
 	for m in "${_mapper_coexpression[@]}"; do
 		odir="$outdir/$m"
 		mkdir -p "$odir"
@@ -324,14 +324,21 @@ function cluster::coexpression(){
 					echo "$sample,${tojoin[-1]}" >> "$csv"
 				done
 
-				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					helper::multijoin
-						-h "$(echo -e "$header")"
-						-o "$odir/experiments.$e"
-						-f $(printf '"%s" ' "${tojoin[@]}")
-				CMD
+				for r in $(seq 0 $(echo ${#tojoin[@]} | awk '{h=log($1+1)/log(2); h=h>int(h)?int(h)+1:h; print h-1}')); do
+					declare -a cmd1x$r
+					cmd1x[$r]=cmd1x$r
+				done
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.join)")
+				helper::multijoin \
+					-1 cmd1x \
+					-p "${tdirs[-1]}" \
+					-e 0 \
+					-h "$(echo -e "$header")" \
+					-o "$odir/experiments.$e" \
+					"${tojoin[@]}"
+
 			else
-				commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 					Rscript - <<< '
 						options(warn=-1);
 						suppressMessages(library("DESeq2"));
@@ -349,7 +356,7 @@ function cluster::coexpression(){
 				CMD
 			fi
 
-			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+			commander::makecmd -a cmd3 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
 				Rscript - <<< '
 					args <- commandArgs(TRUE);
 					intsv <- args[1];
@@ -368,11 +375,17 @@ function cluster::coexpression(){
 	done
 
 	if $skip; then
-		commander::printcmd -a cmd1
+		for c in "${cmd1x[@]}"; do
+			commander::printcmd -a $c
+		done
 		commander::printcmd -a cmd2
+		commander::printcmd -a cmd3
 	else
-		commander::runcmd -v -b -i $threads -a cmd1
+		for c in "${cmd1x[@]}"; do
+			commander::runcmd -v -b -i $threads -a $c
+		done
 		commander::runcmd -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $threads -a cmd3
 	fi
 
 	declare -a cmd3

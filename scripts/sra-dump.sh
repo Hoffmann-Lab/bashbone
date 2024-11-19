@@ -126,6 +126,7 @@ else
 			echo -e "$id\t$id" >&2
 			srr+=("$id")
 		} || {
+			# alternative for GEO accessions: Rscript -e 'library(GEOquery); geo_data <- getGEO(geo_accession); info <- geo_data@header[["characteristics_ch1"]];'
 			i="${#srr[@]}"
 			mapfile -t mapdata < <(esearch -db sra -query "$id" | efetch -format xml | grep .)
 			mapfile -t mapdata < <(join -t $'\t' <(printf '%s\n' "${mapdata[@]}" | xtract -pattern EXPERIMENT_PACKAGE -element RUN@accession,EXPERIMENT/TITLE,Member@sample_name,Member@sample_title | sed -E ':a;s/([^\t]+)\t\1/\1/;ta' | awk -F '\t' '{if($4){$3=$4}; print $1"\tsample_name=\""$3"\";\tsample_title=\""$2"\";"}') <(printf '%s\n' "${mapdata[@]}" | xtract -pattern EXPERIMENT_PACKAGE -element RUN@accession,SAMPLE_ATTRIBUTE/TAG,SAMPLE_ATTRIBUTE/VALUE | perl -F'\t' -lane 'for (1..$#F/2){$F[$_]=~s/\s+/_/g; $F[$_].="=\"$F[$_+$#F/2]\";"} print join"\t",@F[0..$#F/2]'))

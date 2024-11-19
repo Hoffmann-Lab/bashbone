@@ -503,7 +503,7 @@ function variants::tree(){
 
 		# replace all 0 by ref nt and remove invariable sites ie. same nt in all samples
 		commander::makecmd -a cmd8 -s '|' -o "$odir/ALN.fa" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- 'CMD'
-			helper::multijoin -h "$(echo "POS REFERENCE ${names[*]}" | sed 's/ /\t/g')" -f "$odir/REF.nt" $(printf '"%s" ' "${tomerge[@]/%/.snvcov.filtered.nt}")
+			helper::multijoin -t $((threads/${#_mapper_tree[@]}+1)) -e 0 -h "$(echo "POS REFERENCE ${names[*]}" | sed 's/ /\t/g')" "$odir/REF.nt" $(printf '"%s" ' "${tomerge[@]/%/.snvcov.filtered.nt}")
 		CMD
 			sed -E -e ':goto; s/^(\S+\s+)(\w)(.*\s+)0/\1\2\3\2/; t goto;' -e '/^\S+(\s+\w)\1*\1$/d'
 		CMD
@@ -543,7 +543,7 @@ function variants::tree(){
 		commander::runcmd -v -b -i $threads -a cmd5
 		commander::runcmd -v -b -i $threads -a cmd6
 		commander::runcmd -v -b -i $threads -a cmd7
-		commander::runcmd -v -b -i $threads -a cmd8
+		commander::runcmd -v -b -i ${#_mapper_tree[@]} -a cmd8
 		commander::runcmd -c raxml -v -b -i 1 -a cmd9
 	fi
 
