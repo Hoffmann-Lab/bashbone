@@ -945,16 +945,14 @@ function helper::ishash(){
 	while getopts 'v:' arg; do
 		case $arg in
 			v)	{	declare -p "$OPTARG" &> /dev/null
-					compgen -A variable -A arrayvar "$OPTARG" | grep -qFx "$OPTARG" && return 1
+					declare -n __="$OPTARG"
+					[[ "$(declare -p ${!__})" =~ ^declare\ \-[Ab-z]+ ]]
 				} || return 1
-				# {	declare -p "$OPTARG" &> /dev/null
-				# 	declare -n __="$OPTARG"
-				# 	[[ "$(declare -p ${!__})" =~ ^declare\ \-[Ab-z]+ ]]
-				# } || return 1
 			;;
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 
 	return 0
 }
@@ -974,16 +972,14 @@ function helper::isarray(){
 	while getopts 'v:' arg; do
 		case $arg in
 			v)	{	declare -p "$OPTARG" &> /dev/null
-					compgen -A arrayvar "$OPTARG" | grep -qFx "$OPTARG"
+					declare -n __="$OPTARG"
+					[[ "$(declare -p ${!__})" =~ ^declare\ \-[a-zB-Z]+ ]]
 				} || return 1
-				# {	declare -p "$OPTARG" &> /dev/null
-				# 	declare -n __="$OPTARG"
-				# 	[[ "$(declare -p ${!__})" =~ ^declare\ \-[a-zB-Z]+ ]]
-				# } || return 1
 			;;
 			*)	_usage;;
 		esac
 	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
 
 	return 0
 }
