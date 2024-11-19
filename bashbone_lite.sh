@@ -8,6 +8,7 @@
 
 export BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
 export BASHBONE_EXTENSIONDIR="${BASHBONE_EXTENSIONDIR:-$BASHBONE_DIR}/lib"
+export BASHBONE_LEGACY=${BASHBONE_LEGACY:-false}
 
 unset OPTIND
 while getopts 'p:x:s:ah' arg; do
@@ -67,16 +68,17 @@ while getopts 'p:x:s:ah' arg; do
 				        rm -f "$mytempfile"
 				    }
 			EOF
+			unset OPTIND
 			return 0
 		;;
 	esac
 done
 unset OPTIND
-[[ $- =~ i ]] && source "${BASH_SOURCE[0]}" -h && return 0
+[[ $- == *i* ]] && source "${BASH_SOURCE[0]}" -h && return 0
 
-if [[ ! $- =~ i ]] && ${BASHBONE_SETSID:-true}; then
- 	export BASHBONE_SETSID=false
- 	if [[ -t 0 ]]; then
+if ${BASHBONE_SETSID:-false}; then
+	export BASHBONE_SETSID=false
+	if [[ -t 0 ]]; then
 		{ trap 'exit 130' INT; exec setsid --wait bash "$(realpath -s "$0")" "$@"; } &
 	else
 		cat | { trap 'exit 130' INT; exec setsid --wait bash "$(realpath -s "$0")" "$@"; } &
@@ -89,7 +91,13 @@ if [[ ! $- =~ i ]] && ${BASHBONE_SETSID:-true}; then
 	trap - EXIT
 	exit $BASHBONE_EX
 fi
-BASHBONE_PGID=$(($(ps -o pgid= -p $BASHPID)))
+export -n BASHBONE_SETSID
+
+mapfile -t BASHBONE_BAK_SHOPT < <(shopt | awk '$2=="off"{print "shopt -u "$1}'; shopt | awk '$2=="on"{print "shopt -s "$1}')
+BASHBONE_BAK_TRAPS=$(trap -p)
+mapfile -t BASHBONE_BAK_SET < <(printf "%s" $- | sed 's/[isc]//g' | sed -E 's/(.)/set -\1\n/g')
+mapfile -t BASHBONE_BAK_ALIASES < <(declare -p BASH_ALIASES | sed 's/^declare/declare -g/') # squeeze in global paramater otherwise _bashbone_reset function call declares BASH_ALIASES locally
+mapfile -t BASHBONE_BAK_CMD_NOT_FOUND < <(declare -f command_not_found_handle)
 
 set -o pipefail -o errtrace -o functrace
 shopt -s expand_aliases extdebug extglob globstar
@@ -109,25 +117,50 @@ function mktemp(){
 	return 0
 }
 
+BASHBONE_PGID=$(($(ps -o pgid= -p $BASHPID)))
 export TMPDIR="$(command mktemp -d -p "${TMPDIR:-/tmp}" XXXXXXXXXX)"
-function _bashbone_reset(){
+trap '_bashbone_on_error 130 $LINENO; exit 130 &> /dev/null' INT
+trap '_bashbone_on_error $? $LINENO || { [[ $BASHPID -ne $BASHBONE_PGID ]] && { return 130 &> /dev/null || exit 130; } || exit 130 &> /dev/null; }' ERR
+trap '_bashbone_on_exit $?' EXIT
+trap '_bashbone_on_return $? "${BASH_COMMAND%% *}"' RETURN
+
+function _bashbone_on_exit(){
 	trap "" INT TERM ERR
 
-	{ env kill -INT -- -$BASHBONE_PGID & wait $!; } &> /dev/null
-	sleep 0.1
-	{ env kill -TERM -- -$BASHBONE_PGID & wait $!; } &> /dev/null
+	if [[ $1 -eq 0 ]] && ! [[ -t 1 && -t 2 ]]; then
+		:
+	else
+		if [[ $$ -eq $BASHBONE_PGID ]]; then
+			env kill -INT -- -$BASHBONE_PGID
+			sleep 0.1
+			env kill -TERM -- -$BASHBONE_PGID
+		fi
+	fi
+	find -L "$TMPDIR" -type f -name "cleanup.*.sh" -exec bash -c 'tac "$1" | bash || true; rm -f "$1"' bash {} \;
+	"${BASHBONE_EXITFUN:-:}" $1
+	rm -rf "$TMPDIR"
 
-	mkdir "$TMPDIR/.lock.cleanup" &> /dev/null && {
-		find "$TMPDIR" -type f -name "cleanup.*.sh" -exec bash -c 'tac "$1" | bash || true; rm -f "$1"' bash {} \;
-		"${BASHBONE_EXITFUN:-:}" $1
-		rm -rf "$TMPDIR"
-	}
+	set +o pipefail +o errtrace +o functrace
+	trap - INT TERM RETURN ERR EXIT
+	source <(IFS=; echo "$BASHBONE_BAK_TRAPS")
+	source <(printf '%s\n' "${BASHBONE_BAK_CMD_NOT_FOUND[@]}")
+	source <(printf '%s\n' "${BASHBONE_BAK_SHOPT[@]}")
+	source <(printf '%s\n' "${BASHBONE_BAK_SET[@]}")
+	source <(printf '%s\n' "${BASHBONE_BAK_ALIASES[@]}")
+	eval "$(trap -p EXIT | sed 's/^trap -- .//;s/. EXIT$//')"
 	return 0
 }
 
 function _bashbone_wrapper(){
 	local BASHBONE_FUNCNAME=$1
 	shift
+	local f_bashbone_wrapper l_bashbone_wrapper s_bashbone_wrapper BASHBONE_LEGACY=$BASHBONE_LEGACY
+	read -r f_bashbone_wrapper l_bashbone_wrapper s_bashbone_wrapper < <(declare -F $BASHBONE_FUNCNAME) || true
+	if [[ "$s_bashbone_wrapper" == "$BASHBONE_DIR/lib/"* ]]; then
+		[[ "$BASHBONE_FUNCNAME" == commander::* || "$BASHBONE_FUNCNAME" == progress::* ]] || BASHBONE_LEGACY=true
+	else
+		BASHBONE_LEGACY=false
+	fi
 	local BASHBONE_CLEANUP="$(command mktemp -p "$TMPDIR" cleanup.XXXXXXXXXX.sh)"
 	$BASHBONE_FUNCNAME "$@"
 	return $?
@@ -140,57 +173,60 @@ function _bashbone_trace(){
 		[[ "$fun" == "_bashbone_wrapper" || "$fun" == "command_not_found_handle" ]] && continue
 		src="${BASH_SOURCE[$((frame+1))]}"
 		line=${BASH_LINENO[$frame]}
-		if [[ $fun && "$fun" != "main" ]]; then
-			read -r f l src < <(declare -F "$fun")
+		if [[ $line -eq 1 ]]; then
+			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main})" >&2
+		else
+			if [[ $fun && "$fun" != "main" ]]; then
+				read -r f l src < <(declare -F "$fun")
+			fi
+			if [[ "$src" == "environment" ]]; then
+				line=$((line+3))
+				cmd=$(declare -f $fun | awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+			else
+				cmd=$(awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+			fi
+			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main}) @ line $line: $cmd" >&2
 		fi
-		cmd=$(awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
-		echo ":ERROR:$BASHBONE_ERROR in ${src:-shell} (function: ${fun:-main}) @ line $line: $cmd" >&2
 	done
-	echo ":ERROR: exit code 143" >&2
 	return 0
 }
 
 function _bashbone_on_error(){
 	[[ $1 -eq 141 ]] && return 0
 	trap "" INT
-	[[ $1 -ne 130 && $1 -ne 143 ]] && mkdir "$TMPDIR/.lock.error" &> /dev/null && _bashbone_trace $1
-	set -m
-	{ env kill -TERM -- -$BASHBONE_PGID; sleep 0.1; _bashbone_reset 143; } &
-	set +m
-	wait $!
-	return 143
+	mkdir "$TMPDIR/.killed" &> /dev/null && _bashbone_trace $1 && env kill -INT -- -$BASHBONE_PGID
+	return 130
 }
 
 function _bashbone_on_return(){
 	if [[ $1 -eq 0 && "$2" != "source" && "$2" != "." && "$BASHBONE_FUNCNAME" == "${FUNCNAME[1]}" ]]; then
-		if [[ -e "$BASHBONE_CLEANUP" ]]; then
+		COMMANDER=()
+		[[ -e "$BASHBONE_CLEANUP" ]] && {
 			tac "$BASHBONE_CLEANUP" | bash || true
 			rm -f "$BASHBONE_CLEANUP"
-		fi
+		}
 	fi
 	return 0
 }
 
-trap '_bashbone_reset $?' EXIT
-trap '_bashbone_on_error $? || return 143' ERR
-trap '(exit 130)' INT
-trap 'exit 143' TERM
-trap '_bashbone_on_return $? "${BASH_COMMAND%% *}"' RETURN
-
 if [[ -e "$BASHBONE_EXTENSIONDIR" ]]; then
-	while read -r f; do
-		alias $f="_bashbone_wrapper $f"
-	done < <(
+	declare -x -a BASHBONE_FUNCNAMES
+	mapfile -t BASHBONE_FUNCNAMES < <(
 		shopt -s extdebug
+		trap - RETURN
+		while read -r f; do
+			unset -f $f
+		done < <(compgen -A function)
 		while read -r f; do
 			source "$f"
-		done < <(find -L "$BASHBONE_EXTENSIONDIR" -name "*.sh")
-		for f in $(declare -F | awk '{print $3}'); do
-			read -r f l s < <(declare -F $f)
-			[[ "$s" == "$BASHBONE_EXTENSIONDIR"* ]] && echo $f
-		done
+		done < <(find -L "$BASHBONE_EXTENSIONDIR" -name "*.sh" -not -name "#*")
+		compgen -A function
 	)
+	for f in "${BASHBONE_FUNCNAMES[@]}"; do
+		alias $f="_bashbone_wrapper $f"
+	done
+
 	while read -r f; do
 		source "$f"
-	done < <(find -L "$BASHBONE_EXTENSIONDIR" -name "*.sh")
+	done < <(find -L "$BASHBONE_EXTENSIONDIR" -name "*.sh" -not -name "#*")
 fi
