@@ -201,7 +201,9 @@ function compile::conda_tools(){
 		doclean=true
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env remove -y -n $n # manually remove to be compatible with different version: create had --force in newer version replace by -y
+			# manually remove to be compatible with different version: create had --force in newer version replace by -y
+			# as of v1.5.9, non-existing envs cause error
+			mamba env remove -y -n $n || true
 			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
@@ -323,7 +325,7 @@ function compile::conda_tools(){
 
 			commander::printinfo "setup conda $n env"
 			if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-				mamba env remove -y -n $n
+				mamba env remove -y -n $n || true
 				mamba env create -n $n --file "$src/config/$n.yaml"
 			else
 				mamba create -y -n $n
@@ -360,7 +362,7 @@ function compile::conda_tools(){
 
 	# 	commander::printinfo "setup conda $n env"
 	# 	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-	#		mamba env remove -y -n $n
+	#		mamba env remove -y -n $n || true
 	# 		mamba env create -n $n --file "$src/config/$n.yaml"
 	# 	else
 	# 		mamba create -y -n $n
@@ -395,7 +397,7 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env remove -y -n $n
+			mamba env remove -y -n $n || true
 			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n #python=3
@@ -425,7 +427,7 @@ function compile::conda_tools(){
 
 	# 	commander::printinfo "setup conda $n env"
 	# 	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-	# 		mamba env remove -y -n $n
+	# 		mamba env remove -y -n $n || true
 	# 		mamba env create -n $n --file "$src/config/$n.yaml"
 	# 	else
 	# 		mamba create -y -n $n
@@ -469,7 +471,7 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml-noexist" ]] && $cfg; then
-			mamba env remove -y -n $n
+			mamba env remove -y -n $n || true
 			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
@@ -546,7 +548,7 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env remove -y -n $n
+			mamba env remove -y -n $n || true
 			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
@@ -573,7 +575,7 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env remove -y -n $n
+			mamba env remove -y -n $n || true
 			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
@@ -610,7 +612,7 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env remove -y -n $n
+			mamba env remove -y -n $n || true
 			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
@@ -637,7 +639,7 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env remove -y -n $n
+			mamba env remove -y -n $n || true
 			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n #python=3
@@ -663,7 +665,7 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env remove -y -n $n
+			mamba env remove -y -n $n || true
 			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
@@ -719,7 +721,7 @@ function compile::conda_tools(){
 		ln -sfn "$insdir/DANPOS3" "$insdir/latest/danpos"
 
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env remove -y -n $n
+			mamba env remove -y -n $n || true
 			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
@@ -747,7 +749,7 @@ function compile::conda_tools(){
 
 		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
-			mamba env remove -y -n $n
+			mamba env remove -y -n $n || true
 			mamba env create -n $n --file "$src/config/$n.yaml"
 		else
 			mamba create -y -n $n
