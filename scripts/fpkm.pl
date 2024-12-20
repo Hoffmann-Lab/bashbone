@@ -42,7 +42,7 @@ while(<F>){
 	$l[-1]=~/transcript_id\s+(\S+)/;
 	my $t = $1 ? $1 : 'transcript';
 	$t=~s/("|;)//g;
-	if ($l[-1]=~/tag\s+\"(CCDS|\S+_canonical)\"/) {
+	if ($l[-1]=~/tag\s+\"(CCDS|[^"]*canonical)\"/) {
 		$m{$g}{1}{$t} += $l[4]-$l[3]+1;
 	} elsif ($l[2] eq 'ensembl_havana' || $l[2] eq 'HAVANA') {
 		$m{$g}{2}{$t} += $l[4]-$l[3]+1;
