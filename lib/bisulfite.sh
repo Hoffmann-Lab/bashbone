@@ -174,38 +174,72 @@ function bisulfite::segemehl(){
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.segemehl)")
 		if [[ ${_fq2_segemehl[$i]} ]]; then
 			[[ $insertsize ]] && params+=" -I $insertsize"
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				cd "${tdirs[-1]}"
+			# commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			# 	cd "${tdirs[-1]}"
+			# CMD
+			# 	segemehl
+			# 	$params
+			# 	-F $mode
+			# 	-i "$(realpath -se "$ctidx")"
+			# 	-j "$(realpath -se "$gaidx")"
+			# 	-d "$(realpath -se "$genome")"
+			# 	-q "$(realpath -se "${_fq1_segemehl[$i]}")"
+			# 	-p "$(realpath -se "${_fq2_segemehl[$i]}")"
+			# 	-t $threads
+			# 	-b
+			# 	-o "$(realpath -s "$o.bam")"
+			# CMD
+			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
+				cd "${tdirs[-1]}";
 			CMD
 				segemehl
-				$params
-				-F $mode
-				-i "$(realpath -se "$ctidx")"
-				-j "$(realpath -se "$gaidx")"
-				-d "$(realpath -se "$genome")"
-				-q "$(realpath -se "${_fq1_segemehl[$i]}")"
-				-p "$(realpath -se "${_fq2_segemehl[$i]}")"
-				-t $threads
-				-b
-				-o "$(realpath -s "$o.bam")"
+					$params
+					-F $mode
+					-i "$(realpath -se "$ctidx")"
+					-j "$(realpath -se "$gaidx")"
+					-d "$(realpath -se "$genome")"
+					-q "$(realpath -se "${_fq1_segemehl[$i]}")"
+					-p "$(realpath -se "${_fq2_segemehl[$i]}")"
+					-t $threads
 			CMD
+				| sed -E 's@(\tXB:Z:../CT)@\tYD:Z:f\1@; s@(\tXB:Z:../GA)@\tYD:Z:r\1@'
+			CMD
+				| samtools view --no-PG -@ $threads -b -o "$(realpath -s "$o.bam")"
+			CMD
+			# sed adds YD tag used by e.g. dupsifter for bisulfite strand determination
 		else
-			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				cd "${tdirs[-1]}"
+			# commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			# 	cd "${tdirs[-1]}"
+			# CMD
+			# 	segemehl
+			# 	$params
+			# 	-F $mode
+			# 	-i "$(realpath -se "$ctidx")"
+			# 	-j "$(realpath -se "$gaidx")"
+			# 	-d "$(realpath -se "$genome")"
+			# 	-q "$(realpath -se "${_fq1_segemehl[$i]}")"
+			# 	-t $threads
+			# 	-b
+			# 	-o "$(realpath -s "$o.bam")"
+			# CMD
+			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
+				cd "${tdirs[-1]}";
 			CMD
 				segemehl
-				$params
-				-F $mode
-				-i "$(realpath -se "$ctidx")"
-				-j "$(realpath -se "$gaidx")"
-				-d "$(realpath -se "$genome")"
-				-q "$(realpath -se "${_fq1_segemehl[$i]}")"
-				-t $threads
-				-b
-				-o "$(realpath -s "$o.bam")"
+					$params
+					-F $mode
+					-i "$(realpath -se "$ctidx")"
+					-j "$(realpath -se "$gaidx")"
+					-d "$(realpath -se "$genome")"
+					-q "$(realpath -se "${_fq1_segemehl[$i]}")"
+					-t $threads
+			CMD
+				| sed -E 's@(\tXB:Z:../CT)@\tYD:Z:f\1@; s@(\tXB:Z:../GA)@\tYD:Z:r\1@'
+			CMD
+				| samtools view --no-PG -@ $threads -b -o "$(realpath -s "$o.bam")"
 			CMD
 		fi
-		segemehl+=("$o.bam")
+		segemehl[$i]="$o.bam"
 	done
 
 	if $skip; then
@@ -311,7 +345,8 @@ function bisulfite::bwa(){
 				samtools view --no-PG -@ $threads -b -o "$o.bam"
 			CMD
 			# tee >(samtools view -@ $((threads/2+1)) -b > "$o.raw.bam")
-			# sed corrects SA and XA tags, which bwameth does not change back from c2t (f+r) chromosomes i.e. (f|r)chr to chr
+			# sed adds asterisk to unmapped reads and adds segemehl XB tag to make it work with haarz
+			# propably also needs to correct SA and XA tags, because bwameth does not change chromosome names back after using g2a and c2t indices i.e. f/r prefix kept: (f|r)chr
 		else
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 				bwameth.py
@@ -328,7 +363,7 @@ function bisulfite::bwa(){
 			CMD
 			# tee >(samtools view -@ $((threads/2+1)) -b > "$o.raw.bam")
 		fi
-		bwa+=("$o.bam")
+		bwa[$i]="$o.bam"
 	done
 
 	if $skip; then
@@ -475,7 +510,7 @@ function bisulfite::rmduplicates(){
 					CMD
 						| awk -v f=<(helper::cat -f "${umi_bsrmduplicates[$i]}" | paste - - - -)
 					CMD
-						-v OFS='\t' '/^@\S\S\s/{print; next}{l=$0; r="@"$1; getline < f; while(r!=$1){getline < f} print l,"RX:Z:"$(NF-2)}'
+						-v OFS='\t' '/^@\S\S\s/{print; next}{l=$0; r="@"$1; getline < f; while(r!=$1){getline < f} print l,"RX:Z:"$(NF-2),"QX:Z:"$NF}'
 					CMD
 						| samtools sort
 							-@ $ithreads
@@ -928,6 +963,7 @@ function bisulfite::metilene(){
 			-S <hardskip>   | true/false return
 			-s <softskip>   | true/false only print commands
 			-t <threads>    | number of
+			-g <genome>     | path to
 			-c <cmpfiles>   | array of
 			-m <minimum>    | values present in control and treatment samples as fraction or absolute number - default: 0.8
 			-u <upperbound> | values present in control and treatment samples as absolute number (see -m) - default: not capped
@@ -943,11 +979,12 @@ function bisulfite::metilene(){
 	local OPTIND arg mandatory skip=false threads genome mecalldir outdir min=0.8 cap=999999 context=CG tmpdir="${TMPDIR:-/tmp}"
 	declare -a tools
 	declare -n _mapper_metilene _cmpfiles_metilene
-	while getopts 'S:s:t:c:m:u:x:r:i:o:d:' arg; do
+	while getopts 'S:s:t:g:c:m:u:x:r:i:o:d:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
 			c)	((++mandatory)); _cmpfiles_metilene=$OPTARG;;
 			m)	min=$OPTARG;;
 			u)	cap=$OPTARG;;
@@ -960,7 +997,7 @@ function bisulfite::metilene(){
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 	[[ $tools ]] || tools=("") # for backwards compatibility
 
 	commander::printinfo "differential methylation analyses"
@@ -1012,7 +1049,7 @@ function bisulfite::metilene(){
 							-p "${tdirs[-1]}" \
 							-o "$odir/merates.bedg" \
 							-r 1,3- \
-							-b \
+							-b "$genome.fai" \
 							"${tojoin[@]}"
 
 						bisulfite::_metilene \
@@ -1131,14 +1168,15 @@ function bisulfite::join(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads mecalldir outdir context=CG tmpdir="${TMPDIR:-/tmp}"
+	local OPTIND arg mandatory skip=false threads genome mecalldir outdir context=CG tmpdir="${TMPDIR:-/tmp}"
 	declare -a tools
     declare -n _mapper_join _cmpfiles_join
-	while getopts 'S:s:t:r:c:x:i:o:f:d:' arg; do
+	while getopts 'S:s:t:g:r:c:x:i:o:f:d:' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
+			g)	((++mandatory)); genome="$OPTARG";;
 			r)	((++mandatory)); _mapper_join=$OPTARG;;
 			c)	((++mandatory)); _cmpfiles_join=$OPTARG;;
 			x)	context=$OPTARG;;
@@ -1149,7 +1187,7 @@ function bisulfite::join(){
 		esac
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
-	[[ $mandatory -lt 5 ]] && _usage
+	[[ $mandatory -lt 6 ]] && _usage
 	[[ $tools ]] || tools=("") # for backwards compatibility
 
 	commander::printinfo "joining methylation rates, zscores"
@@ -1205,7 +1243,7 @@ function bisulfite::join(){
 				-p "${tdirs[-1]}" \
 				-o "$odir/merates.bedg" \
 				-r 1,3- \
-				-b \
+				-b "$genome.fai" \
 				"${tojoin[@]}"
 
 			# allow for Rscript | head without getting SIGPIPE error. redirection to file possible via sink()
