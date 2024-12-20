@@ -264,7 +264,7 @@ function alignment::rmduplicates(){
 					CMD
 						| awk -v f=<(helper::cat -f "${umi_rmduplicates[$i]}" | paste - - - -)
 					CMD
-						-v OFS='\t' '/^@\S\S\s/{print; next}{l=$0; r="@"$1; getline < f; while(r!=$1){getline < f} print l,"RX:Z:"$(NF-2)}'
+						-v OFS='\t' '/^@\S\S\s/{print; next}{l=$0; r="@"$1; getline < f; while(r!=$1){getline < f} print l,"RX:Z:"$(NF-2),"QX:Z:"$NF}'
 					CMD
 						| samtools sort
 							-@ $ithreads
