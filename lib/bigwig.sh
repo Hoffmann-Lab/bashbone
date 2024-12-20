@@ -64,7 +64,7 @@ function bigwig::_apply(){
 				-t $threads \
 				-p ${tdirs[-1]} \
 				-f tomerge \
-				-o "$odir/$c.mean.pileup.tpm.bw" \
+				-o "$odir/$c.$job.pileup.tpm.bw" \
 				-j $job \
 				-e $missing
 		done
@@ -220,7 +220,7 @@ function bigwig::profiles(){
 	done
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 4 ]] && _usage
-	[[ ! $_bedfiles_profiles && ! $gtf ]] && _usage
+	# [[ ! $_bedfiles_profiles && ! $gtf ]] && _usage
 
 	$pearson && commander::printinfo "correlating bigwigs and creating profiles" || commander::printinfo "creating bigwig profiles"
 
@@ -245,7 +245,7 @@ function bigwig::profiles(){
 
 		for f in "${_bams_profiles[@]}"; do
 			$pearson && coverages+=("$(find -L "$bwdir/$m" -maxdepth 1 -name "$(basename ${f%.*}).coverage.tpm.bw" -print -quit | grep .)")
-			pileups+=("$(find -L "$bwdir/$m" -maxdepth 1 -name "$(basename ${f%.*}).pileup.tpm.bw" -print -quit | grep .)")
+			[[ $toprofile || $gtf ]] && pileups+=("$(find -L "$bwdir/$m" -maxdepth 1 -name "$(basename ${f%.*}).pileup.tpm.bw" -print -quit | grep .)")
 		done
 
 		[[ ${#pileups[@]} -gt 1 ]] && e="$(echo -e "${pileups[0]}\t${pileups[1]}" | sed -E 's/(.+)\t.*\1/\t\1/' | cut -f 2)" || e=".pileup.tpm.bw"
