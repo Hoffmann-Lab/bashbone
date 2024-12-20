@@ -109,13 +109,13 @@ function peaks::macs(){
 			-M <maxmemory>  | amount of
 			-f <size>       | assumed mean fragment
 			-g <genome>     | path to
-			-q <ripseq>     | true/false
 			-r <mapper>     | array of sorted bams within array of
 			-a <nidx>       | array of normal bam idices within -r (if paired input, requires also -i)
 			-i <tidx>       | array of IP* bam idices within -r (if paired input, requires also -a)
 			-o <outdir>     | path to
+			-q <RIP/ATAC>   | true/false
 			-w <broad>      | true/false peak detection
-			-y <pointy>     | true/false call only pointy peaks
+			-y <CUT>        | true/false sparse CUT&TAG/CUT&RUN data or in RIP-seq/ATAC mode (see -q) find very narrow peaks
 			-z <strict>     | true/false peak filters
 		EOF
 		return 1
@@ -216,7 +216,7 @@ function peaks::macs(){
 		broad="broadPeak"
 		mult=4
 	else
-		params+=' --min-length 50 --call-summits'
+		params+=' --min-length 100 --call-summits'
 		broad="narrowPeak"
 		mult=1
 	fi
@@ -418,6 +418,11 @@ function peaks::macs(){
 	else
 		commander::runcmd -v -b -i $instances -a cmd1
 		commander::runcmd -c macs -v -b -i $instances2 -a cmd2
+		{ head -1 "$odir/$o/$o.nomodel_peaks.$broad" "$odir/$o/$o.model_peaks.$broad" | grep -q .; } &> /dev/null || {
+			rm -f "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			touch "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			return 0
+		}
 		commander::runcmd -v -b -i $threads -a cmd3
 		commander::runcmd -c macs -v -b -i $threads -a cmd4
 		commander::runcmd -v -b -i $threads -a cmd5
@@ -588,6 +593,11 @@ function peaks::seacr(){
 	else
 		commander::runcmd -v -b -i $threads -a cmd1
 		commander::runcmd -c seacr -v -b -i $threads -a cmd2
+		{ head -1 "$odir/$o/$o.$params.bed" | grep -q .; } &> /dev/null || {
+			rm -f "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			touch "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			return 0
+		}
 		commander::runcmd -v -b -i $threads -a cmd3
 		commander::runcmd -c macs -v -b -i $threads -a cmd4
 		commander::runcmd -v -b -i $threads -a cmd5
@@ -686,7 +696,7 @@ function peaks::gopeaks(){
 	local params
 	$strict && params="-p 0.01" || params="-p 0.05"
 	# $broad && params+=" -w 150 -t $((fragmentsize/2)) -l 25 -m $((fragmentsize/2*4))" || params+=" -w 50 -t 75 -l 25 -m $((fragmentsize/2))"
-	$broad && params+=" -w 150 -t 100 -l 25 -m 400" || params+=" -w 50 -t 75 -l 25 -m 100"
+	$broad && params+=" -w 150 -t 100 -l 25 -m 400" || params+=" -w 100 -t 75 -l 25 -m 100"
 	# warning!!: memory usage doubles with half sliding size. better dont touch and wait for summit.py stable release
 	# $pointy && params+=" -w $((fragmentsize/2))" || params="-w $fragmentsize"
 	# --broad          Run GoPeaks on broad marks (--step 5000 & --slide 1000) <- for seldom extreme broad marks by h3k27me3
@@ -749,6 +759,11 @@ function peaks::gopeaks(){
 		commander::printcmd -a cmd3
 	else
 		commander::runcmd -c gopeaks -v -b -i $minstances -a cmd1
+		{ head -1 "$odir/$o/${o}_peaks.bed" | grep -q .; } &> /dev/null || {
+			rm -f "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			touch "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			return 0
+		}
 		commander::runcmd -c macs -v -b -i $threads -a cmd2
 		commander::runcmd -v -b -i $threads -a cmd3
 	fi
@@ -772,9 +787,9 @@ function peaks::gem(){
 			-a <nidx>       | array of normal bam idices within -r (if paired input, requires also -i)
 			-i <tidx>       | array of IP* bam idices within -r (if paired input, requires also -a)
 			-o <outdir>     | path to
-			-q <ripseq>     | true/false
+			-q <RIP/ATAC>   | true/false
 			-x <strandness> | hash per bam of (if ripseq)
-			-y <pointy>     | true/false call only pointy peaks
+			-y <CUT>        | true/false sparse CUT&TAG/CUT&RUN data or in RIP-seq/ATAC mode (see -q) find very narrow peaks
 			-z <strict>     | true/false peak filters
 		EOF
 		return 1
@@ -894,9 +909,8 @@ function peaks::gem(){
 		[[ $_nidx_gem ]] && params+=' --nd 2' # --nd 2 is designed for RNA based approaches and uses the control data to model the noise
 
 		params+=" --d '$(dirname "$(which gem)")/Read_Distribution_CLIP.txt'"
-		if $pointy; then
-			params+=' --smooth 5'
-		fi
+		$pointy && params+=' --smooth 5'
+
 		# if very narrow peaks i.e. more pointy signals needs to be deteced (e.g. clip or chip-exo), then
 		# decrease smoothing width for read distribution estimation from default 30 bp to e.g. 5 via --smooth 5
 		# if enough initial peaks can be found, re-estimation of the read distribution takes place
@@ -1012,6 +1026,11 @@ function peaks::gem(){
 		commander::printcmd -a cmd4
 	else
 		commander::runcmd -v -b -i $minstances -a cmd1
+		{ head -1 "$odir/$o/$o.GPS_events.narrowPeak" | grep -q .; } &> /dev/null || {
+			rm -f "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			touch "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			return 0
+		}
 		commander::runcmd -v -b -i $threads -a cmd2
 		commander::runcmd -c macs -v -b -i $threads -a cmd3
 		commander::runcmd -v -b -i $threads -a cmd4
@@ -1036,10 +1055,10 @@ function peaks::homer(){
 			-a <nidx>       | array of normal bam idices within -r (if paired input, requires also -i)
 			-i <tidx>       | array of IP* bam idices within -r (if paired input, requires also -a)
 			-o <outdir>     | path to
-			-q <ripseq>     | true/false
-			-x <strandness> | hash per bam of (if ripseq)
+			-q <RIP/ATAC>   | true/false
 			-w <broad>      | true/false peak detection
-			-y <pointy>     | true/false call only pointy peaks
+			-x <strandness> | hash per bam of (if RIP-seq mode)
+			-y <CUT>        | true/false sparse CUT&TAG/CUT&RUN data or in RIP-seq/ATAC mode (see -q) find very narrow peaks
 			-z <strict>     | true/false peak filters
 		EOF
 		return 1
@@ -1137,7 +1156,7 @@ function peaks::homer(){
 	#	-> must: PeakID	chr	start	end	strand	Normalized Tag Count	region size	findPeaks Score	Fold Change vs Local	p-value vs Local	Total Tags (normalized to Control Experiment)	Control Tags	Fold Change vs Control	p-value vs Control
 	# if input is missing: -fdr 0.00001
 
-	local params='' params2='' strandness=0 minsize=50 maxsize=400 mindist=100
+	local params='' params2='' strandness=0 minsize=100 maxsize=400 mindist=100
 	if [[ $(wc -l < "$genome.fai") -gt 100 ]]; then
 		# create single tags.tsv to favor nfs at cost of higher memory consuption
 		params+=' -single'
@@ -1244,7 +1263,7 @@ function peaks::homer(){
 					"${tdirs[-1]}/$(basename "$f")"
 			CMD
 
-			# or as one-liner: seq 50 10 400 | parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P 40 findPeaks TEST/ip/ -i TEST/input/ -gsize 2801039415 -region -L 2 -localSize 2000 -size {} -minDist 100 -fragLength 150 -inputFragLength 150 -C 0 | grep -v '^#' | cut -f 2- | awk -v OFS='\t' '$4="name\t"$7"\t"$4' | psort -k1,1 -k2,2n -k3,3n | bedtools merge -s -i - -c 4,5,6,10,11 -o distinct,max,distinct,max,min | awk -v s=$(${ss:-false} && echo 1 || echo 0) -v OFS='\t' '{$4="peak_"NR; if(!s){$6="."} print $0,-1,-1}' > homer.narrowPeak
+			# or as one-liner: seq 100 10 400 | parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer -P 40 findPeaks TEST/ip/ -i TEST/input/ -gsize 2801039415 -region -L 2 -localSize 2000 -size {} -minDist 100 -fragLength 150 -inputFragLength 150 -C 0 | grep -v '^#' | cut -f 2- | awk -v OFS='\t' '$4="name\t"$7"\t"$4' | psort -k1,1 -k2,2n -k3,3n | bedtools merge -s -i - -c 4,5,6,10,11 -o distinct,max,distinct,max,min | awk -v s=$(${ss:-false} && echo 1 || echo 0) -v OFS='\t' '{$4="peak_"NR; if(!s){$6="."} print $0,-1,-1}' > homer.narrowPeak
 			for s in $(seq $minsize 10 $maxsize); do
 				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD
 					findPeaks
@@ -1315,6 +1334,11 @@ function peaks::homer(){
 	else
 		commander::runcmd -c homer -v -b -i $threads -a cmd1
 		commander::runcmd -c homer -v -b -i $threads -a cmd2
+		grep -q -v -m 1 '^#' "$odir/$o/size_$minsize.tsv" &> /dev/null || {
+			rm -f "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			touch "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			return 0
+		}
 		commander::runcmd -v -b -i $instances -a cmd3
 		commander::runcmd -c macs -v -b -i $threads -a cmd4
 		commander::runcmd -v -b -i $threads -a cmd5
@@ -1463,6 +1487,11 @@ function peaks::matk(){
 		commander::printcmd -a cmd3
 	else
 		commander::runcmd -v -b -i 1 -a cmd1
+		{ head -1 "$odir/$o/$o.narrowPeak" | grep -q .; } &> /dev/null || {
+			rm -f "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			touch "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			return 0
+		}
 		commander::runcmd -c macs -v -b -i $threads -a cmd2
 		commander::runcmd -v -b -i $threads -a cmd3
 	fi
@@ -1577,7 +1606,6 @@ function peaks::peakachu(){
 				fi
 
 				readsbed="$(find -L "$mdir/$o" -maxdepth 1 -name "$(basename "${f%.*}").bed.gz" -print -quit | grep .)"
-				mkdir -p "$odir/$o"
 
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					rm -rf "$odir/$o"
@@ -1682,6 +1710,11 @@ function peaks::peakachu(){
 		commander::printcmd -a cmd4
 	else
 		commander::runcmd -c peakachu -v -b -i 1 -a cmd1
+		{ head -1 "$odir/$o/peak_tables/"*.csv | grep -q .; } &> /dev/null || {
+			rm -f "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			touch "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			return 0
+		}
 		commander::runcmd -v -b -i $threads -a cmd2
 		commander::runcmd -c macs -v -b -i $threads -a cmd3
 		commander::runcmd -v -b -i $threads -a cmd4
@@ -1702,16 +1735,16 @@ function peaks::genrich(){
 			-a <nidx>       | array of normal bam idices within -r (if paired input, requires also -i)
 			-i <tidx>       | array of IP* bam idices within -r (if paired input, requires also -a)
 			-o <outdir>     | path to
-			-q <ripseq>     | true/false
-			-z <strict>     | true/false peak filters
+			-q <RIP/ATAC>   | true/false
 			-w <broad>      | true/false peak detection
-			-y <pointy>     | true/false call only pointy peaks
+			-y <CUT>        | true/false sparse CUT&TAG/CUT&RUN data or in RIP-seq/ATAC mode (see -q) find very narrow peaks
+			-z <strict>     | true/false peak filters
 			-P              | run pair-wise i.e. ignores replicates
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false skipmd5=false genome fragmentsize threads outdir tmpdir="${TMPDIR:-/tmp}" strict=false ripseq=false pairwise=false pointy=false broad=false
+	local OPTIND arg mandatory skip=false skipmd5=false genome fragmentsize threads outdir tmpdir="${TMPDIR:-/tmp}" strict=false ripseq=false pairwise=false broad=false pointy=false
 	declare -n _mapper_genrich _nidx_genrich _tidx_genrich
 	while getopts 'S:s:f:t:r:a:i:o:q:z:y:w:P' arg; do
 		case $arg in
@@ -1725,8 +1758,8 @@ function peaks::genrich(){
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
 			q)	ripseq=$OPTARG;;
 			z)	strict=$OPTARG;;
-			w)	broad=$OPTARG;;
 			y)	pointy=$OPTARG;;
+			w)	broad=$OPTARG;;
 			P)	pairwise=true;;
 			*) _usage;;
 		esac
@@ -1758,7 +1791,7 @@ function peaks::genrich(){
 	if $broad; then
 		params+=" -l 150 -g 400"
 	else
-		$ripseq && params=" -l 50 -g 50" || params=" -l 50 -g 100"
+		$ripseq && pointy && params=" -l 100 -g 50" || params=" -l 100 -g 100"
 	fi
 	$strict && params+=' -p 0.01' || params+=' -p 0.05'
 
@@ -1859,6 +1892,11 @@ function peaks::genrich(){
 	else
 		commander::runcmd -v -b -i 1 -a cmd1
 		commander::runcmd -c genrich -v -b -i $threads -a cmd2
+		{ head -1 "$odir/$o/$o.narrowPeak" | grep -q .; } &> /dev/null || {
+			rm -f "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			touch "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
+			return 0
+		}
 		commander::runcmd -v -b -i $threads -a cmd3
 	fi
 
