@@ -171,7 +171,7 @@ function preprocess::fastqc(){
 
 		helper::basename -f "$f" -o b -e e
 		e=$(echo $e | cut -d '.' -f 1) # if e == fastq or fq : check for ${b}_fastqc.zip else $b.${e}_fastqc.zip
-		[[ $e == "fastq" || $e == "fq" ]] && f="${b}_fastqc.zip" || f="$b.${e}_fastqc.zip"
+		[[ "$e" == "fastq" || "$e" == "fq" ]] && f="${b}_fastqc.zip" || f="$b.${e}_fastqc.zip"
 		# attention: nugen adapter search causes low false positive rates in R2 seqeunces (<0.1) likewise Small RNA adapter in R1 (<0.01)
 		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 			unzip -c "$outdir/$f" "${f%.*}/fastqc_data.txt" | tac
@@ -201,7 +201,7 @@ function preprocess::fastqc(){
 				exit
 			}'
 		CMD
-			tee "$($skip && echo "/dev/null" || echo "$outdir/$b.adapter")"
+			tee "$($skip && echo "/dev/null" || echo "${f%_fastqc.zip}.adapter")"
 		CMD
 	done
 
@@ -236,6 +236,11 @@ function preprocess::fastqc(){
 
 					helper::basename -f "$f1" -o b1 -e e1
 					helper::basename -f "$f2" -o b2 -e e2
+
+					if [[ "$b1" == "$b2" ]]; then
+						b1+="$e1"
+						b2+="$e2"
+					fi
 
 					tomerge1+=("$outdir/$b1.adapter")
 					tomerge2+=("$outdir/$b2.adapter")
