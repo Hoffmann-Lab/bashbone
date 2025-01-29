@@ -367,7 +367,7 @@ function quantify::featurecounts(){
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			r)	((++mandatory)); _mapper_featurecounts=$OPTARG;;
-			x)	((++mandatory)); _strandness_featurecounts=$OPTARG;;
+			x)	((++mandatory)); if [[ $OPTARG == [012] ]]; then unset _strandness_featurecounts; _strandness_featurecounts=$OPTARG; else _strandness_featurecounts=$OPTARG; fi;;
 			g)	((++mandatory)); gtf="$OPTARG";;
 			l)	level=$OPTARG;;
 			M)	maxmemory=$OPTARG;;
@@ -416,7 +416,7 @@ function quantify::featurecounts(){
 						-Q 0
 						--minOverlap 10
 						--maxMOp 999
-						-s ${_strandness_featurecounts["$f"]}
+						-s $([[ $_strandness_featurecounts ]] && echo $_strandness_featurecounts || echo ${_strandness_featurecounts["$f"]})
 						-T $ithreads
 						-t $level
 						-g transcript_id
@@ -462,7 +462,7 @@ function quantify::featurecounts(){
 						-Q 0
 						--minOverlap 10
 						--maxMOp 999
-						-s ${_strandness_featurecounts["$f"]}
+						-s $([[ $_strandness_featurecounts ]] && echo $_strandness_featurecounts || echo ${_strandness_featurecounts["$f"]})
 						-T $ithreads
 						-t $level
 						-g ${feature}_id
