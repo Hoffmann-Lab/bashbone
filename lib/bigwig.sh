@@ -248,7 +248,8 @@ function bigwig::profiles(){
 			[[ $toprofile || $gtf ]] && pileups+=("$(find -L "$bwdir/$m" -maxdepth 1 -name "$(basename ${f%.*}).pileup.tpm.bw" -print -quit | grep .)")
 		done
 
-		[[ ${#pileups[@]} -gt 1 ]] && e="$(echo -e "${pileups[0]}\t${pileups[1]}" | sed -E 's/(.+)\t.*\1/\t\1/' | cut -f 2)" || e=".pileup.tpm.bw"
+		#[[ ${#pileups[@]} -gt 1 ]] && e="$(echo -e "${pileups[0]}\t${pileups[1]}" | sed -E 's/(.+)\t.*\1/\t\1/' | cut -f 2)" || e=".pileup.tpm.bw"
+		e=".pileup.tpm.bw"
 
 		if [[ $gtf ]]; then
 			commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
@@ -291,19 +292,19 @@ function bigwig::profiles(){
 						-p $(((threads+1)/2))
 						-S $(printf '"%s" ' "${pileups[@]}")
 						-R "\$FILE"
-						-bs 1
+						-bs 10
 						--beforeRegionStartLength 3000
 						--afterRegionStartLength 3000
-						--skipZeros
 						--missingDataAsZero
 						-o "\$FILE.matrix.gz"
 				' 2> >(sed -un '/^Skipping/!p' >&2) | cat;
 			CMD
-				helper::cat -f "${tdirs[-1]}"/*.matrix.gz | grep -v '^@' | helper::pgzip -t $threads -o "${tdirs[-1]}/data.gz";
+				bgzip -@ 1 -kcd "${tdirs[-1]}"/*.matrix.gz | grep -v '^@' | helper::pgzip -t $threads -o "${tdirs[-1]}/data.gz";
 				n=\$(gztool -l "${tdirs[-1]}/data.gz" |& sed -nE '/Number of lines/{s/.*:\s+([0-9]+).*/\1/p}');
-				gzip -kcd "${tdirs[-1]}"/*.matrix.gz | head -1 | sed -E 's/"group_boundaries":\[[0-9,]+\]/"group_boundaries":[0,'\$n']/' | gzip -kc > "$odir/$b.tss.matrix.gz";
+				bgzip -@ 1 -kcd "${tdirs[-1]}"/*.matrix.gz | head -1 | sed -E 's/"group_boundaries":\[[0-9,]+\]/"group_boundaries":[0,'\$n']/' | bgzip -@ 1 -kc > "$odir/$b.tss.matrix.gz";
 				cat "${tdirs[-1]}/data.gz" >> "$odir/$b.tss.matrix.gz";
 			CMD
+			# either do not use --skipZeros or add || true to avoid error "The region group genes had no matching entries!" i.e. all regions in bed chunk return a zero coverage
 			# extremely slow and memory hungry: computeMatrixOperations rbind -m "${tdirs[-1]}"/*.matrix.gz -o "$odir/tss.matrix.gz"
 			# not necessary when using deeptools plotHeatmap: computeMatrixOperations sort -m "${tdirs[-1]}/tss.matrix.gz" -R "$odir/transcripts.bed" -o "$odir/tss.matrix.gz"
 			# use unbuffered sed to avoid "skipping <id> due to being absent in the computeMatrix output" warnings
@@ -315,7 +316,7 @@ function bigwig::profiles(){
 					--plotFileFormat pdf
 					--colorMap RdBu
 					--refPointLabel TSS
-					--samplesLabel $(basename -a "${pileups[@]/%$e/}" | xargs -I {} printf "'%s' " {})
+					--samplesLabel $(basename -a "${pileups[@]%$e}" | xargs -I {} printf "'%s' " {})
 			CMD
 
 			# multithreading capacities limited. parallel instances are much faster and according to
@@ -346,18 +347,17 @@ function bigwig::profiles(){
 						-p $(((threads+1)/2))
 						-S $(printf '"%s" ' "${pileups[@]}")
 						-R "\$FILE"
-						-bs 1
+						-bs 10
 						--beforeRegionStartLength 3000
 						--regionBodyLength 8000
 						--afterRegionStartLength 3000
-						--skipZeros
 						--missingDataAsZero
 						-o "\$FILE.matrix.gz"
 				' 2> >(sed -un '/^Skipping/!p' >&2) | cat;
 			CMD
-				helper::cat -f "${tdirs[-1]}"/*.matrix.gz | grep -v '^@' | helper::pgzip -t $threads -o "${tdirs[-1]}/data.gz";
+				bgzip -@ 1 -kcd "${tdirs[-1]}"/*.matrix.gz | grep -v '^@' | helper::pgzip -t $threads -o "${tdirs[-1]}/data.gz";
 				n=\$(gztool -l "${tdirs[-1]}/data.gz" |& sed -nE '/Number of lines/{s/.*:\s+([0-9]+).*/\1/p}');
-				gzip -kcd "${tdirs[-1]}"/*.matrix.gz | head -1 | sed -E 's/"group_boundaries":\[[0-9,]+\]/"group_boundaries":[0,'\$n']/' | gzip -kc > "$odir/$b.matrix.gz";
+				bgzip -@ 1 -kcd "${tdirs[-1]}"/*.matrix.gz | head -1 | sed -E 's/"group_boundaries":\[[0-9,]+\]/"group_boundaries":[0,'\$n']/' | bgzip -@ 1 -kc > "$odir/$b.matrix.gz";
 				cat "${tdirs[-1]}/data.gz" >> "$odir/$b.matrix.gz";
 			CMD
 
@@ -368,7 +368,7 @@ function bigwig::profiles(){
 					-o "$odir/$b.profile.pdf"
 					--plotFileFormat pdf
 					--numPlotsPerRow 2
-					--samplesLabel $(basename -a "${pileups[@]/%$e/}" | xargs -I {} printf "'%s' " {})
+					--samplesLabel $(basename -a "${pileups[@]%$e}" | xargs -I {} printf "'%s' " {})
 			CMD
 		done
 
@@ -376,7 +376,7 @@ function bigwig::profiles(){
 			commander::makecmd -a cmd3 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 				{	for f in $(printf '"%s" ' "${toprofile[@]}"); do
 						b="\$(basename "\${f%.*}")";
-						pigz -p 1 -cd "$odir/\$b.tss.matrix.gz" | head -1 | paste <(echo \$b) -;
+						bgzip -@ 1 -cd "$odir/\$b.tss.matrix.gz" | head -1 | paste <(echo \$b) -;
 			CMD
 					done | perl -F'\t' -lane '
 						BEGIN{
@@ -397,7 +397,7 @@ function bigwig::profiles(){
 			CMD
 					for f in $(printf '"%s" ' "${toprofile[@]}"); do
 						b="\$(basename "\${f%.*}")";
-						pigz -p 1 -kcd "$odir/\$b.tss.matrix.gz" | grep -v ^@;
+						bgzip -@ 1 -kcd "$odir/\$b.tss.matrix.gz" | grep -v ^@;
 					done;
 				} | helper::pgzip -t $threads -o "$odir/tss.matrix.gz"
 			CMD
@@ -410,14 +410,14 @@ function bigwig::profiles(){
 					--plotFileFormat pdf
 					--colorMap RdBu
 					--refPointLabel TSS
-					--samplesLabel $(basename -a "${pileups[@]/%$e/}" | xargs -I {} printf "'%s' " {})
+					--samplesLabel $(basename -a "${pileups[@]%$e}" | xargs -I {} printf "'%s' " {})
 					--regionsLabel $(basename -a "${toprofile[@]%.*}" | xargs -I {} printf "'%s' " {})
 			CMD
 
 			commander::makecmd -a cmd3 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 				{	for f in $(printf '"%s" ' "${toprofile[@]}"); do
 						b="\$(basename "\${f%.*}")";
-						pigz -p 1 -cd "$odir/\$b.matrix.gz" | head -1 | paste <(echo \$b) -;
+						bgzip -@ 1 -cd "$odir/\$b.matrix.gz" | head -1 | paste <(echo \$b) -;
 			CMD
 					done | perl -F'\t' -lane '
 						BEGIN{
@@ -438,7 +438,7 @@ function bigwig::profiles(){
 			CMD
 					for f in $(printf '"%s" ' "${toprofile[@]}"); do
 						b="\$(basename "\${f%.*}")";
-						pigz -p 1 -kcd "$odir/\$b.matrix.gz" | grep -v ^@;
+						bgzip -@ 1 -kcd "$odir/\$b.matrix.gz" | grep -v ^@;
 					done;
 				} | helper::pgzip -t $threads -o "$odir/matrix.gz"
 			CMD
@@ -450,7 +450,7 @@ function bigwig::profiles(){
 					-o "$odir/profile.pdf"
 					--plotFileFormat pdf
 					--numPlotsPerRow 2
-					--samplesLabel $(basename -a "${pileups[@]/%$e/}" | xargs -I {} printf "'%s' " {})
+					--samplesLabel $(basename -a "${pileups[@]%$e}" | xargs -I {} printf "'%s' " {})
 					--regionsLabel $(basename -a "${toprofile[@]%.*}" | xargs -I {} printf "'%s' " {})
 			CMD
 		fi
@@ -468,7 +468,8 @@ function bigwig::profiles(){
 					-out "$odir/coverage.npz"
 			CMD
 
-			e="$(echo -e "${coverages[0]}\t${coverages[1]}" | sed -E 's/(.+)\t.*\1/\t\1/' | cut -f 2)"
+			#e="$(echo -e "${coverages[0]}\t${coverages[1]}" | sed -E 's/(.+)\t.*\1/\t\1/' | cut -f 2)"
+			e=".coverage.tpm.bw"
 			commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
 				TMPDIR="${tdirs[-1]}" plotCorrelation
 					-in "$odir/coverage.npz"
@@ -480,7 +481,7 @@ function bigwig::profiles(){
 					-o "$odir/coverage.correlation.pearson.pdf"
 					--outFileCorMatrix "$odir/coverage.correlation.pearson.tsv"
 					--plotFileFormat pdf
-					--labels $(basename -a "${coverages[@]/%$e/}" | xargs -I {} printf "'%s' " {})
+					--labels $(basename -a "${coverages[@]%$e}" | xargs -I {} printf "'%s' " {})
 			CMD
 		fi
 	done
