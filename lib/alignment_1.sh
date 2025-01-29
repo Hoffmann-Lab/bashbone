@@ -1052,7 +1052,8 @@ function alignment::_blacklist(){
 					-@ $threads
 					-b
 					-L "$tmpdir/whitelist.bed"
-					-o "$_returnfile_blacklist"
+					--write-index
+					-o "$_returnfile_blacklist##idx##${_returnfile_blacklist%.*}.bai"
 					"$bam"
 			CMD
 		fi
@@ -1063,7 +1064,8 @@ function alignment::_blacklist(){
 				-@ $threads
 				-b
 				-e 'rname!="$blacklist"'
-				-o "$_returnfile_blacklist"
+				--write-index
+				-o "$_returnfile_blacklist##idx##${_returnfile_blacklist%.*}.bai"
 				"$bam"
 		CMD
 	fi
