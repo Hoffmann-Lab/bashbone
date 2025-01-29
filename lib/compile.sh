@@ -1031,7 +1031,8 @@ function compile::m6aviewer(){
 	if [[ -e "$src" ]] && $cfg; then
 		url=$(cat "$src")
 	else
-		url='http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar'
+		# url='http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar'
+		url='https://gitlab.leibniz-fli.de/kriege/m6aviewer/-/raw/main/m6aviewer.jar'
 	fi
 	mkdir -p "$insdir/config"
 	echo "$url" > "$insdir/config/m6aviewer.url"
