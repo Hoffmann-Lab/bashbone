@@ -137,7 +137,7 @@ function cluster::coexpression_deseq(){
 							$m{$1}=1;
 						}
 					}
-				' -- -cb="$biotype" -ft="$feature" "$({ readlink -e "$gtf.info" "$gtf" || true; } | head -1 | grep .)" > "$tmp.genes"
+				' -- -cb="$biotype" -ft="$feature" "$({ realpath -se "$gtf.info" "$gtf" 2> /dev/null || true; } | head -1 | grep .)" > "$tmp.genes"
 				grep -Fw -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 				mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 			}
@@ -414,7 +414,7 @@ function cluster::coexpression(){
 						$m{$1}=1;
 					}
 				}
-			' -- -cb="$biotype" -ft="$feature" "$({ readlink -e "$gtf.info" "$gtf" || true; } | head -1 | grep .)" > "$tmp.genes"
+			' -- -cb="$biotype" -ft="$feature" "$({ realpath -se "$gtf.info" "$gtf" 2> /dev/null || true; } | head -1 | grep .)" > "$tmp.genes"
 			grep -Fw -f "$tmp.genes" "$odir/experiments.filtered.genes" > "$tmp.filtered.genes"
 			mv "$tmp.filtered.genes" "$odir/experiments.filtered.genes"
 		}
