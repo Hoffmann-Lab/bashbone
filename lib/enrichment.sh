@@ -685,7 +685,7 @@ function enrichment::go(){
 					$m{$1}=1;
 				}
 			}
-		' -- -cb="$biotype" -ft="$feature" "$({ readlink -e "$gtf.info" "$gtf" || true; } | head -1 | grep .)" > "$whitelist"
+		' -- -cb="$biotype" -ft="$feature" "$({ realpath -se "$gtf.info" "$gtf" 2> /dev/null || true; } | head -1 | grep .)" > "$whitelist"
 	}
 
 	for f in "${_idfiles_go[@]}"; do
