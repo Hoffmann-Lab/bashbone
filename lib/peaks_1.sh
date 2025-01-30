@@ -39,7 +39,7 @@ function peaks::_bed2narrowpeak(){
 	CMD
 		"$b" | sort -k1,1 -k2,2n -k3,3n > "$tmpdir/peaks";
 	CMD
-		if [[ \$(head -1 "$tmpdir/peaks" | cut -f 10) -eq -1 ]]; then
+		if [[ \$(head -1 "$tmpdir/peaks" | cut -f 10) == -1 ]]; then
 			paste "$tmpdir/peaks" <(macs2 refinepeak
 				-b "$tmpdir/peaks"
 				-i "$i"
@@ -84,7 +84,7 @@ function peaks::_bed2narrowpeak(){
 	CMD
 		> "$tmpdir/summits";
 	CMD
-		if [[ \$(head -1 "$tmpdir/summits" | cut -f 10) -eq -1 ]]; then
+		if [[ \$(head -1 "$tmpdir/summits" | cut -f 10) == -1 ]]; then
 			paste
 				<(bedtools intersect -loj -a "$tmpdir/summits" -b "$(dirname "$i")/model_fc.bedg" | awk -v OFS='\t' '{\$10=\$NF; print}' | cut -f 4-13)
 				<(bedtools intersect -loj -a "$tmpdir/summits" -b "$(dirname "$i")/nomodel_fc.bedg" | awk -v OFS='\t' '{\$10=\$NF; print}' | cut -f 4-13);
@@ -1791,7 +1791,7 @@ function peaks::genrich(){
 	if $broad; then
 		params+=" -l 150 -g 400"
 	else
-		$ripseq && pointy && params=" -l 100 -g 50" || params=" -l 100 -g 100"
+		$ripseq && $pointy && params+=" -l 100 -g 50" || params+=" -l 100 -g 100"
 	fi
 	$strict && params+=' -p 0.01' || params+=' -p 0.05'
 
