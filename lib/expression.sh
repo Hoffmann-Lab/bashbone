@@ -288,12 +288,13 @@ function expression::deseq(){
 					head -1 "$odir/experiments.csv" > "$odir/$c-vs-$t/experiments.csv"
 					while read -r sample condition library replicate factors; do
 						countfile="$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc" -print -quit | grep .)"
+						#tojoin+=("$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc.tpm" -print -quit | grep .)")
+						[[ -e "$countfile.tpm" ]] && tojoin+=("$countfile.tpm")
+
 						[[ $factors ]] && factors=","$(echo $factors | sed -E 's/\s+/,/g')
-
 						# echo "$sample,$countfile,$condition,$replicate$factors" >> "$odir/$c-vs-$t/experiments.csv"
-						echo "$condition.$replicate,$countfile,$condition,$replicate$factors" >> "$odir/$c-vs-$t/experiments.csv"
+						echo "$condition.$replicate,$(realpath -se "$countfile"),$condition,$replicate$factors" >> "$odir/$c-vs-$t/experiments.csv"
 
-						tojoin+=("$(find -L "$countsdir/$m" -maxdepth 1 -name "$sample*.${feature}counts.htsc.tpm" -print -quit | grep .)")
 						#header+="\t$sample.$replicate"
 						header+="\t$condition.$replicate"
 						meanheader+="\t$condition"
@@ -302,104 +303,106 @@ function expression::deseq(){
 						#[[ ${visited["$sample.$replicate"]} ]] && continue || visited["$sample.$replicate"]=1
 						[[ ${visited["$condition.$replicate"]} ]] && continue || visited["$condition.$replicate"]=1
 						# echo "$sample,$countfile,$condition,$replicate$factors" >> "$odir/experiments.csv"
-						echo "$condition.$replicate,$countfile,$condition,$replicate$factors" >> "$odir/experiments.csv"
+						echo "$condition.$replicate,$(realpath -se "$countfile"),$condition,$replicate$factors" >> "$odir/experiments.csv"
 					done < <(awk -v c=$c '$2==c' "$f" | sort -k4,4V && awk -v t=$t '$2==t' "$f" | sort -k4,4V)
 
-					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
-						helper::multijoin
-							-e 0
-							-h "$(echo -e "$header")"
-							-o "$odir/$c-vs-$t/experiments.tpm"
-							$(printf '"%s" ' "${tojoin[@]}");
-					CMD
-						echo -e "$meanheader" > "$odir/$c-vs-$t/experiments.mean.tpm";
-					CMD
-						tail -n +2 "$odir/$c-vs-$t/experiments.tpm" >> "$odir/$c-vs-$t/experiments.mean.tpm";
-					CMD
-						Rscript - <<< '
-							args <- commandArgs(TRUE);
-							tsv <- args[1];
-							df <- read.table(tsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-							means <- t(apply(df, 1, function(x) tapply(x, colnames(df), mean)));
-							write.table(data.frame(id=rownames(means),means[,unique(colnames(df))],check.names=F), row.names = F, file = tsv, quote=F, sep="\t");
-						'
-					CMD
-						"$odir/$c-vs-$t/experiments.mean.tpm"
-					CMD
+					if [[ $tojoin ]]; then
+						commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD
+							helper::multijoin
+								-e 0
+								-h "$(echo -e "$header")"
+								-o "$odir/$c-vs-$t/experiments.tpm"
+								$(printf '"%s" ' "${tojoin[@]}");
+						CMD
+							echo -e "$meanheader" > "$odir/$c-vs-$t/experiments.mean.tpm";
+						CMD
+							tail -n +2 "$odir/$c-vs-$t/experiments.tpm" >> "$odir/$c-vs-$t/experiments.mean.tpm";
+						CMD
+							Rscript - <<< '
+								args <- commandArgs(TRUE);
+								tsv <- args[1];
+								df <- read.table(tsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+								means <- t(apply(df, 1, function(x) tapply(x, colnames(df), mean)));
+								write.table(data.frame(id=rownames(means),means[,unique(colnames(df))],check.names=F), row.names = F, file = tsv, quote=F, sep="\t");
+							'
+						CMD
+							"$odir/$c-vs-$t/experiments.mean.tpm"
+						CMD
 
-					commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-						Rscript - <<< '
-							args <- commandArgs(TRUE);
-							intsv <- args[1];
-							outf <- args[2];
-							df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-							df <- log(df+1);
-							df <- df-rowMeans(df);
-							df <- df/apply(df,1,sd);
-							df[is.na(df)] <- 0;
-							write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
-						'
-					CMD
-						"$odir/$c-vs-$t/experiments.tpm" "$odir/$c-vs-$t/experiments.tpm.zscores"
-					CMD
+						commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+							Rscript - <<< '
+								args <- commandArgs(TRUE);
+								intsv <- args[1];
+								outf <- args[2];
+								df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+								df <- log(df+1);
+								df <- df-rowMeans(df);
+								df <- df/apply(df,1,sd);
+								df[is.na(df)] <- 0;
+								write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
+							'
+						CMD
+							"$odir/$c-vs-$t/experiments.tpm" "$odir/$c-vs-$t/experiments.tpm.zscores"
+						CMD
 
-					commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-						Rscript - <<< '
-							args <- commandArgs(TRUE);
-							intsv <- args[1];
-							outf <- args[2];
-							df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-							df <- log(df+1);
-							df <- df-rowMeans(df);
-							df <- df/apply(df,1,sd);
-							df[is.na(df)] <- 0;
-							write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
-						'
-					CMD
-						"$odir/$c-vs-$t/experiments.mean.tpm" "$odir/$c-vs-$t/experiments.mean.tpm.zscores"
-					CMD
+						commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+							Rscript - <<< '
+								args <- commandArgs(TRUE);
+								intsv <- args[1];
+								outf <- args[2];
+								df <- read.table(intsv, row.names=1, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+								df <- log(df+1);
+								df <- df-rowMeans(df);
+								df <- df/apply(df,1,sd);
+								df[is.na(df)] <- 0;
+								write.table(data.frame(id=rownames(df),df,check.names=F), row.names = F, file = outf, quote=F, sep="\t");
+							'
+						CMD
+							"$odir/$c-vs-$t/experiments.mean.tpm" "$odir/$c-vs-$t/experiments.mean.tpm.zscores"
+						CMD
 
-					# run deseq cmd3
+						# run deseq cmd3
 
-					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.fcshrunk.tsv") -le 2 ]] && exit 0
-					CMD
-						head -1 "$odir/$c-vs-$t/experiments.tpm" > "$odir/$c-vs-$t/heatmap.tpm"
-					CMD
-						grep -Fw -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm" >> "$odir/$c-vs-$t/heatmap.tpm"
-					CMD
-						heatmap.R TRUE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.tpm" "TPM" "most differentially expressed ${feature}s"
-					CMD
+						commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+							[[ \$(wc -l < "$odir/$c-vs-$t/deseq.fcshrunk.tsv") -le 2 ]] && exit 0
+						CMD
+							head -1 "$odir/$c-vs-$t/experiments.tpm" > "$odir/$c-vs-$t/heatmap.tpm"
+						CMD
+							grep -Fw -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm" >> "$odir/$c-vs-$t/heatmap.tpm"
+						CMD
+							heatmap.R TRUE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.tpm" "TPM" "most differentially expressed ${feature}s"
+						CMD
 
-					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.fcshrunk.tsv") -le 2 ]] && exit 0
-					CMD
-						head -1 "$odir/$c-vs-$t/experiments.tpm.zscores" > "$odir/$c-vs-$t/heatmap.tpm.zscores"
-					CMD
-						grep -Fw -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.tpm.zscores"
-					CMD
-						heatmap.R TRUE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.tpm.zscores" "Z-Score" "most differentially expressed ${feature}s"
-					CMD
+						commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+							[[ \$(wc -l < "$odir/$c-vs-$t/deseq.fcshrunk.tsv") -le 2 ]] && exit 0
+						CMD
+							head -1 "$odir/$c-vs-$t/experiments.tpm.zscores" > "$odir/$c-vs-$t/heatmap.tpm.zscores"
+						CMD
+							grep -Fw -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.tpm.zscores"
+						CMD
+							heatmap.R TRUE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.tpm.zscores" "Z-Score" "most differentially expressed ${feature}s"
+						CMD
 
-					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.fcshrunk.tsv") -le 2 ]] && exit 0
-					CMD
-						head -1 "$odir/$c-vs-$t/experiments.mean.tpm" > "$odir/$c-vs-$t/heatmap.mean.tpm"
-					CMD
-						grep -Fw -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm" >> "$odir/$c-vs-$t/heatmap.mean.tpm"
-					CMD
-						heatmap.R FALSE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.mean.tpm" "TPM" "most differentially expressed ${feature}s"
-					CMD
+						commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+							[[ \$(wc -l < "$odir/$c-vs-$t/deseq.fcshrunk.tsv") -le 2 ]] && exit 0
+						CMD
+							head -1 "$odir/$c-vs-$t/experiments.mean.tpm" > "$odir/$c-vs-$t/heatmap.mean.tpm"
+						CMD
+							grep -Fw -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm" >> "$odir/$c-vs-$t/heatmap.mean.tpm"
+						CMD
+							heatmap.R FALSE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.mean.tpm" "TPM" "most differentially expressed ${feature}s"
+						CMD
 
-					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-						[[ \$(wc -l < "$odir/$c-vs-$t/deseq.fcshrunk.tsv") -le 2 ]] && exit 0
-					CMD
-						head -1 "$odir/$c-vs-$t/experiments.mean.tpm.zscores" > "$odir/$c-vs-$t/heatmap.mean.tpm.zscores"
-					CMD
-						grep -Fw -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.mean.tpm.zscores"
-					CMD
-						heatmap.R FALSE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.mean.tpm.zscores" "Z-Score" "most differentially expressed ${feature}s"
-					CMD
+						commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+							[[ \$(wc -l < "$odir/$c-vs-$t/deseq.fcshrunk.tsv") -le 2 ]] && exit 0
+						CMD
+							head -1 "$odir/$c-vs-$t/experiments.mean.tpm.zscores" > "$odir/$c-vs-$t/heatmap.mean.tpm.zscores"
+						CMD
+							grep -Fw -f <(head -51 "$odir/$c-vs-$t/deseq.fcshrunk.tsv" | cut -f 1 | tail -n +2) "$odir/$c-vs-$t/experiments.mean.tpm.zscores" >> "$odir/$c-vs-$t/heatmap.mean.tpm.zscores"
+						CMD
+							heatmap.R FALSE 8 8 "$odir/$c-vs-$t/experiments.csv" "$odir/$c-vs-$t/heatmap.mean.tpm.zscores" "Z-Score" "most differentially expressed ${feature}s"
+						CMD
+					fi
 
 					if [[ $gtf ]]; then
 						commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
