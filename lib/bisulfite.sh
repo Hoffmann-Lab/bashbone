@@ -815,6 +815,7 @@ function bisulfite::mecall(){
 					next unless $F[-1]=~/^$c/ && $F[2]=~/$s/;
 					next if $F[3]+$F[4]==0;
 					$F[1]=$F[1]-(length($F[5])-1) if $F[2] eq "-";
+					$F[1]=1 if $F[1]<1;
 					print join"\t",($F[0],$F[1]-1,$F[1],$F[3],$F[3]+$F[4]);
 				'
 			CMD
@@ -929,6 +930,7 @@ function bisulfite::methyldackel(){
 					next unless $F[-1]=~/^$c/ && $F[2]=~/$s/;
 					next if $F[3]+$F[4]==0;
 					$F[1]=$F[1]-(length($F[5])-1) if $F[2] eq "-";
+					$F[1]=1 if $F[1]<1;
 					print join"\t",($F[0],$F[1]-1,$F[1],$F[3],$F[3]+$F[4]);
 				'
 			CMD
