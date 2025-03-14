@@ -62,8 +62,8 @@ function alignment::slice(){
 			df <- df[srt$ix,];
 
 			lmax <- max(len);
-			n <- slices+1;
-			bins <- c();
+			bins <- c(1:nrow(df));
+			n <- length(bins);
 			i <- 1;
 			while(n > slices){
 				i <- i+1;
@@ -96,9 +96,6 @@ function alignment::slice(){
 		for f in "${_bams_slice[@]}"; do
 			o="$tdir"/$(basename "$f")
 			o="${o%.*}"
-
-			# alignment::_index -1 cmd2 -t $ithreads -f "$f" -o "$o.bai"
-			# params="-X '$o.bai'"
 
 			mapfile -t mapdata < <(find "$tmpdir/genome" -maxdepth 1 -type f -name "slice.*.bed" | sort -V)
 			printf "%s\n" "${mapdata[@]}" | sed -E "s@.+\.([0-9]+)\.bed@$o.slice.\1.bam@" > "$o.slices.info"
@@ -613,14 +610,15 @@ function alignment::clipmateoverlaps(){
 			-r <mapper>    | array of sorted, indexed bams within array of
 			-c <sliceinfo> | array of
 			-o <outdir>    | path to
+			-u             | mark fully softclipped mate as unmapped to avoid e.g. downstream GATK BaseRecalibrator issue java.lang.IllegalStateException: cigar is completely soft-clipped
 		EOF
 		return 1
 	}
 
 	local OPTIND arg mandatory skip=false threads memory maxmemory outdir
-	declare -n _mapper_clipmateoverlaps _bamslices_clipmateoverlaps
+	declare -n _mapper_clipmateoverlaps _bamslices_clipmateoverlaps unmapped=false
 	declare -A nidx tidx
-	while getopts 'S:s:t:m:M:r:c:o:' arg; do
+	while getopts 'S:s:t:m:M:r:c:o:u' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -630,6 +628,7 @@ function alignment::clipmateoverlaps(){
 			r)	((++mandatory)); _mapper_clipmateoverlaps=$OPTARG;;
 			c)	((++mandatory)); _bamslices_clipmateoverlaps=$OPTARG;;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			u)	unmapped=true;;
 			*)	_usage;;
 		esac
 	done
@@ -646,7 +645,9 @@ function alignment::clipmateoverlaps(){
 	local ithreads instances=$((${#_mapper_clipmateoverlaps[@]}*${#_bams_clipmateoverlaps[@]}))
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	local m i o slice odir
+	local m i o slice odir params
+	$unmapped && params='--unmapped' || params=''
+
 	declare -a tomerge cmd1 cmd2 cmd3
 	for m in "${_mapper_clipmateoverlaps[@]}"; do
 		declare -n _bams_clipmateoverlaps=$m
@@ -658,13 +659,13 @@ function alignment::clipmateoverlaps(){
 
 			while read -r slice; do
 				# bamutil clips second read even full length, and by default does not produce unmapped reads
-				# --unmapped marks full length clipped reads as unmapped and does fixmate afterwards
-				# -> when combined with --excludeFlags (default:0xF0C, better: 0x80C) that includes UNMAP and MUNMAP, pairs with 2nd read fully clipped gets removed
+				# --unmapped marks full length clipped reads as unmapped and fixes both mates flags.
 				# use stdout with bam extension to enfoce bam output
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					bam clipOverlap
 						--in "$slice"
 						--out -.bam
+						$params
 						--excludeFlags 0x0
 						--poolSize $poolsize
 						--stats
@@ -1407,15 +1408,18 @@ function alignment::bqsr(){
 
 	commander::printinfo "base quality score recalibration"
 
-	local minstances mthreads jmem jgct jcgct
+	local minstances mthreads jmem jgct jcgct minstances2 mthreads2 jmem2 jgct2 jcgct2
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
 
 	declare -n _bams_bqsr="${_mapper_bqsr[0]}"
 	local ithreads instances=$((${#_mapper_bqsr[@]}*${#_bams_bqsr[@]}))
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+	read -r minstances2 mthreads2 jmem2 jgct2 jcgct2 < <(configure::jvm -i $instances -T $threads -M "$maxmemory") # for gatk simple tasks like gathering
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for samtools
 
-	local m i o slice odir
-	declare -a tdirs tomerge cmd1 cmd2 cmd3 cmd4
+	local m i o slice odir params
+	[[ -s "$genome.InDel_gold.vcf.gz" ]] && params="--known-sites '$dbsnp' --known-sites '$genome.InDel_gold.vcf.gz'" || params="--known-sites '$dbsnp'"
+
+	declare -a reportfile tdirs tomerge cmd1 cmd2 cmd3 cmd4 cmd5
 	for m in "${_mapper_bqsr[@]}"; do
 		declare -n _bams_bqsr=$m
 		odir="$outdir/$m"
@@ -1423,6 +1427,8 @@ function alignment::bqsr(){
 
 		for i in "${!_bams_bqsr[@]}"; do
 			tomerge=()
+
+			reportfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.bqsreport)"
 
 			while read -r slice; do
 				# https://gatkforums.broadinstitute.org/gatk/discussion/7131/is-indel-realignment-removed-from-gatk4
@@ -1449,17 +1455,18 @@ function alignment::bqsr(){
 							'
 						BaseRecalibrator
 						-R "$genome"
-						--known-sites "$dbsnp"
+						$params
 						-I "$slice"
 						-O "$slice.bqsreport"
 						-verbosity ERROR
 						--tmp-dir "${tdirs[-1]}"
 				CMD
 
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					rm -rf "$slice.bqsr.parts"
 				CMD
-					gatk
+					MALLOC_ARENA_MAX=4 gatk
 						--java-options '
 								-Xmx${jmem}m
 								-XX:ParallelGCThreads=$jgct
@@ -1467,14 +1474,14 @@ function alignment::bqsr(){
 								-Djava.io.tmpdir="$tmpdir"
 							'
 						ApplyBQSR
-						-bqsr "$slice.bqsreport"
+						-bqsr "$reportfile"
 						-I "$slice"
 						-O "$slice.bqsr"
 						-verbosity ERROR
 						--tmp-dir "${tdirs[-1]}"
 				CMD
 
-				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					mv "$slice.bqsr" "$slice"
 				CMD
 					samtools index -@ $ithreads "$slice" "${slice%.*}.bai"
@@ -1483,10 +1490,25 @@ function alignment::bqsr(){
 				tomerge+=("$slice")
 			done < "${_bamslices_bqsr[${_bams_bqsr[$i]}]}"
 
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+				MALLOC_ARENA_MAX=4 gatk
+					--java-options '
+							-Xmx${jmem2}m
+							-XX:ParallelGCThreads=$jgct2
+							-XX:ConcGCThreads=$jcgct2
+							-Djava.io.tmpdir="$tmpdir"
+						'
+					GatherBQSRReports
+					$(printf -- '-I "%s" ' "${tomerge[@]/%/.bqsreport}")
+					-O "$reportfile"
+					--tmp-dir "${tdirs[-1]}"
+			CMD
+
 			o="$odir/$(basename "${_bams_bqsr[$i]}")"
 			o="${o%.*}.bqsr.bam"
 			# slices have full sam header info used by merge to maintain the global sort order
-			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $ithreads
 					-f
@@ -1509,11 +1531,13 @@ function alignment::bqsr(){
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
 		commander::printcmd -a cmd4
+		commander::printcmd -a cmd5
 	else
 		commander::runcmd -c gatk -v -b -i $minstances -a cmd1
-		commander::runcmd -c gatk -v -b -i $minstances -a cmd2
-		commander::runcmd -v -b -i $instances -a cmd3
+		commander::runcmd -c gatk -v -b -i $minstances2 -a cmd2
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd3
 		commander::runcmd -v -b -i $instances -a cmd4
+		commander::runcmd -v -b -i $instances -a cmd5
 	fi
 
 	return 0
