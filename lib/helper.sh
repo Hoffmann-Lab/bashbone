@@ -1002,7 +1002,7 @@ function helper::multijoin(){
 function helper::ishash(){
 	function _usage(){
 		commander::print <<- 'EOF'
-			helper::ishash returns without error if given variable is an associative array i.e. hash
+			helper::ishash returns without error if given variable or refers to an associative array i.e. hash
 
 			-v <var> | variable
 		EOF
@@ -1012,10 +1012,8 @@ function helper::ishash(){
 	local OPTIND arg
 	while getopts 'v:' arg; do
 		case $arg in
-			v)	{	declare -p "$OPTARG" &> /dev/null
-					declare -n __="$OPTARG"
-					[[ "$(declare -p ${!__})" =~ ^declare\ \-[Ab-z]+ ]]
-				} || return 1
+			v)	declare -n __="$OPTARG"
+				[[ ${!__@a} == *A* ]] || return 1
 			;;
 			*)	_usage;;
 		esac
@@ -1028,21 +1026,18 @@ function helper::ishash(){
 function helper::isarray(){
 	function _usage(){
 		commander::print <<- 'EOF'
-			helper::isarray returns without error if given variable is an array
+			helper::isarray returns without error if given variable is or refers to an array
 
 			-v <var> | variable
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory var
-	declare -a vars
+	local OPTIND arg
 	while getopts 'v:' arg; do
 		case $arg in
-			v)	{	declare -p "$OPTARG" &> /dev/null
-					declare -n __="$OPTARG"
-					[[ "$(declare -p ${!__})" =~ ^declare\ \-[a-zB-Z]+ ]]
-				} || return 1
+			v)	declare -n __="$OPTARG"
+				[[ ${!__@a} == *a* ]] || return 1
 			;;
 			*)	_usage;;
 		esac
