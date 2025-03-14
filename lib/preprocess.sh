@@ -201,7 +201,7 @@ function preprocess::fastqc(){
 				exit
 			}'
 		CMD
-			tee "$($skip && echo "/dev/null" || echo "${f%_fastqc.zip}.adapter")"
+			tee "$($skip && echo "/dev/null" || echo "$outdir/${f%_fastqc.zip}.adapter")"
 		CMD
 	done
 
