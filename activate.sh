@@ -364,8 +364,8 @@ function _bashbone_wrapper(){
 		read -r f_bashbone_wrapper l_bashbone_wrapper s_bashbone_wrapper < <(declare -F $BASHBONE_FUNCNAME) || true
 		if [[ "$s_bashbone_wrapper" == "$BASHBONE_DIR/lib/"* ]]; then
 			[[ "$BASHBONE_FUNCNAME" == commander::* || "$BASHBONE_FUNCNAME" == progress::* ]] || BASHBONE_LEGACY=true
-		else
-			BASHBONE_LEGACY=false
+		# else
+		# 	BASHBONE_LEGACY=false
 		fi
 		local BASHBONE_BPID=$BASHPID
 		local BASHBONE_CLEANUP="$(command mktemp -p "$BASHBONE_TMPDIR" cleanup.XXXXXXXXXX.sh)"
