@@ -199,10 +199,14 @@ function variants::haplotypecaller(){
 
 				for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-					commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e" | bgzip -k -c -@ $ithreads1 > "$slice.$e.gz"
+					commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
 					CMD
-						tabix -f -p vcf "$slice.$e.gz"
+						bgzip -k -c -@ $ithreads1
+					CMD
+						tee -i "$slice.$e.gz"
+					CMD
+						bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
 					CMD
 				done
 
@@ -211,12 +215,10 @@ function variants::haplotypecaller(){
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bcftools concat --threads $ithreads2 -O z -a -d all -o "$t.$e.gz" $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
 				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${imemory2}M "$t.$e.gz" | bgzip -k -c -@ $ithreads2 > "$o.$e.gz"
-				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					bcftools sort -T "${tdirs[-1]}" -m ${imemory2}M "$t.$e.gz" | bgzip -k -c -@ $ithreads2 | tee -i "$o.$e.gz" | bcftools index --threads $ithreads2 -f -t -o "$o.$e.gz.tbi"
 				CMD
 				# sorting required to retain chromosomal order
 			done
@@ -481,10 +483,14 @@ function variants::mutect(){
 
 				for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-					commander::makecmd -a cmd11 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e" | bgzip -k -c -@ $ithreads1 > "$slice.$e.gz"
+					commander::makecmd -a cmd11 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
 					CMD
-						tabix -f -p vcf "$slice.$e.gz"
+						bgzip -k -c -@ $ithreads1
+					CMD
+						tee -i "$slice.$e.gz"
+					CMD
+						bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
 					CMD
 				done
 
@@ -582,12 +588,10 @@ function variants::mutect(){
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-				commander::makecmd -a cmd12 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+				commander::makecmd -a cmd12 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bcftools concat --threads $ithreads2 -O z -a -d all -o "$t.$e.gz" $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
 				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${imemory2}M "$t.$e.gz" | bgzip -k -c -@ $ithreads2 > "$o.$e.gz"
-				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					bcftools sort -T "${tdirs[-1]}" -m ${imemory2}M "$t.$e.gz" | bgzip -k -c -@ $ithreads2 | tee -i "$o.$e.gz" | bcftools index --threads $ithreads2 -f -t -o "$o.$e.gz.tbi"
 				CMD
 				# sorting required to retain chromosomal order
 			done
@@ -827,10 +831,14 @@ function variants::bcftools(){
 
 				for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
-					commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e" | bgzip -k -c -@ $ithreads1 > "$slice.$e.gz"
+					commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
 					CMD
-						tabix -f -p vcf "$slice.$e.gz"
+						bgzip -k -c -@ $ithreads1
+					CMD
+						tee -i "$slice.$e.gz"
+					CMD
+						bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
 					CMD
 				done
 
@@ -839,10 +847,12 @@ function variants::bcftools(){
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				# removes potential duplicates due to padding
-				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools concat --threads $ithreads2 -O z -a -d all -o "$o.$e.gz" $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
+				commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bcftools concat --threads $ithreads2 -O z -a -d all $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
 				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					tee -i "$o.$e.gz"
+				CMD
+					bcftools index --threads $ithreads2 -f -t -o "$o.$e.gz.tbi"
 				CMD
 			done
 		done
@@ -1039,10 +1049,14 @@ function variants::freebayes(){
 
 				for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.freebayes)")
-					commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e" | bgzip -k -c -@ $ithreads1 > "$slice.$e.gz"
+					commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
 					CMD
-						tabix -f -p vcf "$slice.$e.gz"
+						bgzip -k -c -@ $ithreads1
+					CMD
+						tee -i "$slice.$e.gz"
+					CMD
+						bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
 					CMD
 				done
 
@@ -1051,10 +1065,12 @@ function variants::freebayes(){
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				# removes potential duplicates due to padding
-				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools concat --threads $ithreads2 -O z -a -d all -o "$o.$e.gz" $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
+				commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bcftools concat --threads $ithreads2 -O z -a -d all $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
 				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					tee -i "$o.$e.gz"
+				CMD
+					bcftools index --threads $ithreads2 -f -t -o "$o.$e.gz.tbi"
 				CMD
 			done
 		done
@@ -1213,25 +1229,21 @@ function variants::varscan(){
 					# do not hard filter here. vcfix.pl adds vcfix_somatic FILTER tag if SS=2
 
 					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.varscan)")
-					commander::makecmd -a cmd3 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					commander::makecmd -a cmd3 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 						awk -v OFS='\t' '$7=="PASS"{$7="."}{print}'
 					CMD
 						"$slice.snp.vcf" > "$slice.snp.toreheader";
 					CMD
-						bcftools reheader -f "$genome.fai" "$slice.snp.toreheader" | bgzip -k -c -@ $ithreads1 > "$slice.snp.vcf.gz";
-					CMD
-						tabix -f -p vcf "$slice.snp.vcf.gz"
+						bcftools reheader -f "$genome.fai" "$slice.snp.toreheader" | bgzip -k -c -@ $ithreads1 | tee -i "$slice.snp.vcf.gz" | bcftools index --threads $ithreads1 -f -t -o "$slice.snp.vcf.gz.tbi"
 					CMD
 
 					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.varscan)")
-					commander::makecmd -a cmd3 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					commander::makecmd -a cmd3 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 						awk -v OFS='\t' '$7=="PASS"{$7="."}{print}'
 					CMD
 						"$slice.indel.vcf" > "$slice.indel.toreheader";
 					CMD
-						bcftools reheader -f "$genome.fai" "$slice.indel.toreheader" | bgzip -k -c -@ $ithreads1 > "$slice.indel.vcf.gz";
-					CMD
-						tabix -f -p vcf "$slice.indel.vcf.gz"
+						bcftools reheader -f "$genome.fai" "$slice.indel.toreheader" | bgzip -k -c -@ $ithreads1 | tee -i "$slice.indel.vcf.gz" | bcftools index --threads $ithreads1 -f -t -o "$slice.indel.vcf.gz.tbi"
 					CMD
 
 					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
@@ -1312,10 +1324,14 @@ function variants::varscan(){
 
 				for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.varscan)")
-					commander::makecmd -a cmd8 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e" | bgzip -k -c -@ $ithreads1 > "$slice.$e.gz"
+					commander::makecmd -a cmd8 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
 					CMD
-						tabix -f -p vcf "$slice.$e.gz"
+						bgzip -k -c -@ $ithreads1
+					CMD
+						tee -i "$slice.$e.gz"
+					CMD
+						bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
 					CMD
 				done
 
@@ -1324,10 +1340,12 @@ function variants::varscan(){
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				# removes potential duplicates due to padding
-				commander::makecmd -a cmd9 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools concat --threads $ithreads2 -O z -a -d all -o "$o.$e.gz" $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
+				commander::makecmd -a cmd9 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bcftools concat --threads $ithreads2 -O z -a -d all $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
 				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					tee -i "$o.$e.gz"
+				CMD
+					bcftools index --threads $ithreads2 -f -t -o "$o.$e.gz.tbi"
 				CMD
 			done
 		done
@@ -1578,10 +1596,14 @@ function variants::vardict(){
 
 				for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vardict)")
-					commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e" | bgzip -k -c -@ $ithreads1 > "$slice.$e.gz"
+					commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
 					CMD
-						tabix -f -p vcf "$slice.$e.gz"
+						bgzip -k -c -@ $ithreads1
+					CMD
+						tee -i "$slice.$e.gz"
+					CMD
+						bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
 					CMD
 				done
 
@@ -1590,10 +1612,12 @@ function variants::vardict(){
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				# removes potential duplicates due to padding
-				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools concat --threads $ithreads2 -O z -a -d all -o "$o.$e.gz" $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
+				commander::makecmd -a cmd7 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bcftools concat --threads $ithreads2 -O z -a -d all $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
 				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					tee -i "$o.$e.gz"
+				CMD
+					bcftools index --threads $ithreads2 -f -t -o "$o.$e.gz.tbi"
 				CMD
 			done
 		done
@@ -1786,48 +1810,50 @@ function variants::vardict_threads(){
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vardict)")
 			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bcftools reheader -f "$genome.fai" -o "$t.vcf" "$t.toreheader"
+				bcftools reheader -f "$genome.fai" -o "$t.reheadered" "$t.toreheader"
 			CMD
-				bcftools sort -T "${tdirs[-1]}" -m ${imemory}M -o "$o.vcf" "$t.vcf"
+				bcftools sort -T "${tdirs[-1]}" -m ${imemory}M -o "$t.vcf" "$t.reheadered"
 			CMD
 
 			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-				vcfix.pl -i "$o.vcf" > "$o.fixed.vcf"
+				vcfix.pl -i "$t.vcf" > "$t.fixed.vcf"
 			CMD
 
 			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bcftools norm -f "$genome" -c s -m-both "$o.fixed.vcf"
+				bcftools norm -f "$genome" -c s -m-both "$t.fixed.vcf"
 			CMD
-				vcfix.pl -i - > "$o.fixed.nomulti.vcf"
+				vcfix.pl -i - > "$t.fixed.nomulti.vcf"
 			CMD
 
 			if [[ $dbsnp ]]; then
 				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
-					vcffixup "$o.fixed.nomulti.vcf"
+					vcffixup "$t.fixed.nomulti.vcf"
 				CMD
 					vt normalize -q -n -r "$genome" -
 				CMD
 					vcfixuniq.pl
 				CMD
-					tee -i "$o.fixed.nomulti.normed.vcf"
+					tee -i "$t.fixed.nomulti.normed.vcf"
 				CMD
-					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$o.fixed.nomulti.normed.nodbsnp.vcf"
+					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$t.fixed.nomulti.normed.nodbsnp.vcf"
 				CMD
 			else
 				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-					vcffixup "$o.fixed.nomulti.vcf"
+					vcffixup "$t.fixed.nomulti.vcf"
 				CMD
 					vt normalize -q -n -r "$genome" -
 				CMD
-					vcfixuniq.pl > "$o.fixed.nomulti.normed.vcf"
+					vcfixuniq.pl > "$t.fixed.nomulti.normed.vcf"
 				CMD
 			fi
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
-				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
+				commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bgzip -k -c -@ $ithreads "$t.$e"
 				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					tee -i "$o.$e.gz"
+				CMD
+					bcftools index --threads $ithreads -f -t -o "$o.$e.gz.tbi"
 				CMD
 			done
 		done
@@ -1943,9 +1969,9 @@ function variants::platypus(){
 				# use to filter for germline risk
 				# do not use --strict, which requires that no observation in the germline support the somatic alternate i.e. no 0/1 0/1
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools reheader -f "$genome.fai" "$t.toreheader" | vcfsamplediff VCFSAMPLEDIFF NORMAL TUMOR - > "$t.vcf"
+					bcftools reheader -f "$genome.fai" "$t.toreheader" | vcfsamplediff VCFSAMPLEDIFF NORMAL TUMOR - > "$t.reheadered"
 				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${imemory}M -o "$o.vcf" "$t.vcf"
+					bcftools sort -T "${tdirs[-1]}" -m ${imemory}M -o "$t.vcf" "$t.reheadered"
 				CMD
 				#	grep -E '(^#|VCFSAMPLEDIFF=somatic)' > "$o.vcf"
 				#CMD # do not hard filter here. vcfix.pl adds vcfix_somatic FILTER tag if somatic or loh and GQ MAF thresholds passed
@@ -1971,49 +1997,51 @@ function variants::platypus(){
 				CMD
 
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools reheader -f "$genome.fai" -o "$t.vcf" "$t.toreheader"
+					bcftools reheader -f "$genome.fai" -o "$t.reheadered" "$t.toreheader"
 				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${imemory}M -o "$o.vcf" "$t.vcf"
+					bcftools sort -T "${tdirs[-1]}" -m ${imemory}M -o "$t.vcf" "$t.reheadered"
 				CMD
 			fi
 
 			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-				vcfix.pl -i "$o.vcf" > "$o.fixed.vcf"
+				vcfix.pl -i "$t.vcf" > "$t.fixed.vcf"
 			CMD
 
 			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bcftools norm -f "$genome" -c s -m-both "$o.fixed.vcf"
+				bcftools norm -f "$genome" -c s -m-both "$t.fixed.vcf"
 			CMD
-				vcfix.pl -i - > "$o.fixed.nomulti.vcf"
+				vcfix.pl -i - > "$t.fixed.nomulti.vcf"
 			CMD
 
 			if [[ $dbsnp ]]; then
 				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
-					vcffixup "$o.fixed.nomulti.vcf"
+					vcffixup "$t.fixed.nomulti.vcf"
 				CMD
 					vt normalize -q -n -r "$genome" -
 				CMD
 					vcfixuniq.pl
 				CMD
-					tee -i "$o.fixed.nomulti.normed.vcf"
+					tee -i "$t.fixed.nomulti.normed.vcf"
 				CMD
-					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$o.fixed.nomulti.normed.nodbsnp.vcf"
+					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$t.fixed.nomulti.normed.nodbsnp.vcf"
 				CMD
 			else
 				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-					vcffixup "$o.fixed.nomulti.vcf"
+					vcffixup "$t.fixed.nomulti.vcf"
 				CMD
 					vt normalize -q -n -r "$genome" -
 				CMD
-					vcfixuniq.pl > "$o.fixed.nomulti.normed.vcf"
+					vcfixuniq.pl > "$t.fixed.nomulti.normed.vcf"
 				CMD
 			fi
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
-				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
+				commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bgzip -k -c -@ $ithreads "$t.$e"
 				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					tee -i "$o.$e.gz"
+				CMD
+					bcftools index --threads $ithreads -f -t -o "$o.$e.gz.tbi"
 				CMD
 			done
 		done

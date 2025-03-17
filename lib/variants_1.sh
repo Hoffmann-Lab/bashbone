@@ -83,10 +83,8 @@ function variants::vcfnorm(){
 		if $zip; then
 			for e in fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vcfnorm)")
-				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$o.$e" | bgzip -k -c -@ $ithreads > "$o.$e.gz"
-				CMD
-					tabix -f -p vcf "$o.$e.gz"
+				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bcftools sort -T "${tdirs[-1]}" -m ${imemory}M "$o.$e" | bgzip -k -c -@ $ithreads | tee "$o.$e.gz" | bcftools index --threads $ithreads -f -t -o "$o.$e.gz.tbi"
 				CMD
 					rm "$o.$e"
 				CMD
@@ -95,7 +93,7 @@ function variants::vcfnorm(){
 			for e in fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vcfnorm)")
 				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$o.$e" > "${tdirs[-1]}/$(basename "$o.$e")"
+					bcftools sort -T "${tdirs[-1]}" -m ${imemory}M "$o.$e" > "${tdirs[-1]}/$(basename "$o.$e")"
 				CMD
 					mv "${tdirs[-1]}/$(basename "$o.$e")" "$o.$e"
 				CMD
@@ -213,22 +211,24 @@ function variants::panelofnormals(){
 				CMD
 
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e" | bgzip -k -c -@ $ithreads1 > "$slice.$e.gz"
+				commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+					bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
 				CMD
-					tabix -f -p vcf "$slice.$e.gz"
+					bgzip -k -c -@ $ithreads1
+				CMD
+					tee "$slice.$e.gz"
+				CMD
+					bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
 				CMD
 
 				tomerge+=("$slice.vcf.gz")
 			done < "${_bamslices_panelofnormals[${_bams_panelofnormals[$i]}]}"
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				bcftools concat --threads $ithreads2 -O z -a -d all -o "$t.vcf.gz" $(printf '"%s" ' "${tomerge[@]}")
 			CMD
-				bcftools sort -T "${tdirs[-1]}" -m ${imemory2}M "$t.vcf.gz" | bgzip -k -c -@ $ithreads2 > "$o.vcf.gz"
-			CMD
-				tabix -f -p vcf "$o.vcf.gz"
+				bcftools sort -T "${tdirs[-1]}" -m ${imemory2}M "$t.vcf.gz" | bgzip -k -c -@ $ithreads2 | tee "$o.vcf.gz" | bcftools index --threads $ithreads2 -f -t -o "$o.vcf.gz.tbi"
 			CMD
 		done
 	done
@@ -304,8 +304,7 @@ function variants::makepondb(){
 
 			bcftools view -h "$odir/${o%.*}.vcf.gz" | head -n -1 > "${tdirs[-1]}/vcf"
 			echo -e "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tINITIALIZE" >> "${tdirs[-1]}/vcf"
-			bgzip -k -c -@ $threads "${tdirs[-1]}/vcf" > "${tdirs[-1]}/vcf.gz"
-			tabix -f -p vcf "${tdirs[-1]}/vcf.gz"
+			bgzip -k -c -@ $threads "${tdirs[-1]}/vcf" | tee "${tdirs[-1]}/vcf.gz" | bcftools index -f -t -o "${tdirs[-1]}/vcf.gz.tbi"
 
 			commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				MALLOC_ARENA_MAX=4 gatk
