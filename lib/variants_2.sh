@@ -20,7 +20,7 @@ function variants::haplotypecaller(){
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp dbsnpfilter=true tmpdir="${TMPDIR:-/tmp}" outdir isdna=true
+	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir="${TMPDIR:-/tmp}" outdir isdna=true
 	declare -n _mapper_haplotypecaller _bamslices_haplotypecaller
 	while getopts 'S:s:t:g:d:e:m:M:r:c:o:' arg; do
 		case $arg in
@@ -41,24 +41,16 @@ function variants::haplotypecaller(){
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 6 ]] && _usage
 
-	if [[ ! $dbsnp ]]; then
-		dbsnpfilter=false
-
-		local tmpfile="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.vcf.gz)"
-		dbsnp="$tmpfile"
-		echo -e "##fileformat=VCFv4.0\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" | bgzip -k -c -@ $threads > "$tmpfile"
-		tabix -f -p vcf "$tmpfile"
-		dbsnp="$tmpfile"
-	fi
-
 	commander::printinfo "calling variants haplotypecaller"
 
 	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
-	eclare -n _bams_haplotypecaller="${_mapper_haplotypecaller[0]}"
-	local i memory ithreads instances=$((${#_mapper_haplotypecaller[@]}*${#_bams_haplotypecaller[@]}))
-	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
+	declare -n _bams_haplotypecaller="${_mapper_haplotypecaller[0]}"
+	local ignore instances1 ithreads1 imemory1 instances2 ithreads2 imemory2
+	local n=3 instances=$((${#_mapper_haplotypecaller[@]}*${#_bams_haplotypecaller[@]}))
+	[[ $dbsnp ]] && n=4
+	read -r instances1 ithreads1 imemory1 ignore < <(configure::jvm -i $((instances*minstances*n)) -t 10 -T $threads -M "$maxmemory") # for slice wise bcftools sort + bgzip
+	read -r instances2 ithreads2 imemory2 ignore < <(configure::jvm -i $((instances*n)) -t 10 -T $threads -M "$maxmemory") # for final bcftools concat of all 4 vcf files
 
 	local m i o t e slice odir tdir
 	declare -a tdirs tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6
@@ -69,6 +61,9 @@ function variants::haplotypecaller(){
 		mkdir -p "$odir" "$tdir"
 
 		for i in "${!_bams_haplotypecaller[@]}"; do
+			o="$(basename "${_bams_haplotypecaller[$i]}")"
+			t="$tdir/${o%.*}"
+			o="$odir/${o%.*}"
 			tomerge=()
 
 			while read -r slice; do
@@ -96,7 +91,6 @@ function variants::haplotypecaller(){
 						-I "$slice"
 						-O "$slice.unfiltered.vcf"
 						-R "$genome"
-						-D "$dbsnp"
 						-A Coverage
 						-A DepthPerAlleleBySample
 						-A StrandBiasBySample
@@ -112,6 +106,9 @@ function variants::haplotypecaller(){
 						-verbosity INFO
 						--tmp-dir "${tdirs[-1]}"
 				CMD
+				# in HC < v4 dbSNP input was required
+				# -D "$dbsnp" # does annotation only - i.e. transferring varaint id (RS ID) from dbSNP to vcf only
+				# adds ##INFO=<ID=DB,Number=0,Type=Flag,Description="dbSNP Membership">
 
 				if $isdna; then
 					# or 'QD<2.0||MQ<40.0||FS>60.0||MQRankSum<−12.5||ReadPosRankSum<−8.0'
@@ -144,6 +141,7 @@ function variants::haplotypecaller(){
 							--tmp-dir "${tdirs[-1]}"
 					CMD
 				else
+					# https://github.com/gatk-workflows/gatk4-rnaseq-germline-snps-indels/blob/master/gatk4-rna-best-practices.wdl
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 						MALLOC_ARENA_MAX=4 gatk
 							--java-options '
@@ -177,7 +175,7 @@ function variants::haplotypecaller(){
 					vcfix.pl -i - > "$slice.fixed.nomulti.vcf"
 				CMD
 
-				if $dbsnpfilter; then
+				if [[ $dbsnp ]]; then
 					commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 						vcffixup "$slice.fixed.nomulti.vcf"
 					CMD
@@ -199,27 +197,30 @@ function variants::haplotypecaller(){
 					CMD
 				fi
 
+				for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+					commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
+					CMD
+						bgzip -k -c -@ $ithreads1
+					CMD
+						tee -i "$slice.$e.gz"
+					CMD
+						bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
+					CMD
+				done
+
 				tomerge+=("$slice")
 			done < "${_bamslices_haplotypecaller[${_bams_haplotypecaller[$i]}]}"
 
-			o="$(basename "${_bams_haplotypecaller[$i]}")"
-			t="$tdir/${o%.*}"
-			o="$odir/${o%.*}"
-
-			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $($dbsnpfilter && echo fixed.nomulti.normed.nodbsnp.vcf); do
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
-				#DO NOT PIPE - DATALOSS!
-				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools concat -o "$t.$e" $(printf '"%s" ' "${tomerge[@]/%/.$e}")
-				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.$e" "$t.$e"
-				CMD
-
+			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
 				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
+					bcftools concat --threads $ithreads2 -O z -a -d all -o "$t.$e.gz" $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
 				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					bcftools sort -T "${tdirs[-1]}" -m ${imemory2}M "$t.$e.gz" | bgzip -k -c -@ $ithreads2 | tee -i "$o.$e.gz" | bcftools index --threads $ithreads2 -f -t -o "$o.$e.gz.tbi"
 				CMD
+				# sorting required to retain chromosomal order
 			done
 		done
 	done
@@ -238,8 +239,8 @@ function variants::haplotypecaller(){
 		commander::runcmd -v -b -i $threads -a cmd3
 		commander::runcmd -v -b -i $threads -a cmd4
 		commander::runcmd -v -b -i $threads -a cmd5
-		commander::runcmd -v -b -i $threads -a cmd6
-		commander::runcmd -v -b -i $instances -a cmd7
+		commander::runcmd -v -b -i $instances1 -a cmd6
+		commander::runcmd -v -b -i $instances2 -a cmd7
 	fi
 
 	return 0
@@ -251,15 +252,10 @@ function variants::mutect(){
 	# Instead you may use gs://gatk-best-practices/somatic-b37/Mutect2-exome-panel.vcf.
 	# For the -germline-resource you should use gs://gatk-best-practices/somatic-b37/af-only-gnomad.raw.sites.vcf.
 	# -> this seems to be replacing old dbSNP input, which does not have AF info field
-	# For the -V and -L arguments to GetPileupSummaries you may use gs://gatk-best-practices/somatic-b37/small_exac_common_3.vcf.
-	# -> can this be used? ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606_b151_GRCh38p7/VCF/GATK/00-common_all.vcf.gz
-	# -> cam this be used? ftp://ftp.ensembl.org/pub/current_variation/vcf/homo_sapiens/homo_sapiens_somatic.vcf.gz
-	# BUT b37 => HG19 ...
-	# https://software.broadinstitute.org/gatk/download/bundle
-	# https://console.cloud.google.com/storage/browser/gatk-best-practices/somatic-hg38/
-	# BUT this is b37 (similar to hg19) liftovered data (picard LiftoverVCF ? ENSEMBL/NCBI remap?)
-	# from helsinki workshop to create gatk tutotial webpage : https://software.broadinstitute.org/gatk/documentation/article?id=11136
-	# data downloaded to /misc/paras/data/genomes/GRCh38.p12/GATK-resources
+	# For the -V and -L arguments to GetPileupSummaries you may use gs://gatk-best-practices/somatic-b37/small_exac_common_3.vcf
+	# see also https://gatk.broadinstitute.org/hc/en-us/articles/360035890811-Resource-bundle
+	# hg38 data mainly comes from helsinki workshop to create hg19 liftover and gatk tutotial
+	# -> https://software.broadinstitute.org/gatk/documentation/article?id=11136
 
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
@@ -274,7 +270,8 @@ function variants::mutect(){
 			-1 <normalidx> | array of (requieres -2)
 			-2 <tumoridx>  | array of
 			-c <sliceinfo> | array of
-			-d <pondb>     | path to
+			-n <pondb>     | path to
+			-d <dbsnp>     | path to
 			-o <outdir>    | path to
 		EOF
 		return 1
@@ -305,16 +302,19 @@ function variants::mutect(){
 
 	commander::printinfo "calling variants mutect"
 
-	local minstances mthreads jmem jgct jcgct minstances2 mthreads2 jmem2 jgct2 jcgct2
+	local minstances mthreads jmem jgct jcgct
 	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m $memory -M "$maxmemory")
-	local params params2 m i o t nslice slice odir tdir ithreads instances=$((${#_mapper_mutect[@]}*${#_tidx_mutect[@]}))
-	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -T $threads)
-	read -r minstances2 mthreads2 jmem2 jgct2 jcgct2 < <(configure::jvm -i $instances -T $threads -M "$maxmemory")
+	local ignore jmem2 jgct2 jcgct2 instances1 ithreads1 imemory1 instances2 ithreads2 imemory2
+	local n=3 instances=$((${#_mapper_mutect[@]}*${#_tidx_mutect[@]}))
+	[[ $dbsnp ]] && n=4
+	read -r ignore ignore jmem2 jgct2 jcgct2 < <(configure::jvm -i $instances -T $threads -M "$maxmemory") # for gatk simple tasks like gathering
+	read -r instances1 ithreads1 imemory1 ignore < <(configure::jvm -i $((instances*minstances*n)) -t 10 -T $threads -M "$maxmemory") # for slice wise bcftools sort + bgzip
+	read -r instances2 ithreads2 imemory2 ignore < <(configure::jvm -i $((instances*n)) -t 10 -T $threads -M "$maxmemory") # for final bcftools concat of all 4 vcf files
 
 	[[ $pondb ]] && params="-pon '$pondb'"
-	[[ -s "$genome.af_only_gnomad.vcf.gz" ]] && params+=" --germline-resource '$genome.af_only_gnomad.vcf.gz'"
+	[[ -s "$genome.gnomAD_with_AF.vcf.gz" ]] && params+=" --germline-resource '$genome.gnomAD_with_AF.vcf.gz'"
 
+	local params params2 m i o t nslice slice odir tdir filterdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.filterdata)"
 	declare -a tdirs tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6 cmd7 cmd8 cmd9 cmd10
 	for m in "${_mapper_mutect[@]}"; do
 		declare -n _bams_mutect=$m
@@ -323,10 +323,15 @@ function variants::mutect(){
 		mkdir -p "$odir" "$tdir"
 
 		for i in "${!_tidx_mutect[@]}"; do
+			o="$(basename "${_bams_mutect[${_tidx_mutect[$i]}]}")"
+			t="$tdir/${o%.*}"
+			o="$odir/${o%.*}"
 			tomerge=()
 
 			while read -r nslice slice; do
+				tomerge+=("$slice")
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+
 				# normal name defined for RGSM sam header entry by alignment::addreadgroup
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 					MALLOC_ARENA_MAX=4 gatk
@@ -377,7 +382,27 @@ function variants::mutect(){
 
 				# --dont-use-soft-clipped-bases recommended for RNA based calling due to splitNcigar which elongates both splits towards full length read alignments and mask them\n\t\t\t\t# since we are doing clipmateoverlap, which introduces soft-clips, always enable this option
 
-				if [[ -s "$genome.small_common.vcf.gz" ]]; then
+				if [[ -s "$genome.ExAC_common.vcf.gz" ]]; then
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+						MALLOC_ARENA_MAX=4 gatk
+							--java-options '
+								-Xmx${jmem}m
+								-XX:ParallelGCThreads=$jgct
+								-XX:ConcGCThreads=$jcgct
+								-Djava.io.tmpdir="$tmpdir"
+								-DGATK_STACKTRACE_ON_USER_EXCEPTION=true
+							'
+							GetPileupSummaries
+							-I "$nslice"
+							-V "$genome.ExAC_common.vcf.gz"
+							-L "$genome.ExAC_common.vcf.gz"
+							-O "$slice.normal.pileups.table"
+							--verbosity INFO
+							--tmp-dir "${tdirs[-1]}"
+					CMD
+
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
 					commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 						MALLOC_ARENA_MAX=4 gatk
 							--java-options '
@@ -389,53 +414,18 @@ function variants::mutect(){
 							'
 							GetPileupSummaries
 							-I "$slice"
-							-V "$genome.small_common.vcf.gz"
-							-L "$genome.small_common.vcf.gz"
-							-O "$slice.pileups.table"
+							-V "$genome.ExAC_common.vcf.gz"
+							-L "$genome.ExAC_common.vcf.gz"
+							-O "$slice.tumor.pileups.table"
 							--verbosity INFO
 							--tmp-dir "${tdirs[-1]}"
 					CMD
 
-
-					##########
-					#TODO awk 'NR>2' *slice?.bam.pileups.table | sort -k1,1V -k2,2n  BUT -k1,1 must be in order of $genome.list
-					# then predict contamination as whole and filter on full set
-					##########
-					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-						MALLOC_ARENA_MAX=4 gatk
-							--java-options '
-								-Xmx${jmem}m
-								-XX:ParallelGCThreads=$jgct
-								-XX:ConcGCThreads=$jcgct
-								-Djava.io.tmpdir="$tmpdir"
-								-DGATK_STACKTRACE_ON_USER_EXCEPTION=true
-							'
-							CalculateContamination
-							-I "$slice.pileups.table"
-							-O "$slice.contamination.table"
-							--tumor-segmentation "$slice.tumorsegments.table"
-							--verbosity INFO
-							--tmp-dir "${tdirs[-1]}"
-					CMD
-					params2=" --contamination-table '$slice.contamination.table' --tumor-segmentation '$slice.tumorsegments.table'"
+					params2="--contamination-table '$filterdir/contamination.table' --tumor-segmentation '$filterdir/tumorsegments.table'"
 				fi
 
-				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
-					MALLOC_ARENA_MAX=4 gatk
-						--java-options '
-							-Xmx${jmem}m
-							-XX:ParallelGCThreads=$jgct
-							-XX:ConcGCThreads=$jcgct
-							-Djava.io.tmpdir="$tmpdir"
-							-DGATK_STACKTRACE_ON_USER_EXCEPTION=true
-						'
-						LearnReadOrientationModel
-						-I "$slice.f1r2.tar.gz"
-						-O "$slice.f1r2_model.tar.gz"
-						--tmp-dir "${tdirs[-1]}"
-				CMD
-
-				commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD
 					MALLOC_ARENA_MAX=4 gatk
 						--java-options '
 							-Xmx${jmem}m
@@ -446,7 +436,7 @@ function variants::mutect(){
 						'
 						FilterMutectCalls
 						$params2
-						--ob-priors "$slice.f1r2_model.tar.gz"
+						--ob-priors "$filterdir/f1r2_model.tar.gz"
 						-R "$genome"
 						-V "$slice.unfiltered.vcf"
 						-stats "$slice.unfiltered.vcf.stats"
@@ -459,18 +449,18 @@ function variants::mutect(){
 				#In order to tweak results in favor of more sensitivity users may set -f-score-beta to a value greater than its default of 1 (beta is the relative weight of sensitivity versus precision in the harmonic mean). Setting it lower biases results toward greater precision.
 				# optional: --tumor-segmentation segments.table
 
-				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD
 					vcfix.pl -i "$slice.vcf" > "$slice.fixed.vcf"
 				CMD
 
-				commander::makecmd -a cmd7 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd8 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bcftools norm -f "$genome" -c s -m-both "$slice.fixed.vcf"
 				CMD
 					vcfix.pl -i - > "$slice.fixed.nomulti.vcf"
 				CMD
 
 				if [[ $dbsnp ]]; then
-					commander::makecmd -a cmd8 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
+					commander::makecmd -a cmd9 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 						vcffixup "$slice.fixed.nomulti.vcf"
 					CMD
 						vt normalize -q -n -r "$genome" -
@@ -482,7 +472,7 @@ function variants::mutect(){
 						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.nodbsnp.vcf"
 					CMD
 				else
-					commander::makecmd -a cmd8 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					commander::makecmd -a cmd9 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 						vcffixup "$slice.fixed.nomulti.vcf"
 					CMD
 						vt normalize -q -n -r "$genome" -
@@ -491,15 +481,96 @@ function variants::mutect(){
 					CMD
 				fi
 
-				tomerge+=("$slice")
+				for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+					commander::makecmd -a cmd11 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
+					CMD
+						bgzip -k -c -@ $ithreads1
+					CMD
+						tee -i "$slice.$e.gz"
+					CMD
+						bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
+					CMD
+				done
+
+				# tomerge+=("$slice") is on top of loop
 			done < <(paste "${_bamslices_mutect[${_bams_mutect[${_nidx_mutect[$i]}]}]}" "${_bamslices_mutect[${_bams_mutect[${_tidx_mutect[$i]}]}]}")
 
-			o="$(basename "${_bams_mutect[${_tidx_mutect[$i]}]}")"
-			t="$tdir/${o%.*}"
-			o="$odir/${o%.*}"
+			if [[ -s "$genome.ExAC_common.vcf.gz" ]]; then
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
+					MALLOC_ARENA_MAX=4 gatk
+						--java-options '
+							-Xmx${jmem2}m
+							-XX:ParallelGCThreads=$jgct2
+							-XX:ConcGCThreads=$jcgct2
+							-Djava.io.tmpdir="$tmpdir"
+							-DGATK_STACKTRACE_ON_USER_EXCEPTION=true
+						'
+						GatherPileupSummaries
+						--sequence-dictionary "${genome%.*}.dict"
+						$(printf -- '-I "%s" ' "${tomerge[@]/%/.normal.pileups.table}")
+						-O "$filterdir/normal.pileup.table"
+						--tmp-dir "${tdirs[-1]}"
+				CMD
+
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
+					MALLOC_ARENA_MAX=4 gatk
+						--java-options '
+							-Xmx${jmem2}m
+							-XX:ParallelGCThreads=$jgct2
+							-XX:ConcGCThreads=$jcgct2
+							-Djava.io.tmpdir="$tmpdir"
+							-DGATK_STACKTRACE_ON_USER_EXCEPTION=true
+						'
+						GatherPileupSummaries
+						--sequence-dictionary "${genome%.*}.dict"
+						$(printf -- '-I "%s" ' "${tomerge[@]/%/.tumor.pileups.table}")
+						-O "$filterdir/tumor.pileups.table"
+						--tmp-dir "${tdirs[-1]}"
+				CMD
+
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+					MALLOC_ARENA_MAX=4 gatk
+						--java-options '
+							-Xmx${jmem2}m
+							-XX:ParallelGCThreads=$jgct2
+							-XX:ConcGCThreads=$jcgct2
+							-Djava.io.tmpdir="$tmpdir"
+							-DGATK_STACKTRACE_ON_USER_EXCEPTION=true
+						'
+						CalculateContamination
+						-I "$filterdir/tumor.pileups.table"
+						--matched-normal "$filterdir/normal.pileups.table"
+						-O "$filterdir/contamination.table"
+						--tumor-segmentation "$filterdir/tumorsegments.table"
+						--verbosity INFO
+						--tmp-dir "${tdirs[-1]}"
+				CMD
+				# --tumor-segmentation is removed i.e. deprecated since v4.6?
+			fi
 
 			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
-			commander::makecmd -a cmd9 -s ';' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
+				MALLOC_ARENA_MAX=4 gatk
+					--java-options '
+						-Xmx${jmem2}m
+						-XX:ParallelGCThreads=$jgct2
+						-XX:ConcGCThreads=$jcgct2
+						-Djava.io.tmpdir="$tmpdir"
+						-DGATK_STACKTRACE_ON_USER_EXCEPTION=true
+					'
+					LearnReadOrientationModel
+					$(printf -- '-I "%s" ' "${tomerge[@]/%/.f1r2.tar.gz}")
+					-O "$filterdir/f1r2_model.tar.gz"
+					--tmp-dir "${tdirs[-1]}"
+			CMD
+
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+			commander::makecmd -a cmd10 -s ';' -c {COMMANDER[0]}<<- CMD
 				MALLOC_ARENA_MAX=4 gatk
 					--java-options '
 						-Xmx${jmem2}m
@@ -516,19 +587,13 @@ function variants::mutect(){
 			CMD
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
-				tdirs+=("$(mktemp -d -p "$tdir" cleanup.XXXXXXXXXX.bcftools)")
-				#DO NOT PIPE - DATALOSS!
-				commander::makecmd -a cmd10 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools concat -o "$t.$e" $(printf '"%s" ' "${tomerge[@]/%/.$e}")
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gatk)")
+				commander::makecmd -a cmd12 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+					bcftools concat --threads $ithreads2 -O z -a -d all -o "$t.$e.gz" $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
 				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.$e" "$t.$e"
+					bcftools sort -T "${tdirs[-1]}" -m ${imemory2}M "$t.$e.gz" | bgzip -k -c -@ $ithreads2 | tee -i "$o.$e.gz" | bcftools index --threads $ithreads2 -f -t -o "$o.$e.gz.tbi"
 				CMD
-
-				commander::makecmd -a cmd11 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
-				CMD
-					tabix -f -p vcf "$o.$e.gz"
-				CMD
+				# sorting required to retain chromosomal order
 			done
 
 		done
@@ -546,18 +611,20 @@ function variants::mutect(){
 		commander::printcmd -a cmd9
 		commander::printcmd -a cmd10
 		commander::printcmd -a cmd11
+		commander::printcmd -a cmd12
 	else
 		commander::runcmd -c gatk -v -b -i $minstances -a cmd1
 		commander::runcmd -c gatk -v -b -i $minstances -a cmd2
-		commander::runcmd -c gatk -v -b -i $minstances -a cmd3
-		commander::runcmd -c gatk -v -b -i $minstances -a cmd4
-		commander::runcmd -c gatk -v -b -i $minstances -a cmd5
-		commander::runcmd -v -b -i $threads -a cmd6
+		commander::runcmd -c gatk -v -b -i $threads -a cmd3
+		commander::runcmd -c gatk -v -b -i $threads -a cmd4
+		commander::runcmd -c gatk -v -b -i $threads -a cmd5
+		commander::runcmd -c gatk -v -b -i $minstances -a cmd6
 		commander::runcmd -v -b -i $threads -a cmd7
 		commander::runcmd -v -b -i $threads -a cmd8
-		commander::runcmd -c gatk -v -b -i $minstances2 -a cmd9
-		commander::runcmd -v -b -i $threads -a cmd10
-		commander::runcmd -v -b -i $instances -a cmd11
+		commander::runcmd -v -b -i $threads -a cmd9
+		commander::runcmd -c gatk -v -b -i $threads -a cmd10
+		commander::runcmd -v -b -i $instances1 -a cmd11
+		commander::runcmd -v -b -i $instances2 -a cmd12
 	fi
 
 	return 0
@@ -607,42 +674,35 @@ function variants::bcftools(){
 	declare -n _bams_bcftools=$m
 	[[ ! $_tidx_bcftools ]] && unset _tidx_bcftools && declare -a _tidx_bcftools=(${!_bams_bcftools[@]}) # use all indices for germline calling
 
-	local ithreads i memory instances=$((${#_mapper_bcftools[@]}*${#_tidx_bcftools[@]}))
-	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
+	local ignore instances1 ithreads1 imemory1 instances2 ithreads2 imemory2
+	local n=3 instances=$((${#_mapper_bcftools[@]}*${#_tidx_bcftools[@]}))
+	[[ $dbsnp ]] && n=4
+	read -r instances1 ithreads1 imemory1 ignore < <(configure::jvm -i $((instances*threads*n)) -t 10 -T $threads -M "$maxmemory") # for slice wise bcftools sort + bgzip
+	read -r instances2 ithreads2 imemory2 ignore < <(configure::jvm -i $((instances*n)) -t 10 -T $threads -M "$maxmemory") # for final bcftools concat of all 4 vcf files
 
-	declare -a cmd1slice cmd2slice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
-	commander::makecmd -a cmd1slice -s ' ' -o "${tdirs[0]}/tmp" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-		perl -lane '
-			$i=0;
-			for (map {$_*100000} 1..($F[1]-1)/100000){
-				$i=$_;
-				print join"\t",($F[0],$_-100000,$_-1);
-			}
-			print join"\t",($F[0],$i,$F[1]-1) if $i<$F[1]-1;
-		'
+	declare -a cmdslice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
+	commander::makecmd -a cmdslice -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+		bedtools makewindows
+			-g "$genome.fai"
+			-w 100000
+			-s $((100000-100))
+		> "${tdirs[0]}/tmp"
 	CMD
-		"$genome.fai"
-	CMD
-
-	commander::makecmd -a cmd2slice -s ' ' -c {COMMANDER[0]}<<- CMD
 		split
-		--numeric-suffixes=1
-		-a ${#threads}
-		-n l/$threads
-		--additional-suffix=.bed
-		--filter='bedtools merge -d 1 -i - > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
-		"${tdirs[0]}/tmp" "${tdirs[0]}/x"
+			--numeric-suffixes=1
+			-a ${#threads}
+			-n l/$threads
+			--additional-suffix=.bed
+			--filter='bedtools merge -i - > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
+			"${tdirs[0]}/tmp" "${tdirs[0]}/x"
 	CMD
+	# introduce padding across chunks
 
 	if $skip; then
-		commander::printcmd -a cmd1slice
-		commander::printcmd -a cmd2slice
+		commander::printcmd -a cmdslice
 	else
-		commander::runcmd -v -b -i $threads -a cmd1slice
-		commander::runcmd -v -b -i $threads -a cmd2slice
+		commander::runcmd -v -b -i $threads -a cmdslice
 	fi
-
 
 	local m i j f nf o t e slice odir tdir
 	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6
@@ -769,22 +829,30 @@ function variants::bcftools(){
 					CMD
 				fi
 
+				for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
+					commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
+					CMD
+						bgzip -k -c -@ $ithreads1
+					CMD
+						tee -i "$slice.$e.gz"
+					CMD
+						bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
+					CMD
+				done
+
 				tomerge+=("$slice")
 			done
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
-				#DO NOT PIPE - DATALOSS!
-				commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools concat -o "$t.$e" $(printf '"%s" ' "${tomerge[@]/%/.$e}")
+				# removes potential duplicates due to padding
+				commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bcftools concat --threads $ithreads2 -O z -a -d all $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
 				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.$e" "$t.$e"
+					tee -i "$o.$e.gz"
 				CMD
-
-				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
-				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					bcftools index --threads $ithreads2 -f -t -o "$o.$e.gz.tbi"
 				CMD
 			done
 		done
@@ -802,8 +870,8 @@ function variants::bcftools(){
 		commander::runcmd -v -b -i $threads -a cmd2
 		commander::runcmd -v -b -i $threads -a cmd3
 		commander::runcmd -v -b -i $threads -a cmd4
-		commander::runcmd -v -b -i $threads -a cmd5
-		commander::runcmd -v -b -i $instances -a cmd6
+		commander::runcmd -v -b -i $instances1 -a cmd5
+		commander::runcmd -v -b -i $instances2 -a cmd6
 	fi
 
 	return 0
@@ -853,43 +921,35 @@ function variants::freebayes(){
 	declare -n _bams_freebayes=$m
 	[[ ! $_tidx_freebayes ]] && unset _tidx_freebayes && declare -a _tidx_freebayes=(${!_bams_freebayes[@]}) # use all indices for germline calling
 
-	local ithreads i memory instances=$((${#_mapper_freebayes[@]}*${#_tidx_freebayes[@]}))
-	read -r i memory < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
+	local ignore instances1 ithreads1 imemory1 instances2 ithreads2 imemory2
+	local n=3 instances=$((${#_mapper_freebayes[@]}*${#_tidx_freebayes[@]}))
+	[[ $dbsnp ]] && n=4
+	read -r instances1 ithreads1 imemory1 ignore < <(configure::jvm -i $((instances*threads*n)) -t 10 -T $threads -M "$maxmemory") # for slice wise bcftools sort + bgzip
+	read -r instances2 ithreads2 imemory2 ignore < <(configure::jvm -i $((instances*n)) -t 10 -T $threads -M "$maxmemory") # for final bcftools concat of all 4 vcf files
 
-	declare -a cmd1slice cmd2slice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
-
-	commander::makecmd -a cmd1slice -s ' ' -o "${tdirs[0]}/tmp" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-		perl -lane '
-			$i=0;
-			for (map {$_*100000} 1..($F[1]-1)/100000){
-				$i=$_;
-				print join"\t",($F[0],$_-100000,$_-1);
-			}
-			print join"\t",($F[0],$i,$F[1]-1) if $i<$F[1]-1;
-		'
+	declare -a cmdslice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
+	commander::makecmd -a cmdslice -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+		bedtools makewindows
+			-g "$genome.fai"
+			-w 100000
+			-s $((100000-100))
+		> "${tdirs[0]}/tmp"
 	CMD
-		"$genome.fai"
-	CMD
-
-	commander::makecmd -a cmd2slice -s ' ' -c {COMMANDER[0]}<<- CMD
 		split
-		--numeric-suffixes=1
-		-a ${#threads}
-		-n l/$threads
-		--additional-suffix=.bed
-		--filter='bedtools merge -d 1 -i - > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
-		"${tdirs[0]}/tmp" "${tdirs[0]}/x"
+			--numeric-suffixes=1
+			-a ${#threads}
+			-n l/$threads
+			--additional-suffix=.bed
+			--filter='bedtools merge -i - > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
+			"${tdirs[0]}/tmp" "${tdirs[0]}/x"
 	CMD
+	# introduce padding
 
 	if $skip; then
-		commander::printcmd -a cmd1slice
-		commander::printcmd -a cmd2slice
+		commander::printcmd -a cmdslice
 	else
-		commander::runcmd -v -b -i $threads -a cmd1slice
-		commander::runcmd -v -b -i $threads -a cmd2slice
+		commander::runcmd -v -b -i $threads -a cmdslice
 	fi
-
 
 	local m i j f nf o t e slice odir tdir
 	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6
@@ -987,22 +1047,30 @@ function variants::freebayes(){
 					CMD
 				fi
 
+				for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.freebayes)")
+					commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
+					CMD
+						bgzip -k -c -@ $ithreads1
+					CMD
+						tee -i "$slice.$e.gz"
+					CMD
+						bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
+					CMD
+				done
+
 				tomerge+=("$slice")
 			done
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
-				#DO NOT PIPE - DATALOSS!
-				commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools concat -o "$t.$e" $(printf '"%s" ' "${tomerge[@]/%/.$e}")
+				# removes potential duplicates due to padding
+				commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bcftools concat --threads $ithreads2 -O z -a -d all $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
 				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.$e" "$t.$e"
+					tee -i "$o.$e.gz"
 				CMD
-
-				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
-				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					bcftools index --threads $ithreads2 -f -t -o "$o.$e.gz.tbi"
 				CMD
 			done
 		done
@@ -1020,8 +1088,8 @@ function variants::freebayes(){
 		commander::runcmd -v -b -i $threads -a cmd2
 		commander::runcmd -v -b -i $threads -a cmd3
 		commander::runcmd -v -b -i $threads -a cmd4
-		commander::runcmd -v -b -i $threads -a cmd5
-		commander::runcmd -v -b -i $instances -a cmd6
+		commander::runcmd -v -b -i $instances1 -a cmd5
+		commander::runcmd -v -b -i $instances2 -a cmd6
 	fi
 
 	return 0
@@ -1034,7 +1102,6 @@ function variants::varscan(){
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
-			-m <memory>    | per threads amount of (default: 2048)
 			-M <maxmemory> | amount of
 			-g <genome>    | path to
 			-d <dbsnp>     | path to
@@ -1048,12 +1115,11 @@ function variants::varscan(){
 
 	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir="${TMPDIR:-/tmp}" outdir
 	declare -n _mapper_varscan _nidx_varscan _tidx_varscan
-	while getopts 'S:s:t:M:g:d:m:r:1:2:c:o:' arg; do
+	while getopts 'S:s:t:M:g:d:r:1:2:c:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
-			m) memory=$OPTARG;;
 			M) maxmemory=$OPTARG;;
 			g) ((++mandatory)); genome="$OPTARG";;
 			d) dbsnp="$OPTARG";;
@@ -1073,45 +1139,36 @@ function variants::varscan(){
 	declare -n _bams_varscan=$m
 	[[ ! $_tidx_varscan ]] && unset _tidx_varscan && declare -a _tidx_varscan=(${!_bams_varscan[@]}) # use all indices for germline calling
 
-	local minstances mthreads jmem jgct jcgct ithreads i memory1 memory2 instances=$((${#_mapper_varscan[@]}*${#_tidx_varscan[@]}))
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m ${memory:-2048} -M "$maxmemory") # good estimate for varscan
-	read -r i memory1 < <(configure::memory_by_instances -i $((minstances*instances)) -T $threads -M "$maxmemory") # for bcftools sort of initial vcf slices
-	read -r i memory2 < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
+	local ignore jmem jgct jcgct instances1 ithreads1 imemory1 instances2 ithreads2 imemory2
+	local n=3 instances=$((${#_mapper_varscan[@]}*${#_tidx_varscan[@]}))
+	[[ $dbsnp ]] && n=4
+	read -r ignore ignore jmem jgct jcgct < <(configure::jvm -T $threads -M "$maxmemory")
+	read -r instances1 ithreads1 imemory1 ignore < <(configure::jvm -i $((instances*threads*n)) -t 10 -T $threads -M "$maxmemory") # for slice wise bcftools sort + bgzip
+	read -r instances2 ithreads2 imemory2 ignore < <(configure::jvm -i $((instances*n)) -t 10 -T $threads -M "$maxmemory") # for final bcftools concat of all 4 vcf files
 
-	declare -a cmd1slice cmd2slice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
-
-	commander::makecmd -a cmd1slice -s ' ' -o "${tdirs[0]}/tmp" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-		perl -lane '
-			$i=0;
-			for (map {$_*100000} 1..($F[1]-1)/100000){
-				$i=$_;
-				print join"\t",($F[0],$_-100000,$_-1);
-			}
-			print join"\t",($F[0],$i,$F[1]-1) if $i<$F[1]-1;
-		'
+	declare -a cmdslice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
+	commander::makecmd -a cmdslice -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+		bedtools makewindows
+			-g "$genome.fai"
+			-w 100000
+			-s $((100000-100))
+		> "${tdirs[-1]}/tmp"
 	CMD
-		"$genome.fai"
-	CMD
-
-	commander::makecmd -a cmd2slice -s ' ' -c {COMMANDER[0]}<<- CMD
 		split
-		--numeric-suffixes=1
-		-a ${#minstances}
-		-n l/$minstances
-		--additional-suffix=.bed
-		--filter='bedtools merge -d 1 -i - > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
-		"${tdirs[0]}/tmp" "${tdirs[0]}/x"
+			--numeric-suffixes=1
+			-a ${#threads}
+			-n l/$threads
+			--additional-suffix=.bed
+			--filter='bedtools merge -i - > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
+			"${tdirs[0]}/tmp" "${tdirs[0]}/x"
 	CMD
+	# introduce padding
 
 	if $skip; then
-		commander::printcmd -a cmd1slice
-		commander::printcmd -a cmd2slice
+		commander::printcmd -a cmdslice
 	else
-		commander::runcmd -v -b -i $threads -a cmd1slice
-		commander::runcmd -v -b -i $threads -a cmd2slice
+		commander::runcmd -v -b -i $threads -a cmdslice
 	fi
-
 
 	local m i j f nf o t e slice odir tdir
 	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6 cmd7 cmd8
@@ -1128,7 +1185,7 @@ function variants::varscan(){
 			o="$odir/${o%.*}"
 			tomerge=()
 
-			for j in $(seq 1 $minstances); do
+			for j in $(seq 1 $threads); do
 				slice="$t.slice.$j"
 
 				if [[ $_nidx_varscan ]]; then # somatic
@@ -1168,20 +1225,30 @@ function variants::varscan(){
 							--output-indel "$slice.indel"
 							--output-vcf 1
 					CMD
+					# all sites are labeled with PASS
+					# do not hard filter here. vcfix.pl adds vcfix_somatic FILTER tag if SS=2
 
-					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
-					# do not use bcftools concat -o "$slice.concat" "$slice.snp.reheader" "$slice.indel.reheader", since positions can overlap which is not handled by bcftools unless input is bgzip
-					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-						bcftools reheader -f "$genome.fai" -o "$slice.snp.reheader" "$slice.snp.vcf"
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.varscan)")
+					commander::makecmd -a cmd3 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+						awk -v OFS='\t' '$7=="PASS"{$7="."}{print}'
 					CMD
-						bcftools reheader -f "$genome.fai" -o "$slice.indel.reheader" "$slice.indel.vcf"
+						"$slice.snp.vcf" > "$slice.snp.toreheader";
 					CMD
-						cat <(bcftools view -h "$slice.snp.reheader") <(bcftools view -H "$slice.snp.reheader" | awk -v OFS='\t' '{\$7="."; print}') <(bcftools view -H "$slice.indel.reheader" | awk -v OFS='\t' '{\$7="."; print}') > "$slice.concat"
+						bcftools reheader -f "$genome.fai" "$slice.snp.toreheader" | bgzip -k -c -@ $ithreads1 | tee -i "$slice.snp.vcf.gz" | bcftools index --threads $ithreads1 -f -t -o "$slice.snp.vcf.gz.tbi"
 					CMD
-						bcftools sort -T "${tdirs[-1]}" -m ${memory1}M -o "$slice.vcf" "$slice.concat"
+
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.varscan)")
+					commander::makecmd -a cmd3 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+						awk -v OFS='\t' '$7=="PASS"{$7="."}{print}'
 					CMD
-					#	grep -E '(^#|SS=2)' "$slice.unfiltered" > "$slice.vcf"
-					#CMD # do not hard filter here. vcfix.pl adds vcfix_somatic FILTER tag if SS=2
+						"$slice.indel.vcf" > "$slice.indel.toreheader";
+					CMD
+						bcftools reheader -f "$genome.fai" "$slice.indel.toreheader" | bgzip -k -c -@ $ithreads1 | tee -i "$slice.indel.vcf.gz" | bcftools index --threads $ithreads1 -f -t -o "$slice.indel.vcf.gz.tbi"
+					CMD
+
+					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+						bcftools concat --threads $ithreads1 -a -d all -o "$slice.vcf" "$slice.snp.vcf.gz" "$slice.indel.vcf.gz"
+					CMD
 				else
 					commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
 						samtools mpileup
@@ -1212,28 +1279,29 @@ function variants::varscan(){
 							--output-vcf 1
 							--variants 1
 					CMD
-						awk -v OFS='\t' '{if($7=="PASS"){$7="."}; print}'
+						awk -v OFS='\t' '$7=="PASS"{$7="."}{print}'
 					CMD
 					# all sites are labeled with PASS
 
 					# do not pipe into bcftools : --fai cannot be used when reading from stdin
-					commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.varscan)")
+					commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
 						bcftools reheader -f "$genome.fai" -o "$slice.vcf" "$slice.toreheader"
 					CMD
 				fi
 
-				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd5 -s ';' -c {COMMANDER[0]}<<- CMD
 					vcfix.pl -i "$slice.vcf" > "$slice.fixed.vcf"
 				CMD
 
-				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 					bcftools norm -f "$genome" -c s -m-both "$slice.fixed.vcf"
 				CMD
 					vcfix.pl -i - > "$slice.fixed.nomulti.vcf"
 				CMD
 
 				if [[ $dbsnp ]]; then
-					commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
+					commander::makecmd -a cmd7 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
 						vcffixup "$slice.fixed.nomulti.vcf"
 					CMD
 						vt normalize -q -n -r "$genome" -
@@ -1245,7 +1313,7 @@ function variants::varscan(){
 						vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$slice.fixed.nomulti.normed.nodbsnp.vcf"
 					CMD
 				else
-					commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					commander::makecmd -a cmd7 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
 						vcffixup "$slice.fixed.nomulti.vcf"
 					CMD
 						vt normalize -q -n -r "$genome" -
@@ -1254,22 +1322,30 @@ function variants::varscan(){
 					CMD
 				fi
 
+				for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.varscan)")
+					commander::makecmd -a cmd8 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
+					CMD
+						bgzip -k -c -@ $ithreads1
+					CMD
+						tee -i "$slice.$e.gz"
+					CMD
+						bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
+					CMD
+				done
+
 				tomerge+=("$slice")
 			done
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
-				#DO NOT PIPE - DATALOSS!
-				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools concat -o "$t.$e" $(printf '"%s" ' "${tomerge[@]/%/.$e}")
+				# removes potential duplicates due to padding
+				commander::makecmd -a cmd9 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bcftools concat --threads $ithreads2 -O z -a -d all $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
 				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${memory2}M -o "$o.$e" "$t.$e"
+					tee -i "$o.$e.gz"
 				CMD
-
-				commander::makecmd -a cmd8 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
-				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					bcftools index --threads $ithreads2 -f -t -o "$o.$e.gz.tbi"
 				CMD
 			done
 		done
@@ -1284,15 +1360,17 @@ function variants::varscan(){
 		commander::printcmd -a cmd6
 		commander::printcmd -a cmd7
 		commander::printcmd -a cmd8
+		commander::printcmd -a cmd9
 	else
 		commander::runcmd -v -b -i $threads -a cmd1
-		commander::runcmd -c varscan -v -b -i $minstances -a cmd2
-		commander::runcmd -v -b -i $threads -a cmd3
-		commander::runcmd -v -b -i $threads -a cmd4
+		commander::runcmd -c varscan -v -b -i $threads -a cmd2
+		commander::runcmd -v -b -i $instances1 -a cmd3
+		commander::runcmd -v -b -i $instances1 -a cmd4
 		commander::runcmd -v -b -i $threads -a cmd5
 		commander::runcmd -v -b -i $threads -a cmd6
 		commander::runcmd -v -b -i $threads -a cmd7
-		commander::runcmd -v -b -i $instances -a cmd8
+		commander::runcmd -v -b -i $instances1 -a cmd8
+		commander::runcmd -v -b -i $instances2 -a cmd9
 	fi
 
 	return 0
@@ -1305,7 +1383,6 @@ function variants::vardict(){
 			-S <hardskip>  | true/false return
 			-s <softskip>  | true/false only print commands
 			-t <threads>   | number of
-			-m <memory>    | per thread amount of (default: 12288)
 			-M <maxmemory> | amount of
 			-g <genome>    | path to
 			-d <dbsnp>     | path to
@@ -1319,12 +1396,11 @@ function variants::vardict(){
 
 	local OPTIND arg mandatory skip=false threads memory maxmemory genome dbsnp tmpdir="${TMPDIR:-/tmp}" outdir
 	declare -n _mapper_vardict _nidx_vardict _tidx_vardict
-	while getopts 'S:s:t:M:g:d:m:r:1:2:c:o:' arg; do
+	while getopts 'S:s:t:M:g:d:r:1:2:c:o:' arg; do
 		case $arg in
 			S) $OPTARG && return 0;;
 			s) $OPTARG && skip=true;;
 			t) ((++mandatory)); threads=$OPTARG;;
-			m) memory=$OPTARG;;
 			M) maxmemory=$OPTARG;;
 			g) ((++mandatory)); genome="$OPTARG";;
 			d) dbsnp="$OPTARG";;
@@ -1344,53 +1420,43 @@ function variants::vardict(){
 	declare -n _bams_vardict=$m
 	[[ ! $_tidx_vardict ]] && unset _tidx_vardict && declare -a _tidx_vardict=(${!_bams_vardict[@]}) # use all indices for germline calling
 
-	local minstances mthreads jmem jgct jcgct ithreads i memory1 memory2 instances=$((${#_mapper_vardict[@]}*${#_tidx_vardict[@]}))
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -T $threads -m ${memory:=12288} -M "$maxmemory")
+	local ignore jmem jgct jcgct ithreads instances1 ithreads1 imemory1 instances2 ithreads2 imemory2
+	local n=3 instances=$((${#_mapper_vardict[@]}*${#_tidx_vardict[@]}))
+	[[ $dbsnp ]] && n=4
+	read -r ignore ignore jmem jgct jcgct < <(configure::jvm -T $threads -M "$maxmemory")
+	read -r instances1 ithreads1 imemory1 ignore < <(configure::jvm -i $((instances*threads*n)) -t 10 -T $threads -M "$maxmemory") # for slice wise bcftools sort + bgzip
+	read -r instances2 ithreads2 imemory2 ignore < <(configure::jvm -i $((instances*n)) -t 10 -T $threads -M "$maxmemory") # for final bcftools concat of all 4 vcf files
+
+	declare -a cmdslice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
+
+	commander::makecmd -a cmdslice -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+		bedtools makewindows
+			-g "$genome.fai"
+			-w $((jmem>12000?10000:jmem<3000?1000:jmem-2000))
+			-s $((jmem>12000?10000-100:jmem<3000?1000-100:jmem-2000-100))
+		> "${tdirs[-1]}/tmp"
+	CMD
+		split
+			--numeric-suffixes=1
+			-a ${#threads}
+			-n l/$threads
+			--additional-suffix=.bed
+			--filter='cat > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
+			"${tdirs[0]}/tmp" "${tdirs[0]}/x"
+	CMD
 	# I often estimate needed memory by about 1Mb for 1 bp of region (here are included possible intermediate structures for variations, reference and softclips).
 	# Also you have to take account of amount of threads that you run, because memory will be used by all of them and will be split between threads
 	# https://github.com/AstraZeneca-NGS/VarDictJava/issues/216
-	# -> 10kb chunks -> 10G per thread + JVM overhead by GC
-	read -r i memory1 < <(configure::memory_by_instances -i $((minstances*instances)) -T $threads -M "$maxmemory") # for bcftools sort of initial vcf slices
-	read -r i memory2 < <(configure::memory_by_instances -i $((instances*4)) -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
-
-	declare -a cmd1slice cmd2slice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
-
-	commander::makecmd -a cmd1slice -s ' ' -o "${tdirs[0]}/tmp" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-		perl -M'List::Util qw(max)' -slane '
-			$l = $m-2048 >= 9500 ? 10000 : int(($m-1024)/1000)*1000;
-			$i=0;
-			for (map {$_*$l} 1..($F[1]-1)/$l){
-				$i=$_;
-				print join"\t",($F[0],max(0,$_-$l-100),$_-1);
-			}
-			print join"\t",($F[0],$i-100,$F[1]-1) if $i<$F[1]-1;
-		'
-	CMD
-		-- -m=$jmem "$genome.fai"
-	CMD
 	# despite of mutlithreading support, execute in parallel on multiple chunks, to limit memory footprint which heavily depends on region size and coverage.
-	# small chunks within one bed file wille be individually processed. thus a small overlap is recommended to no miss any variant.
-	# overlaps will by internally handled -> https://github.com/AstraZeneca-NGS/VarDictJava/issues/64
-
-	commander::makecmd -a cmd2slice -s ' ' -c {COMMANDER[0]}<<- CMD
-		split
-		--numeric-suffixes=1
-		-a ${#minstances}
-		-n l/$minstances
-		--additional-suffix=.bed
-		--filter='cat > "\$(dirname "\$FILE")/"\$(basename "\$FILE" | sed "s/^x0*/slice./")'
-		"${tdirs[0]}/tmp" "${tdirs[0]}/x"
-	CMD
+	# 1k region ~ 1gb memory + 2gb by java + tool itself
+	# small chunks within one bed file will be individually processed. thus a small overlap is recommended to not miss any variant.
+	# overlaps will by internally handled by var2vcf_paired.pl. see https://github.com/AstraZeneca-NGS/VarDictJava/issues/64
 
 	if $skip; then
-		commander::printcmd -a cmd1slice
-		commander::printcmd -a cmd2slice
+		commander::printcmd -a cmdslice
 	else
-		commander::runcmd -v -b -i $threads -a cmd1slice
-		commander::runcmd -v -b -i $threads -a cmd2slice
+		commander::runcmd -v -b -i $threads -a cmdslice
 	fi
-
 
 	local m i j f nf o t e slice odir tdir
 	declare -a tomerge cmd1 cmd2 cmd3 cmd4 cmd5 cmd6 cmd7
@@ -1407,7 +1473,7 @@ function variants::vardict(){
 			o="$odir/${o%.*}"
 			tomerge=()
 
-			for j in $(seq 1 $minstances); do
+			for j in $(seq 1 $threads); do
 				slice="$t.slice.$j"
 
 				if [[ $_nidx_vardict ]]; then # somatic
@@ -1415,7 +1481,7 @@ function variants::vardict(){
 					# prefer -fisher option (vardict skips corrupt sites) over vardict | testsomatic.R | var2vcf_paired.pl , due to R: Error in fisher.test
 					# use -X 0 to not combine snps within 3 bp window into indel or complex, which in addiation reduces the risk of StringIndexOutOfBoundsException
 					# vardict will fail upon > 10 errors per region
-					commander::makecmd -a cmd1 -s '|' -o "$slice.vcf" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
+					commander::makecmd -a cmd1 -s '|' -o "$slice.toreheader" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD'
 						MALLOC_ARENA_MAX=4
 						JAVA_OPTS="-Xmx${jmem}m -XX:ParallelGCThreads=$jgct -XX:ConcGCThreads=$jcgct -Djava.io.tmpdir='$tmpdir' -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
 						vardict-java
@@ -1447,7 +1513,7 @@ function variants::vardict(){
 							-A
 							-N "TUMOR|NORMAL"
 					CMD
-						awk -v OFS='\t' '{if(/^#CHROM/){s=1}; if(s){t=$11; $11=$10; $10=t}; print}'
+						awk -v OFS='\t' '/^#CHROM/{s=1}; s==1{t=$11; $11=$10; $10=t} {print}'
 					CMD
 					#	grep -E '(^#|STATUS=[^;]*[sS]omatic)' > "$slice.vcf"
 					#CMD # do not hard filter here. vcfix.pl adds vcfix_somatic FILTER tag if STATUS=[^;]*[sS]omatic
@@ -1483,18 +1549,18 @@ function variants::vardict(){
 							-A
 							-E
 							-N SAMPLE
-						> "$slice.vcf"
+						> "$slice.toreheader"
 					CMD
 				fi
 				# -A print all variants at the same site. otherwise reported one is chosen by MAF.
 				# note: this does not always mean multiple alleles per se (like bcftools norm), but sometimes duplicons with slightly differnt format and info fields
 
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
-				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools reheader -f "$genome.fai" -o "$slice.reheader" "$slice.vcf"
+				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vardict)")
+				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
+					bcftools reheader -f "$genome.fai" -o "$slice.vcf" "$slice.toreheader"
 				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${memory1}M -o "$slice.vcf" "$slice.reheader"
-				CMD
+				# 	bcftools sort -T "${tdirs[-1]}" -m ${memory1}M -o "$slice.vcf" "$slice.reheadered"
+				# CMD
 
 				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 					vcfix.pl -i "$slice.vcf" > "$slice.fixed.vcf"
@@ -1528,22 +1594,30 @@ function variants::vardict(){
 					CMD
 				fi
 
+				for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
+					tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vardict)")
+					commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+						bcftools sort -T "${tdirs[-1]}" -m ${imemory1}M "$slice.$e"
+					CMD
+						bgzip -k -c -@ $ithreads1
+					CMD
+						tee -i "$slice.$e.gz"
+					CMD
+						bcftools index --threads $ithreads1 -f -t -o "$slice.$e.gz.tbi"
+					CMD
+				done
+
 				tomerge+=("$slice")
 			done
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
-				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
-				#DO NOT PIPE - DATALOSS!
-				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools concat -o "$t.$e" $(printf '"%s" ' "${tomerge[@]/%/.$e}")
+				# removes potential duplicates due to padding
+				commander::makecmd -a cmd7 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bcftools concat --threads $ithreads2 -O z -a -d all $(printf '"%s" ' "${tomerge[@]/%/.$e.gz}")
 				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${memory2}M -o "$o.$e" "$t.$e"
+					tee -i "$o.$e.gz"
 				CMD
-
-				commander::makecmd -a cmd7 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
-				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					bcftools index --threads $ithreads2 -f -t -o "$o.$e.gz.tbi"
 				CMD
 			done
 		done
@@ -1558,13 +1632,13 @@ function variants::vardict(){
 		commander::printcmd -a cmd6
 		commander::printcmd -a cmd7
 	else
-		commander::runcmd -c vardict -v -b -i $minstances -a cmd1
+		commander::runcmd -c vardict -v -b -i $threads -a cmd1
 		commander::runcmd -v -b -i $threads -a cmd2
 		commander::runcmd -v -b -i $threads -a cmd3
 		commander::runcmd -v -b -i $threads -a cmd4
 		commander::runcmd -v -b -i $threads -a cmd5
-		commander::runcmd -v -b -i $threads -a cmd6
-		commander::runcmd -v -b -i $instances -a cmd7
+		commander::runcmd -v -b -i $instances1 -a cmd6
+		commander::runcmd -v -b -i $instances2 -a cmd7
 	fi
 
 	return 0
@@ -1618,31 +1692,26 @@ function variants::vardict_threads(){
 	declare -n _bams_vardict=$m
 	[[ ! $_tidx_vardict ]] && unset _tidx_vardict && declare -a _tidx_vardict=(${!_bams_vardict[@]}) # use all indices for germline calling
 
-	local minstances mthreads jmem jgct jcgct ithreads i memory instances=$((${#_mapper_vardict[@]}*${#_tidx_vardict[@]}))
-	read -r minstances mthreads jmem jgct jcgct < <(configure::jvm -i 1 -T $threads -M "$maxmemory")
-	read -r i memory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory") # for final bcftools sort of vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf
-	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
+	local ignore jmem jgct jcgct ithreads imemory instances=$((${#_mapper_vardict[@]}*${#_tidx_vardict[@]}))
+	read -r ignore ignore jmem jgct jcgct < <(configure::jvm -T $threads -M "$maxmemory")
+	read -r ignore imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 
-	declare -a cmd1slice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
+	declare -a cmdslice tdirs=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bed)")
 
-	commander::makecmd -a cmd1slice -s ' ' -o "${tdirs[0]}/regions.bed" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
-		perl -M'List::Util qw(max)' -lane '
-			$i=0;
-			for (map {$_*10000} 1..($F[1]-1)/10000){
-				$i=$_;
-				print join"\t",($F[0],max(0,$_-10000-100),$_-1);
-			}
-			print join"\t",($F[0],$i-100,$F[1]-1) if $i<$F[1]-1;
-		'
+	commander::makecmd -a cmdslice -s ' ' -c {COMMANDER[0]}<<- CMD
+		bedtools makewindows
+			-g "$genome.fai"
+			-w $((jmem/threads>12000?10000:jmem/threads<3000?1000:jmem/threads-2000))
+			-s $((jmem/threads>12000?10000-100:jmem/threads<3000?1000-100:jmem/threads-2000-100))
+		> "${tdirs[-1]}/regions.bed"
 	CMD
-		"$genome.fai"
-	CMD
-	# TODO either do chunks depending on jmem/threads or restrict -th parameter to maxmem/jmem
+	# due to 1 instance jmem inferred as max avail mem. i.e. chunk size (1kb~1gb per threads) is jmem/threads
 
 	if $skip; then
-		commander::printcmd -a cmd1slice
+		commander::printcmd -a cmdslice
 	else
-		commander::runcmd -v -b -i $threads -a cmd1slice
+		commander::runcmd -v -b -i $threads -a cmdslice
 	fi
 
 	local m i f nf o t e odir tdir
@@ -1739,50 +1808,52 @@ function variants::vardict_threads(){
 			# -A print all variants at the same site. otherwise reported one is chosen by MAF.
 			# note: this does not always mean multiple alleles per se (like bcftools norm), but sometimes duplicons with slightly differnt format and info fields
 
-			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.vardict)")
 			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bcftools reheader -f "$genome.fai" -o "$t.vcf" "$t.toreheader"
+				bcftools reheader -f "$genome.fai" -o "$t.reheadered" "$t.toreheader"
 			CMD
-				bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.vcf" "$t.vcf"
+				bcftools sort -T "${tdirs[-1]}" -m ${imemory}M -o "$t.vcf" "$t.reheadered"
 			CMD
 
 			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-				vcfix.pl -i "$o.vcf" > "$o.fixed.vcf"
+				vcfix.pl -i "$t.vcf" > "$t.fixed.vcf"
 			CMD
 
 			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bcftools norm -f "$genome" -c s -m-both "$o.fixed.vcf"
+				bcftools norm -f "$genome" -c s -m-both "$t.fixed.vcf"
 			CMD
-				vcfix.pl -i - > "$o.fixed.nomulti.vcf"
+				vcfix.pl -i - > "$t.fixed.nomulti.vcf"
 			CMD
 
 			if [[ $dbsnp ]]; then
 				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
-					vcffixup "$o.fixed.nomulti.vcf"
+					vcffixup "$t.fixed.nomulti.vcf"
 				CMD
 					vt normalize -q -n -r "$genome" -
 				CMD
 					vcfixuniq.pl
 				CMD
-					tee -i "$o.fixed.nomulti.normed.vcf"
+					tee -i "$t.fixed.nomulti.normed.vcf"
 				CMD
-					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$o.fixed.nomulti.normed.nodbsnp.vcf"
+					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$t.fixed.nomulti.normed.nodbsnp.vcf"
 				CMD
 			else
 				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-					vcffixup "$o.fixed.nomulti.vcf"
+					vcffixup "$t.fixed.nomulti.vcf"
 				CMD
 					vt normalize -q -n -r "$genome" -
 				CMD
-					vcfixuniq.pl > "$o.fixed.nomulti.normed.vcf"
+					vcfixuniq.pl > "$t.fixed.nomulti.normed.vcf"
 				CMD
 			fi
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
-				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
+				commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bgzip -k -c -@ $ithreads "$t.$e"
 				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					tee -i "$o.$e.gz"
+				CMD
+					bcftools index --threads $ithreads -f -t -o "$o.$e.gz.tbi"
 				CMD
 			done
 		done
@@ -1851,8 +1922,8 @@ function variants::platypus(){
 	declare -n _bams_platypus=$m
 	[[ ! $_tidx_platypus ]] && unset _tidx_platypus && declare -a _tidx_platypus=(${!_bams_platypus[@]}) # use all indices for germline calling
 
-	local ithreads memory i instances=$((${#_mapper_platypus[@]}*${#_tidx_platypus[@]}))
-	read -r i memory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
+	local ignore ithreads imemory instances=$((${#_mapper_platypus[@]}*${#_tidx_platypus[@]}))
+	read -r ignore imemory < <(configure::memory_by_instances -i $instances -T $threads -M "$maxmemory")
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads) # for final bgzip
 
 	local m i f nf o t e odir tdir
@@ -1869,7 +1940,7 @@ function variants::platypus(){
 			t="$tdir/${o%.*}"
 			o="$odir/${o%.*}"
 			echo "rm -f '$t'*" >> "$BASHBONE_CLEANUP"
-			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.bcftools)")
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.platypus)")
 
 			# can make use of --regions=$(awk '{print $1":"$2"-"$3}' $bed | xargs -echo | sed 's/ /,/g')
 			if [[ $_nidx_platypus ]]; then # somatic
@@ -1898,9 +1969,9 @@ function variants::platypus(){
 				# use to filter for germline risk
 				# do not use --strict, which requires that no observation in the germline support the somatic alternate i.e. no 0/1 0/1
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools reheader -f "$genome.fai" "$t.toreheader" | vcfsamplediff VCFSAMPLEDIFF NORMAL TUMOR - > "$t.vcf"
+					bcftools reheader -f "$genome.fai" "$t.toreheader" | vcfsamplediff VCFSAMPLEDIFF NORMAL TUMOR - > "$t.reheadered"
 				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.vcf" "$t.vcf"
+					bcftools sort -T "${tdirs[-1]}" -m ${imemory}M -o "$t.vcf" "$t.reheadered"
 				CMD
 				#	grep -E '(^#|VCFSAMPLEDIFF=somatic)' > "$o.vcf"
 				#CMD # do not hard filter here. vcfix.pl adds vcfix_somatic FILTER tag if somatic or loh and GQ MAF thresholds passed
@@ -1926,49 +1997,51 @@ function variants::platypus(){
 				CMD
 
 				commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bcftools reheader -f "$genome.fai" -o "$t.vcf" "$t.toreheader"
+					bcftools reheader -f "$genome.fai" -o "$t.reheadered" "$t.toreheader"
 				CMD
-					bcftools sort -T "${tdirs[-1]}" -m ${memory}M -o "$o.vcf" "$t.vcf"
+					bcftools sort -T "${tdirs[-1]}" -m ${imemory}M -o "$t.vcf" "$t.reheadered"
 				CMD
 			fi
 
 			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
-				vcfix.pl -i "$o.vcf" > "$o.fixed.vcf"
+				vcfix.pl -i "$t.vcf" > "$t.fixed.vcf"
 			CMD
 
 			commander::makecmd -a cmd4 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-				bcftools norm -f "$genome" -c s -m-both "$o.fixed.vcf"
+				bcftools norm -f "$genome" -c s -m-both "$t.fixed.vcf"
 			CMD
-				vcfix.pl -i - > "$o.fixed.nomulti.vcf"
+				vcfix.pl -i - > "$t.fixed.nomulti.vcf"
 			CMD
 
 			if [[ $dbsnp ]]; then
 				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
-					vcffixup "$o.fixed.nomulti.vcf"
+					vcffixup "$t.fixed.nomulti.vcf"
 				CMD
 					vt normalize -q -n -r "$genome" -
 				CMD
 					vcfixuniq.pl
 				CMD
-					tee -i "$o.fixed.nomulti.normed.vcf"
+					tee -i "$t.fixed.nomulti.normed.vcf"
 				CMD
-					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$o.fixed.nomulti.normed.nodbsnp.vcf"
+					vcftools --vcf - --exclude-positions "$dbsnp" --recode --recode-INFO-all --stdout > "$t.fixed.nomulti.normed.nodbsnp.vcf"
 				CMD
 			else
 				commander::makecmd -a cmd5 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
-					vcffixup "$o.fixed.nomulti.vcf"
+					vcffixup "$t.fixed.nomulti.vcf"
 				CMD
 					vt normalize -q -n -r "$genome" -
 				CMD
-					vcfixuniq.pl > "$o.fixed.nomulti.normed.vcf"
+					vcfixuniq.pl > "$t.fixed.nomulti.normed.vcf"
 				CMD
 			fi
 
 			for e in vcf fixed.vcf fixed.nomulti.vcf fixed.nomulti.normed.vcf $([[ $dbsnp ]] && echo fixed.nomulti.normed.nodbsnp.vcf); do
-				commander::makecmd -a cmd6 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					bgzip -k -c -@ $ithreads "$o.$e" > "$o.$e.gz"
+				commander::makecmd -a cmd6 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					bgzip -k -c -@ $ithreads "$t.$e"
 				CMD
-					tabix -f -p vcf "$o.$e.gz"
+					tee -i "$o.$e.gz"
+				CMD
+					bcftools index --threads $ithreads -f -t -o "$o.$e.gz.tbi"
 				CMD
 			done
 		done

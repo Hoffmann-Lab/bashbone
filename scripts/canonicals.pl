@@ -21,9 +21,9 @@ use feature ":5.10";
 use List::Util qw(min max);
 
 if ($#ARGV < 2){
-	say "usage: canonicals.pl file.gtf feature-level feature-tag";
-	say "gtf needs to contain feature level e.g. exon";
-	say "and feature id tag e.g. gene_id with transcript_id";
+	say "usage: canonicals.pl <gtf> <feature-level> <feature-tag>";
+	say 'extracts canonical transcripts searching for flags CCDS/*canonical, fallbacks to the longest meta-feature composed of sub-transcript features given the associated <feature-level> e.g. "exon"';
+	say 'for each canonical transcript, the given parental <feature-tag> of interest e.g. "gene_id" or "gene_name" and the associated "transcript_id" tag is reported';
 	exit 1;
 }
 
@@ -42,11 +42,10 @@ while(<F>){
 	$g=~s/("|;)//g;
 	push @ids,$g unless exists $m{$g};
 	$l[-1]=~/transcript_id\s+(\S+)/;
-	my $t = $1 ? $1 : 'transcript';
-	$t=~s/("|;)//g;
-	if ($l[-1]=~/tag\s+\"CCDS\"/) {
+	my $t = $1 ? $1=~s/("|;)//gr : 'transcript';
+	if ($l[-1]=~/tag\s+\"(CCDS|[^"]*canonical)\"/) {
 		$m{$g}{1}{$t} += $l[4]-$l[3]+1;
-	} elsif ($l[2] eq 'ensembl_havana') {
+	} elsif ($l[2] eq 'ensembl_havana' || $l[2] eq 'HAVANA') {
 		$m{$g}{2}{$t} += $l[4]-$l[3]+1;
 	} else{
 		$m{$g}{3}{$t} += $l[4]-$l[3]+1;
@@ -63,7 +62,8 @@ for my $g (keys %m){
 		push @ts,$t;
 	}
 	my $max = max(@ls);
-	say $g."\t".$ts[(grep {$ls[$_]==$max} 0..$#ls)[0]];
+	# ensures reproducibility if multiple transcripts of same length do exist
+	say $g."\t".(sort {$a cmp $b} @ts[grep {$ls[$_]==$max} 0..$#ls])[0];
 }
 
 exit 0;

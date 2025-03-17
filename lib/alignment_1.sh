@@ -157,7 +157,7 @@ function alignment::segemehl(){
 				ln -sfnr "$o.sngl.bed" "$o.sj"
 			CMD
 		fi
-		segemehl+=("$o.bam")
+		segemehl[$i]="$o.bam"
 	done
 
 	if $skip; then
@@ -388,14 +388,14 @@ function alignment::star(){
 			CMD
 				ln -sfnr "$o.SJ.out.tab" "$o.sj"
 			CMD
-			star+=("$o.transcriptomic.bam")
+			star[$i]="$o.transcriptomic.bam"
 		else
 			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
 				mv "$o.Aligned.out.bam" "$o.bam"
 			CMD
 				ln -sfnr "$o.SJ.out.tab" "$o.sj"
 			CMD
-			star+=("$o.bam")
+			star[$i]="$o.bam"
 		fi
 	done
 
@@ -492,7 +492,7 @@ function alignment::bwa(){
 
 	commander::printinfo "mapping bwa"
 
-	# use absolute path, because on some maschines sometimes bwa-mem2 aborts with error: prefix is too long
+	# use absolute path, because on some machines sometimes bwa-mem2 aborts with error: prefix is too long
 	declare -a cmdchk=("which bwa-mem2 &> /dev/null && which bwa-mem2 || echo bwa")
 	local bwacmd=$(commander::runcmd -c bwa -a cmdchk)
 
@@ -622,7 +622,7 @@ function alignment::bwa(){
 				CMD
 			fi
 		fi
-		bwa+=("$o1.bam")
+		bwa[$i]="$o1.bam"
 	done
 
 	if $skip; then
@@ -1052,7 +1052,8 @@ function alignment::_blacklist(){
 					-@ $threads
 					-b
 					-L "$tmpdir/whitelist.bed"
-					-o "$_returnfile_blacklist"
+					--write-index
+					-o "$_returnfile_blacklist##idx##${_returnfile_blacklist%.*}.bai"
 					"$bam"
 			CMD
 		fi
@@ -1063,7 +1064,8 @@ function alignment::_blacklist(){
 				-@ $threads
 				-b
 				-e 'rname!="$blacklist"'
-				-o "$_returnfile_blacklist"
+				--write-index
+				-o "$_returnfile_blacklist##idx##${_returnfile_blacklist%.*}.bai"
 				"$bam"
 		CMD
 	fi
@@ -2070,6 +2072,7 @@ function alignment::qcstats(){
 				-p "${tdirs[-1]}" \
 				-h "$(echo -e "$header")" \
 				-o "$odir/insertsizes.histogram.tsv" \
+				-d \
 				"${tojoin[@]}"
 
 			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD

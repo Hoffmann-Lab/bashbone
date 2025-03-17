@@ -21,9 +21,10 @@ use feature ":5.10";
 use List::Util qw(min max);
 
 if ($#ARGV < 3){
-	say "usage: tpm.pl file.gtf feature-level feature-tag htseq.counts";
-	say "gtf needs to contain feature level e.g. exon to be summarized";
-	say "and feature id tag e.g. gene_id with optional transcript_id";
+	say "usage: tpm.pl <gtf> <feature-level> <feature-tag> <htseq.counts>";
+	say 'extracts canonical transcripts searching for flags CCDS/*canonical, fallbacks to the longest meta-feature composed of sub-transcript features given the associated <feature-level> e.g. "exon"';
+	say 'for each canonical transcript, the parental feature of interest is looked-up by its <feature-tag> e.g. "gene_id" or "gene_name" within the first column of supplied <htseq.counts> file';
+	say 'the count value stored in the second column gets normalized by total count (library size) and canonical or longest transcript length';
 	exit 1;
 }
 
@@ -40,9 +41,8 @@ while(<F>){
 	my $g = $1 ? $1 : $l[-1];
 	$g=~s/("|;)//g;
 	$l[-1]=~/transcript_id\s+(\S+)/;
-	my $t = $1 ? $1 : 'transcript';
-	$t=~s/("|;)//g;
-	if ($l[-1]=~/tag\s+\"(CCDS|\S+_canonical)\"/) {
+	my $t = $1 ? $1=~s/("|;)//gr : 'transcript';
+	if ($l[-1]=~/tag\s+\"(CCDS|[^"]*canonical)\"/) {
 		$m{$g}{1}{$t} += $l[4]-$l[3]+1;
 	} elsif ($l[2] eq 'ensembl_havana' || $l[2] eq 'HAVANA') {
 		$m{$g}{2}{$t} += $l[4]-$l[3]+1;

@@ -409,6 +409,11 @@ function alignment::strandsplit(){
 }
 
 function alignment::downsample(){
+	alignment::scale "$@"
+	return 0
+}
+
+function alignment::scale(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			${FUNCNAME[-2]} usage:
@@ -416,22 +421,26 @@ function alignment::downsample(){
 			-s <softskip>   | true/false only print commands. use with -d
 			-t <threads>    | number of
 			-r <mapper>     | array of sorted, indexed bams within array of
+			-z <spikeins>   | array of sorted, indexed bams within array of to infer sizefactors from
 			-o <outdir>     | path to
-			-m <basename>   | of merged bam from downsampled files. optional
+			-m <basename>   | of merged bam from scaled files. optional
+			-j <job>        | to be applied in order to scale according to [mean|median|geom|min|max] or a reference alignments number. default: min
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory skip=false threads outdir merged delete=false
-	declare -n _mapper_downsample
-	while getopts 'S:s:t:r:o:m:d' arg; do
+	local OPTIND arg mandatory skip=false threads outdir merged delete=false job=min
+	declare -n _mapper_downsample _mapper_spikeins_downsample
+	while getopts 'S:s:t:r:z:o:m:j:d' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
 			t)	((++mandatory)); threads=$OPTARG;;
 			r)	((++mandatory)); _mapper_downsample=$OPTARG;;
+			z)	_mapper_spikeins_downsample=$OPTARG;;
 			o)	outdir="$OPTARG"; mkdir -p "$outdir";;
 			m)	merged="$OPTARG";;
+			j)	job="$OPTARG";;
 			d)	delete=true;;
 			*)	_usage;;
 		esac
@@ -440,50 +449,65 @@ function alignment::downsample(){
 	[[ $mandatory -lt 2 ]] && _usage
 	[[ $merged && ! $outdir ]] && _usage
 
-	commander::printinfo "downsampling alignments to smallest"
+	commander::printinfo "scaling alignments to $job"
 
-	declare -n _bams_downsample="${_mapper_downsample[0]}"
-	# local ithreads instances=$((${#_mapper_downsample[@]}*${#_bams_downsample[@]}))
-	# read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
-
-	declare -a cmd1 cmd2 cmd3 cmd4 tomerge
-	local m i n f min odir
-	for m in "${_mapper_downsample[@]}"; do
+	declare -a cmd1 cmd2 cmd3 tomerge
+	local m z i f ref n s odir
+	for i in "${!_mapper_downsample[@]}"; do
+		m="${_mapper_downsample[$i]}"
 		declare -n _bams_downsample=$m
 		[[ $outdir ]] && odir="$outdir/$m" && mkdir -p "$odir"
 
 		tomerge=()
-		min=0
-		while read -r n i; do
+
+		if [[ $_mapper_spikeins_downsample ]]; then
+			z="${_mapper_spikeins_downsample[$i]}"
+			declare -n _bams_spikeins_downsample=$z
+			[[ "$job" == +([0-9]) ]] && ref=$job || ref=$(for f in "${_bams_spikeins_downsample[@]}"; do samtools idxstats "$f" | datamash sum 3; done | datamash --format="%.f" $([[ "$job" == "geom" ]] && echo geomean || echo "$job") 1)
+		else
+			[[ "$job" == +([0-9]) ]] && ref=$job || ref=$(for f in "${_bams_downsample[@]}"; do samtools idxstats "$f" | datamash sum 3; done | datamash --format="%.f" $([[ "$job" == "geom" ]] && echo geomean || echo "$job") 1)
+		fi
+
+		for i in "${!_bams_downsample[@]}"; do
 			f="${_bams_downsample[$i]}"
 			[[ $outdir ]] || odir="$(dirname "$f")"
-			o="$odir/$(basename "${f%.*}").downsampled.bam"
+			o="$odir/$(basename "${f%.*}").scaled.bam"
 			tomerge+=("$o")
 
-			if [[ $min -eq 0 ]]; then
-				min=$n
-				# ln -sfnr "$f" "$o"
+			n=$(samtools idxstats "$([[ $_bams_spikeins_downsample ]] && echo "${_bams_spikeins_downsample[$i]}" || echo "$f")" | datamash sum 3)
+			s=$(echo $n | awk -v n=$((ref/n)) -v ref=$ref '{printf("%g", ref/$1-n )}')
+			# echo $n $ref | awk '{print $1,$2/$1}'
+
+			if [[ "$s" == "1" || "$s" == "0" ]]; then
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					cp "$f" "$o"
+					samtools merge
+						-@ $threads
+						-f
+						-c
+						-p
+						--write-index
+						-o "$o##idx##${o%.*}.bai"
+						$(yes "'$f'" | head -n $((ref/n)))
 				CMD
 			else
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-					samtools view -@ $threads -b --subsample-seed 1234 -s $(echo $n | awk -v min=$min '{print min/$1}') -o "$o" "$f"
+					samtools merge
+						-@ $threads
+						-f
+						-c
+						-p
+						--write-index
+						-o "$o##idx##${o%.*}.bai"
+						$(yes "'$f'" | head -n $((ref/n)))
+						<(samtools view -@ $threads -b --subsample-seed 12345 --subsample $s "$f")
 				CMD
 			fi
-			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
-				samtools index -@ $threads "$o" "${o%.*}.bai"
-			CMD
 
 			_bams_downsample[$i]="$o"
-		done < <(
-			for i in "${!_bams_downsample[@]}"; do
-				echo "$(samtools idxstats "${_bams_downsample[$i]}" | awk '{n=n+$3}END{print n}') $i"
-			done | sort -k1,1n
-		)
+		done
 
 		if [[ $merged ]]; then
-			commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
+			commander::makecmd -a cmd2 -s ';' -c {COMMANDER[0]}<<- CMD
 				samtools merge
 					-@ $threads
 					-f
@@ -495,7 +519,7 @@ function alignment::downsample(){
 			CMD
 
 			if $delete; then
-				commander::makecmd -a cmd4 -s ';' -c {COMMANDER[0]}<<- CMD
+				commander::makecmd -a cmd3 -s ';' -c {COMMANDER[0]}<<- CMD
 					rm -f $(printf '"%s" ' "${tomerge[@]}")
 				CMD
 			fi
@@ -506,12 +530,182 @@ function alignment::downsample(){
 		commander::printcmd -a cmd1
 		commander::printcmd -a cmd2
 		commander::printcmd -a cmd3
-		commander::printcmd -a cmd4
 	else
 		commander::runcmd -v -b -i 1 -a cmd1
 		commander::runcmd -v -b -i 1 -a cmd2
 		commander::runcmd -v -b -i 1 -a cmd3
-		commander::runcmd -v -b -i 1 -a cmd4
+	fi
+
+	return 0
+}
+
+function alignment::tofastq(){
+	function _usage(){
+		commander::print <<- 'EOF'
+			alignment::tofastq usage:
+			-S <hardskip>   | true/false return
+			-s <softskip>   | true/false only print commands. use with -d
+			-t <threads>    | number of
+			-1 <fastq1>     | optional
+			                | array which may already contain single or first mate fastq.gz paths or names
+			-2 <fastq2>     | optional
+			                | array which may already contain mate pair fastq.gz paths or names
+			-3 <fastqUMI>   | optional
+			                | array which may already contain UMI fastq.gz paths or names
+			-r <mapper>     | array of sorted, indexed bams within array of
+			-o <outdir>     | optional. path to
+			-u              | unmapped only
+			-i              | dev option!: use alignments from alignment::add4stats stage $m$i
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" unmapped=0 stage
+	declare -n _fq1_bamtofastq _fq2_bamtofastq _umi_bamtofastq _mapper_bamtofastq
+	while getopts 'S:s:t:r:1:2:3:o:i:u' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	((++mandatory)); _mapper_bamtofastq=$OPTARG;;
+			1)	_fq1_bamtofastq=$OPTARG;;
+			2)	_fq2_bamtofastq=$OPTARG;;
+			3)	_umi_bamtofastq=$OPTARG;;
+			o)	outdir="$OPTARG"; mkdir -p "$outdir";;
+			u)	unmapped=4;;
+			i) 	stage=$OPTARG;;
+			*)	_usage;;
+		esac
+	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
+	[[ $mandatory -lt 2 ]] && _usage
+	[[ $merged && ! $outdir ]] && _usage
+
+	commander::printinfo "converting alignments to fastq"
+
+	[[ ! $_fq1_bamtofastq ]] && unset _fq1_bamtofastq _fq2_bamtofastq && declare -a _fq1_bamtofastq _fq2_bamtofastq
+	[[ ! $_umi_bamtofastq ]] && unset _umi_bamtofastq && declare -a _umi_bamtofastq
+
+	if [[ $stage ]]; then
+		declare -a b
+		for m in "${_mapper_bamtofastq[@]}"; do
+			declare -n _bams_bamtofastq=$m
+			b=()
+			for i in "${!_bams_bamtofastq[@]}"; do
+				declare -n _mi_bamtofastq=$m$i
+				b+=(${_mi_bamtofastq[$stage]})
+			done
+			# local segemehl star bwa arrays
+			declare -a $m
+			declare -n _m=$m
+			_m=("${b[@]}")
+		done
+	fi
+
+	declare -a cmd1 tdirs
+	local i m f x y o1 o2 o3
+	for i in "${!_mapper_bamtofastq[@]}"; do
+		m="${_mapper_bamtofastq[$i]}"
+		declare -n _bams_bamtofastq=$m
+
+		for i in "${!_bams_bamtofastq[@]}"; do
+			f="${_bams_bamtofastq[$i]}"
+			odir="$(dirname "$f")"
+			[[ $outdir ]] && odir="$outdir/$m" && mkdir -p "$odir"
+
+			x=$(samtools view -F 4 "$f" | head -10000 | cat <(samtools view -H "$f") - | samtools view -c -f 1)
+			y=$(samtools view -F 4 "$f" | head -10000 | cat <(samtools view -H "$f") - | samtools view -c -d RX)
+			tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.samtools)")
+
+			if [[ $x -gt 0 ]]; then
+				if [[ $_fq1_bamtofastq ]]; then
+					o1="$odir/$(basename "${_fq1_bamtofastq[$i]}")"
+					o2="$odir/$(basename "${_fq2_bamtofastq[$i]}")"
+					_fq1_bamtofastq[$i]="$o1"
+					_fq2_bamtofastq[$i]="$o2"
+					[[ ${_umi_bamtofastq[$i]} ]] && o3="$odir/$(basename "${_umi_bamtofastq[$i]}")" || o3="$odir/$(basename "${f%.*}").UMI.fastq.gz"
+					[[ $y -gt 0 ]] && _umi_bamtofastq[$i]="$o3" || o3="${tdirs[-1]}/null"
+				else
+					o1="$odir/$(basename "${f%.*}").R1.fastq.gz"
+					o2="$odir/$(basename "${f%.*}").R2.fastq.gz"
+					o3="$odir/$(basename "${f%.*}").UMI.fastq.gz"
+					_fq1_bamtofastq[$i]="$o1"
+					_fq2_bamtofastq[$i]="$o2"
+					[[ $y -gt 0 ]] && _umi_bamtofastq[$i]="$o3" || o3="${tdirs[-1]}/null"
+				fi
+
+				# -f 4 -f 8 --> -f 12
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					samtools view
+						-@ $threads
+						-u
+						-f $((unmapped+2*unmapped))
+						"$f"
+				CMD
+					samtools sort
+						-T "${tdirs[-1]}/$(basename "${f%.*}")"
+						-@ $threads
+						-n
+						-u
+				CMD
+					samtools fastq
+						-@ $threads
+						-n
+						-s /dev/null
+						--barcode-tag RX
+						--quality-tag QX
+						--index-format "i*"
+						-0 /dev/null
+						-1 >(sed '1~4{s/$/ 1/}' | helper::pgzip -t $threads -o "$o1")
+						-2 >(sed '1~4{s/$/ 2/}' | helper::pgzip -t $threads -o "$o2")
+						--i1 >(sed '1~4{s/$/ 3/}' | helper::pgzip -t $threads -o "$o3")
+					| cat
+				CMD
+				# misusing casava i5 i7 index report and barcode options to also write umis
+			else
+				if [[ $_fq1_bamtofastq ]]; then
+					o1="$odir/$(basename "${_fq1_bamtofastq[$i]}")"
+					_fq1_bamtofastq[$i]="$o1"
+					[[ ${_umi_bamtofastq[$i]} ]] && o3="$odir/$(basename "${_umi_bamtofastq[$i]}")" || o3="$odir/$(basename "${f%.*}").UMI.fastq.gz"
+					[[ $y -gt 0 ]] && _umi_bamtofastq[$i]="$o3" || o3="${tdirs[-1]}/null"
+				else
+					o1="$odir/$(basename "${f%.*}").fastq.gz"
+					o3="$odir/$(basename "${f%.*}").UMI.fastq.gz"
+					_fq1_bamtofastq[$i]="$o1"
+					[[ $y -gt 0 ]] && _umi_bamtofastq[$i]="$o3" || o3="${tdirs[-1]}/null"
+				fi
+				commander::makecmd -a cmd1 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD
+					samtools view
+						-@ $threads
+						-u
+						-f $unmapped
+						"$f"
+				CMD
+					samtools sort
+						-T "${tdirs[-1]}/$(basename "${f%.*}")"
+						-@ $threads
+						-n
+						-u
+				CMD
+					samtools fastq
+						-@ $threads
+						-n
+						--barcode-tag RX
+						--quality-tag QX
+						--index-format "i*"
+						-0 >(sed '1~4{s/$/ 1/}' | helper::pgzip -t $threads -o "$o1")
+						--i1 >(sed '1~4{s/$/ 2/}' | helper::pgzip -t $threads -o "$o3")
+					| cat
+				CMD
+
+			fi
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+	else
+		commander::runcmd -v -b -i 1 -a cmd1
 	fi
 
 	return 0

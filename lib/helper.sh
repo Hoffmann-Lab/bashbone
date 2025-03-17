@@ -712,7 +712,8 @@ function helper::multijoin(){
 			-h <header>    | optional. header string to be reported
 			-e <empty>     | optional. string for empty/null fields. default: NA
 			-o <outfile>   | optional. path to output table. default: stdout
-			-b             | optional. data is sorted bed or bedgraph format i.e. ignores -s -n
+			-b <seqidsfile>| optional. data is positional sorted bed/bedgraph format with sequence identifiers ordered according to first column of given file
+			-d             | optional. all columns to be used as id group contain numerically, increasingly sorted digits
 
 			example
 			helper::multijoin <path> <path> [<path> ..]
@@ -735,9 +736,9 @@ function helper::multijoin(){
 		return 1
 	}
 
-	local OPTIND arg mandatory outfile=/dev/stdout header empty=NA sep=$'\t' tmpdir group=1 range=1- bed=false execute=true threads=1
+	local OPTIND arg mandatory outfile=/dev/stdout header empty=NA sep=$'\t' tmpdir group=1 range=1- bed=false execute=true threads=1 digits=false seqids
 	declare -n _cmds_multijoin _files_multijoin
-	while getopts '1:t:s:h:e:o:n:r:p:f:b' arg; do
+	while getopts '1:t:s:h:e:o:n:r:p:f:b:d' arg; do
 		case $arg in
 			1)	execute=false; _cmds_multijoin=$OPTARG;;
 			t)	threads="$OPTARG";;
@@ -749,7 +750,8 @@ function helper::multijoin(){
 			o)	outfile="$OPTARG"; mkdir -p "$(dirname "$outfile")";;
 			p)	tmpdir="$OPTARG";;
 			f)	_files_multijoin="$OPTARG";;
-			b)	bed=true;;
+			b)	seqids="$OPTARG"; bed=true;;
+			d)	digits=true;;
 			*) _usage;;
 		esac
 	done
@@ -793,18 +795,84 @@ function helper::multijoin(){
 						o="$outfile"
 						# padding positions by leading zeroes
 						# and use padded rank instead of fasta seq ids.
-						commander::makecmd -s ' ' -a __cmds_multijoin -c {COMMANDER[0]}<<-CMD {COMMANDER[1]}<<-CMD {COMMANDER[2]}<<-CMD {COMMANDER[3]}<<-'CMD' {COMMANDER[4]}<<-CMD {COMMANDER[5]}<<-'CMD' {COMMANDER[6]}<<-CMD {COMMANDER[7]}<<-CMD
+						commander::makecmd -s ' ' -a __cmds_multijoin -c {COMMANDER[0]}<<-CMD {COMMANDER[1]}<<-CMD {COMMANDER[2]}<<-'CMD' {COMMANDER[3]}<<-CMD {COMMANDER[4]}<<-'CMD' {COMMANDER[5]}<<-CMD {COMMANDER[6]}<<-CMD {COMMANDER[7]}<<-CMD
 							$([[ $header ]] && echo "echo -e '$header' > '$o';" || rm -f "$o" &> /dev/null || true)
 						CMD
 							join -o 0\$({ head -1 "$f1"; head -1 "$f2"; } | awk -F '\t' '{for(i=2;i<=NF-2;i++){printf ",%s",NR"."i}}') -1 1 -2 1 -a 1 -a 2 -e "$empty" -t \$'\t'
 						CMD
-							<(cat "$f1"
+							<(awk -F '\t' -v OFS='\t' '{f+=FNR==1?1:0} f==1{h[$1]=NR} f==2{$3=sprintf("%010d",h[$1])sprintf("%010d",$2)sprintf("%010d",$3)"#:::#"$1"#:::#"$2"#:::#"$3; print}'
 						CMD
-								| awk -F '\t' -v OFS='\t' '{r += h[$1] ? 0 : 1; h[$1]=1; $3=sprintf("%010d",r)sprintf("%010d",$2)sprintf("%010d",$3)"#:::#"$1"#:::#"$2"#:::#"$3; print}' | cut -f 3-)
+								"$seqids" "$f1" | cut -f 3-)
 						CMD
-							<(cat "$f2"
+							<(awk -F '\t' -v OFS='\t' '{f+=FNR==1?1:0} f==1{h[$1]=NR} f==2{$3=sprintf("%010d",h[$1])sprintf("%010d",$2)sprintf("%010d",$3)"#:::#"$1"#:::#"$2"#:::#"$3; print}'
 						CMD
-								| awk -F '\t' -v OFS='\t' '{r += h[$1] ? 0 : 1; h[$1]=1; $3=sprintf("%010d",r)sprintf("%010d",$2)sprintf("%010d",$3)"#:::#"$1"#:::#"$2"#:::#"$3; print}' | cut -f 3-)
+								"$seqids" "$f2" | cut -f 3-)
+						CMD
+							| sed 's/#:::#/\t/g' | cut -f 2- | cut -f $range >> "$o";
+						CMD
+							$([[ "$f1" == *"$tmpdir/tojoin"* ]] && echo "rm '$f1';"; [[ "$f2" == *"$tmpdir/tojoin"* ]] && echo "rm '$f2'")
+						CMD
+					else
+						((++j))
+						o="$tmpdir/tojoin.$r.$j"
+						commander::makecmd -s ' ' -a __cmds_multijoin -c {COMMANDER[0]}<<-CMD {COMMANDER[1]}<<-'CMD' {COMMANDER[2]}<<-CMD {COMMANDER[3]}<<-'CMD' {COMMANDER[4]}<<-CMD {COMMANDER[5]}<<-CMD {COMMANDER[6]}<<-CMD
+							join -o 0\$({ head -1 "$f1"; head -1 "$f2"; } | awk -F '\t' '{for(i=2;i<=NF-2;i++){printf ",%s",NR"."i}}') -1 1 -2 1 -a 1 -a 2 -e "$empty" -t \$'\t'
+						CMD
+							<(awk -F '\t' -v OFS='\t' '{f+=FNR==1?1:0} f==1{h[$1]=NR} f==2{$3=sprintf("%010d",h[$1])sprintf("%010d",$2)sprintf("%010d",$3)"#:::#"$1"#:::#"$2"#:::#"$3; print}'
+						CMD
+								"$seqids" "$f1" | cut -f 3-)
+						CMD
+							<(awk -F '\t' -v OFS='\t' '{f+=FNR==1?1:0} f==1{h[$1]=NR} f==2{$3=sprintf("%010d",h[$1])sprintf("%010d",$2)sprintf("%010d",$3)"#:::#"$1"#:::#"$2"#:::#"$3; print}'
+						CMD
+								"$seqids" "$f2" | cut -f 3-)
+						CMD
+							| sed 's/#:::#/\t/g' | cut -f 2- > "$o";
+						CMD
+							$([[ "$f1" == *"$tmpdir/tojoin"* ]] && echo "rm '$f1';"; [[ "$f2" == *"$tmpdir/tojoin"* ]] && echo "rm '$f2'";)
+						CMD
+						joined+=("$o")
+					fi
+				else
+					joined+=("${tojoin[$i]}")
+				fi
+			done
+			tojoin=("${joined[@]}")
+			((++r))
+		done
+	elif $digits; then
+		local zeroes=$(tail -q -n 1 "${tojoin[@]}" | cut -f 1-$group | tr "$sep" '\n' | awk '{x=length($0);m=m>x?m:x}END{print m}')
+		while [[ ${#tojoin[@]} -gt 1 ]]; do
+			joined=()
+			j=0
+			if [[ ${_cmds_multijoin[$r]} ]]; then
+				declare -n __cmds_multijoin=${_cmds_multijoin[$r]}
+			else
+				declare -g -a multijoincmd$r
+				declare -n __cmds_multijoin=multijoincmd$r
+				__cmds_multijoin=()
+				_cmds_multijoin[$r]=multijoincmd$r
+			fi
+
+			for i in $(seq 0 2 $((${#tojoin[@]}-1))); do
+				if [[ ${tojoin[$((i+1))]} ]]; then
+					f1="${tojoin[$i]}"
+					f2="${tojoin[$((i+1))]}"
+					if [[ ${#tojoin[@]} -eq 2 ]]; then
+						o="$outfile"
+						# padding positions by leading zeroes
+						# and use padded rank instead of fasta seq ids.
+						commander::makecmd -s ' ' -a __cmds_multijoin -c {COMMANDER[0]}<<-CMD {COMMANDER[1]}<<-CMD {COMMANDER[2]}<<-CMD {COMMANDER[3]}<<-'CMD' {COMMANDER[4]}<<-CMD {COMMANDER[5]}<<-'CMD' {COMMANDER[6]}<<-CMD {COMMANDER[7]}<<-CMD
+							$([[ $header ]] && echo "echo -e '$header' > '$o';" || rm -f "$o" &> /dev/null || true)
+						CMD
+							join -o 0\$({ head -1 "$f1"; head -1 "$f2"; } | awk -F "$sep" -v r=$group '{for(i=2;i<=NF-r+1;i++){printf ",%s",NR"."i}}') -1 1 -2 1 -a 1 -a 2 -e "$empty" -t \$'\t'
+						CMD
+							<(cat "$f1" | awk -F '\t' -v OFS='\t' -v r=$group -v n=$zeroes
+						CMD
+								'{x=$r; $r=sprintf("%010d",$r); for(i=1;i<r;i++){x=$i"#:::#"x; $r=sprintf("%0"n"d",$i)$r; $i=""} $r=$r"#:::#"x; print}' | sed 's/^\s*//')
+						CMD
+							<(cat "$f2" | awk -F '\t' -v OFS='\t' -v r=$group -v n=$zeroes
+						CMD
+								'{x=$r; $r=sprintf("%010d",$r); for(i=1;i<r;i++){x=$i"#:::#"x; $r=sprintf("%0"n"d",$i)$r; $i=""} $r=$r"#:::#"x; print}' | sed 's/^\s*//')
 						CMD
 							| sed 's/#:::#/\t/g' | cut -f 2- | cut -f $range >> "$o";
 						CMD
@@ -814,15 +882,15 @@ function helper::multijoin(){
 						((++j))
 						o="$tmpdir/tojoin.$r.$j"
 						commander::makecmd -s ' ' -a __cmds_multijoin -c {COMMANDER[0]}<<-CMD {COMMANDER[1]}<<-CMD {COMMANDER[2]}<<-'CMD' {COMMANDER[3]}<<-CMD {COMMANDER[4]}<<-'CMD' {COMMANDER[5]}<<-CMD {COMMANDER[6]}<<-CMD
-							join -o 0\$({ head -1 "$f1"; head -1 "$f2"; } | awk -F '\t' '{for(i=2;i<=NF-2;i++){printf ",%s",NR"."i}}') -1 1 -2 1 -a 1 -a 2 -e "$empty" -t \$'\t'
+							join -o 0\$({ head -1 "$f1"; head -1 "$f2"; } | awk -F "$sep" -v r=$group '{for(i=2;i<=NF-r+1;i++){printf ",%s",NR"."i}}') -1 1 -2 1 -a 1 -a 2 -e "$empty" -t \$'\t'
 						CMD
-							<(cat "$f1"
+							<(cat "$f1" | awk -F '\t' -v OFS='\t' -v r=$group -v n=$zeroes
 						CMD
-								| awk -F '\t' -v OFS='\t' '{r += h[$1] ? 0 : 1; h[$1]=1; $3=sprintf("%010d",r)sprintf("%010d",$2)sprintf("%010d",$3)"#:::#"$1"#:::#"$2"#:::#"$3; print}' | cut -f 3-)
+								'{x=$r; $r=sprintf("%010d",$r); for(i=1;i<r;i++){x=$i"#:::#"x; $r=sprintf("%0"n"d",$i)$r; $i=""} $r=$r"#:::#"x; print}' | sed 's/^\s*//')
 						CMD
-							<(cat "$f2"
+							<(cat "$f2" | awk -F '\t' -v OFS='\t' -v r=$group -v n=$zeroes
 						CMD
-								| awk -F '\t' -v OFS='\t' '{r += h[$1] ? 0 : 1; h[$1]=1; $3=sprintf("%010d",r)sprintf("%010d",$2)sprintf("%010d",$3)"#:::#"$1"#:::#"$2"#:::#"$3; print}' | cut -f 3-)
+								'{x=$r; $r=sprintf("%010d",$r); for(i=1;i<r;i++){x=$i"#:::#"x; $r=sprintf("%0"n"d",$i)$r; $i=""} $r=$r"#:::#"x; print}' | sed 's/^\s*//')
 						CMD
 							| sed 's/#:::#/\t/g' | cut -f 2- > "$o";
 						CMD
@@ -934,7 +1002,7 @@ function helper::multijoin(){
 function helper::ishash(){
 	function _usage(){
 		commander::print <<- 'EOF'
-			helper::ishash returns without error if given variable is an associative array i.e. hash
+			helper::ishash returns without error if given variable or refers to an associative array i.e. hash
 
 			-v <var> | variable
 		EOF
@@ -944,10 +1012,8 @@ function helper::ishash(){
 	local OPTIND arg
 	while getopts 'v:' arg; do
 		case $arg in
-			v)	{	declare -p "$OPTARG" &> /dev/null
-					declare -n __="$OPTARG"
-					[[ "$(declare -p ${!__})" =~ ^declare\ \-[Ab-z]+ ]]
-				} || return 1
+			v)	declare -n __="$OPTARG"
+				[[ ${!__@a} == *A* ]] || return 1
 			;;
 			*)	_usage;;
 		esac
@@ -960,21 +1026,18 @@ function helper::ishash(){
 function helper::isarray(){
 	function _usage(){
 		commander::print <<- 'EOF'
-			helper::isarray returns without error if given variable is an array
+			helper::isarray returns without error if given variable is or refers to an array
 
 			-v <var> | variable
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory var
-	declare -a vars
+	local OPTIND arg
 	while getopts 'v:' arg; do
 		case $arg in
-			v)	{	declare -p "$OPTARG" &> /dev/null
-					declare -n __="$OPTARG"
-					[[ "$(declare -p ${!__})" =~ ^declare\ \-[a-zB-Z]+ ]]
-				} || return 1
+			v)	declare -n __="$OPTARG"
+				[[ ${!__@a} == *a* ]] || return 1
 			;;
 			*)	_usage;;
 		esac

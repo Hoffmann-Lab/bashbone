@@ -582,11 +582,13 @@ function compile::conda_tools(){
 			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults $tool bwa-mem2
 		fi
 		# get latest functions from pull requensts like support for bwa-mem2 and report of supplementary/split alignments
+		# use absolute path, because on some machines sometimes bwa-mem2 aborts with error: prefix is too long
 		curl -s "https://raw.githubusercontent.com/brentp/bwa-meth/master/bwameth.py" | \
 			sed -E -e '/--threads/{s/$/\n    p.add_argument("-s", "--score", type=int, default=40)/}' \
 			-e '/threads=args.threads/{s/$/\n            score=args.score,/}' \
 			-e 's/threads=1,/threads=1, score=40,/' \
-			-e 's/"\|bwa(.+) -T 40 -B 2 -L 10 -CM/f"|bwa\1 -T {score} -a -B 2 -L 10 -C -Y/' \
+			-e 's@"bwa-mem2 index@"\\\"" + os.path.dirname(__file__) + "/bwa-mem2\\\" index@' \
+			-e 's@bwa-mem2 mem -T 40 -B 2 -L 10 -CM@ \\\"" + os.path.dirname(__file__) + f"/bwa-mem2\\\" mem -T {score} -a -B 2 -L 10 -C -Y@' \
 		> "$insdir/conda/envs/bwameth/bin/bwameth.py"
 		# by removal of -M splits/chimeric reads are marked as supplementary (which is the way to go!).
 		# -Y: apply soft-clipping instead of hard clipping to keep sequence info in bam (can be changed via)
@@ -1029,7 +1031,8 @@ function compile::m6aviewer(){
 	if [[ -e "$src" ]] && $cfg; then
 		url=$(cat "$src")
 	else
-		url='http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar'
+		# url='http://dna2.leeds.ac.uk/m6a/m6aViewer_1_6_1.jar'
+		url='https://gitlab.leibniz-fli.de/kriege/m6aviewer/-/raw/main/m6aviewer.jar'
 	fi
 	mkdir -p "$insdir/config"
 	echo "$url" > "$insdir/config/m6aviewer.url"

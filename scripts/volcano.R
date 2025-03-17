@@ -74,13 +74,11 @@ if(is.na(args[3])){
   }
 
   topidx = head(which(! is.na(df$padj) & df$padj<0.05),n=ndowns)
-  got=topidx
   df[topidx,]$label = df[topidx,]$name
   topidx = tail(which(! is.na(df$padj) & df$padj<0.05),n=nups)
-  got=unique(c(got,topidx))
   df[topidx,]$label = df[topidx,]$name
   df = df[order(df$padj,na.last = T),]
-  topidx = head(which(! df$id %in% df$id[got] & ! is.na(df$padj) & df$padj<0.05),n=10)
+  topidx = head(which(is.na(df$label) & ! is.na(df$padj) & df$padj<0.05),n=10)
   df[topidx,]$label = df[topidx,]$name
 } else {
   idlist = scan(args[3], character(), quote="", quiet=T)
@@ -95,14 +93,11 @@ if(is.na(args[3])){
   }
 
   topidx = head(which(df$id %in% idlist & ! is.na(df$padj) & df$padj<0.05),n=ndowns)
-  got=topidx
   df[topidx,]$label = df[topidx,]$name
   topidx = tail(which(df$id %in% idlist & ! is.na(df$padj) & df$padj<0.05),n=nups)
-  got=unique(c(got,topidx))
   df[topidx,]$label = df[topidx,]$name
   df = df[order(df$padj,na.last = T),]
-  topidx = head(which(! df$id %in% df$id[got] & df$id %in% idlist & ! is.na(df$padj) & df$padj<0.05),n=10)
-
+  topidx = head(which(is.na(df$label) & df$id %in% idlist & ! is.na(df$padj) & df$padj<0.05),n=10)
   df[topidx,]$label = df[topidx,]$name
 }
 ups=sum(!is.na(df$padj) & df$padj<0.05 & df$log2FoldChange > 0)
@@ -120,7 +115,7 @@ ggplot(df, aes(x=log2FoldChange, y=-log10(pvalue), col=Regulation, label=label))
   geom_point(alpha=0.65) + 
   theme_classic() +
   # scale_color_manual(values=c("blue","darkgrey","red","#00c200")) +
-  scale_color_manual(values=c("Down" = "blue", "n.s." = "darkgrey", "Up" = "red", "highlight" = "#00c200"), breaks=c("Down","NA","Up")) +
+  scale_color_manual(values=c("Down" = "blue", "n.s." = "darkgrey", "Up" = "red", "highlight" = "#00c200"), breaks=c("Down","n.s.","Up")) +
   geom_vline(xintercept=c(-0.5, 0.5), col="black", linetype="longdash") +
   geom_hline(yintercept=-log10(0.05), col="black", linetype="longdash") +
   ggtitle(title) +

@@ -171,7 +171,7 @@ function preprocess::fastqc(){
 
 		helper::basename -f "$f" -o b -e e
 		e=$(echo $e | cut -d '.' -f 1) # if e == fastq or fq : check for ${b}_fastqc.zip else $b.${e}_fastqc.zip
-		[[ $e == "fastq" || $e == "fq" ]] && f="${b}_fastqc.zip" || f="$b.${e}_fastqc.zip"
+		[[ "$e" == "fastq" || "$e" == "fq" ]] && f="${b}_fastqc.zip" || f="$b.${e}_fastqc.zip"
 		# attention: nugen adapter search causes low false positive rates in R2 seqeunces (<0.1) likewise Small RNA adapter in R1 (<0.01)
 		commander::makecmd -a cmd2 -s '|' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 			unzip -c "$outdir/$f" "${f%.*}/fastqc_data.txt" | tac
@@ -201,7 +201,7 @@ function preprocess::fastqc(){
 				exit
 			}'
 		CMD
-			tee "$($skip && echo "/dev/null" || echo "$outdir/$b.adapter")"
+			tee "$($skip && echo "/dev/null" || echo "$outdir/${f%_fastqc.zip}.adapter")"
 		CMD
 	done
 
@@ -236,6 +236,11 @@ function preprocess::fastqc(){
 
 					helper::basename -f "$f1" -o b1 -e e1
 					helper::basename -f "$f2" -o b2 -e e2
+
+					if [[ "$b1" == "$b2" ]]; then
+						b1+="$e1"
+						b2+="$e2"
+					fi
 
 					tomerge1+=("$outdir/$b1.adapter")
 					tomerge2+=("$outdir/$b2.adapter")
@@ -475,7 +480,7 @@ function preprocess::trimmomatic(){
 	commander::printinfo "trimming"
 
 	#offset 64: ASCII 64 to 106 (solexa: 59 to 106)
-	#offset 33: ASCII 33 to 75
+	#offset 33: ASCII 33 to 88
 	#64 to 33: ord(char)-33+2
 	#theoretical max range is 126 for all encodings, thus more reliable detection would be just min based
 	#https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2847217/
@@ -499,11 +504,11 @@ function preprocess::trimmomatic(){
 					$max=max($max,@x);
 				}
 				END{
-					if($min>=33 && $max<=75){
+					if($min>=33 && $max<=88){
 						print "phred33 $f";
-					}elsif($min>=64 && $max>75 && $max<=106){
+					}elsif($min>=64 && $max>88 && $max<=106){
 						print "phred64 $f";
-					}elsif($min>=59 && $min<64 && $max>75 && $max<=106){
+					}elsif($min>=59 && $min<64 && $max>88 && $max<=106){
 						print "solexa64 $f";
 					}else{
 						print "unknown $f";

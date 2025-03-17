@@ -6,6 +6,7 @@
 [[ "$(uname)" != "Linux" ]] && echo "unsupported operating system" >&2 && exit 1
 [[ ${BASH_VERSINFO[0]} -lt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -lt 4) ]] && echo "requieres bash >= v4.4" >&2 && exit 1
 
+export BASHBONE_WORKINGDIR="$PWD"
 export BASHBONE_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
 export BASHBONE_EXTENSIONDIR="${BASHBONE_EXTENSIONDIR:-$BASHBONE_DIR}/lib"
 export BASHBONE_LEGACY=${BASHBONE_LEGACY:-false}
@@ -118,7 +119,7 @@ function mktemp(){
 }
 
 BASHBONE_PGID=$(($(ps -o pgid= -p $BASHPID)))
-export TMPDIR="$(command mktemp -d -p "${TMPDIR:-/tmp}" XXXXXXXXXX)"
+export TMPDIR="$(command mktemp -d -p "${TMPDIR:-/tmp}" bashbone.XXXXXXXXXX)"
 trap '_bashbone_on_error 130 $LINENO; exit 130 &> /dev/null' INT
 trap '_bashbone_on_error $? $LINENO || { [[ $BASHPID -ne $BASHBONE_PGID ]] && { return 130 &> /dev/null || exit 130; } || exit 130 &> /dev/null; }' ERR
 trap '_bashbone_on_exit $?' EXIT
@@ -183,7 +184,7 @@ function _bashbone_trace(){
 				line=$((line+3))
 				cmd=$(declare -f $fun | awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 			else
-				cmd=$(awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+				cmd=$(awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$BASHBONE_WORKINGDIR/$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 			fi
 			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main}) @ line $line: $cmd" >&2
 		fi
