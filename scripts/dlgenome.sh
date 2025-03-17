@@ -36,7 +36,7 @@ usage(){
 		                          : NOTE: for mouse data, genes will be substituted by Ensembl orthologs if possible
 
 		(the following options require bcftools, bgzip, tabix in PATH)
-		-s | --dbsnp              : download Ensembl common dbSNP (hg), EVA validated SNPs (mm) respectively
+		-s | --dbsnp              : download Ensembl common dbSNP (hg), EVA validated SNPs (mm) respectively (mm10 only)
 		                          : NOTE: for hg, each orignal entry is listed in 1000Genomes and contain its african, american, european, asian population MAF
 		                            -> filtered for max(MAF)>0.01
 		-n | --ncbi               : switch to NCBI common dbSNP (hg), validated SNPs (mm) respectively (mm10 only)
@@ -979,7 +979,7 @@ function dlgenome::hg19.dbsnp.ucsc() {
 	cd "$outdir"
 	genome=GRCh37
 
-	echo ":INFO: ucsc dbsnp not supported"
+	echo ":INFO: UCSC dbSNP not supported"
 	# https://groups.google.com/a/soe.ucsc.edu/g/genome-announce/c/40coV6ZVtFY
 	# https://genome.ucsc.edu/cgi-bin/hgTrackUi?db=hg19&g=dbSnp155Composite
 	# http://hgdownload.soe.ucsc.edu/gbdb/hg19/snp/dbSnp155Common.bb
@@ -1127,7 +1127,7 @@ function dlgenome::hg38.dbsnp.ucsc() {
 	cd "$outdir"
 	genome=GRCh38
 
-	echo ":INFO: ucsc dbsnp not supported"
+	echo ":INFO: UCSC dbSNP not supported"
 	return 0
 
 	# TODO needs more effort due to missing start position ref. see also
@@ -1180,7 +1180,7 @@ function dlgenome::mm10.dbsnp.gatk() {
 	cd "$outdir"
 	genome=GRCm38
 
-	echo ":INFO: gatk bundle not available"
+	echo ":INFO: GATK bundle not available"
 	return 0
 }
 
@@ -1223,8 +1223,9 @@ function dlgenome::mm10.dbsnp.ensembl() {
 	cd "$outdir"
 	genome=GRCm38
 
-	echo ":INFO: ensembl dbsnp not supported"
+	echo ":INFO: Ensembl dbSNP not supported"
 	return 0
+
 	url="https://ftp.ensembl.org/pub/release-102/variation/vcf/mus_musculus/mus_musculus.vcf.gz"
 	# contains 80M variants without any INFO on how to filter them
 }
@@ -1258,7 +1259,7 @@ function dlgenome::mm10.dbsnp.eva() {
 	cat <<- EOF >> "$genome.fa.vcf.README"
 		$(date)
 		$USER
-		EVA v"$(echo "$version" | cut -d _ -f 2 -)" $genome
+		EVA v$(echo "$version" | cut -d _ -f 2 -) $genome
 		filtered for RS_VALIDATED
 		$url
 	EOF
@@ -1279,6 +1280,7 @@ function dlgenome::mm10.dbsnp.ucsc() {
 
 	# url="https://ftp.ncbi.nih.gov/snp/organisms/archive/mouse_10090/VCF/00-All.vcf.gz"
 	# better use https://ftp.ebi.ac.uk/pub/databases/eva/rs_releases/release_6/by_species/mus_musculus/GRCm38.p4/10090_GCA_000001635.6_current_ids.vcf.gz
+	# alternative: https://hgdownload.soe.ucsc.edu/gbdb/mm10/bbi/evaSnp6.bb
 	# filter by UCSC common
 	# 81432271 -> 8404784 VLD using NCBI
 	# 82691010 -> 8592575 RS_VALIDATED using EVA
@@ -1314,7 +1316,7 @@ function dlgenome::mm11.dbsnp.gatk() {
 	cd "$outdir"
 	genome=GRCm39
 
-	echo ":INFO: gatk bundle not available"
+	echo ":INFO: GATK bundle not available"
 	return 0
 }
 
@@ -1323,7 +1325,7 @@ function dlgenome::mm11.dbsnp.ncbi() {
 	cd "$outdir"
 	genome=GRCm39
 
-	echo ":INFO: ncbi dbsnp not available"
+	echo ":INFO: NCBI dbSNP not available"
 	return 0
 }
 
@@ -1332,7 +1334,7 @@ function dlgenome::mm11.dbsnp.ensembl() {
 	cd "$outdir"
 	genome=GRCm39
 
-	echo ":INFO: ensembl dbsnp not supported"
+	echo ":INFO: Ensembl dbSNP not supported"
 	return 0
 
 	url="https://ftp.ensembl.org/pub/"
@@ -1344,6 +1346,11 @@ alias dlgenome::mm11.dbsnp.eva="_bashbone_wrapper dlgenome::mm11.dbsnp.eva"
 function dlgenome::mm11.dbsnp.eva() {
 	cd "$outdir"
 	genome=GRCm39
+
+	echo ":INFO: eva dbsnp not supported"
+	return 0
+	# in contrast to mm10, likewise to ncbi, the vcf file has no validation info included
+
 	echo ":INFO: downloading dbSNP"
 
 	url="https://ftp.ebi.ac.uk/pub/databases/eva/rs_releases/"
@@ -1364,7 +1371,7 @@ function dlgenome::mm11.dbsnp.eva() {
 	cat <<- EOF >> "$genome.fa.vcf.README"
 		$(date)
 		$USER
-		EVA v"$(echo "$version" | cut -d _ -f 2-)" $genome
+		EVA v$(echo "$version" | cut -d _ -f 2-) $genome
 		$url
 		filtered for RS_VALIDATED
 	EOF
@@ -1375,7 +1382,7 @@ function dlgenome::mm11.dbsnp.ucsc() {
 	cd "$outdir"
 	genome=GRCm39
 
-	echo ":INFO: ucsc dbsnp not supported"
+	echo ":INFO: UCSC dbSNP not supported"
 	return 0
 	# bigBedToBed https://hgdownload.soe.ucsc.edu/gbdb/mm39/bbi/evaSnp6.bb
 	# ucsc data source is eva
