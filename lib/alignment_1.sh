@@ -992,10 +992,11 @@ function alignment::_blacklist(){
 	if [[ -s "$blacklist" ]]; then
 
 		# or bedtools complement
+		# if blacklist bed has non-equal number of columns, bedtools will fail, thus cut 1-3
 		commander::makecmd -a _cmds1_blacklist -s ';' -c {COMMANDER[0]}<<- CMD
 			bedtools subtract
 				-a <(samtools view -H "$bam" | awk '/^@SQ/{\$1=""; print}' | cut -d ':' -f 2,3 | sed -r 's/(\S+)\s+LN:(.+)/\1\t0\t\2/' | helper::sort -k1,1 -k2,2n -k3,3n -t $threads -M $((memory/2)))
-				-b <(helper::sort -k1,1 -k2,2n -k3,3n -t $threads -f "$blacklist" -M $((memory/2)))
+				-b <(helper::sort -k1,1 -k2,2n -k3,3n -t $threads -f "$blacklist" -M $((memory/2)) | cut -f 1-3)
 			> "$tmpdir/whitelist.bed"
 		CMD
 
@@ -1296,12 +1297,12 @@ function alignment::_collate(){
 			    declare outfile=""
 			    ${FUNCNAME[-2]} -1 cmds -t 16 -i /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -p /path/to/tmpdir -r outfile
 
-			create sorted bam:
-			    commander::printcmd -a cmds # samtools [..] /path/to/alignment.[sam|bam] > /path/to/alignment.sorted.bam
+			create collated bam:
+			    commander::printcmd -a cmds # samtools [..] /path/to/alignment.[sam|bam] > /path/to/alignment.collated.bam
 			    commander::runcmd [..] -a cmds
 
-			access sorted bam:
-			    ls "\$outfile" # /path/to/outdir/alignment.sorted.bam
+			access collated bam:
+			    ls "\$outfile" # /path/to/outdir/alignment.collated.bam
 		EOF
 		return 1
 	}
@@ -1339,11 +1340,11 @@ function alignment::_collate(){
 					<(samtools view -@ $(((threads+1)/2)) -u -e 'rnext==rname' -f 2 -F 4 -F 64 "$bam" | samtools sort -t HI -n -@ $(((threads+1)/2)) -T "$tmpdir/$(basename "$outbase").nsrtR2" -u | samtools collate -@ $(((threads+1)/2)) -u -O -n 1 - "$tmpdir/$(basename "$outbase").collateR2" | samtools view -@ $(((threads+1)/2)));
 			}
 		CMD
-			samtools view --no-PG -@ 100 -b -o "$_returnfile_collate"
+			samtools view --no-PG -@ $threads -b -o "$_returnfile_collate"
 		CMD
 	elif [[ $x -gt 0 ]]; then
 		# name sort seems to work, too - shuffling via collate not necessary i.e. beeing the better name sorting for PE data
-		# -e 'rnext==rname' is mainly a bwa fix for quantification with salmon
+		# -e 'rnext==rname' is mainly a bwa fix for quantification with salmon which requires randomized alignments, but mates next to each other and mapped onto same ref
 		commander::makecmd -a _cmds1_collate -s '|' -c {COMMANDER[0]}<<- CMD -c {COMMANDER[1]}<<- CMD
 			{
 				samtools view --no-PG -H "$bam";
@@ -1352,7 +1353,7 @@ function alignment::_collate(){
 					<(samtools view -@ $(((threads+1)/2)) -u -e 'rnext==rname' -f 2 -F 4 -F 64 "$bam" | samtools sort -n -@ $(((threads+1)/2)) -T "$tmpdir/$(basename "$outbase").nsrtR2" -u | samtools collate -@ $(((threads+1)/2)) -u -O -n 1 - "$tmpdir/$(basename "$outbase").collateR2" | samtools view -@ $(((threads+1)/2)));
 			}
 		CMD
-			samtools view --no-PG -@ 100 -b -o "$_returnfile_collate"
+			samtools view --no-PG -@ $threads -b -o "$_returnfile_collate"
 		CMD
 	else
 		commander::makecmd -a _cmds1_collate -s ';' -c {COMMANDER[0]}<<- CMD
@@ -1398,7 +1399,7 @@ function alignment::_index(){
 			    commander::runcmd [..] -a cmds
 
 			access bam index:
-			    ls "\$idxfile"
+			    ls "\$idxfile" # /path/to/alignment.sorted.bai
 		EOF
 		return 1
 	}
