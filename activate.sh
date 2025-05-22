@@ -242,7 +242,7 @@ function _bashbone_trace(){
 				line=$((line+3))
 				cmd=$(declare -f $fun | awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 			else
-				cmd=$(awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$BASHBONE_WORKINGDIR/$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+				cmd=$(cd "$BASHBONE_WORKINGDIR"; awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 			fi
 			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main}) @ line $line: $cmd" >&2
 		fi
@@ -270,7 +270,7 @@ function _bashbone_trace_interactive(){
 		if [[ $line -eq 1 ]]; then
 			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main} @ line $l)" >> "$o"
 		else
-			cmd=$(awk -v l=$l '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$BASHBONE_WORKINGDIR/$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+			cmd=$(cd "$BASHBONE_WORKINGDIR"; awk -v l=$l '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main}) @ line $l: $cmd" >> "$o"
 		fi
 	done
@@ -483,6 +483,9 @@ function bashbone(){
 				conda deactivate &> /dev/null
 			done
 			PATH="${PATH/$BASHBONE_PATH/}"
+			p="$BASHBONE_TOOLSDIR/conda/condabin"
+			PATH="${PATH/$p:/}"
+			PATH="${PATH/$p/}"
 
 			if [[ $- == *i* ]]; then
 				if [[ ${BASH_VERSINFO[0]} -ge 5 && -r /usr/share/bash-completion/bash_completion ]]; then
