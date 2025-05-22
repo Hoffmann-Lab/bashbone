@@ -351,60 +351,12 @@ function commander::runcmd(){
 	return 0
 }
 
-# old code from times, when jobs were executed via xargs instead of gnu parallel. may it be useful for someone stumbling across
-# function commander::runalter_xargs(){
-# 	function _usage(){
-# 		commander::print {COMMANDER[0]}<<- EOF
-# 			${FUNCNAME[-2]} usage:
-# 			-i <instances> | number of parallel
-# 			-p <id|name>   | xargs process id or job name
-# 		EOF
-# 		return 1
-# 	}
-
-# 	local OPTIND arg mandatory pid instances
-# 	while getopts 'p:i:' arg; do
-# 		case $arg in
-# 			p)	((++mandatory)); pid=$OPTARG;;
-# 			i)	((++mandatory)); instances=$OPTARG;;
-# 			*)	_usage;;
-# 		esac
-# 	done
-# 	[[ $# -eq 0 ]] && { _usage || return 0; }
-# 	[[ $mandatory -lt 2 ]] && _usage
-
-# 	BASHBONE_ERROR="no such job name: $pid"
-# 	[[ $pid =~ ^[0-9]+$ ]] || pid=$(($(ps -o pgid= -p $(pgrep -o -f "job.$pid.*.sh"))))
-# 	BASHBONE_ERROR="not a valid job id: $pid"
-# 	[[ "$(ps -o comm= -p $pid)" == xargs ]]
-
-# 	local i=$(pgrep -c -P $pid)
-# 	i=$((i-instances))
-# 	[[ $i -eq 0 ]] && return 0
-
-# 	if [[ $i -gt 0 ]]; then
-# 		# decrement
-# 		while [[ $((i--)) -gt 0 ]]; do
-# 			kill -USR2 $pid
-# 			sleep 0.1
-# 		done
-# 	else
-# 		# increment
-# 		while [[ $((i++)) -lt 0 ]]; do
-# 			kill -USR1 $pid
-# 			sleep 0.1
-# 		done
-# 	fi
-
-# 	return 0
-# }
-
 function commander::runalter(){
 	function _usage(){
 		commander::print <<- EOF
 			commander::runalter
 
-			increment or decrement the number of parallel running instances of a GNU parallel process
+			increment or decrement the number of instances i.e. parallel running jobs of a xargs or GNU parallel process
 
 			-i <instances> | mandatory. number of new parallel instances
 			-p <id|name>   | mandatory. GNU parallel process id or job name. see also commander::runstat
@@ -424,11 +376,31 @@ function commander::runalter(){
 	[[ $mandatory -lt 2 ]] && _usage
 
 	BASHBONE_ERROR="no such job name: $pid"
-
 	[[ $pid =~ ^[0-9]+$ ]] || pid=$(($(ps -o ppid= -p $(pgrep -o -f "job.$pid.*.sh"))))
+
 	BASHBONE_ERROR="not a valid job id: $pid"
-	[[ "$(ps -o cmd= -p $pid)" =~ perl[[:space:]]+[^[:space:]]+parallel[[:space:]] ]]
-	echo $instances > "$(ps -o cmd= --ppid $pid | head -1 | sed -E 's/^bash\s+//' | xargs -I {} bash -c 'echo "$(dirname "$1")/instances.$(basename "$1" | cut -d "." -f 2)"' bash {})"
+	if [[ "$(ps -o comm= -p $pid)" == xargs ]]; then
+			local i=$(pgrep -c -P $pid)
+			i=$((i-instances))
+			[[ $i -eq 0 ]] && return 0
+			if [[ $i -gt 0 ]]; then
+				# decrement
+				while [[ $((i--)) -gt 0 ]]; do
+					kill -USR2 $pid
+					sleep 0.1
+				done
+			else
+				# increment
+				while [[ $((i++)) -lt 0 ]]; do
+					kill -USR1 $pid
+					sleep 0.1
+				done
+			fi
+	elif [[ "$(ps -o cmd= -p $pid)" =~ perl[[:space:]]+[^[:space:]]+parallel[[:space:]] ]]; then
+		echo $instances > "$(ps -o cmd= --ppid $pid | head -1 | sed -E 's/^bash\s+//' | xargs -I {} bash -c 'echo "$(dirname "$1")/instances.$(basename "$1" | cut -d "." -f 2)"' bash {})"
+	else
+		false
+	fi
 
 	return 0
 }
