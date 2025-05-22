@@ -16,13 +16,13 @@ cleanup(){
 usage(){
 	cat <<- EOF
 		DESCRIPTION
-		$(basename "$0") retrieves fastq data from ncbi sra based on GSM, SRR or SRX accession numbers
+		$(basename "$0") retrieves fastq data from ncbi sra based on GSE, GSM, SRR or SRX accession numbers
 		  - support for parallel download instances
 		  - if installed, sra-toolkit via ncbi gov resource is priorized over retrieval via ebi uk mirror
 		  - ebi uk mirror can be defined as fallback upon fastq-dump errors
 
 		VERSION
-		0.4.0
+		0.5.0
 
 		REQUIREMENTS
 		Depends on chosen options
@@ -31,14 +31,14 @@ usage(){
 		  - wget or curl or fastq-dump (from stra-toolkit https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/)
 
 		SYNOPSIS
-		$(basename "$0") [OPTIONS] [GSM|SRR|SRX|SRP] [..]
+		$(basename "$0") [OPTIONS] [GSE|GSM|SRR|SRX|SRP] [..]
 		$(basename "$0") -l [OPTIONS] [SRA] [..]
 
 		OPTIONS
 		-d [path] : download into this directory (default: "$PWD")
 		-p [num]  : number of maximum parallel download instances (default: 2)
 		-t [num]  : pigz compression threads per fastq-dump download instance (default: no pigz)
-		            HINT1: single threaded gzip compression may be a bottleneck regarding download speed
+		            HINT1: single threaded gzip compression may reduce download speed
 		-m [path] : path to temporary directory (default: "$PWD/tmp.XXXXXXXXXX.sradump")
 		-l        : convert local sra files to compressed fastq files
 		-s        : show received meta information for given accession numbers and exit
@@ -103,8 +103,8 @@ nofetch=${nofetch:-false}
 fallback=${fallback:-false}
 BASHBONE_ERROR="requires -w or -c"
 $fallback && $ebi
-outfile="${outfile:-/dev/null}"
-outdir="${outdir:-$PWD}"
+outfile="$(realpath -s "${outfile:-/dev/null}")"
+outdir="$(realpath -s "${outdir:-$PWD}")"
 BASHBONE_ERROR="cannot create output directory"
 mkdir -p "$outdir"
 BASHBONE_ERROR="cannot create directory for output file"
@@ -126,12 +126,18 @@ else
 			echo -e "$id\t$id" >&2
 			srr+=("$id")
 		} || {
-			# alternative for GEO accessions: Rscript -e 'library(GEOquery); geo_data <- getGEO(geo_accession); info <- geo_data@header[["characteristics_ch1"]];'
-			i="${#srr[@]}"
-			mapfile -t mapdata < <(esearch -db sra -query "$id" | efetch -format xml | grep .)
-			mapfile -t mapdata < <(join -t $'\t' <(printf '%s\n' "${mapdata[@]}" | xtract -pattern EXPERIMENT_PACKAGE -element RUN@accession,EXPERIMENT/TITLE,Member@sample_name,Member@sample_title | sed -E ':a;s/([^\t]+)\t\1/\1/;ta' | awk -F '\t' '{if($4){$3=$4}; print $1"\tsample_name=\""$3"\";\tsample_title=\""$2"\";"}') <(printf '%s\n' "${mapdata[@]}" | xtract -pattern EXPERIMENT_PACKAGE -element RUN@accession,SAMPLE_ATTRIBUTE/TAG,SAMPLE_ATTRIBUTE/VALUE | perl -F'\t' -lane 'for (1..$#F/2){$F[$_]=~s/\s+/_/g; $F[$_].="=\"$F[$_+$#F/2]\";"} print join"\t",@F[0..$#F/2]'))
-			srr+=($(printf '%s\n' "${mapdata[@]}" | cut -f 1))
-			printf '%s\n' "${mapdata[@]}" | sed "s/^/$id\t/" | tee -a "$outfile" >&2
+			if esearch -db sra -query "$id" | efetch -format xml | grep -q .; then
+				ids=($id)
+			else
+				# alternative for GEO accessions: Rscript -e 'library(GEOquery); geo_data <- getGEO(geo_accession); info <- geo_data@header[["characteristics_ch1"]];'
+				ids=($(esearch -db gds -query "$id" | efetch | grep -oE 'Sample\s*Accession:\s*\S*' 1 | awk '{print $NF}'))
+			fi
+			for id in "${ids[@]}"; do
+				mapfile -t mapdata < <(esearch -db sra -query "$id" | efetch -format xml | grep .)
+				mapfile -t mapdata < <(join -t $'\t' <(printf '%s\n' "${mapdata[@]}" | xtract -pattern EXPERIMENT_PACKAGE -element RUN@accession,EXPERIMENT/TITLE,Member@sample_name,Member@sample_title | sed -E ':a;s/([^\t]+)\t\1/\1/;ta' | awk -F '\t' '{if($4){$3=$4}; print $1"\tsample_name=\""$3"\";\tsample_title=\""$2"\";"}') <(printf '%s\n' "${mapdata[@]}" | xtract -pattern EXPERIMENT_PACKAGE -element RUN@accession,SAMPLE_ATTRIBUTE/TAG,SAMPLE_ATTRIBUTE/VALUE | perl -F'\t' -lane 'for (1..$#F/2){$F[$_]=~s/\s+/_/g; $F[$_].="=\"$F[$_+$#F/2]\";"} print join"\t",@F[0..$#F/2]'))
+				srr+=($(printf '%s\n' "${mapdata[@]}" | cut -f 1))
+				printf '%s\n' "${mapdata[@]}" | sed "s/^/$id\t/" | tee -a "$outfile" >&2
+			done
 		}
 	done
 	$nodownload && exit 0
@@ -213,11 +219,11 @@ s3dump_awscli(){
 }
 
 ftpdump_wget(){
-	local params id url i=-1
+	local params id url i=-1 tdir
 	$resume && params="-c" || params=""
 	for id in ${srr[@]}; do # do not quote. in case srr=("$(fastqdump ...)") terminates succesfully, srr==("") -> id==""
 		url=$([[ $(echo -n $id | wc -c) -lt 10 ]] && echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$id || echo ftp://ftp.sra.ebi.ac.uk/vol1/fastq/${id:0:6}/$(printf '%03i' $(echo ${id:9} | sed 's/^0*//'))/$id)
-		# attemp to tackle colliding .listing files by sleep
+		# attemp to tackle colliding .listing files at $outdir by sleep
 		echo "wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping --recursive --no-directories --no-parent --level=1 --reject 'index.htm*' --accept-regex '$id.*\.fastq\.gz' '$url/'" >&2
 		echo -ne "sleep $((++i%instances*2)); wget $params -q -P '$outdir' --show-progress --progress=bar:force --timeout=60 --waitretry=10 --tries=10 --retry-connrefused --timestamping --recursive --no-directories --no-parent --level=1 --reject 'index.htm*' --accept-regex '$id.*\.fastq\.gz' '$url/'\0"
 		# --glob has the same listing problem and additionally adds risk for 404 due to wildcards not supported in HTTP (despite of ftp url, where glob should work)
