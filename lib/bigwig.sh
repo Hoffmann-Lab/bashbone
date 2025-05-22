@@ -191,6 +191,7 @@ function bigwig::profiles(){
 			-t <threads>  | number of
 			-r <mapper>   | array of bams within array of
 			-i <bwdir>    | path to pileup bigwig files
+			-n <names>    | array of
 			-g <gtf>      | path to with transcript feature (and transcript_id feature tag) for TSS and transcript profiling. mutually exclusive to -b
 			-b <bedfiles> | array of paths to bed or bed-like files e.g. narrowPeak. mutually exclusive to -g
 			-o <outdir>   | path to
@@ -201,8 +202,8 @@ function bigwig::profiles(){
 	}
 
 	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}" gtf bed bwdir pearson=false maxmemory canonicals=false
-	declare -n _mapper_profiles _strandness_profiles _bedfiles_profiles
-	while getopts 'S:s:t:r:g:b:i:o:M:pa' arg; do
+	declare -n _mapper_profiles _strandness_profiles _bedfiles_profiles _names_profiles
+	while getopts 'S:s:t:r:n:g:b:i:o:M:pa' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -210,6 +211,7 @@ function bigwig::profiles(){
 			r)	((++mandatory)); _mapper_profiles=$OPTARG;;
 			g)	gtf="$OPTARG";;
 			b)	_bedfiles_profiles=$OPTARG;;
+			n)	_names_profiles=$OPTARG;;
 			M)	maxmemory=$OPTARG;;
 			i)	((++mandatory)); bwdir="$OPTARG";;
 			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
@@ -316,7 +318,7 @@ function bigwig::profiles(){
 					--plotFileFormat pdf
 					--colorMap RdBu
 					--refPointLabel TSS
-					--samplesLabel $(basename -a "${pileups[@]%$e}" | xargs -I {} printf "'%s' " {})
+					--samplesLabel $([[ $_names_profiles ]] && printf '"%s" ' "${_names_profiles[@]}" || { basename -a "${pileups[@]%$e}" | xargs -I {} printf "'%s' " {}; })
 			CMD
 
 			# multithreading capacities limited. parallel instances are much faster and according to
@@ -368,7 +370,7 @@ function bigwig::profiles(){
 					-o "$odir/$b.profile.pdf"
 					--plotFileFormat pdf
 					--numPlotsPerRow 2
-					--samplesLabel $(basename -a "${pileups[@]%$e}" | xargs -I {} printf "'%s' " {})
+					--samplesLabel $([[ $_names_profiles ]] && printf '"%s" ' "${_names_profiles[@]}" || { basename -a "${pileups[@]%$e}" | xargs -I {} printf "'%s' " {}; })
 			CMD
 		done
 
@@ -410,7 +412,7 @@ function bigwig::profiles(){
 					--plotFileFormat pdf
 					--colorMap RdBu
 					--refPointLabel TSS
-					--samplesLabel $(basename -a "${pileups[@]%$e}" | xargs -I {} printf "'%s' " {})
+					--samplesLabel $([[ $_names_profiles ]] && printf '"%s" ' "${_names_profiles[@]}" || { basename -a "${pileups[@]%$e}" | xargs -I {} printf "'%s' " {}; })
 					--regionsLabel $(basename -a "${toprofile[@]%.*}" | xargs -I {} printf "'%s' " {})
 			CMD
 
@@ -450,7 +452,7 @@ function bigwig::profiles(){
 					-o "$odir/profile.pdf"
 					--plotFileFormat pdf
 					--numPlotsPerRow 2
-					--samplesLabel $(basename -a "${pileups[@]%$e}" | xargs -I {} printf "'%s' " {})
+					--samplesLabel $([[ $_names_profiles ]] && printf '"%s" ' "${_names_profiles[@]}" || { basename -a "${pileups[@]%$e}" | xargs -I {} printf "'%s' " {}; })
 					--regionsLabel $(basename -a "${toprofile[@]%.*}" | xargs -I {} printf "'%s' " {})
 			CMD
 		fi
@@ -481,7 +483,7 @@ function bigwig::profiles(){
 					-o "$odir/coverage.correlation.pearson.pdf"
 					--outFileCorMatrix "$odir/coverage.correlation.pearson.tsv"
 					--plotFileFormat pdf
-					--labels $(basename -a "${coverages[@]%$e}" | xargs -I {} printf "'%s' " {})
+					--labels $([[ $_names_profiles ]] && printf '"%s" ' "${_names_profiles[@]}" || { basename -a "${coverages[@]%$e}" | xargs -I {} printf "'%s' " {}; })
 			CMD
 		fi
 	done
