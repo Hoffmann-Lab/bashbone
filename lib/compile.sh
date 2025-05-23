@@ -485,7 +485,7 @@ function compile::conda_tools(){
 		# bioconda as well as conda-forge sortmerna=4.3.7 leads to Illegal instruction (core dumped). as of 2025, sortmerna is removed from bioconda, but erroneous version still remains
 		# -> local compilation with conda-build environment
 		# mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults conda-build cc_linux-64=11.4 gxx_linux-64=11.4 glib pkg-config make automake cmake pyyaml jinja2 requests ninja
-		# now fetch recipe from conda-forge pull request via git fetch origin pull/25438/head
+		# now fetch recipe from conda-forge pull request via git fetch origin pull/25438/head == 0ca7f59a3f7c404d9038cbf9721812c8c5fd9d32
 		# NOTE: worked till pull request was accepted due to further changes in meta.yaml i.e. jinja2 resolved {{ stdlib('c') }} entry =>  https://github.com/conda-forge/sortmerna-feedstock
 		# -> local compilation needs latest working hash 815aef22eecc616c160d66bf2a03b8a60267053a
 		# add the following to conda_build_config.yaml
@@ -496,7 +496,8 @@ function compile::conda_tools(){
 		# cxx_compiler:
 		#   - gxx
 
-		local tmp="$(mktemp -d -p "${TMPDIR:-/tmp}" cleanup.XXXXXXXXXX.sortmerna)"
+		# TMPDIR for building must be on same filesystem! otherwise os.rename() or shutil.move() will fail
+		local tmp="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.sortmerna)"
 		git -C "$tmp" init
 		git -C "$tmp" remote add origin https://github.com/conda-forge/staged-recipes
 		git -C "$tmp" fetch origin 815aef22eecc616c160d66bf2a03b8a60267053a
@@ -508,11 +509,12 @@ function compile::conda_tools(){
 		chmod 666 "$insdir/conda/envs/$n/rRNA_databases/"*.fasta
 		rm -f "$insdir/conda/envs/$n/rRNA_databases/database.tar.gz"
 
+		# rm -f "$insdir/conda/envs/$n/conda-bld/linux-64/sortmerna-4.3.7"*
 		declare -a cmdbuild
 		commander::makecmd -a cmdbuild -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-			rm -f "$insdir/conda/envs/$n/conda-bld/linux-64/sortmerna-4.3.7"*
+			conda build purge-all
 		CMD
-			conda build --no-anaconda-upload $tmp/recipes/sortmerna
+			TMPDIR="$tmp" conda build --no-anaconda-upload $tmp/recipes/sortmerna
 		CMD
 			conda install -y --override-channels -c conda-forge -c bioconda -c defaults "$insdir/conda/envs/$n/conda-bld/linux-64/sortmerna-4.3.7"*.+(conda|tar.bz2)
 		CMD
