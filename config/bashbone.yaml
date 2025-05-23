@@ -22,6 +22,8 @@ dependencies:
   - bioconductor-rhtslib==1.26.0
   - bioconductor-rrvgo==1.6.0
   - bioconductor-rsamtools==2.10.0
+  - bioconductor-tcgabiolinks==2.22.1
+  - bioconductor-tcgabiolinksgui.data==1.14.1
   - bioconductor-tcgautils==1.14.0
   - bzip2==1.0.8
   - cgpbigwig==1.6.0
@@ -37,6 +39,7 @@ dependencies:
   - gxx_linux-64==9.4.0
   - htseq==1.99.2
   - htslib==1.16
+  - indexed_bzip2==1.6.0
   - java-jdk==8.0.112
   - khmer==3.0.0a3
   - libcurl==7.86.0
@@ -70,6 +73,7 @@ dependencies:
   - r-dendextend==1.16.0
   - r-devtools==2.4.3
   - r-dplyr==1.0.7
+  - r-ellipse==0.4.5
   - r-ggplot2==3.3.5
   - r-ggpubr==0.4.0
   - r-ggridges==0.5.3
@@ -85,7 +89,7 @@ dependencies:
   - r-tidyverse==1.3.1
   - r-treemap==2.4_3
   - r-wgcna==1.69
-  - samtools==1.14
+  - samtools==1.16.1
   - sra-tools==2.11.0
   - ucsc-bigwiginfo==466
   - ucsc-facount==377
