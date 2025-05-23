@@ -291,7 +291,6 @@ function compile::conda_bashbone(){
 		# devtools::install_github("BioinformaticsFMRP/TCGAbiolinks", upgrade="never", force=T, clean=T, destdir="$tmpdir");
 		# as of 2022, conda can install all r-packages without conflicts since most of them have been merged from r channel into conda-forge. now manual compilation is cumbersome
 		# bioconductor-tcgabiolinks conda package is outdated and errornous. Apr 2022 tcga db changed way to access, thus latest tcgabiolinks from git required
-		# as of 2024, conda installation should work again
 		declare -a cmd3
 		commander::makecmd -a cmd3 -s '&&' -c {COMMANDER[0]}<<- CMD
 			Rscript - <<< '
@@ -299,6 +298,8 @@ function compile::conda_bashbone(){
 				Sys.setenv(TAR="$(which tar)");
 				install.packages(c("knapsack"), repos="http://R-Forge.r-project.org", Ncpus=$threads, clean=T, destdir="$tmpdir");
 				devtools::install_github("andymckenzie/DGCA", upgrade="never", force=T, clean=T, destdir="$tmpdir");
+				devtools::install_github("BioinformaticsFMRP/TCGAbiolinksGUI.data", upgrade="never", force=T, clean=T, destdir="$tmpdir");
+				devtools::install_github("BioinformaticsFMRP/TCGAbiolinks", upgrade="never", force=T, clean=T, destdir="$tmpdir");
 			'
 		CMD
 

@@ -72,7 +72,7 @@ dependencies:
   - r-data.table==1.14.2
   - r-dendextend==1.16.0
   - r-devtools==2.4.3
-  - r-dplyr==1.0.7
+  - r-dplyr==1.1.2
   - r-ellipse==0.4.5
   - r-ggplot2==3.3.5
   - r-ggpubr==0.4.0
