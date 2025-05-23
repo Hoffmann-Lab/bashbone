@@ -227,7 +227,6 @@ function compile::conda_bashbone(){
 		$upgrade && ${envs[$n]:=false}
 	fi || {
 		doclean=true
-		commander::printinfo "setup conda $n env"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
 			# manually remove to be compatible with different version: create had --force in newer version replace by -y
 			# as of v1.5.9, non-existing envs cause error
@@ -344,7 +343,7 @@ function compile::conda_tools(){
 	local insdir threads upgrade=false cfg tool n star_version bin doclean=false src="$(dirname "$(dirname "$(readlink -e "$0")")")" f
 	declare -A envs
 	compile::_parse -r insdir -s threads -c upgrade -f cfg "$@"
-	$upgrade && commander::printinfo "validating tools conda environments" || commander::printinfo "installing tools conda environments"
+	$upgrade && commander::printinfo "validating conda environments" || commander::printinfo "installing conda environments"
 
 	local tmpdir="$insdir/tmp"
 	mkdir -p "$tmpdir" "$insdir/config"
@@ -371,7 +370,7 @@ function compile::conda_tools(){
 		fi || {
 			doclean=true
 
-			commander::printinfo "setup conda $n env"
+			commander::printinfo "installing $n conda environment"
 			if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
 				compile::conda_create $n --file "$src/config/$n.yaml"
 			else
@@ -406,7 +405,7 @@ function compile::conda_tools(){
 	fi || {
 		doclean=true
 
-		commander::printinfo "setup conda $n env"
+		commander::printinfo "installing $n conda environment"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
 			compile::conda_create $n --file "$src/config/$n.yaml"
 		else
@@ -432,7 +431,7 @@ function compile::conda_tools(){
 	# fi || {
 	# 	doclean=true
 
-	# 	commander::printinfo "setup conda $n env"
+	# 	commander::printinfo "installing $n conda environment"
 	# 	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
 	# 		mamba env remove -y -n $n || true
 	# 		mamba env create -n $n --file "$src/config/$n.yaml"
@@ -471,7 +470,7 @@ function compile::conda_tools(){
 	fi || {
 		doclean=true
 
-		commander::printinfo "setup conda $n env"
+		commander::printinfo "installing $n conda environment"
 		if [[ -e "$src/config/$n.yaml-noexist" ]] && $cfg; then
 			compile::conda_create $n --file "$src/config/$n.yaml"
 		else
@@ -541,7 +540,7 @@ function compile::conda_tools(){
 	fi || {
 		doclean=true
 
-		commander::printinfo "setup conda $n env"
+		commander::printinfo "installing $n conda environment"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
 			compile::conda_create $n --file "$src/config/$n.yaml"
 		else
@@ -564,7 +563,7 @@ function compile::conda_tools(){
 	fi || {
 		doclean=true
 
-		commander::printinfo "setup conda $n env"
+		commander::printinfo "installing $n conda environment"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
 			compile::conda_create $n --file "$src/config/$n.yaml"
 		else
@@ -599,7 +598,7 @@ function compile::conda_tools(){
 	fi || {
 		doclean=true
 
-		commander::printinfo "setup conda $n env"
+		commander::printinfo "installing $n conda environment"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
 			compile::conda_create $n --file "$src/config/$n.yaml"
 		else
@@ -621,7 +620,7 @@ function compile::conda_tools(){
 	fi || {
 		doclean=true
 
-		commander::printinfo "setup conda $n env"
+		commander::printinfo "installing $n conda environment"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
 			compile::conda_create $n --file "$src/config/$n.yaml"
 		else
@@ -642,7 +641,7 @@ function compile::conda_tools(){
 	fi || {
 		doclean=true
 
-		commander::printinfo "setup conda $n env"
+		commander::printinfo "installing $n conda environment"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
 			compile::conda_create $n --file "$src/config/$n.yaml"
 		else
@@ -664,7 +663,7 @@ function compile::conda_tools(){
 	fi || {
 		doclean=true
 
-		commander::printinfo "setup conda $n env"
+		commander::printinfo "installing $n conda environment"
 
 		rm -rf "$insdir/DANPOS3"
 		mkdir -p "$insdir/DANPOS3"
@@ -713,7 +712,7 @@ function compile::conda_tools(){
 	fi || {
 		doclean=true
 
-		commander::printinfo "setup conda $n env"
+		commander::printinfo "installing $n conda environment"
 		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
 			compile::conda_create $n --file "$src/config/$n.yaml"
 		else
@@ -737,7 +736,7 @@ function compile::conda_tools(){
 	}
 
 	# this is a pipeline itself with own genome and databases and thus will not be part of bashbone
-	# commander::printinfo "setup conda fusion-catcher env"
+	# commander::printinfo "installing fusioncatcher conda environment"
 	# tool=fusioncatcher
 	# n=${tool//[^[:alpha:]]/}
 	# conda create -y -n $n
