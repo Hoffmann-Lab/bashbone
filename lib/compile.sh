@@ -184,9 +184,11 @@ function compile::conda_export(){
 	# channels can be added to packages via --channel-subdir option. but this also returns architecture
 	# use --from-history options to not report implicit dependencies.
 	# workaround --from-history not reporting installed versions if conda install package has not been called with a explicitly set version
-	mamba env export "$@" -n $n --no-builds \
+	# mamba export from-history seems to mix up pip installed packages from environments of same name but coming from different parallel conda installations
+	# also mamba export fails on calling envs with python2 installed (Unknown option: -q [..] Try `python -h' for more information)
+	conda env export "$@" -n $n --no-builds \
 	| sed -n '/^dependencies:/,/^[a-z]/{p}' \
-	| grep -F -f <(echo dependencies; mamba env export "$@" -n $n --from-history | sed -nE '/^dependencies:/,/^[a-z]/{s/^\s*-\s*([^=]+).*/\1=/p}') \
+	| grep -F -f <(echo dependencies; conda env export "$@" -n $n --from-history | sed -nE '/^dependencies:/,/^([a-z]|\s*-\s*pip:)/{s/^\s*-\s*([^=]+).*/\1=/p}') \
 	| sed -E 's/=+/==/'
 
 	return 0
