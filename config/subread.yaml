@@ -3,4 +3,4 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - subread==2.0.1
+  - subread==2.0.6
