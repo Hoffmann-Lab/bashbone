@@ -636,10 +636,118 @@ function alignment::bwa(){
 	return 0
 }
 
+function alignment::sizeselect(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			alignment::sizeselect (converts sam to bam and) filters sorted alignments by insert size
+
+			-S <hardskip>   | optional. default: false
+			                | [true|false] do nothing and return
+			-s <softskip>   | optional. default: false
+			                | [true|false] do nothing but check for files and print commands (see -d)
+			-d <range>      | optional given -x option. default when used with -s option: 0:1000
+			-t <threads>    | mandatory
+			                | number of threads
+			-r <mapper>     | mandatory
+			                | array of array names which contain alignment paths
+			                | mapper=(segemehl star); [segemehl|star]=(/outdir/[segemehl|star]/1.bam /outdir/[segemehl|star]/2.bam ..);
+			-x <insertsizes>| optional given -d option
+			                | associative array to store range information (see -d)
+			                | insertsizes=([/outdir/[segemehl|star]/1.bam]="0:120" /outdir/[segemehl|star]/2.bam]="0:1000" ..)
+			-o <outdir>     | mandatory
+			                | path to output directory. subdirectories will be created according to array of array names (see -r)
+
+			example1:
+			    mapper=(segemehl star)
+			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
+			    alignment::sizeselect -t 16 -r mapper -d 0:1000
+
+			example2:
+			    mapper=(segemehl star)
+			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
+			    declare -A insertsizes=([/path/to/[segemehl|star]/1.bam]=0:1000 [/path/to/[segemehl|star]/2.bam]=0:120)
+			    alignment::sizeselect -t 16 -r mapper -x insertsizes
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false skipmd5=false threads outdir default tmpdir="${TMPDIR:-/tmp}"
+	declare -n _mapper_sizeselect _sizes_sizeselect
+	while getopts 'S:s:t:r:x:g:o:h' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			d)	default=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	_mapper_sizeselect=$OPTARG;;
+			x)	_sizes_sizeselect=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			h)	{ _usage || return 0; };;
+			*)	_usage;;
+		esac
+	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
+	[[ $mandatory -lt 2 ]] && _usage
+	[[ ! $default && ${#_sizes_sizeselect[@]} -eq 0 ]] && _usage
+
+	local m f
+	if [[ $default ]]; then
+		declare -A sizes_sizeselect
+		_sizes_sizeselect=sizes_sizeselect
+
+		commander::printinfo "assigning default insert size"
+		for m in "${_mapper_sizeselect[@]}"; do
+			declare -n _bams_sizeselect=$m
+			for f in "${_bams_sizeselect[@]}"; do
+				sizes_sizeselect["$f"]="$default"
+			done
+		done
+	fi
+
+	declare -n _bams_sizeselect="${_mapper_sizeselect[0]}"
+	local ithreads instances=$((${#_mapper_sizeselect[@]}*${#_bams_sizeselect[@]}))
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+
+	local m f i outbase newbam
+	declare -a cmd1 cmd2
+	for m in "${_mapper_sizeselect[@]}"; do
+		declare -n _bams_sizeselect=$m
+		mkdir -p "$outdir/$m"
+		for i in "${!_bams_sizeselect[@]}"; do
+			f="${_bams_sizeselect[$i]}"
+			outbase="$outdir/$m/$(basename "$f")"
+			outbase="${outbase%.*}"
+
+			alignment::_sizeselect \
+				-1 cmd1 \
+				-2 cmd2 \
+				-t $ithreads \
+				-f "$f" \
+				-m $(cut -d ':' -f 1 <<< "${_sizes_sizeselect["$f"]}") \
+				-x $(cut -d ':' -f 2 <<< "${_sizes_sizeselect["$f"]}") \
+				-o "$outbase" \
+				-p "$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.picard)" \
+				-r newbam
+
+			_bams_sizeselect[$i]="$newbam"
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+	else
+		commander::runcmd -c picard -v -b -i $instances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
+	fi
+
+	return 0
+}
+
 function alignment::postprocess(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} (converts sam to bam and) either filteres alignments for uniqueness (and properly aligned mate pairs), sorts by coordinate or index them
+			alignment::postprocess (converts sam to bam and) either filteres, sorts by coordinate or indexes alignments
 
 			-S <hardskip>    | optional. default: false
 			                 | [true|false] do nothing and return
@@ -663,7 +771,7 @@ function alignment::postprocess(){
 			example:
 			    mapper=(segemehl star)
 			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
-			    ${FUNCNAME[-2]} -t 16 -r mapper -j uniqify -o /path/to/outdir
+			    alignment::postprocess -t 16 -r mapper -j uniqify -o /path/to/outdir
 
 			access bam paths directly:
 			    printf '%s\n' "\${segemehl[@]}" # /path/to/outdir/segemehl/1.unique.bam /path/to/outdir/segemehl/2.unique.bam ..
@@ -1542,7 +1650,7 @@ function alignment::inferstrandness(){
 			    mapper=(segemehl star)
 			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
 			    declare -A strandness
-			    ${FUNCNAME[-2]} -t 16 -r mapper -x strandness -x 2
+			    ${FUNCNAME[-2]} -t 16 -r mapper -x strandness -d 2
 
 			access strandness directly:
 			    for file in "\${segemehl[@]}"; do
