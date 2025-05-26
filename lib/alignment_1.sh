@@ -673,7 +673,7 @@ function alignment::sizeselect(){
 
 	local OPTIND arg mandatory skip=false skipmd5=false threads outdir default tmpdir="${TMPDIR:-/tmp}"
 	declare -n _mapper_sizeselect _sizes_sizeselect
-	while getopts 'S:s:t:r:x:g:o:h' arg; do
+	while getopts 'S:s:t:r:x:d:o:h' arg; do
 		case $arg in
 			S)	$OPTARG && return 0;;
 			s)	$OPTARG && skip=true;;
@@ -2085,6 +2085,7 @@ function alignment::qcstats(){
 		header="size"
 		tojoin=()
 		echo -e "sample\ttype\tcount" > "$odir/mapping.barplot.tsv"
+		echo -e "sample\ttype\tcount" > "$odir/mapping.barplot.overlayed.tsv"
 		for i in "${!_bams_bamstats[@]}"; do
 			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
 			[[ ${#_mi_bamstats[@]} -eq 0 || "${_bams_bamstats[$i]}" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
@@ -2121,7 +2122,8 @@ function alignment::qcstats(){
 				fi
 				echo -e "$b\t$filter reads\t$c" >> "$o"
 			done
-			perl -F'\t' -lane '$all=$F[2] unless $all; $F[0].=" ($all)"; $F[2]=(100*$F[2]/$all); print join"\t",@F' $o | tac | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$odir/mapping.barplot.tsv"
+			perl -F'\t' -lane '$all=$F[2] unless $all; $F[0].=" ($all)"; $F[2]=(100*$F[2]/$all); print join"\t",@F' $o | tac | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$odir/mapping.barplot.overlayed.tsv"
+			perl -F'\t' -lane '$all=$F[2] unless $all; $F[0].=" ($all)"; $F[2]=sprintf("%.2f",100*$F[2]/$all); print join"\t",@F' $o >> "$odir/mapping.barplot.tsv"
 		done
 
 		if [[ $(wc -l < "$odir/mapping.barplot.tsv") -gt 2 ]]; then
@@ -2133,17 +2135,35 @@ function alignment::qcstats(){
 					intsv <- args[1];
 					outfile <- args[2];
 					m <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-					l <- length(m$type)/length(unique(m$sample));
-					l <- m$type[1:l];
-					m$type = factor(m$type, levels=l);
-					pdf(outfile);
+					m$type = factor(m$type, levels=unique(m$type));
 					ggplot(m, aes(x = sample, y = count, fill = type)) +
-						ggtitle("Mapping") + xlab("Sample") + ylab("Readcount in %") +
+						ggtitle("Mapping") + xlab("Sample") + ylab("Readcount") +
 						theme_bw() + guides(fill=guide_legend(title=NULL)) +
 						theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8)) +
 						geom_bar(position = "fill", stat = "identity") +
-						scale_y_continuous(labels = percent_format());
-					graphics.off();
+						scale_y_continuous(breaks = pretty_breaks(), labels = percent_format());
+					suppressMessages(ggsave(outfile));
+				'
+			CMD
+				"$odir/mapping.barplot.overlayed.tsv"  "$odir/mapping.barplot.overlayed.pdf"
+			CMD
+
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				Rscript - <<< '
+					suppressMessages(library("ggplot2"));
+					suppressMessages(library("scales"));
+					args <- commandArgs(TRUE);
+					intsv <- args[1];
+					outfile <- args[2];
+					m <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+					m$type = factor(m$type, levels=unique(m$type));
+					ggplot(m, aes(x = sample, y = count, fill = type)) +
+					  ggtitle("Mapping") + xlab("Sample") + ylab("Readcount") +
+					  theme_bw() + guides(fill=guide_legend(title=NULL)) +
+					  theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5, size = 8)) +
+					  geom_bar(stat = "identity", position = "dodge") +
+					  scale_y_continuous(breaks = pretty_breaks(), labels = percent_format(scale = 1));
+					suppressMessages(ggsave(outfile));
 				'
 			CMD
 				"$odir/mapping.barplot.tsv"  "$odir/mapping.barplot.pdf"
