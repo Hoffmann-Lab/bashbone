@@ -665,13 +665,12 @@ function peaks::gopeaks(){
 
 	local x=$(samtools view -F 4 "${_bams_gopeaks[0]}" | head -10000 | cat <(samtools view -H "${_bams_gopeaks[0]}") - | samtools view -c -f 1)
 	[[ $x -eq 0 ]] && commander::warn "peak calling gopeaks not applied due to single-end data" && return 0
+	commander::printinfo "peak calling gopeaks"
 
 	# according to dev: memory requirement is ~17X per GB bam input for default -l 50
 	# y=$($broad && echo 1 || echo 2)
 	local minstances mthreads memory=$(du -k "${_bams_gopeaks[0]}" | awk -v x=$([[ $_nidx_gopeaks ]] && echo 1.5 || echo 1) -v y=2 '{printf "%.f",$1/1024*17*x*y}')
 	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
-
-	commander::printinfo "peak calling gopeaks"
 
 	if [[ ! $macsdir ]]; then
 		macsdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gopeaks)"
