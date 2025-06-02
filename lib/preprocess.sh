@@ -1189,7 +1189,7 @@ function preprocess::qcstats(){
 			ggplot(m, aes(x = sample, y = count, fill = type)) +
 				ggtitle("Preprocessing") + xlab("Sample") + ylab("Readcount") +
 				theme_bw() + guides(fill=guide_legend(title=NULL)) +
-				theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5, size = 8)) +
+				theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8)) +
 				geom_bar(stat = "identity", position = "dodge") +
 				scale_y_continuous(breaks = pretty_breaks(), labels = percent_format(scale = 1));
 			suppressMessages(ggsave(outfile));
