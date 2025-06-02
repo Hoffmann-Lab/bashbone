@@ -871,7 +871,7 @@ function compile::segemehl(){
 	cat <<- 'EOF' > "$insdir/latest/segemehl/segemehl"
 		#!/usr/bin/env bash
 		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
-		l="$(pkg-config --variable=libdir htslib)"
+		l="$(pkg-config --variable=libdir htslib 2> /dev/null)"
 		[[ $l ]] && export LD_LIBRARY_PATH="$l"
 		unset MALLOC_ARENA_MAX
 		exec "$(realpath -se "$(dirname "$0")")/segemehl.x" "$@"
@@ -879,7 +879,7 @@ function compile::segemehl(){
 	cat <<- 'EOF' > "$insdir/latest/segemehl/haarz"
 		#!/usr/bin/env bash
 		[[ $CONDA_PREFIX ]] && export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
-		l="$(pkg-config --variable=libdir htslib)"
+		l="$(pkg-config --variable=libdir htslib 2> /dev/null)"
 		[[ $l ]] && export LD_LIBRARY_PATH="$l"
 		unset MALLOC_ARENA_MAX
 		exec "$(realpath -se "$(dirname "$0")")/haarz.x" "$@"
