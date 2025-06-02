@@ -45,7 +45,7 @@ function compile::all(){
 	compile::conda_tools "$@"
 	compile::java "$@"
 	compile::trimmomatic "$@"
-	# compile::segemehl "$@" # do not use. see comment in function
+	compile::segemehl "$@"
 	compile::starfusion "$@"
 	compile::preparedexseq "$@"
 	compile::revigo "$@"
@@ -838,20 +838,24 @@ function compile::segemehl(){
 
 	# attention: official source does not allow multi-member gzip/bgzip files and has a haarz bug
 	source "$insdir/conda/bin/activate" bashbone
-	if [[ -e "$src" ]] && $cfg; then
-		url=$(cat "$src")
-	else
-		url='http://www.bioinf.uni-leipzig.de/Software/segemehl/downloads/'
-		url='http://legacy.bioinf.uni-leipzig.de/Software/segemehl/'
-		url="$url"$(curl -s "$url" | grep -oE 'downloads/segemehl-[0-9\.]+\.tar\.gz' | head -1)
-	fi
-	mkdir -p "$insdir/config"
-	echo "$url" > "$insdir/config/segemehl.url"
+	# if [[ -e "$src" ]] && $cfg; then
+	# 	url=$(cat "$src")
+	# else
+	# 	url='http://www.bioinf.uni-leipzig.de/Software/segemehl/downloads/'
+	# 	url='http://legacy.bioinf.uni-leipzig.de/Software/segemehl/'
+	# 	url="$url"$(curl -s "$url" | grep -oE 'downloads/segemehl-[0-9\.]+\.tar\.gz' | head -1)
+	# fi
+	# mkdir -p "$insdir/config"
+	# echo "$url" > "$insdir/config/segemehl.url"
 
-	wget -q --show-progress --progress=bar:force "$url" -O "$insdir/segemehl.tar.gz"
-	tar -xzf "$insdir/segemehl.tar.gz" -C "$insdir"
-	rm "$insdir/segemehl.tar.gz"
-	cd "$(ls -dv "$insdir/segemehl-"*/ | tail -1)"
+	# wget -q --show-progress --progress=bar:force "$url" -O "$insdir/segemehl.tar.gz"
+	# tar -xzf "$insdir/segemehl.tar.gz" -C "$insdir"
+	# rm "$insdir/segemehl.tar.gz"
+	# cd "$(ls -dv "$insdir/segemehl-"*/ | tail -1)"
+	rm -rf "$insdir/segemehl"
+	git clone --depth 1 https://gitlab.leibniz-fli.de/kriege/segemehl "$insdir/segemehl"
+	cd "$insdir/segemehl"
+
 	export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig"
 	make clean || true
 	make -j $threads all
