@@ -21,6 +21,7 @@ if(length(args)<5){
 cat("about to run deseq2 and pca\n")
 
 options(warn=-1)
+options(scipen = 999)
 
 suppressMessages({
 	library("DESeq2")
@@ -106,6 +107,7 @@ suppressMessages({
 	}
 })
 save(dds, file = file.path(outdir,"dds.RData"))
+# load(file = file.path(outdir,"dds.RData"))
 
 pdf(file.path(outdir,"dispersion.pdf"))
 plotDispEsts(dds)
@@ -113,7 +115,7 @@ graphics.off()
 
 ###### pca
 
-pcaplot = function(df,PCx="PC1",PCy="PC2"){
+pcaplot = function(df,percentVar,outdir,method,n,PCx="PC1",PCy="PC2"){
 	pal = "Set1"
 	ncols = length(unique(df$condition))
 	maxcol = length(palette(pal))
@@ -134,13 +136,13 @@ pcaplot = function(df,PCx="PC1",PCy="PC2"){
 	yl = max(abs(df[[PCy]]))
 	p + xlim(-xl,xl) +
 		ylim(-yl,yl)
-	suppressMessages(ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".pdf")), width = 8, height = 6))
+	ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".pdf")), width = 8, height = 6)
 	if(!is.null(df$facet)){
 		p + aes(shape=replicate) +
 			facet_wrap(~facet , scales = "free") +
 			xlim(-xl,xl) +
 			ylim(-yl,yl)
-		suppressMessages(ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".facets.pdf")), width = 8, height = 4))
+		ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".facets.pdf")), width = 8, height = 4)
 	}
 
 	# + stat_ellipse(geom = "polygon", alpha=0.1, level = 0.85, aes(fill=condition))
@@ -157,7 +159,7 @@ pcaplot = function(df,PCx="PC1",PCy="PC2"){
 	p + geom_polygon(data = ellipses, aes(x, y, color=condition, fill=condition), alpha = 0.1, inherit.aes = F) +
 		xlim(-xl,xl) +
 		ylim(-yl,yl)
-	suppressMessages(ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".ellipses.pdf")), width = 8, height = 6))
+	ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".ellipses.pdf")), width = 8, height = 6)
 	if(!is.null(df$facet)){
 		ellipses = df %>% group_by(condition,facet) %>% group_map(~ {
 			df = data.frame(x=.x[[PCx]],y=.x[[PCy]])
@@ -168,16 +170,18 @@ pcaplot = function(df,PCx="PC1",PCy="PC2"){
 			facet_wrap(~facet , scales = "free") +
 			xlim(-xl,xl) +
 			ylim(-yl,yl)
-		suppressMessages(ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".ellipses.facets.pdf")), width = 8, height = 4))
+		ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".ellipses.facets.pdf")), width = 8, height = 4)
 	}
 }
 
-# log = DESeqTransform(SummarizedExperiment(log2(counts(dds, normalized=T) + 1), colData=colData(dds)))
-# save(log, file = file.path(outdir,"log.RData"))
+log = DESeqTransform(SummarizedExperiment(log2(counts(dds, normalized=T) + 1), colData=colData(dds)))
+save(log, file = file.path(outdir,"log.RData"))
 vsd = varianceStabilizingTransformation(dds, blind=FALSE)
 save(vsd, file = file.path(outdir,"vsd.RData"))
 rld = rlog(dds, blind=FALSE)
 save(rld, file = file.path(outdir,"rld.RData"))
+# load(file = file.path(outdir,"vsd.RData"))
+# load(file = file.path(outdir,"rld.RData"))
 
 # for (method in c("log","vsd","rld")){
 for (method in c("vsd","rld")){
@@ -190,17 +194,16 @@ for (method in c("vsd","rld")){
 
 	for (n in c(500,1000,2000,5000,10000,20000,50000,100000)){
 		if(n>length(vars)) break
-		n = min(n,length(vars))
 		topidx = vars[1:n]
 
 		pca = prcomp(t(normed[topidx, ]), scale = F)
 		percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
 
 		loadings = pca$rotation
-		for (i in 1:3){
-			ids = rownames(loadings[order(abs(loadings[,i]), decreasing = TRUE),])
+		for (pc in 1:3){
+			ids = rownames(loadings[order(abs(loadings[,pc]), decreasing = TRUE),])
 			ids = head(ids,n=max(1,length(ids)*0.05)) # variables that drive variation in PC1
-			sink(file.path(outdir,paste0("pca_PC",i,"_",method,"_top",n,".variables")))
+			sink(file.path(outdir,paste0("pca_PC",pc,"_",method,"_top",n,".variables")))
 			lapply(ids, cat, "\n")
 			sink()
 		}
@@ -217,13 +220,12 @@ for (method in c("vsd","rld")){
 		)
 
 		suppressMessages({
-			pcaplot(df, "PC1", "PC2")
-			pcaplot(df, "PC2", "PC3")
-			pcaplot(df, "PC1", "PC3")
+			pcaplot(df, percentVar, outdir, method, n, "PC1", "PC2")
+			pcaplot(df, percentVar, outdir, method, n, "PC2", "PC3")
+			pcaplot(df, percentVar, outdir, method, n, "PC1", "PC3")
 		})
 	}
 }
-
 
 ##### heatmap functions
 
@@ -504,21 +506,20 @@ get_table = function(dds){
 
 		for (n in c(500,1000,2000,5000,10000,20000,50000,100000)){
 			if(n>length(topids)) break
-			n = min(n,length(topids))
 
-			pca = prcomp(t(normed[rownames(normed) %in% head(topids,n=n) , ]), scale = F)
+			pca = prcomp(t(assay(normed[rownames(normed) %in% head(topids,n=n) , ])), scale = F)
 			percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
 
 			loadings = pca$rotation
-			for (i in 1:3){
-				ids = rownames(loadings[order(abs(loadings[,i]), decreasing = TRUE),])
+			for (pc in 1:3){
+				ids = rownames(loadings[order(abs(loadings[,pc]), decreasing = TRUE),])
 				ids = head(ids,n=max(1,length(ids)*0.05)) # variables that drive variation in PC1
-				sink(file.path(odir,paste0("pca_PC",i,"_",method,"_top",n,".variables")))
+				sink(file.path(odir,paste0("pca_PC",pc,"_",method,"_top",n,".variables")))
 				lapply(ids, cat, "\n")
 				sink()
 			}
 
-			exp = experiments[,experiments$condition %in% c(ctr[i],treat[i])]
+			exp = experiments[experiments$condition %in% c(ctr[i],treat[i]), ]
 			df = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = exp$replicate, condition = exp$condition)
 			df$condition=factor(df$condition,levels = unique(df$condition))
 			df$replicate=factor(df$replicate,levels = unique(mixedsort(df$replicate))) # use version sort via mixedsort() from gtools
@@ -531,9 +532,9 @@ get_table = function(dds){
 			)
 
 			suppressMessages({
-				pcaplot(df, "PC1", "PC2")
-				pcaplot(df, "PC2", "PC3")
-				pcaplot(df, "PC1", "PC3")
+				pcaplot(df, percentVar, odir, method, n, "PC1", "PC2")
+				pcaplot(df, percentVar, odir, method, n, "PC2", "PC3")
+				pcaplot(df, percentVar, odir, method, n, "PC1", "PC3")
 			})
 
 			### old pca using deseq function

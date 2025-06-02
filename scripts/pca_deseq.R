@@ -20,6 +20,7 @@ if(length(args)<2){
 cat("about to run pca\n")
 
 options(warn=-1)
+options(scipen = 999)
 
 suppressMessages({
 	library("DESeq2")
@@ -56,7 +57,7 @@ if(isnormalized) {
 	methods=c("log","vsd","rld")
 }
 
-pcaplot = function(df,PCx="PC1",PCy="PC2"){
+pcaplot = function(df,percentVar.method,n,PCx="PC1",PCy="PC2"){
 	pal = "Set1"
 	ncols = length(unique(df$condition))
 	maxcol = length(palette(pal))
@@ -77,13 +78,13 @@ pcaplot = function(df,PCx="PC1",PCy="PC2"){
 	yl = max(abs(df[[PCy]]))
 	p + xlim(-xl,xl) +
 		ylim(-yl,yl)
-	suppressMessages(ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".pdf")), width = 8, height = 6))
+	ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".pdf")), width = 8, height = 6)
 	if(!is.null(df$facet)){
 		p + aes(shape=replicate) +
 			facet_wrap(~facet , scales = "free") +
 			xlim(-xl,xl) +
 			ylim(-yl,yl)
-		suppressMessages(ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".facets.pdf")), width = 8, height = 4))
+		ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".facets.pdf")), width = 8, height = 4)
 	}
 
 	# + stat_ellipse(geom = "polygon", alpha=0.1, level = 0.85, aes(fill=condition))
@@ -100,7 +101,7 @@ pcaplot = function(df,PCx="PC1",PCy="PC2"){
 	p + geom_polygon(data = ellipses, aes(x, y, color=condition, fill=condition), alpha = 0.1, inherit.aes = F) +
 		xlim(-xl,xl) +
 		ylim(-yl,yl)
-	suppressMessages(ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".ellipses.pdf")), width = 8, height = 6))
+	ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".ellipses.pdf")), width = 8, height = 6)
 	if(!is.null(df$facet)){
 		ellipses = df %>% group_by(condition,facet) %>% group_map(~ {
 			df = data.frame(x=.x[[PCx]],y=.x[[PCy]])
@@ -111,7 +112,7 @@ pcaplot = function(df,PCx="PC1",PCy="PC2"){
 			facet_wrap(~facet , scales = "free") +
 			xlim(-xl,xl) +
 			ylim(-yl,yl)
-		suppressMessages(ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".ellipses.facets.pdf")), width = 8, height = 4))
+		ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".ellipses.facets.pdf")), width = 8, height = 4)
 	}
 }
 
@@ -153,9 +154,9 @@ for (method in methods){
 		)
 
 		suppressMessages({
-			pcaplot(df, "PC1", "PC2")
-			pcaplot(df, "PC2", "PC3")
-			pcaplot(df, "PC1", "PC3")
+			pcaplot(df, percentVar, method, n, "PC1", "PC2")
+			pcaplot(df, percentVar, method, n, "PC2", "PC3")
+			pcaplot(df, percentVar, method, n, "PC1", "PC3")
 		})
 	}
 }
