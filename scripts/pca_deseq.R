@@ -78,13 +78,13 @@ pcaplot = function(df,percentVar.method,n,PCx="PC1",PCy="PC2"){
 	yl = max(abs(df[[PCy]]))
 	p + xlim(-xl,xl) +
 		ylim(-yl,yl)
-	ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".pdf")), width = 8, height = 6)
+	ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",format(n, scientific=F),".pdf")), width = 8, height = 6)
 	if(!is.null(df$facet)){
 		p + aes(shape=replicate) +
 			facet_wrap(~facet , scales = "free") +
 			xlim(-xl,xl) +
 			ylim(-yl,yl)
-		ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".facets.pdf")), width = 8, height = 4)
+		ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",format(n, scientific=F),".facets.pdf")), width = 8, height = 4)
 	}
 
 	# + stat_ellipse(geom = "polygon", alpha=0.1, level = 0.85, aes(fill=condition))
@@ -101,7 +101,7 @@ pcaplot = function(df,percentVar.method,n,PCx="PC1",PCy="PC2"){
 	p + geom_polygon(data = ellipses, aes(x, y, color=condition, fill=condition), alpha = 0.1, inherit.aes = F) +
 		xlim(-xl,xl) +
 		ylim(-yl,yl)
-	ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".ellipses.pdf")), width = 8, height = 6)
+	ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",format(n, scientific=F),".ellipses.pdf")), width = 8, height = 6)
 	if(!is.null(df$facet)){
 		ellipses = df %>% group_by(condition,facet) %>% group_map(~ {
 			df = data.frame(x=.x[[PCx]],y=.x[[PCy]])
@@ -112,7 +112,7 @@ pcaplot = function(df,percentVar.method,n,PCx="PC1",PCy="PC2"){
 			facet_wrap(~facet , scales = "free") +
 			xlim(-xl,xl) +
 			ylim(-yl,yl)
-		ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",n,".ellipses.facets.pdf")), width = 8, height = 4)
+		ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",format(n, scientific=F),".ellipses.facets.pdf")), width = 8, height = 4)
 	}
 }
 
@@ -137,7 +137,7 @@ for (method in methods){
 		for (i in 1:3){
 			ids = rownames(loadings[order(abs(loadings[,i]), decreasing = TRUE),])
 			ids = head(ids,n=max(1,length(ids)*0.05)) # variables that drive variation in PC1
-			sink(file.path(outdir,paste0("pca_PC",i,"_",method,"_top",n,".variables")))
+			sink(file.path(outdir,paste0("pca_PC",i,"_",method,"_top",format(n, scientific=F),".variables")))
 			lapply(ids, cat, "\n")
 			sink()
 		}
@@ -150,7 +150,7 @@ for (method in methods){
 			df$facet=factor(df$facet,levels = unique(df$facet))
 		}
 		write.table(data.frame(id=rownames(df),df), row.names = F,
-			file=file.path(outdir,paste0("pca_",method,"_top",n,".tsv")), quote=F, sep="\t"
+			file=file.path(outdir,paste0("pca_",method,"_top",format(n, scientific=F),".tsv")), quote=F, sep="\t"
 		)
 
 		suppressMessages({
