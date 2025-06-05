@@ -22,17 +22,17 @@ usage(){
 		  - ebi uk mirror can be defined as fallback upon fastq-dump errors
 
 		VERSION
-		0.5.0
+		0.6.0
 
 		REQUIREMENTS
 		Depends on chosen options
-		  - esearch (for non-SRR identifiers, from eutilities https://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/)
+		  - esearch (from eutilities https://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/)
 		  - pigz (for compression threads > 1)
 		  - wget or curl or fastq-dump (from stra-toolkit https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/)
 
 		SYNOPSIS
 		$(basename "$0") [OPTIONS] [GSE|GSM|SRR|SRX|SRP] [..]
-		$(basename "$0") -l [OPTIONS] [SRA] [..]
+		$(basename "$0") -l [OPTIONS] [SRR.sra] [..]
 
 		OPTIONS
 		-d [path] : download into this directory (default: "$PWD")
@@ -41,10 +41,15 @@ usage(){
 		            HINT1: single threaded gzip compression may reduce download speed
 		-m [path] : path to temporary directory (default: "$PWD/tmp.XXXXXXXXXX.sradump")
 		-l        : convert local sra files to compressed fastq files
+		            HINT1: filename must start with SRR accession number followed by an extension
+		            HINT2: misuse this parameter iff all accession numbers are SRR ids and eutilities fail due to server errors
 		-s        : show received meta information for given accession numbers and exit
 		-r        : do not fetch meta information for given SRR* accession numbers
-		-o [file] : additionally write information for given accession numbers to file
-		-a [list] : fetch all, biological and technical reads, and reassign mate ids according to a comma separated list e.g. 1,3,2
+		-o [file] : additionally write meta information for given accession numbers to file
+		-a [list] : fetch all, biological and technical/UMI/barcode reads, and reassign read numbers according to given comma separated list
+		            HINT1: can create up to 6 files depending on single-end/paired-end with/without UMIs/barcode and single-/dual-index
+		            HINT2: example for single-index paired-end data without UMIs assuming 1=R1, 2=index, 3=R2 use: -a 1,3,2
+		            HINT3: if usure, simply provide 1,2,3,4,5,6
 		-w        : unless -a, download from ebi uk mirror utilizing wget
 		            HINT1: outperformes fastq-dump but uses less stable connections which may requires additional runs
 		            HINT2: use -p 1 in a final run to ensure all files were downloaded correctly
@@ -52,8 +57,8 @@ usage(){
 		            HINT1: experimental!
 		-f        : unless -a, use ebi uk mirror as fallback upon fastq-dump failures. requires -w or -c
 		-z        : unless -a, download sra file from amazon aws utilizing awscli
-		            HINT1: uses -p 1 due to download of multiple chunks
-		            HINT2: use -l in a final run to convert sra files
+		            HINT1: uses -p 1 due to download of multiple chunks in parallel
+		            HINT2: use -l in a second run to convert the local sra files
 
 		EXAMPLES
 		$(basename "$0") -p 2 -t 4 -m /tmp GSM1446883 SRR1528586 SRX663213
@@ -92,7 +97,6 @@ declare -a srr title
 instances=${instances:-2}
 threads=${threads:-1}
 tmp="$(mktemp -d -p "${t:-$PWD}" tmp.XXXXXXXXXX.sradump)"
-faster=${faster:-false}
 files=${files:-false}
 $files && ebi=false && aws=false && fallback=false
 ebi=${ebi:-false}
@@ -159,6 +163,8 @@ fi
 }
 
 fastqdump_sngl(){
+	# if local file should be converted:
+	# filename must be SRRxxxxx.sra because read ids become filename SRRxxxxx and otherwise --defline-seq fails to request origial read ids via web service
 	local id cmd="fastq-dump --split-3"
 	[[ $($cmd 2>&1 | grep -c unrecognized) -gt 0 ]] && cmd="fastq-dump --split-e"
 	for id in "${srr[@]}"; do
@@ -173,8 +179,14 @@ fastqdump_sngl(){
 fastqdump_mult(){
 	local id cmd="fastq-dump --split-3"
 	[[ $($cmd 2>&1 | grep -c unrecognized) -gt 0 ]] && cmd="fastq-dump --split-e"
+
+	# works, but in case of SE data creates SRR_1.fastq.gz file and runs data stream always through sed
+	#fastqdump_all "$cmd"
+	#return 0
+
 	for id in "${srr[@]}"; do
-		if [[ $($cmd --defline-seq '@$ac.$si[.$sn] \$ri' --defline-qual '+' -X 1 --stdout "$id" 2>/dev/null | wc -l || return 1) -gt 4 ]]; then
+		if [[ $($cmd --defline-seq '@$ac.$si[.$sn] $ri' --defline-qual '+' -X 1 --stdout "$id" 2>/dev/null | wc -l || return 1) -eq 8 ]]; then
+			# or: fastq-dump | paste - - - - - - - - | tee >(cut -f 1-4 | tr '\t' '\n' | pigz -c > R1) >(cut -f 5-8 | tr '\t' '\n' | pigz > R2)
 			echo "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --stdout '$id' | paste - - - - | tee >(sed -n '1~2{s/\\\t/\\\n/gp}' | pigz -p $(((threads+1)/2)) -c > '$outdir/$(basename "$id" .sra)_1.fastq.gz') >(sed -n '2~2{s/\\\t/\\\n/gp}' | pigz -p $(((threads+1)/2)) -c > '$outdir/$(basename "$id" .sra)_2.fastq.gz') > /dev/null | cat" | tr -s '\\' '\\' >&2
 			echo -ne "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --stdout '$id' | paste - - - - | tee >(sed -n '1~2{s/\\\t/\\\n/gp}' | pigz -p $(((threads+1)/2)) -c > '$outdir/$(basename "$id" .sra)_1.fastq.gz') >(sed -n '2~2{s/\\\t/\\\n/gp}' | pigz -p $(((threads+1)/2)) -c > '$outdir/$(basename "$id" .sra)_2.fastq.gz') > /dev/null | cat\0"
 		else
@@ -186,25 +198,60 @@ fastqdump_mult(){
 }
 
 fastqdump_all(){
-	local id cmd="fastq-dump --split-files"
+	# example for single-end with UMIs SRR20073591
+	local id i j n ithreads cmd="${1:-"fastq-dump --split-files"}"
+	[[ $mateid ]] || mateid=(1 2 3 4 5 6)
+	local -a teecmds
 	for id in "${srr[@]}"; do
-		if [[ $($cmd --defline-seq '@$ac.$si[.$sn] \$ri' --defline-qual '+' -X 1 --stdout "$id" 2>/dev/null | wc -l || return 1) -gt 6 ]]; then
-			echo "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --stdout '$id' | paste - - - - | tee >(sed -n '1~3{s/[0-9]\\\t/${mateid[0]}\\\t/;s/\\\t/\\\n/gp}' | pigz -p $(((threads+2)/3)) -c > '$outdir/$(basename "$id" .sra)_${mateid[0]}.fastq.gz') >(sed -n '2~3{s/[0-9]\\\t/${mateid[1]}\\\t/;s/\\\t/\\\n/gp}' | pigz -p $(((threads+2)/3)) -c > '$outdir/$(basename "$id" .sra)_${mateid[1]}.fastq.gz') >(sed -n '3~3{s/[0-9]\\\t/${mateid[2]}\\\t/;s/\\\t/\\\n/gp}' | pigz -p $(((threads+2)/3)) -c > '$outdir/$(basename "$id" .sra)_${mateid[2]}.fastq.gz') > /dev/null | cat" | tr -s '\\' '\\' >&2
-			echo -ne "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --stdout '$id' | paste - - - - | tee >(sed -n '1~3{s/[0-9]\\\t/${mateid[0]}\\\t/;s/\\\t/\\\n/gp}' | pigz -p $(((threads+2)/3)) -c > '$outdir/$(basename "$id" .sra)_${mateid[0]}.fastq.gz') >(sed -n '2~3{s/[0-9]\\\t/${mateid[0]}\\\t/;s/\\\t/\\\n/gp}' | pigz -p $(((threads+2)/3)) -c > '$outdir/$(basename "$id" .sra)_${mateid[1]}.fastq.gz') >(sed -n '3~3{s/[0-9]\\\t/${mateid[2]}\\\t/;s/\\\t/\\\n/gp}' | pigz -p $(((threads+2)/3)) -c > '$outdir/$(basename "$id" .sra)_${mateid[2]}.fastq.gz') > /dev/null | cat\0"
-		else
-			echo "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --stdout $id | paste - - - - | tee >(sed -n '1~2{s/[0-9]\\\t/${mateid[0]}\\\t/;s/\\\t/\\\n/gp}' | pigz -p $(((threads+1)/2)) -c > '$outdir/$(basename "$id" .sra)_${mateid[0]}.fastq.gz') >(sed -n '2~2{s/[0-9]\\\t/${mateid[1]}\\\t/;s/\\\t/\\\n/gp}' | pigz -p $(((threads+1)/2)) -c > '$outdir/$(basename "$id" .sra)_${mateid[1]}.fastq.gz') > /dev/null | cat" | tr -s '\\' '\\' >&2
-			echo -ne "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --stdout $id | paste - - - - | tee >(sed -n '1~2{s/[0-9]\\\t/${mateid[0]}\\\t/;s/\\\t/\\\n/gp}' | pigz -p $(((threads+1)/2)) -c > '$outdir/$(basename "$id" .sra)_${mateid[0]}.fastq.gz') >(sed -n '2~2{s/[0-9]\\\t/${mateid[1]}\\\t/;s/\\\t/\\\n/gp}' | pigz -p $(((threads+1)/2)) -c > '$outdir/$(basename "$id" .sra)_${mateid[1]}.fastq.gz') > /dev/null | cat\0"
-		fi
+		n=$($cmd --defline-seq '@$ac.$si[.$sn] $ri' --defline-qual '+' -X 1 --stdout "$id" 2>/dev/null | wc -l || return 1)
+		ithreads=$((threads/(n/4)))
+		[[ $ithreads -eq 0 ]] && ithreads=1;
+		teecmds=()
+		j=0
+		for i in $(seq 1 4 $n); do
+			teecmds+=("cut -f $i-$((i+3)) | sed 's/[0-9]\\\t/${mateid[$j]}\\\t/' | tr '\\\t' '\\\n' | pigz -p $ithreads -c > '$outdir/$(basename "$id" .sra)_${mateid[$j]}.fastq.gz'")
+			((++j))
+		done
+		echo "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --stdout '$id' 2>/dev/null | paste $(yes - | head -n $n | xargs echo) | parallel --tmpdir '$tmp' --termseq INT,1000,TERM,0 --halt now,fail=1 --pipe --tee ::: $(printf '"%s" ' "${teecmds[@]}")" | tr -s '\\' '\\' >&2
+		echo -ne "$cmd --defline-seq '@\$ac.\$si[.\$sn] \$ri' --defline-qual '+' --stdout '$id' 2>/dev/null | paste $(yes - | head -n $n | xargs echo) | parallel --tmpdir '$tmp' --termseq INT,1000,TERM,0 --halt now,fail=1 --pipe --tee ::: $(printf '"%s" ' "${teecmds[@]}")\0"
 	done | xargs -0 -P $instances -I {} bash -c {}
+
 	return 0
 }
 
 fasterqdump(){
-	local id
-	for id in "${srr[@]}"; do
-		echo "fasterq-dump -t '$tmp' -p -f -P -O '$outdir' '$id'" >&2
-		echo -ne "fasterq-dump -t '$tmp' -p -f -P -O '$outdir' '$id'\0"
-	done | xargs -0 -P $instances -I {} bash -c {}
+	# from docs: To approach feature parity with fastq-dump, fasterq-dump supports a flexible defline. There are 2 new commandline-parameters for that:
+	# --seq-defline FORMAT and --qual-defline FORMAT
+	# -> these options don't exist! but if original read ids will be automatically added (space seperated) if available
+
+	# fasterq-dump -t [TMP] --threads 1 --split-spot --print-read-nr --skip-technical --stdout [ID|FILE]
+	# -P|--print-read-nr adds /1 /2 ... /5 to read id. better would be @ID 1 and @ID 2 instead of @ID/1 and @ID/2
+	# -> to spare parsing dont use!
+	# to include technical: --include-technical (example 1-> R1 , 2-> tech , 3-> R2)
+
+	# if local file should be converted:
+	# filename must be SRRxxxxx.sra. file must be in working directory
+	# -> read ids become filename SRRxxxxx.sra -> create SRRxxxxx directory and symlink file as SRRxxxxx.sra into it
+
+	# runtime benchmark for local SRR24441955 conversion
+	# fastq-dump: 1m48s
+	# fasterq-dump -t /dev/shm --threads 1: 2m24s
+	# fasterq-dump -t /dev/shm --threads 30: 1m53s
+	# -> due to tmp usage fasterq-dump is slow and has a high disk footprint
+
+	# runtime benchmark for download and conversion SRR24441955
+	# fastq-dump: 13m13s
+	# fasterq-dump -t /dev/shm --threads 30: 13m6s
+	# -> parity
+
+	# summary:
+	# less flexible in defline
+	# adds length info to read
+	# does not compress
+	# does not clean up tmp upon abort
+	# tmp directory contains uncompressed fastq data before merged or send to stdout
+	# -> aside being able to download multiple files parallel, buth then for sure not to stdout, fasterq-dump sucks
+
 	return 0
 }
 
