@@ -522,8 +522,8 @@ get_table = function(dds){
 			df = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = exp$replicate, condition = exp$condition)
 			df$condition=factor(df$condition,levels = unique(df$condition))
 			df$replicate=factor(df$replicate,levels = unique(mixedsort(df$replicate))) # use version sort via mixedsort() from gtools
-			if (!is.null(experiments$factor1)) {
-				df$facet = experiments$factor1
+			if (!is.null(exp$factor1)) {
+				df$facet = exp$factor1
 				df$facet=factor(df$facet,levels = unique(df$facet))
 			}
 			write.table(data.frame(id=rownames(df),df), row.names = F,
