@@ -31,7 +31,7 @@ usage(){
 
 		MspI
 		CGG...........C
-		  C...........CCG
+		  C...........GGC
 
 		End-repair and BS
 		RETPADA-CGG...........TCG-ADAPTER
