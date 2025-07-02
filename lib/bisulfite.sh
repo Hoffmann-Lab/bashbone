@@ -422,7 +422,7 @@ function bisulfite::rmduplicates(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 	read -r oinstances othreads < <(configure::instances_by_threads -i $oinstances -t 10 -T $threads)
 
-	declare -a cmdsort
+	declare -a cmdsort umi_bsrmduplicates
 	if [[ $_umi_bsrmduplicates ]]; then
 		params2='-B'
 
@@ -442,7 +442,7 @@ function bisulfite::rmduplicates(){
 			CMD
 				helper::pgzip -t $sthreads -o "$o"
 			CMD
-			_umi_bsrmduplicates[$i]="$o"
+			umi_bsrmduplicates[$i]="$o"
 		done
 	fi
 
@@ -461,7 +461,7 @@ function bisulfite::rmduplicates(){
 			while read -r slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rmduplicates)")
 
-				if [[ $_umi_bsrmduplicates ]]; then
+				if [[ $umi_bsrmduplicates ]]; then
 					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
 						samtools sort
 							-n
@@ -479,7 +479,7 @@ function bisulfite::rmduplicates(){
 					CMD
 						| awk -v f=<(helper::cat -f "${umi_bsrmduplicates[$i]}" | paste - - - -)
 					CMD
-						-v OFS='\t' '/^@\S\S\s/{print; next}{l=$0; r="@"$1; getline < f; while(r!=$1){getline < f} print l,"RX:Z:"$(NF-2),"QX:Z:"$NF}'
+						-v OFS='\t' '/^@\S\S\s/{print; next}{l=$0; r="@"$1; while(r!=u){getline < f; u=$1; s=$2; q=$4} print l,"RX:Z:"s,"QX:Z:"q}'
 					CMD
 						| samtools sort
 							-@ $ithreads
