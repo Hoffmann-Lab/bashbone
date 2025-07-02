@@ -84,7 +84,7 @@ function bigwig::apply(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
 			description
-			bigwig::apply returns a bigwig file after applying [mean|median|sum|stddev|min|max] on all intervals of given bigwig files
+			bigwig::apply returns a bigwig file after applying [mean|median|sum|stddev|min|max] on all intervals of given bigwig or bedgraph files
 
 			synopsis
 			bigwig::apply <OPTIONS> [<files>]
@@ -94,9 +94,10 @@ function bigwig::apply(){
 			-f <files>    | optional. array of bigwig files. default: positional arguments
 			-o <outfile>  | required. path to output bigwig file
 			-j <job>      | required. job to be applied. one of [mean|median|sum|stddev|min|max]
-			-e <expect>   | optional. missing values due to differing regions quantified. one of [true|false]. default: false
+			-e <expect>   | optional. expect and handle missing values due to differing regions quantified. one of [true|false]. default: false
 			              | NOTE: if set to false, input files must have suffix .bw
 			              | NOTE: if set to false, number of threads == number of input files
+			-g <genome>   | optional. supply indexed fasta as switch to enable and operate on bedgraph input
 
 			developer options
 			-1 <cmds>     | array to append crafted command to instead of execution
@@ -105,9 +106,9 @@ function bigwig::apply(){
 		return 1
 	}
 
-	local OPTIND arg mandatory threads=1 tmpdir outfile missing=false job execute=true
+	local OPTIND arg mandatory threads=1 tmpdir outfile missing=false job execute=true genome
 	declare -n _cmds1_bwapply _files_bwapply
-	while getopts '1:t:p:f:j:o:e:' arg; do
+	while getopts '1:t:p:f:j:o:e:g:' arg; do
 		case $arg in
 			1)	execute=false; _cmds1_bwapply=$OPTARG;;
 			t)	threads=$OPTARG;;
@@ -116,6 +117,7 @@ function bigwig::apply(){
 			f)	_files_bwapply="$OPTARG";;
 			o)	((++mandatory)); outfile="$OPTARG"; mkdir -p "$(dirname "$outfile")";;
 			e)	missing="$OPTARG";;
+			g)	genome="$OPTARG";;
 			*) _usage;;
 		esac
 	done
@@ -138,41 +140,55 @@ function bigwig::apply(){
 		[[ $_files_bwapply ]] || _usage
 	fi
 
-	if $missing; then
-		[[ $job == "stddev" ]] && job="sttdev"
+	if [[ $genome ]]; then
+			[[ $job == "stddev" ]] && job="sttdev"
 
-		commander::makecmd -a _cmds1_bwapply -s ' ' -m -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
-			apply(){
-				local JOB_NR=\$(wc -l < "\$FILE")
-				paste <(cut -f 1-3 "\$FILE") <(cut -f 4- "\$FILE" | datamash transpose | datamash --narm $job 1-\$JOB_NR | datamash transpose | sed 's/\<nan\>/NA/g')
-			}
-			export -f apply
-			bigWigInfo -chroms "${_files_bwapply[0]}"
-		CMD
-				| sed -n '/chromCount/,/basesCovered/p'	| sed -nE '2,${$d;s/^\s*(\S+).*\s([0-9]+)$/\1\t\2/p}'
-		CMD
-				> "$tmpdir/sizes"
-			bedtools unionbedg -filler NA -i $(printf '<(bwcat -i "%s") ' "${_files_bwapply[@]}")
-		CMD
-				| helper::lapply -d 20000 -f -t $threads -k -c apply | bg2bw -i /dev/stdin -c "$tmpdir/sizes" -o "$outfile"
-		CMD
+			commander::makecmd -a _cmds1_bwapply -m -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+				apply(){
+					local JOB_NR=\$(wc -l < "\$FILE")
+					paste <(cut -f 1-3 "\$FILE") <(cut -f 4- "\$FILE" | datamash transpose | datamash --narm $job 1-\$JOB_NR | datamash transpose | sed 's/\<nan\>/NA/g')
+				}
+				export -f apply
+			CMD
+				bedtools unionbedg -filler NA -i $(printf '"%s" ' "${_files_bwapply[@]}") | helper::lapply -d 20000 -f -t $threads -k -c apply | bg2bw -i /dev/stdin -c "$genome.fai" -o "$outfile"
+			CMD
 	else
-		# attention. default values of missing data is 0 and cannot be set to nan
-		# wiggletools write_bg - mean default 0 file1.bw default 0 file2.bw
-		commander::makecmd -a _cmds1_bwapply -s ' ' -m -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
-			bigWigInfo -chroms "${_files_bwapply[0]}"
-		CMD
-				| sed -n '/chromCount/,/basesCovered/p' | sed -nE '2,${$d;s/^\s*(\S+).*\s([0-9]+)$/\1\t\2/p}'
-		CMD
-				> "$tmpdir/sizes"
-			while read -r c l;
-		CMD
-			do
-				wiggletools write_bg - seek \$c 1 \$l $job $(printf '"%s" ' "${_files_bwapply[@]}")
-			done < "$tmpdir/sizes"
-		CMD
-				| bg2bw -i /dev/stdin -c "$tmpdir/sizes" -o "$outfile"
-		CMD
+		if $missing; then
+			[[ $job == "stddev" ]] && job="sttdev"
+
+			commander::makecmd -a _cmds1_bwapply -s ' ' -m -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD
+				apply(){
+					local JOB_NR=\$(wc -l < "\$FILE")
+					paste <(cut -f 1-3 "\$FILE") <(cut -f 4- "\$FILE" | datamash transpose | datamash --narm $job 1-\$JOB_NR | datamash transpose | sed 's/\<nan\>/NA/g')
+				}
+				export -f apply
+				bigWigInfo -chroms "${_files_bwapply[0]}"
+			CMD
+					| sed -n '/chromCount/,/basesCovered/p'	| sed -nE '2,${$d;s/^\s*(\S+).*\s([0-9]+)$/\1\t\2/p}'
+			CMD
+					> "$tmpdir/sizes"
+				bedtools unionbedg -filler NA -i $(printf '<(bwcat -i "%s") ' "${_files_bwapply[@]}")
+			CMD
+					| helper::lapply -d 20000 -f -t $threads -k -c apply | bg2bw -i /dev/stdin -c "$tmpdir/sizes" -o "$outfile"
+			CMD
+		else
+			# attention. default values of missing data is 0 and cannot be set to nan
+			# wiggletools write_bg - mean default 0 file1.bw default 0 file2.bw
+			commander::makecmd -a _cmds1_bwapply -s ' ' -m -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- CMD {COMMANDER[4]}<<- CMD
+				bigWigInfo -chroms "${_files_bwapply[0]}"
+			CMD
+					| sed -n '/chromCount/,/basesCovered/p' | sed -nE '2,${$d;s/^\s*(\S+).*\s([0-9]+)$/\1\t\2/p}'
+			CMD
+					> "$tmpdir/sizes"
+				while read -r c l;
+			CMD
+				do
+					wiggletools write_bg - seek \$c 1 \$l $job $(printf '"%s" ' "${_files_bwapply[@]}")
+				done < "$tmpdir/sizes"
+			CMD
+					| bg2bw -i /dev/stdin -c "$tmpdir/sizes" -o "$outfile"
+			CMD
+		fi
 	fi
 
 	if $execute; then
