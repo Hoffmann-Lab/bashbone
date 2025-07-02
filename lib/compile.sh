@@ -362,7 +362,7 @@ function compile::conda_tools(){
 	commander::runcmd -i $threads -a cmdchk
 
 	# instead of gopeaks check regularly if this is going to be continued: https://github.com/gartician/summit.git but I doubt it
-	for tool in fastqc cutadapt rcorrector star bwa bbmap rseqc subread htseq picard bamutil fgbio macs2 genrich peakachu diego gatk4 freebayes varscan igv intervene deeptools raxml metilene dupsifter umi_tools methyldackel idr clust seacr gopeaks homer kmc; do
+	for tool in fastqc cutadapt rcorrector star bwa bbmap rseqc subread htseq picard bamutil fgbio macs2 genrich diego gatk4 freebayes varscan igv intervene deeptools raxml metilene dupsifter umi_tools methyldackel idr clust seacr gopeaks homer kmc; do
 		n=${tool/=*/}
 		n=${n//[^[:alpha:]]/}
 		[[ $tool == "bwa" ]] && tool+=" bwa-mem2"
@@ -395,6 +395,28 @@ function compile::conda_tools(){
 		exec "\$(realpath -s "\$(dirname "\$0")")/$(basename "$insdir/conda/envs/seacr/bin/"SEACR_*.sh)" "\$@"
 	EOF
 	chmod 755 "$insdir/conda/envs/seacr/bin/SEACR.sh"
+
+	tool=peakachu
+	n=${tool/=*/}
+	n=${n//[^[:alpha:]]/}
+	if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+		$upgrade && diff "$src/config/$n.yaml" "$tmpdir/$n.yaml" &> /dev/null
+	else
+		$upgrade && ${envs[$n]:=false}
+	fi || {
+		doclean=true
+
+		commander::printinfo "installing $n conda environment"
+		if [[ -e "$src/config/$n.yaml" ]] && $cfg; then
+			compile::conda_create $n --file "$src/config/$n.yaml"
+		else
+			compile::conda_create $n
+			# as of v1.4 pandas fleeds with frame.append method is deprecated and as of v2 it was removed
+			mamba install -n $n -y --override-channels -c conda-forge -c bioconda -c defaults peakachu "pandas<1.4"
+		fi
+		mkdir -p "$insdir/config"
+		compile::conda_export $n > "$insdir/config/$n.yaml"
+	}
 
 	# manual setup of requirements from bioconda meta.yaml (see compile::starfusion) due to non-latest installation via conda
 	# note: recent star (star indexer 2.7.1a) is not compatible with CTAT plug-n-play genome index for star-fusion v1.9 (star indexer 2.4.1)
@@ -732,7 +754,8 @@ function compile::conda_tools(){
 		git -C "$insdir/SalmonTE" remote add origin https://github.com/hyunhwan-jeong/SalmonTE
 		git -C "$insdir/SalmonTE" fetch origin 0a405190b7b5796b646814f14870b268bdf33249
 		git -C "$insdir/SalmonTE" reset --hard FETCH_HEAD
-		sed -i 's/quant --minAssignedFrags/quant --discardOrphansQuasi --minAssignedFrags/' "$insdir/SalmonTE/snakemake/Snakefile.paired"
+		sed -i 's/ quant / --no-version-check quant --discardOrphansQuasi --minAssignedFrags 1 /' "$insdir/SalmonTE/snakemake/Snakefile.paired"
+		sed -i 's/ quant / --no-version-check quant --minAssignedFrags 1 /' "$insdir/SalmonTE/snakemake/Snakefile.single"
 		mv "$insdir/SalmonTE/salmon/linux/bin/salmon" "$insdir/SalmonTE/salmon/linux/bin/salmon.old"
 		ln -sfnr "$insdir/conda/envs/$n/bin/salmon" "$insdir/SalmonTE/salmon/linux/bin/salmon"
 		ln -sfn "$insdir/SalmonTE" "$insdir/latest/salmon"
