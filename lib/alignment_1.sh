@@ -636,10 +636,118 @@ function alignment::bwa(){
 	return 0
 }
 
+function alignment::sizeselect(){
+	function _usage(){
+		commander::print {COMMANDER[0]}<<- EOF
+			alignment::sizeselect (converts sam to bam and) filters sorted alignments by insert size
+
+			-S <hardskip>   | optional. default: false
+			                | [true|false] do nothing and return
+			-s <softskip>   | optional. default: false
+			                | [true|false] do nothing but check for files and print commands (see -d)
+			-d <range>      | optional given -x option. default when used with -s option: 0:1000
+			-t <threads>    | mandatory
+			                | number of threads
+			-r <mapper>     | mandatory
+			                | array of array names which contain alignment paths
+			                | mapper=(segemehl star); [segemehl|star]=(/outdir/[segemehl|star]/1.bam /outdir/[segemehl|star]/2.bam ..);
+			-x <insertsizes>| optional given -d option
+			                | associative array to store range information (see -d)
+			                | insertsizes=([/outdir/[segemehl|star]/1.bam]="0:120" /outdir/[segemehl|star]/2.bam]="0:1000" ..)
+			-o <outdir>     | mandatory
+			                | path to output directory. subdirectories will be created according to array of array names (see -r)
+
+			example1:
+			    mapper=(segemehl star)
+			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
+			    alignment::sizeselect -t 16 -r mapper -d 0:1000
+
+			example2:
+			    mapper=(segemehl star)
+			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
+			    declare -A insertsizes=([/path/to/[segemehl|star]/1.bam]=0:1000 [/path/to/[segemehl|star]/2.bam]=0:120)
+			    alignment::sizeselect -t 16 -r mapper -x insertsizes
+		EOF
+		return 1
+	}
+
+	local OPTIND arg mandatory skip=false skipmd5=false threads outdir default tmpdir="${TMPDIR:-/tmp}"
+	declare -n _mapper_sizeselect _sizes_sizeselect
+	while getopts 'S:s:t:r:x:d:o:h' arg; do
+		case $arg in
+			S)	$OPTARG && return 0;;
+			s)	$OPTARG && skip=true;;
+			d)	default=$OPTARG;;
+			t)	((++mandatory)); threads=$OPTARG;;
+			r)	_mapper_sizeselect=$OPTARG;;
+			x)	_sizes_sizeselect=$OPTARG;;
+			o)	((++mandatory)); outdir="$OPTARG"; mkdir -p "$outdir";;
+			h)	{ _usage || return 0; };;
+			*)	_usage;;
+		esac
+	done
+	[[ $# -eq 0 ]] && { _usage || return 0; }
+	[[ $mandatory -lt 2 ]] && _usage
+	[[ ! $default && ${#_sizes_sizeselect[@]} -eq 0 ]] && _usage
+
+	local m f
+	if [[ $default ]]; then
+		declare -A sizes_sizeselect
+		_sizes_sizeselect=sizes_sizeselect
+
+		commander::printinfo "assigning default insert size"
+		for m in "${_mapper_sizeselect[@]}"; do
+			declare -n _bams_sizeselect=$m
+			for f in "${_bams_sizeselect[@]}"; do
+				sizes_sizeselect["$f"]="$default"
+			done
+		done
+	fi
+
+	declare -n _bams_sizeselect="${_mapper_sizeselect[0]}"
+	local ithreads instances=$((${#_mapper_sizeselect[@]}*${#_bams_sizeselect[@]}))
+	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
+
+	local m f i outbase newbam
+	declare -a cmd1 cmd2
+	for m in "${_mapper_sizeselect[@]}"; do
+		declare -n _bams_sizeselect=$m
+		mkdir -p "$outdir/$m"
+		for i in "${!_bams_sizeselect[@]}"; do
+			f="${_bams_sizeselect[$i]}"
+			outbase="$outdir/$m/$(basename "$f")"
+			outbase="${outbase%.*}"
+
+			alignment::_sizeselect \
+				-1 cmd1 \
+				-2 cmd2 \
+				-t $ithreads \
+				-f "$f" \
+				-m $(cut -d ':' -f 1 <<< "${_sizes_sizeselect["$f"]}") \
+				-x $(cut -d ':' -f 2 <<< "${_sizes_sizeselect["$f"]}") \
+				-o "$outbase" \
+				-p "$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.picard)" \
+				-r newbam
+
+			_bams_sizeselect[$i]="$newbam"
+		done
+	done
+
+	if $skip; then
+		commander::printcmd -a cmd1
+		commander::printcmd -a cmd2
+	else
+		commander::runcmd -c picard -v -b -i $instances -a cmd1
+		commander::runcmd -v -b -i $instances -a cmd2
+	fi
+
+	return 0
+}
+
 function alignment::postprocess(){
 	function _usage(){
 		commander::print {COMMANDER[0]}<<- EOF
-			${FUNCNAME[-2]} (converts sam to bam and) either filteres alignments for uniqueness (and properly aligned mate pairs), sorts by coordinate or index them
+			alignment::postprocess (converts sam to bam and) either filteres, sorts by coordinate or indexes alignments
 
 			-S <hardskip>    | optional. default: false
 			                 | [true|false] do nothing and return
@@ -663,7 +771,7 @@ function alignment::postprocess(){
 			example:
 			    mapper=(segemehl star)
 			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
-			    ${FUNCNAME[-2]} -t 16 -r mapper -j uniqify -o /path/to/outdir
+			    alignment::postprocess -t 16 -r mapper -j uniqify -o /path/to/outdir
 
 			access bam paths directly:
 			    printf '%s\n' "\${segemehl[@]}" # /path/to/outdir/segemehl/1.unique.bam /path/to/outdir/segemehl/2.unique.bam ..
@@ -992,10 +1100,11 @@ function alignment::_blacklist(){
 	if [[ -s "$blacklist" ]]; then
 
 		# or bedtools complement
+		# if blacklist bed has non-equal number of columns, bedtools will fail, thus cut 1-3
 		commander::makecmd -a _cmds1_blacklist -s ';' -c {COMMANDER[0]}<<- CMD
 			bedtools subtract
 				-a <(samtools view -H "$bam" | awk '/^@SQ/{\$1=""; print}' | cut -d ':' -f 2,3 | sed -r 's/(\S+)\s+LN:(.+)/\1\t0\t\2/' | helper::sort -k1,1 -k2,2n -k3,3n -t $threads -M $((memory/2)))
-				-b <(helper::sort -k1,1 -k2,2n -k3,3n -t $threads -f "$blacklist" -M $((memory/2)))
+				-b <(helper::sort -k1,1 -k2,2n -k3,3n -t $threads -f "$blacklist" -M $((memory/2)) | cut -f 1-3)
 			> "$tmpdir/whitelist.bed"
 		CMD
 
@@ -1296,12 +1405,12 @@ function alignment::_collate(){
 			    declare outfile=""
 			    ${FUNCNAME[-2]} -1 cmds -t 16 -i /path/to/alignment.[sam|bam] -o /path/to/outdir/alignment -p /path/to/tmpdir -r outfile
 
-			create sorted bam:
-			    commander::printcmd -a cmds # samtools [..] /path/to/alignment.[sam|bam] > /path/to/alignment.sorted.bam
+			create collated bam:
+			    commander::printcmd -a cmds # samtools [..] /path/to/alignment.[sam|bam] > /path/to/alignment.collated.bam
 			    commander::runcmd [..] -a cmds
 
-			access sorted bam:
-			    ls "\$outfile" # /path/to/outdir/alignment.sorted.bam
+			access collated bam:
+			    ls "\$outfile" # /path/to/outdir/alignment.collated.bam
 		EOF
 		return 1
 	}
@@ -1339,11 +1448,11 @@ function alignment::_collate(){
 					<(samtools view -@ $(((threads+1)/2)) -u -e 'rnext==rname' -f 2 -F 4 -F 64 "$bam" | samtools sort -t HI -n -@ $(((threads+1)/2)) -T "$tmpdir/$(basename "$outbase").nsrtR2" -u | samtools collate -@ $(((threads+1)/2)) -u -O -n 1 - "$tmpdir/$(basename "$outbase").collateR2" | samtools view -@ $(((threads+1)/2)));
 			}
 		CMD
-			samtools view --no-PG -@ 100 -b -o "$_returnfile_collate"
+			samtools view --no-PG -@ $threads -b -o "$_returnfile_collate"
 		CMD
 	elif [[ $x -gt 0 ]]; then
 		# name sort seems to work, too - shuffling via collate not necessary i.e. beeing the better name sorting for PE data
-		# -e 'rnext==rname' is mainly a bwa fix for quantification with salmon
+		# -e 'rnext==rname' is mainly a bwa fix for quantification with salmon which requires randomized alignments, but mates next to each other and mapped onto same ref
 		commander::makecmd -a _cmds1_collate -s '|' -c {COMMANDER[0]}<<- CMD -c {COMMANDER[1]}<<- CMD
 			{
 				samtools view --no-PG -H "$bam";
@@ -1352,7 +1461,7 @@ function alignment::_collate(){
 					<(samtools view -@ $(((threads+1)/2)) -u -e 'rnext==rname' -f 2 -F 4 -F 64 "$bam" | samtools sort -n -@ $(((threads+1)/2)) -T "$tmpdir/$(basename "$outbase").nsrtR2" -u | samtools collate -@ $(((threads+1)/2)) -u -O -n 1 - "$tmpdir/$(basename "$outbase").collateR2" | samtools view -@ $(((threads+1)/2)));
 			}
 		CMD
-			samtools view --no-PG -@ 100 -b -o "$_returnfile_collate"
+			samtools view --no-PG -@ $threads -b -o "$_returnfile_collate"
 		CMD
 	else
 		commander::makecmd -a _cmds1_collate -s ';' -c {COMMANDER[0]}<<- CMD
@@ -1398,7 +1507,7 @@ function alignment::_index(){
 			    commander::runcmd [..] -a cmds
 
 			access bam index:
-			    ls "\$idxfile"
+			    ls "\$idxfile" # /path/to/alignment.sorted.bai
 		EOF
 		return 1
 	}
@@ -1541,7 +1650,7 @@ function alignment::inferstrandness(){
 			    mapper=(segemehl star)
 			    [segemehl|star]=(/path/to/[segemehl|star]/1.bam /path/to/[segemehl|star]/2.bam ..)
 			    declare -A strandness
-			    ${FUNCNAME[-2]} -t 16 -r mapper -x strandness -x 2
+			    ${FUNCNAME[-2]} -t 16 -r mapper -x strandness -d 2
 
 			access strandness directly:
 			    for file in "\${segemehl[@]}"; do
@@ -1976,6 +2085,7 @@ function alignment::qcstats(){
 		header="size"
 		tojoin=()
 		echo -e "sample\ttype\tcount" > "$odir/mapping.barplot.tsv"
+		echo -e "sample\ttype\tcount" > "$odir/mapping.barplot.overlayed.tsv"
 		for i in "${!_bams_bamstats[@]}"; do
 			declare -n _mi_bamstats=$m$i # reference declaration in alignment::add4stats
 			[[ ${#_mi_bamstats[@]} -eq 0 || "${_bams_bamstats[$i]}" =~ (fullpool|pseudopool|pseudorep|pseudoreplicate) ]] && continue
@@ -2012,7 +2122,8 @@ function alignment::qcstats(){
 				fi
 				echo -e "$b\t$filter reads\t$c" >> "$o"
 			done
-			perl -F'\t' -lane '$all=$F[2] unless $all; $F[0].=" ($all)"; $F[2]=(100*$F[2]/$all); print join"\t",@F' $o | tac | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$odir/mapping.barplot.tsv"
+			perl -F'\t' -lane '$all=$F[2] unless $all; $F[0].=" ($all)"; $F[2]=(100*$F[2]/$all); print join"\t",@F' $o | tac | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$odir/mapping.barplot.overlayed.tsv"
+			perl -F'\t' -lane '$all=$F[2] unless $all; $F[0].=" ($all)"; $F[2]=sprintf("%.2f",100*$F[2]/$all); print join"\t",@F' $o >> "$odir/mapping.barplot.tsv"
 		done
 
 		if [[ $(wc -l < "$odir/mapping.barplot.tsv") -gt 2 ]]; then
@@ -2024,17 +2135,35 @@ function alignment::qcstats(){
 					intsv <- args[1];
 					outfile <- args[2];
 					m <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
-					l <- length(m$type)/length(unique(m$sample));
-					l <- m$type[1:l];
-					m$type = factor(m$type, levels=l);
-					pdf(outfile);
+					m$type = factor(m$type, levels=unique(m$type));
 					ggplot(m, aes(x = sample, y = count, fill = type)) +
-						ggtitle("Mapping") + xlab("Sample") + ylab("Readcount in %") +
+						ggtitle("Mapping") + xlab("Sample") + ylab("Readcount") +
 						theme_bw() + guides(fill=guide_legend(title=NULL)) +
 						theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8)) +
 						geom_bar(position = "fill", stat = "identity") +
-						scale_y_continuous(labels = percent_format());
-					graphics.off();
+						scale_y_continuous(breaks = pretty_breaks(), labels = percent_format());
+					suppressMessages(ggsave(outfile));
+				'
+			CMD
+				"$odir/mapping.barplot.overlayed.tsv"  "$odir/mapping.barplot.overlayed.pdf"
+			CMD
+
+			commander::makecmd -a cmd2 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+				Rscript - <<< '
+					suppressMessages(library("ggplot2"));
+					suppressMessages(library("scales"));
+					args <- commandArgs(TRUE);
+					intsv <- args[1];
+					outfile <- args[2];
+					m <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+					m$type = factor(m$type, levels=unique(m$type));
+					ggplot(m, aes(x = sample, y = count, fill = type)) +
+					  ggtitle("Mapping") + xlab("Sample") + ylab("Readcount") +
+					  theme_bw() + guides(fill=guide_legend(title=NULL)) +
+					  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8)) +
+					  geom_bar(stat = "identity", position = "dodge") +
+					  scale_y_continuous(breaks = pretty_breaks(), labels = percent_format(scale = 1));
+					suppressMessages(ggsave(outfile));
 				'
 			CMD
 				"$odir/mapping.barplot.tsv"  "$odir/mapping.barplot.pdf"

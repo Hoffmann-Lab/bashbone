@@ -173,72 +173,41 @@ function bisulfite::segemehl(){
 		[[ $accuracy ]] && params+=" -A $accuracy"
 		tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.segemehl)")
 		if [[ ${_fq2_segemehl[$i]} ]]; then
+			params+=" -p '$(realpath -se "${_fq2_segemehl[$i]}")'"
 			[[ $insertsize ]] && params+=" -I $insertsize"
-			# commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-			# 	cd "${tdirs[-1]}"
-			# CMD
-			# 	segemehl
-			# 	$params
-			# 	-F $mode
-			# 	-i "$(realpath -se "$ctidx")"
-			# 	-j "$(realpath -se "$gaidx")"
-			# 	-d "$(realpath -se "$genome")"
-			# 	-q "$(realpath -se "${_fq1_segemehl[$i]}")"
-			# 	-p "$(realpath -se "${_fq2_segemehl[$i]}")"
-			# 	-t $threads
-			# 	-b
-			# 	-o "$(realpath -s "$o.bam")"
-			# CMD
-			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
-				cd "${tdirs[-1]}";
-			CMD
-				segemehl
-					$params
-					-F $mode
-					-i "$(realpath -se "$ctidx")"
-					-j "$(realpath -se "$gaidx")"
-					-d "$(realpath -se "$genome")"
-					-q "$(realpath -se "${_fq1_segemehl[$i]}")"
-					-p "$(realpath -se "${_fq2_segemehl[$i]}")"
-					-t $threads
-			CMD
-				| sed -E 's@(\tXB:Z:../CT)@\tYD:Z:f\1@; s@(\tXB:Z:../GA)@\tYD:Z:r\1@'
-			CMD
-				| samtools view --no-PG -@ $threads -b -o "$(realpath -s "$o.bam")"
-			CMD
-			# sed adds YD tag used by e.g. dupsifter for bisulfite strand determination
-		else
-			# commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-			# 	cd "${tdirs[-1]}"
-			# CMD
-			# 	segemehl
-			# 	$params
-			# 	-F $mode
-			# 	-i "$(realpath -se "$ctidx")"
-			# 	-j "$(realpath -se "$gaidx")"
-			# 	-d "$(realpath -se "$genome")"
-			# 	-q "$(realpath -se "${_fq1_segemehl[$i]}")"
-			# 	-t $threads
-			# 	-b
-			# 	-o "$(realpath -s "$o.bam")"
-			# CMD
-			commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
-				cd "${tdirs[-1]}";
-			CMD
-				segemehl
-					$params
-					-F $mode
-					-i "$(realpath -se "$ctidx")"
-					-j "$(realpath -se "$gaidx")"
-					-d "$(realpath -se "$genome")"
-					-q "$(realpath -se "${_fq1_segemehl[$i]}")"
-					-t $threads
-			CMD
-				| sed -E 's@(\tXB:Z:../CT)@\tYD:Z:f\1@; s@(\tXB:Z:../GA)@\tYD:Z:r\1@'
-			CMD
-				| samtools view --no-PG -@ $threads -b -o "$(realpath -s "$o.bam")"
-			CMD
 		fi
+
+		commander::makecmd -a cmd1 -s '|' -v threads -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- CMD
+			cd "${tdirs[-1]}";
+			segemehl
+				-i '$(realpath -se "$ctidx")'
+				-j '$(realpath -se "$gaidx")'
+				-d '$(realpath -se "$genome")'
+				-q '$(realpath -se "${_fq1_segemehl[$i]}")'
+				$params
+				-F $mode
+				-t $threads
+		CMD
+			sed -E 's@(\tXB:Z:../CT)@\tYD:Z:f\1@; s@(\tXB:Z:../GA)@\tYD:Z:r\1@'
+		CMD
+			{
+				read -r l;
+				while [[ "$l" =~ ^@[[:alnum:]]{2,2}[[:space:]] ]]; do header+=("$l"); read -r l; done;
+				printf "%s\n" "${header[@]}";
+				header+=("$l");
+				cat <(printf "%s\n" "${header[@]}") - | parallel --termseq INT,1000,TERM,0 --halt now,fail=1 --line-buffer --pipe --tee {} ::: "samtools view -@ $((threads+1/2)) -d HI:0 --remove-flags 256" "samtools view -@ $((threads+1/2)) -e '[HI]>0'";
+			}
+		CMD
+			samtools view --no-PG -@ $threads -b -o "$(realpath -s "$o.bam")"
+		CMD
+		# sed command adds YD tag used by e.g. dupsifter for bisulfite strand determination
+		#   thus requires final samtools based BAM conversion instead of running segemehl with -b -o out.bam
+		# command group 1) slurps header and forwards it to final samtools 2) forwards header and alignments to line buffered tee, which removes secondary flag from all first hits
+		# this is necessary because segemehl in BS mode does not flag "optimal" alignment as primary. instead only uniques i.e. NH:1 become primary, which fucks up alignment::bamqc (samtools flagstat) and subsequently alignment::qcstats
+		#   for sure HI:0 is not always the "true" primary alignment, but this solution is much cheaper than sorting by MQUAL, name (and HI in case of PE data!) to determine the best alignment by score
+		# this solution also solves rare cases in which segemehl adds (or keeps) secondary flags during its merging step of CT and GA alignments.
+		#   this affects reversely mapped reads even if they are unique and thus by default primary (observed for non strand specific RRBS data)
+
 		segemehl[$i]="$o.bam"
 	done
 
@@ -453,7 +422,7 @@ function bisulfite::rmduplicates(){
 	read -r instances ithreads < <(configure::instances_by_threads -i $instances -t 10 -T $threads)
 	read -r oinstances othreads < <(configure::instances_by_threads -i $oinstances -t 10 -T $threads)
 
-	declare -a cmdsort
+	declare -a cmdsort umi_bsrmduplicates
 	if [[ $_umi_bsrmduplicates ]]; then
 		params2='-B'
 
@@ -473,7 +442,7 @@ function bisulfite::rmduplicates(){
 			CMD
 				helper::pgzip -t $sthreads -o "$o"
 			CMD
-			_umi_bsrmduplicates[$i]="$o"
+			umi_bsrmduplicates[$i]="$o"
 		done
 	fi
 
@@ -492,7 +461,7 @@ function bisulfite::rmduplicates(){
 			while read -r slice; do
 				tdirs+=("$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.rmduplicates)")
 
-				if [[ $_umi_bsrmduplicates ]]; then
+				if [[ $umi_bsrmduplicates ]]; then
 					commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD' {COMMANDER[4]}<<- CMD {COMMANDER[5]}<<- CMD
 						samtools sort
 							-n
@@ -510,7 +479,7 @@ function bisulfite::rmduplicates(){
 					CMD
 						| awk -v f=<(helper::cat -f "${umi_bsrmduplicates[$i]}" | paste - - - -)
 					CMD
-						-v OFS='\t' '/^@\S\S\s/{print; next}{l=$0; r="@"$1; getline < f; while(r!=$1){getline < f} print l,"RX:Z:"$(NF-2),"QX:Z:"$NF}'
+						-v OFS='\t' '/^@\S\S\s/{print; next}{l=$0; r="@"$1; while(r!=u){getline < f; u=$1; s=$2; q=$4} print l,"RX:Z:"s,"QX:Z:"q}'
 					CMD
 						| samtools sort
 							-@ $ithreads

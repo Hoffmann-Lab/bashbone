@@ -1,17 +1,6 @@
-name: rcorrector
 channels:
   - conda-forge
   - bioconda
   - defaults
 dependencies:
-  - _libgcc_mutex==0.1
-  - _openmp_mutex==4.5
-  - kmer-jellyfish==2.3.1
-  - libgcc-ng==13.2.0
-  - libgomp==13.2.0
-  - libstdcxx-ng==13.2.0
-  - libxcrypt==4.4.36
-  - libzlib==1.2.13
-  - perl==5.32.1
-  - rcorrector==1.0.7
-  - zlib==1.2.13
+  - rcorrector==1.0.4

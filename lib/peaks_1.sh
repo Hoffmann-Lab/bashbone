@@ -665,13 +665,12 @@ function peaks::gopeaks(){
 
 	local x=$(samtools view -F 4 "${_bams_gopeaks[0]}" | head -10000 | cat <(samtools view -H "${_bams_gopeaks[0]}") - | samtools view -c -f 1)
 	[[ $x -eq 0 ]] && commander::warn "peak calling gopeaks not applied due to single-end data" && return 0
+	commander::printinfo "peak calling gopeaks"
 
 	# according to dev: memory requirement is ~17X per GB bam input for default -l 50
 	# y=$($broad && echo 1 || echo 2)
 	local minstances mthreads memory=$(du -k "${_bams_gopeaks[0]}" | awk -v x=$([[ $_nidx_gopeaks ]] && echo 1.5 || echo 1) -v y=2 '{printf "%.f",$1/1024*17*x*y}')
 	read -r minstances mthreads < <(configure::instances_by_memory -T $threads -m $memory -M "$maxmemory")
-
-	commander::printinfo "peak calling gopeaks"
 
 	if [[ ! $macsdir ]]; then
 		macsdir="$(mktemp -d -p "$tmpdir" cleanup.XXXXXXXXXX.gopeaks)"
@@ -1623,12 +1622,12 @@ function peaks::peakachu(){
 						--output_folder "$odir/$o"
 				CMD
 
-				commander::makecmd -a cmd2 -s '|' -o "$odir/$o/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
+				commander::makecmd -a cmd2 -s '|' -o "$odir/$o/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- 'CMD'
 					awk -v OFS='\t' '!/^replicon/{print \$1,\$3,\$4,".",0,".",-1,-1,-1,-1}' "$odir/$o/peak_tables/"*.csv
 				CMD
 					sort -k1,1 -k2,2n -k3,3n
 				CMD
-					bedtools merge -c 4,5,6,7,8,9,10 -o distinct,distinct,distinct,max,distinct,distinct,distinct
+					{ read -r l; [[ $l ]] && cat <(echo "$l") - | bedtools merge -c 4,5,6,7,8,9,10 -o distinct,distinct,distinct,max,distinct,distinct,distinct; }
 				CMD
 					awk -v OFS='\t' '{$4="peak_"NR; print}'
 				CMD
@@ -1678,24 +1677,24 @@ function peaks::peakachu(){
 					--output_folder "$odir/$o"
 			CMD
 
-			# NF-9 is either base_mean or fold_change if ctr_libs
+			# NF-9 is either base_mean or fold_change, the latter if ctr_libs given
 			if [[ $nf ]]; then
-				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
+				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- 'CMD'
 					awk -v OFS='\t' '!/^replicon/ && \$(NF-9)!="inf"{print \$1,\$3,\$4,".",0,".",\$(NF-9),-1,-1,-1}' "$odir/$o/peak_tables/"*.csv
 				CMD
 					sort -k1,1 -k2,2n -k3,3n
 				CMD
-					bedtools merge -c 4,5,6,7,8,9,10 -o distinct,distinct,distinct,max,distinct,distinct,distinct
+					{ read -r l; [[ $l ]] && cat <(echo "$l") - | bedtools merge -c 4,5,6,7,8,9,10 -o distinct,distinct,distinct,max,distinct,distinct,distinct; }
 				CMD
 					awk -v OFS='\t' '{$4="peak_"NR; print}'
 				CMD
 			else
-				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- CMD {COMMANDER[3]}<<- 'CMD'
+				commander::makecmd -a cmd2 -s '|' -o "$odir/$o.narrowPeak" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- 'CMD'
 					awk -v OFS='\t' '!/^replicon/{print \$1,\$3,\$4,".",0,".",-1,-1,-1,-1}' "$odir/$o/peak_tables/"*.csv
 				CMD
 					sort -k1,1 -k2,2n -k3,3n
 				CMD
-					bedtools merge -c 4,5,6,7,8,9,10 -o distinct,distinct,distinct,max,distinct,distinct,distinct
+					{ read -r l; [[ $l ]] && cat <(echo "$l") - | bedtools merge -c 4,5,6,7,8,9,10 -o distinct,distinct,distinct,max,distinct,distinct,distinct; }
 				CMD
 					awk -v OFS='\t' '{$4="peak_"NR; print}'
 				CMD
@@ -1710,11 +1709,6 @@ function peaks::peakachu(){
 		commander::printcmd -a cmd4
 	else
 		commander::runcmd -c peakachu -v -b -i 1 -a cmd1
-		{ head -1 "$odir/$o/peak_tables/"*.csv | grep -q .; } &> /dev/null || {
-			rm -f "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
-			touch "$odir/$o/$o.narrowPeak" "$odir/$o.narrowPeak"
-			return 0
-		}
 		commander::runcmd -v -b -i $threads -a cmd2
 		commander::runcmd -c macs -v -b -i $threads -a cmd3
 		commander::runcmd -v -b -i $threads -a cmd4

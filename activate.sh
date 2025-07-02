@@ -242,7 +242,7 @@ function _bashbone_trace(){
 				line=$((line+3))
 				cmd=$(declare -f $fun | awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 			else
-				cmd=$(awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$BASHBONE_WORKINGDIR/$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+				cmd=$(cd "$BASHBONE_WORKINGDIR"; awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 			fi
 			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main}) @ line $line: $cmd" >&2
 		fi
@@ -270,7 +270,7 @@ function _bashbone_trace_interactive(){
 		if [[ $line -eq 1 ]]; then
 			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main} @ line $l)" >> "$o"
 		else
-			cmd=$(awk -v l=$l '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$BASHBONE_WORKINGDIR/$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+			cmd=$(cd "$BASHBONE_WORKINGDIR"; awk -v l=$l '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main}) @ line $l: $cmd" >> "$o"
 		fi
 	done
@@ -473,9 +473,9 @@ function bashbone(){
 					echo ":ERROR: no bashbone installation found" >&2
 					exit 1
 				}
-				mapfile -t mapdata < <({ readlink -e "$BASHBONE_TOOLSDIR/latest/"* | sed -nE 's@.*\/([^/]+)-([0-9][^/]+)\/*.*@\L\1\t\2@p;'; mamba list | grep -vP '^(#|_|lib|perl-|xorg-|r-(?!(base|wgcna))|r\s|python-|font|gcc_|gxx_|gfortran_|ca-certificates|pkg-config|pthread)' | tr -s ' ' '\t'; } | sort -k1,1 -k2,2Vr | cut -f 1,2)
-				for e in $(mamba env list | grep -F "$BASHBONE_TOOLSDIR" | grep -v '^base' | cut -f 1 -d ' '); do
-					mamba list -n $e | grep -vP '^(#|_|lib|perl-|xorg-|r-(?!(base|wgcna))|r\s|python-|font|gcc_|gxx_|gfortran_|ca-certificates|pkg-config|pthread)'
+				mapfile -t mapdata < <({ readlink -e "$BASHBONE_TOOLSDIR/latest/"* | sed -nE 's@.*\/([^/]+)-([0-9][^/]+)\/*.*@\L\1\t\2@p;'; conda list | grep -vP '^(#|_|lib|perl-|xorg-|r-(?!(base|wgcna))|r\s|python-|font|gcc_|gxx_|gfortran_|ca-certificates|pkg-config|pthread)' | tr -s ' ' '\t'; } | sort -k1,1 -k2,2Vr | cut -f 1,2)
+				for e in $(conda env list | grep -F "$BASHBONE_TOOLSDIR" | awk '$1!="base"{print $1}'); do
+					conda list -n $e | grep -vP '^(#|_|lib|perl-|xorg-|r-(?!(base|wgcna))|r\s|python-|font|gcc_|gxx_|gfortran_|ca-certificates|pkg-config|pthread)'
 				done | tr -s ' ' '\t' | sort -k1,1 -k2,2Vr | cut -f 1,2 | rev | uniq -f 1 | rev | grep -v -Fw -f <(printf "%s\n" "${mapdata[@]}" | cut -f 1) | sort -k1,1 - <(printf "%s\n" "${mapdata[@]}")
 			) || return 1
 			;;
@@ -483,6 +483,9 @@ function bashbone(){
 				conda deactivate &> /dev/null
 			done
 			PATH="${PATH/$BASHBONE_PATH/}"
+			p="$BASHBONE_TOOLSDIR/conda/condabin"
+			PATH="${PATH/$p:/}"
+			PATH="${PATH/$p/}"
 
 			if [[ $- == *i* ]]; then
 				if [[ ${BASH_VERSINFO[0]} -ge 5 && -r /usr/share/bash-completion/bash_completion ]]; then

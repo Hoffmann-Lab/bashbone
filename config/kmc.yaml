@@ -1,15 +1,6 @@
-name: kmc
 channels:
   - conda-forge
   - bioconda
   - defaults
 dependencies:
-  - _libgcc_mutex==0.1
-  - _openmp_mutex==4.5
-  - bzip2==1.0.8
   - kmc==3.2.4
-  - libgcc-ng==13.2.0
-  - libgomp==13.2.0
-  - libstdcxx-ng==13.2.0
-  - libzlib==1.2.13
-  - zlib==1.2.13

@@ -184,7 +184,7 @@ function _bashbone_trace(){
 				line=$((line+3))
 				cmd=$(declare -f $fun | awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 			else
-				cmd=$(awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$BASHBONE_WORKINGDIR/$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
+				cmd=$(cd "$BASHBONE_WORKINGDIR"; awk -v l=$line '{ if(NR>=l){if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{print o$0; exit}}else{if($0~/\s\\\s*$/){o=o""gensub(/\\\s*$/,"",1,$0)}else{o=""}}}' "$src" | sed -E -e 's/\s+/ /g' -e 's/(^\s+|\s+$)//g')
 			fi
 			echo ":ERROR: ${BASHBONE_ERROR:+$BASHBONE_ERROR }in ${src:-shell} (function: ${fun:-main}) @ line $line: $cmd" >&2
 		fi

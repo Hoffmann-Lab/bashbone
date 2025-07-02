@@ -1,11 +1,6 @@
-name: gopeaks
 channels:
   - conda-forge
   - bioconda
   - defaults
 dependencies:
-  - _libgcc_mutex==0.1
-  - _openmp_mutex==4.5
   - gopeaks==1.0.0
-  - libgcc-ng==13.1.0
-  - libgomp==13.1.0

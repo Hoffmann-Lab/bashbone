@@ -758,8 +758,6 @@ function preprocess::sortmerna(){
 		return 1
 	}
 
-	# sortmerna --version |& grep version | tail -1 | grep -oE '[0-9.]+' | head -1
-
 	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}"
 	declare -n _fq1_sortmerna _fq2_sortmerna
 	while getopts 'S:s:t:i:o:1:2:' arg; do
@@ -1131,6 +1129,7 @@ function preprocess::qcstats(){
 	local o c multiplier tool tmp="$(mktemp -p "$tmpdir" cleanup.XXXXXXXXXX.tsv)"
 	declare -a counts
 	echo -e "sample\ttype\tcount" > "$outdir/preprocessing.barplot.tsv"
+	echo -e "sample\ttype\tcount" > "$outdir/preprocessing.barplot.overlayed.tsv"
 	for i in "${!_fq1_qcstats[@]}"; do
 		helper::basename -f "${_fq1_qcstats[$i]}" -o b -e e
 		e=$(echo $e | cut -d '.' -f 1) # if e == fastq or fq : check for ${b}_fastqc.zip else $b.${e}_fastqc.zip
@@ -1138,15 +1137,16 @@ function preprocess::qcstats(){
 		o="$outdir/$b.stats"
 		multiplier=1
 		[[ "${_fq2_qcstats[$i]}" ]] && multiplier=2
-		rm -f $o
+		rm -f "$o" "$tmp"
 		for qdir in "${_qualdirs_qcstats[@]}"; do
 			tool=$(basename "$qdir")
 			c=$(unzip -c "$qdir/$qczip" "${qczip%.*}/fastqc_data.txt" | grep -m 1 -F Total | awk -v mult=$multiplier '{print $3*mult}')
 			counts+=($c)
 			echo -e "$b\t$tool reads\t$c" >> $o
+			perl -sle 'print join"\t",("$sample ($all)","$tool reads",(100*$c/$all))' -- -all=${counts[$((i*${#_qualdirs_qcstats[@]}))]} -c=$c -sample=$b -tool=$tool >> "$tmp"
 			perl -sle 'print join"\t",("$sample ($all)","$tool reads",(100*$c/$all))' -- -all=${counts[$((i*${#_qualdirs_qcstats[@]}))]} -c=$c -sample=$b -tool=$tool
-		done > "$tmp" # strange!!! if piped directly into tac - tac's awk implementation fails - not a shournal raceexception bug!
-		tac "$tmp" | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$outdir/preprocessing.barplot.tsv"
+		done >> "$outdir/preprocessing.barplot.tsv"
+		tac "$tmp" | awk -F '\t' '{OFS="\t"; if(c){$NF=$NF-c} c=c+$NF; print}' | tac >> "$outdir/preprocessing.barplot.overlayed.tsv"
 	done
 
 	declare -a cmd1
@@ -1161,14 +1161,36 @@ function preprocess::qcstats(){
 			l <- length(m$type)/length(unique(m$sample));
 			l <- m$type[1:l];
 			m$type = factor(m$type, levels=l);
-			pdf(outfile);
 			ggplot(m, aes(x = sample, y = count, fill = type)) +
-				ggtitle("Preprocessing") + xlab("Sample") + ylab("Readcount in %") +
+				ggtitle("Preprocessing") + xlab("Sample") + ylab("Readcount") +
 				theme_bw() + guides(fill=guide_legend(title=NULL)) +
 				theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8)) +
 				geom_bar(position = "fill", stat = "identity") +
-				scale_y_continuous(labels = percent_format());
-			graphics.off();
+				scale_y_continuous(breaks = pretty_breaks(), labels = percent_format());
+			suppressMessages(ggsave(outfile));
+		'
+	CMD
+		"$outdir/preprocessing.barplot.overlayed.tsv"  "$outdir/preprocessing.barplot.overlayed.pdf"
+	CMD
+
+	commander::makecmd -a cmd1 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD
+		Rscript - <<< '
+			suppressMessages(library("ggplot2"));
+			suppressMessages(library("scales"));
+			args <- commandArgs(TRUE);
+			intsv <- args[1];
+			outfile <- args[2];
+			m <- read.table(intsv, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
+			l <- length(m$type)/length(unique(m$sample));
+			l <- m$type[1:l];
+			m$type = factor(m$type, levels=l);
+			ggplot(m, aes(x = sample, y = count, fill = type)) +
+				ggtitle("Preprocessing") + xlab("Sample") + ylab("Readcount") +
+				theme_bw() + guides(fill=guide_legend(title=NULL)) +
+				theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8)) +
+				geom_bar(stat = "identity", position = "dodge") +
+				scale_y_continuous(breaks = pretty_breaks(), labels = percent_format(scale = 1));
+			suppressMessages(ggsave(outfile));
 		'
 	CMD
 		"$outdir/preprocessing.barplot.tsv"  "$outdir/preprocessing.barplot.pdf"

@@ -22,6 +22,7 @@ options(warn=-1)
 suppressMessages({
   library(ggplot2)
   library(ggrepel)
+  library(scales)
 })
 
 ddsr = args[1]
@@ -125,6 +126,7 @@ ggplot(df, aes(x=log2FoldChange, y=-log10(pvalue), col=Regulation, label=label))
   annotate("text", x=-myxlim, y=myylim, color="blue", label= paste0(paste0(rep(" ",10-nchar(downs)),collapse=""),downs)) +
   #theme(plot.title = element_text(hjust = 0.5)) +
   geom_label_repel(min.segment.length = 0, box.padding = 0.5, fill="white", force=1, max.overlaps =Inf, na.rm=T, colour = "black", size=3) +
-  scale_y_continuous(limits = c(0,myylim),breaks = scales::pretty_breaks(n = round(myylim/2))) +
-  scale_x_continuous(limits = c(-myxlim,myxlim),breaks = scales::pretty_breaks(n = round(myxlim/2)*2))
+  scale_y_continuous(limits = c(0,myylim),breaks = pretty_breaks()) +
+  scale_x_continuous(limits = c(-myxlim,myxlim),breaks = pretty_breaks(n = round(myxlim/2)*2))
+  # scale_y_continuous(limits = c(0,myylim),breaks = scales::pretty_breaks(n = round(myylim/2))) +
 suppressMessages(ggsave(file.path(dirname(ddsr),outfile)))

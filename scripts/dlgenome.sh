@@ -11,7 +11,7 @@ usage(){
 		$(basename $0) downloads most recent human or mouse genome, annotation, gene ontology, orthologs, dbSNP
 
 		VERSION
-		1.0.0
+		1.0.1
 
 		SYNOPSIS
 		$(basename $0) -r [hg19|hg38|mm10|mm11] -o <PATH> -t <THREADS> [-g|-c] [-a] [-d|-m|-e] [-s|-n|-u|-k]
@@ -88,7 +88,7 @@ function dlgenome::_go.ensembl(){
 	cat <<- EOF >> "$tdir/download.R"
 		library("biomaRt")
 		v <- "$version"
-		for (try in 1;10){
+		for (try in 1:10){
 			tryCatch({
 				if ("$version" == "latest"){
 					ensembl <- useEnsembl(biomart="genes", dataset="$dataset")
@@ -132,6 +132,13 @@ function dlgenome::_go.ensembl(){
 		write.table(goids,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.go")
 		write.table(descriptions,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.info")
 
+		sink("$out.go.README")
+		cat("$(date)\n")
+		cat("$USER\n")
+		cat(paste0("Ensembl go v",v,"\n"))
+		cat("via biomart\n")
+		sink()
+
 		orthos <- data.frame()
 		for (v in as.vector(na.omit(as.integer(listEnsemblArchives()\$version)))){
 			cat(paste0(":INFO: working on orthologs from Ensembl v",v,"\n"))
@@ -148,13 +155,6 @@ function dlgenome::_go.ensembl(){
 		}
 		if(try!=0) quit("no",1)
 		write.table(orthos,quote=FALSE,row.names=FALSE,col.names=FALSE,sep="\t",file="$out.orthologs")
-
-		sink("$out.go.README")
-		cat("$(date)\n")
-		cat("$USER\n")
-		cat(paste0("Ensembl go v",v,"\n"))
-		cat("via biomart\n")
-		sink()
 	EOF
 
 	echo ":INFO: downloading gene ontology and descriptions"
@@ -536,7 +536,8 @@ function dlgenome::hg19.genome() {
 
 	echo ":INFO: downloading $genome genome"
 	url="https://ftp.ensembl.org/pub/grch37/"
-	url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/fasta/homo_sapiens/dna/Homo_sapiens.GRCh37.dna.chromosome"
+	# url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/fasta/homo_sapiens/dna/Homo_sapiens.GRCh37.dna.chromosome"
+	url+="$(curl -s "${url/https/ftp}" | grep -E "current\s*->\s*" | awk '{print $NF}')/fasta/homo_sapiens/dna/Homo_sapiens.GRCh37.dna.chromosome"
 	version=$(grep -oE 'release-[0-9]+' <<< "$url" | cut -d '-' -f 2-)
 	echo ":INFO: v$version from Ensembl"
 
@@ -564,7 +565,8 @@ function dlgenome::hg38.genome() {
 
 	echo ":INFO: downloading $genome genome"
 	url="https://ftp.ensembl.org/pub/"
-	url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.chromosome"
+	# url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.chromosome"
+	url+="$(curl -s "${url/https/ftp}" | grep -E "current\s*->\s*" | awk '{print $NF}')/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.chromosome"
 	version=$(grep -oE 'release-[0-9]+' <<< "$url" | cut -d '-' -f 2-)
 	echo ":INFO: v$version from Ensembl"
 
@@ -617,7 +619,8 @@ function dlgenome::mm11.genome() {
 
 	echo ":INFO: downloading $genome genome"
 	url="https://ftp.ensembl.org/pub/"
-	url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/fasta/mus_musculus/dna/Mus_musculus.GRCm39.dna.chromosome"
+	# url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/fasta/mus_musculus/dna/Mus_musculus.GRCm39.dna.chromosome"
+	url+="$(curl -s "${url/https/ftp}" | grep -E "current\s*->\s*" | awk '{print $NF}')/fasta/mus_musculus/dna/Mus_musculus.GRCm39.dna.chromosome"
 	version=$(grep -oE 'release-[0-9]+' <<< "$url" | cut -d '-' -f 2-)
 	echo ":INFO: v$version from Ensembl"
 
@@ -648,7 +651,8 @@ function dlgenome::hg19.gtf() {
 
 	echo ":INFO: downloading annotation"
 	url="https://ftp.ensembl.org/pub/grch37/"
-	url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/gtf/homo_sapiens/"
+	# url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/gtf/homo_sapiens/"
+	url+="$(curl -s "${url/https/ftp}" | grep -E "current\s*->\s*" | awk '{print $NF}')/gtf/homo_sapiens/"
 	url+="$(curl -s "$url" | grep -oE 'Homo_sapiens.GRCh37.[0-9]+.chr.gtf.gz' | sort -Vr | head -1)"
 	version="$(basename "$url" | cut -d . -f 3)"
 	echo ":INFO: v$version from Ensembl"
@@ -679,7 +683,8 @@ function dlgenome::hg38.gtf() {
 	echo ":INFO: downloading annotation"
 
 	url="https://ftp.ensembl.org/pub/"
-	url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/gtf/homo_sapiens/"
+	# url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/gtf/homo_sapiens/"
+	url+="$(curl -s "${url/https/ftp}" | grep -E "current\s*->\s*" | awk '{print $NF}')/gtf/homo_sapiens/"
 	url+="$(curl -s "$url" | grep -oE 'Homo_sapiens.GRCh38.[0-9]+.chr.gtf.gz' | sort -Vr | head -1)"
 	version="$(basename "$url" | cut -d . -f 3)"
 	echo ":INFO: v$version from Ensembl"
@@ -749,7 +754,8 @@ function dlgenome::mm11.gtf() {
 
 	echo ":INFO: downloading annotation"
 	url="https://ftp.ensembl.org/pub/"
-	url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/gtf/mus_musculus/"
+	# url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/gtf/mus_musculus/"
+	url+="$(curl -s "${url/https/ftp}" | grep -E "current\s*->\s*" | awk '{print $NF}')/gtf/mus_musculus/"
 	url+="$(curl -s "$url" | grep -oE 'Mus_musculus.GRCm39.[0-9]+.chr.gtf.gz' | sort -Vr | head -1)"
 	version="$(basename "$url" | cut -d . -f 3)"
 	echo ":INFO: v$version from Ensembl"
@@ -1098,7 +1104,8 @@ function dlgenome::hg38.dbsnp.ensembl() {
 	echo ":INFO: downloading dbSNP"
 	# url="https://ftp.ensembl.org/pub/current_variation/vcf/homo_sapiens/1000GENOMES-phase_3.vcf.gz"
 	url="https://ftp.ensembl.org/pub/"
-	url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/variation/vcf/homo_sapiens/1000GENOMES-phase_3.vcf.gz"
+	# url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/variation/vcf/homo_sapiens/1000GENOMES-phase_3.vcf.gz"
+	url+="$(curl -s "${url/https/ftp}" | grep -E "current\s*->\s*" | awk '{print $NF}')/variation/vcf/homo_sapiens/1000GENOMES-phase_3.vcf.gz"
 	version="$(bcftools view -h "$url" | grep -m 1 -oE dbSNP_[0-9]+ | cut -d _ -f 2)"
 	echo ":INFO: v$version from Ensembl"
 
@@ -1338,7 +1345,8 @@ function dlgenome::mm11.dbsnp.ensembl() {
 	return 0
 
 	url="https://ftp.ensembl.org/pub/"
-	url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/variation/vcf/mus_musculus/mus_musculus.vcf.gz"
+	# url+="$(curl -s "$url" | grep -oE 'release-[0-9]+' | sort -Vr | head -1)/variation/vcf/mus_musculus/mus_musculus.vcf.gz"
+	url+="$(curl -s "${url/https/ftp}" | grep -E "current\s*->\s*" | awk '{print $NF}')/variation/vcf/mus_musculus/mus_musculus.vcf.gz"
 	# contains 80M variants without any INFO on how to filter them
 }
 

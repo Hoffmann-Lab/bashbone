@@ -216,15 +216,24 @@ function survival::ssgsea(){
 	local f n setsize
 	rm -f "$outdir/input.gmt" "$outdir/gmt.list"
 	for f in "${_sets_ssgsea[@]}"; do
-		if [[ $(awk '{if(NF>i){i=NF}}END{print i}' "$f") -eq 1 ]]; then
+		if [[ $(awk -v i=0 'NF>i{i=NF}END{print i}' "$f") -eq 1 ]]; then
 			n="$(basename "$f" | sed -E 's/\s+/_/g')"
 			n="${n%.*}"
-			sed -E -e ':a;N;$!ba' -e 's/(^\s+|\s+$)//g' -e's/\s+/\t/g' -e "s/^/$n\tna\t/" "$f" >> "$outdir/input.gmt"
+			sed -E -e ':a;N;$!ba' -e 's/(^\s+|\s+$)//g' -e 's/\s+/\t/g' "$f" | sed "s/^/$n\tna\t/" >> "$outdir/input.gmt"
 		else
 			realpath -se "$f" >> "$outdir/gmt.list"
 		fi
 	done
 	[[ -s "$outdir/input.gmt" ]] && realpath -se "$outdir/input.gmt" >> "$outdir/gmt.list"
+
+	local min max
+	read -r min max < <(while read -r f; do awk '{print NF}' "$f"; done < "$outdir/gmt.list" | datamash min 1 max 1)
+	if [[ $min -eq 3 && $max -gt 3 ]]; then
+		# at least one gmt has 3 columns i.e. only one gene, but the remaining need ssgsea which will fail on singletons
+		# as an alternative, one could add a second dummy gene, never expressed at all like ENSG00000284332, but I prefer to use raw TPMs instead
+		commander::printerr "joined analysis of id sets n=1 and n>1 not allowed. submit either idfiles all having number ids equal to 1 or always greater 1"
+		return 1
+	fi
 
 	local gct="$outdir/input.gct"
 	if [[ "$(head -1 "$counts")" =~ ^# ]]; then
@@ -235,28 +244,30 @@ function survival::ssgsea(){
 		awk -v nrow=$((nrow-1)) -v ncol=$((ncol-1)) -v OFS='\t' 'BEGIN{print "#1.2"; print nrow,ncol} {if(NR==1){$1="Name\tDescription"}else{$1=$1"\tna"}; print}' "$counts" > "$gct"
 	fi
 
-	# ssgsea v2 defaults: -w 0.75 -m 10 -n rank
-	# -> without permutations -p 0, results are equal to gpmodule implementation, failes with -l $threads
-	# use (combine.replace) instead of separate up/down scores (combine.all)
-
-	# commander::makecmd -a cmd1 -s '&&' -c {COMMANDER[0]}<<- CMD
-	# 	ssgsea-cli.R -p 0 -i "$outdir/input.gct" -d "$outdir/input.gmt" -o $outdir/ssgsea
-	# 	{ echo "barcode"; cut -f 1 RFX7sets.gmt; } | xargs echo | sed 's/ /\t/g' > ssgsea.tsv
-	# 	datamash transpose < <(tail -n +3 ssgsea-scores.gct) | grep -w -F -m 1 -A 999999 'No.columns.scored' | tail -n +2 >> ssgsea.tsv
-	# CMD
-
 	declare -a cmd1 cmd2 cmd3
-	local minsize=$(awk -v i=10 '{if(NF-2<i){i=NF-2}}END{print i}' $(cat "$outdir/gmt.list"))
-	commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
-		Rscript "$(which ssGSEA.R)"
-			"-l$(dirname "$(which ssGSEA.R)")"
-			"-i$gct" "-o$outdir/ssgsea"
-			"-D$outdir/gmt.list"
-			"-nrank"
-			"-v$minsize"
-			"-w0.75"
-			"-Ccombine.replace"
-	CMD
+	if [[ $min -eq 3 ]]; then
+		# if not failed above, all id files have only one gene
+		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
+			head -n 3 "$gct" | awk -v OFS='\t' 'NR==2{\$1=1}{print}' > "$outdir/ssgsea.gct"
+		CMD
+			grep -Fw -f <(cut -f 3 $(printf '"%s" ' $(cat "$outdir/gmt.list"))) "$gct" | sed -f <(awk '{print "s/^"\$3"/"\$1"/"}' $(printf '"%s" ' $(cat "$outdir/gmt.list"))) >> "$outdir/ssgsea.gct"
+		CMD
+	else
+		# ssgsea v2 defaults: -w 0.75 -m 10 -n rank
+		# -> without permutations -p 0, results are equal to gpmodule implementation, failes with -l $threads
+		# use (combine.replace) instead of separate up/down scores (combine.all)
+		local minsize=$(awk -v i=10 '{if(NF-2<i){i=NF-2}}END{print i}' $(cat "$outdir/gmt.list"))
+		commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD
+			Rscript "$(which ssGSEA.R)"
+				"-l$(dirname "$(which ssGSEA.R)")"
+				"-i$gct" "-o$outdir/ssgsea"
+				"-D$outdir/gmt.list"
+				"-nrank"
+				"-v$minsize"
+				"-w0.75"
+				"-Ccombine.replace"
+		CMD
+	fi
 
 	commander::makecmd -a cmd2 -s '|' -o "$outdir/ssgsea.tsv" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 		datamash transpose < <(tail -n +3 "$outdir/ssgsea.gct")

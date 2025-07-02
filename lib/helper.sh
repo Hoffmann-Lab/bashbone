@@ -315,11 +315,12 @@ function helper::capply(){
 
 	local l c x
 	if readlink -e "$f" | file -b --mime-type -f - | grep -qF 'gzip'; then
-		if rapidgzip --version 2> /dev/null | sed -E 's/.+\s([0-9]+)\.([0-9]+)\.([0-9]+)$/\1.\2\t\2.\3/' | awk '$1>0.14 || $2>=14.3{exit 0}{exit 1}'; then
-			l=$(rapidgzip -P 1 -q --count-lines --import-index "${f%.*}.gzi" "$f")
-		else
+		# count-lines does not use index yet
+		# if rapidgzip --version 2> /dev/null | sed -E 's/.+\s([0-9]+)\.([0-9]+)\.([0-9]+)$/\1.\2\t\2.\3/' | awk '$1>0.14 || $2>=14.3{exit 0}{exit 1}'; then
+		# 	l=$(rapidgzip -P 1 -q --count-lines --import-index "${f%.*}.gzi" "$f")
+		# else
 			l=$(gztool -l "$f" |& sed -nE 's/.*\s+lines\s+:\s+([0-9]+).*/\1/p')
-		fi
+		# fi
 	else
 		l=$(tail -1 "${f%.*}.ffi" | cut -f 1)
 	fi

@@ -25,11 +25,12 @@ options(warn=-1)
 suppressMessages({
 	library("DESeq2")
 	library("BiocParallel")
-	library("ggplot2")
+	library("ggpubr")
 	library("gplots")
 	library("pheatmap")
 	library("RColorBrewer")
 	library("dplyr")
+	library("gtools")
 })
 
 threads = as.numeric(args[1])
@@ -48,6 +49,11 @@ setEPS(width=8, height=8, onefile=T)
 
 experiments = read.table(incsv, header=T, sep=",", stringsAsFactors=F, check.names=F, quote="")
 colnames(experiments)[1:4] = c("sample","countfile","condition","replicate")
+experiments$condition=factor(experiments$condition,levels = unique(experiments$condition))
+experiments$replicate=factor(experiments$replicate,levels = unique(mixedsort(experiments$replicate))) # use version sort via mixedsort() from gtools
+if (!is.null(experiments$factor1)) {
+	experiments$factor1 = factor(experiments$factor1,levels = unique(experiments$factor1))
+}
 
 # create design formula from factors under exclusion of potential linear combinations
 # e.g. ~ factor1 + factor2 + condition
@@ -105,12 +111,141 @@ suppressMessages({
 	}
 })
 save(dds, file = file.path(outdir,"dds.RData"))
+# load(file = file.path(outdir,"dds.RData"))
 
 pdf(file.path(outdir,"dispersion.pdf"))
 plotDispEsts(dds)
 graphics.off()
 
-###### pca
+###### pca functions
+
+pca_plot = function(df,method,n,PCx="PC1",PCy="PC2",outdir,shaped=TRUE,pal="Set1"){
+	dir.create(outdir, recursive = T, showWarnings = F)
+	maxcol = length(palette(pal))
+	ncols = length(unique(df$condition))
+
+	PCxVar=df[1,colnames(df)==paste0(PCx,"v")]
+	PCyVar=df[1,colnames(df)==paste0(PCy,"v")]
+
+	p = ggplot(df, aes(x=!!sym(PCx), y=!!sym(PCy), color = condition, shape = if(shaped) !!sym("replicate") else NULL)) +
+		ggtitle(paste0("PCA of top ",n," variable features")) +
+		theme_minimal() +
+		theme(aspect.ratio=1, legend.box="horizontal", legend.title=element_blank()) +
+		geom_point(size = 1.5) +
+		scale_color_manual(values = colorRampPalette(brewer.pal(min(ncols,maxcol), pal))(ncols)) +
+		scale_fill_manual(values = colorRampPalette(brewer.pal(min(ncols,maxcol), pal))(ncols)) +
+		scale_shape_manual(values = c(1:length(unique(df$replicate)))) +
+		xlab(paste0(PCx,": ",PCxVar, "% variance")) +
+		ylab(paste0(PCy,": ",PCyVar, "% variance")) +
+		geom_hline(yintercept=0, col="black", linetype="dashed", size=0.3) +
+		geom_vline(xintercept=0, col="black", linetype="dashed", size=0.3)
+	xl = max(abs(df[[PCx]]))
+	yl = max(abs(df[[PCy]]))
+	p + xlim(-xl,xl) +
+		ylim(-yl,yl)
+	ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",format(n, scientific=F),".pdf")), width = 8, height = 6)
+
+	if(!is.null(df$facet)){
+		p + facet_wrap(~facet , scales = "free") +
+			xlim(-xl,xl) +
+			ylim(-yl,yl)
+		ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",format(n, scientific=F),".faceted.pdf")), width = 4*nlevels(df$facet), height = 4)
+	}
+
+	# + stat_ellipse(geom = "polygon", alpha=0.1, level = 0.85, aes(fill=condition))
+	# => slightly different from ellipse::ellipse. does not work for less then 4 data-points, sometimes even less than 3
+	# + ggforce::geom_mark_ellipse(aes(fill=condition)) +
+	# => works for > 1 points, but completely differently computed i.e. rather geometric enclosing shape based than covariance based
+	# for full control also regarding axis limits, better calculate manually
+	ellipses = df %>% group_by(condition) %>% group_map(~ {
+		df = data.frame(x=.x[[PCx]],y=.x[[PCy]])
+		as.data.frame(ellipse::ellipse(cov(df), centre = colMeans(df), level = 0.85)) %>% mutate(condition = .y$condition)
+	}) %>% bind_rows()
+	xl = max(abs(ellipses$x))
+	yl = max(abs(ellipses$y))
+	p + geom_polygon(data = ellipses, aes(x, y, color=condition, fill=condition), alpha = 0.1, inherit.aes = F) +
+		xlim(-xl,xl) +
+		ylim(-yl,yl)
+	ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",format(n, scientific=F),".ellipses.pdf")), width = 8, height = 6)
+
+	if(!is.null(df$facet)){
+		ellipses = df %>% group_by(condition,facet) %>% group_map(~ {
+			df = data.frame(x=.x[[PCx]],y=.x[[PCy]])
+			as.data.frame(ellipse::ellipse(cov(df), centre = colMeans(df), level = 0.85)) %>% mutate(condition = .y$condition, facet = .y$facet)
+		}) %>% bind_rows()
+		p + geom_polygon(data = ellipses, aes(x, y, color=condition, fill=condition), alpha = 0.1, inherit.aes = F) +
+			facet_wrap(~facet , scales = "free") +
+			xlim(-xl,xl) +
+			ylim(-yl,yl)
+		ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",format(n, scientific=F),".faceted.ellipses.pdf")), width = 4*nlevels(df$facet), height = 4)
+	}
+}
+
+pca_list_plot = function(dfs,method,n,PCx="PC1",PCy="PC2",outdir,shaped=TRUE,pal="Set1"){
+	dir.create(outdir, recursive = T, showWarnings = F)
+	maxcol = length(palette(pal))
+
+	plots = lapply(dfs, function(df) {
+		ncols = length(unique(df$condition))
+		PCxVar=df[1,colnames(df)==paste0(PCx,"v")]
+		PCyVar=df[1,colnames(df)==paste0(PCy,"v")]
+
+		p = ggplot(df, aes(x=!!sym(PCx), y=!!sym(PCy), color = condition, shape = if(shaped) !!sym("replicate") else NULL)) +
+			ggtitle(df$factor[1]) +
+			theme_minimal() +
+			theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank(), plot.title = element_text(hjust = 0.5, face = "plain", size=11)) +
+			geom_point(size = 1.5) +
+			scale_color_manual(values = colorRampPalette(brewer.pal(min(ncols,maxcol), pal))(ncols)) +
+			scale_fill_manual(values = colorRampPalette(brewer.pal(min(ncols,maxcol), pal))(ncols)) +
+			xlab(paste0(PCx,": ",PCxVar, "% variance")) +
+			ylab(paste0(PCy,": ",PCyVar, "% variance")) +
+			geom_hline(yintercept=0, col="black", linetype="dashed", size=0.3) +
+			geom_vline(xintercept=0, col="black", linetype="dashed", size=0.3)
+		xl = max(abs(df[[PCx]]))
+		yl = max(abs(df[[PCy]]))
+		p + xlim(-xl,xl) +
+			ylim(-yl,yl)
+	})
+	annotate_figure(
+		ggarrange(plotlist = plots, nrow = 1, common.legend = T, legend = "right", align = "hv"),
+		top = text_grob(paste0("PCA of top ",n," variable genes"), hjust = 1.46)
+	)
+	ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",format(n, scientific=F),".splitted.pdf")), width = 1+4*length(dfs), height = 4)
+
+	plots = lapply(dfs, function(df) {
+		ncols = length(unique(df$condition))
+		PCxVar=df[1,colnames(df)==paste0(PCx,"v")]
+		PCyVar=df[1,colnames(df)==paste0(PCy,"v")]
+
+		p = ggplot(df, aes(x=!!sym(PCx), y=!!sym(PCy), color = condition, shape = if(shaped) !!sym("replicate") else NULL)) +
+			ggtitle(df$factor[1]) +
+			theme_minimal() +
+			theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank(), plot.title = element_text(hjust = 0.5, face = "plain", size=11)) +
+			geom_point(size = 1.5) +
+			scale_color_manual(values = colorRampPalette(brewer.pal(min(ncols,maxcol), pal))(ncols)) +
+			scale_fill_manual(values = colorRampPalette(brewer.pal(min(ncols,maxcol), pal))(ncols)) +
+			xlab(paste0(PCx,": ",PCxVar, "% variance")) +
+			ylab(paste0(PCy,": ",PCyVar, "% variance")) +
+			geom_hline(yintercept=0, col="black", linetype="dashed", size=0.3) +
+			geom_vline(xintercept=0, col="black", linetype="dashed", size=0.3)
+		ellipses = df %>% group_by(condition) %>% group_map(~ {
+			df = data.frame(x=.x[[PCx]],y=.x[[PCy]])
+			as.data.frame(ellipse::ellipse(cov(df), centre = colMeans(df), level = 0.85)) %>% mutate(condition = .y$condition)
+		}) %>% bind_rows()
+		xl = max(abs(ellipses$x))
+		yl = max(abs(ellipses$y))
+		p + geom_polygon(data = ellipses, aes(x, y, color=condition, fill=condition), alpha = 0.1, inherit.aes = F) +
+			xlim(-xl,xl) +
+			ylim(-yl,yl)
+	})
+	annotate_figure(
+		ggarrange(plotlist = plots, nrow = 1, common.legend = T, legend = "right", align = "hv"),
+		top = text_grob(paste0("PCA of top ",n," variable genes"), hjust = 1.46)
+	)
+	ggsave(file.path(outdir,paste0("pca_",PCx,PCy,"_",method,"_top",format(n, scientific=F),".splitted.ellipses.pdf")), width = 1+4*length(dfs), height = 4)
+}
+
+######## pca
 
 # log = DESeqTransform(SummarizedExperiment(log2(counts(dds, normalized=T) + 1), colData=colData(dds)))
 # save(log, file = file.path(outdir,"log.RData"))
@@ -118,6 +253,8 @@ vsd = varianceStabilizingTransformation(dds, blind=FALSE)
 save(vsd, file = file.path(outdir,"vsd.RData"))
 rld = rlog(dds, blind=FALSE)
 save(rld, file = file.path(outdir,"rld.RData"))
+# load(file = file.path(outdir,"vsd.RData"))
+# load(file = file.path(outdir,"rld.RData"))
 
 # for (method in c("log","vsd","rld")){
 for (method in c("vsd","rld")){
@@ -128,74 +265,66 @@ for (method in c("vsd","rld")){
 	normed = assay(get(method))
 	vars = order(rowVars(normed), decreasing = TRUE)
 
-	for (n in c(500,2000,5000,10000)){
-		n = min(n,length(vars))
+	for (n in c(500,1000,2000,5000,10000,20000,50000,100000)){
+		if(n>length(vars)) break
 		topidx = vars[1:n]
-		pca = prcomp(t(normed[topidx, ]), scale = F)
 
+		pca = prcomp(t(normed[topidx, ]), scale = F)
 		loadings = pca$rotation
-		for (i in 1:3){
-			ids = rownames(loadings[order(abs(loadings[,i]), decreasing = TRUE),])
-			ids = head(ids,n=max(1,length(ids)*0.05)) # variables that drive variation in PC1
-			sink(file.path(outdir,paste("pca_pc",i,"_",method,"_top",n,".variables",sep="")))
+		for (pc in 1:3){
+			ids = rownames(loadings[order(abs(loadings[,pc]), decreasing = TRUE),])
+			ids = head(ids,n=max(1,length(ids)*0.05))
+			sink(file.path(outdir,paste0("pca_PC",pc,"_",method,"_top",format(n, scientific=F),".variables")))
 			lapply(ids, cat, "\n")
 			sink()
 		}
 
-		percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
-		if (length(unique(experiments$replicate))==nrow(experiments)){
-			if(is.null(experiments$factor1)){
-				data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = "replicate", condition = experiments$condition)
-			} else {
-				data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = experiments$factor1, condition = experiments$condition)
-			}
-		} else {
-			data = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], replicate = experiments$replicate, condition = experiments$condition)
-		}
-		write.table(data.frame(id=rownames(data),data), row.names = F,
-			file=file.path(outdir,paste("pca_12_",method,"_top",n,".tsv",sep="")), quote=F, sep="\t"
+		df = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], condition = experiments$condition, replicate = experiments$replicate)
+		write.table(data.frame(id=rownames(df),df), row.names = F,
+			file=file.path(outdir,paste0("pca_",method,"_top",format(n, scientific=F),".tsv")), quote=F, sep="\t"
 		)
 
+		if (!is.null(experiments$factor1)) {
+			df$facet = experiments$factor1
+		}
+		percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
+		df$PC1v=percentVar[1]
+		df$PC2v=percentVar[2]
+		df$PC3v=percentVar[3]
+
 		suppressMessages({
-			ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
-				ggtitle("PCA plot - PC1 vs PC2") +
-				scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-				# coord_fixed() +
-				theme_bw() +
-				theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank()) +
-				geom_point(size = 3) +
-				xlab(paste0("PC1: ",percentVar[1], "% variance")) +
-				ylab(paste0("PC2: ",percentVar[2], "% variance"))
-			suppressMessages(ggsave(file.path(outdir,paste("pca_12_",method,"_top",n,".pdf",sep=""))))
-			# stat_ellipse() +
-
-			ggplot(data, aes(PC1, PC3, color = condition, group = condition, shape = replicate)) +
-				ggtitle("PCA plot - PC1 vs PC3") +
-				scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-				# coord_fixed() +
-				theme_bw() +
-				theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank()) +
-				geom_point(size = 3) +
-				xlab(paste0("PC1: ",percentVar[1], "% variance")) +
-				ylab(paste0("PC3: ",percentVar[3], "% variance"))
-			suppressMessages(ggsave(file.path(outdir,paste("pca_13_",method,"_top",n,".pdf",sep=""))))
-			# stat_ellipse() +
-
-			ggplot(data, aes(PC2, PC3, color = condition, group = condition, shape = replicate)) +
-				ggtitle("PCA plot - PC2 vs PC3") +
-				scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-				# coord_fixed() +
-				theme_bw() +
-				theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank()) +
-				geom_point(size = 3) +
-				xlab(paste0("PC2: ",percentVar[2], "% variance")) +
-				ylab(paste0("PC3: ",percentVar[3], "% variance"))
-			suppressMessages(ggsave(file.path(outdir,paste("pca_23_",method,"_top",n,".pdf",sep=""))))
-			# stat_ellipse() +
+			pca_plot(df, method, n, "PC1", "PC2", file.path(outdir,"pca_plots_shaped"))
+			pca_plot(df, method, n, "PC1", "PC3", file.path(outdir,"pca_plots_shaped"))
+			pca_plot(df, method, n, "PC2", "PC3", file.path(outdir,"pca_plots_shaped"))
+			pca_plot(df, method, n, "PC1", "PC2", file.path(outdir,"pca_plots"), FALSE)
+			pca_plot(df, method, n, "PC1", "PC3", file.path(outdir,"pca_plots"), FALSE)
+			pca_plot(df, method, n, "PC2", "PC3", file.path(outdir,"pca_plots"), FALSE)
 		})
+
+		if (!is.null(experiments$factor1)) {
+			dfs = lapply(levels(experiments$factor1), function(f) {
+				exp = experiments[experiments$factor1 == f,]
+				nor = normed[,colnames(normed) %in% exp$sample]
+				v = order(rowVars(nor), decreasing = TRUE)
+				topidx = v[1:n]
+				pca = prcomp(t(nor[topidx, ]), scale = F)
+				percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
+				data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], condition = exp$condition, replicate = exp$replicate,
+					PC1v=percentVar[1], PC2v=percentVar[2], PC3v=percentVar[3], factor=f
+				)
+			})
+
+			suppressMessages({
+				pca_list_plot(dfs, method, n, "PC1", "PC2", file.path(outdir,"pca_plots_shaped"))
+				pca_list_plot(dfs, method, n, "PC1", "PC3", file.path(outdir,"pca_plots_shaped"))
+				pca_list_plot(dfs, method, n, "PC2", "PC3", file.path(outdir,"pca_plots_shaped"))
+				pca_list_plot(dfs, method, n, "PC1", "PC2", file.path(outdir,"pca_plots"), FALSE)
+				pca_list_plot(dfs, method, n, "PC1", "PC3", file.path(outdir,"pca_plots"), FALSE)
+				pca_list_plot(dfs, method, n, "PC2", "PC3", file.path(outdir,"pca_plots"), FALSE)
+			})
+		}
 	}
 }
-
 
 ##### heatmap functions
 
@@ -470,33 +599,80 @@ get_table = function(dds){
 	#for (method in c("log","vsd","rld")){
 	for (method in c("vsd","rld")){
 
-		normed = get(method)
-		normed = normed[,normed$condition %in% c(ctr[i],treat[i])]
-		topids = rownames(normed)[order(rowVars(assay(normed)), decreasing=T)]
+		# old: use topmost variable features across all samples
+		# normed = get(method)
+		# normed = normed[,normed$condition %in% c(ctr[i],treat[i])]
+		# topids = rownames(normed)[order(rowVars(assay(normed)), decreasing=T)]
+		# inloop:
+		# pca = prcomp(t(assay(normed[rownames(normed) %in% head(topids,n=n) , ])), scale = F)
+		# percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
 
-		for (n in c(500,2000,5000,10000)){
-			n = min(n,length(topids))
-			data = plotPCA(normed[rownames(normed) %in% head(topids,n=n) , ], intgroup = c("condition", "replicate"), returnData = T)
-			write.table(data.frame(id=rownames(data),data), row.names = F,
-				file=file.path(odir,paste("pca_12_",method,"_top",n,".tsv",sep="")), quote=F, sep="\t"
+		# new: use topmost variable features of samples of current contrast
+		normed = get(method)
+		normed = assay(normed[,normed$condition %in% c(ctr[i],treat[i])])
+		vars = order(rowVars(normed), decreasing=T)
+		exp = experiments[experiments$condition %in% c(ctr[i],treat[i]), ]
+
+		for (n in c(500,1000,2000,5000,10000,20000,50000,100000)){
+			if(n>length(vars)) break
+			topidx = vars[1:n]
+
+			pca = prcomp(t(normed[topidx, ]), scale = F)
+			loadings = pca$rotation
+			for (pc in 1:3){
+				ids = rownames(loadings[order(abs(loadings[,pc]), decreasing = TRUE),])
+				ids = head(ids,n=max(1,length(ids)*0.05)) # variables that drive variation in PC
+				sink(file.path(odir,paste0("pca_PC",pc,"_",method,"_top",format(n, scientific=F),".variables")))
+				lapply(ids, cat, "\n")
+				sink()
+			}
+
+			df = data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], condition = exp$condition, replicate = exp$replicate)
+			write.table(data.frame(id=rownames(df),df), row.names = F,
+				file=file.path(odir,paste0("pca_",method,"_top",format(n, scientific=F),".tsv")), quote=F, sep="\t"
 			)
-			percentVar = round(100 * attr(data, "percentVar"))
+
+			if (!is.null(exp$factor1)) {
+				df$facet = exp$factor1
+			}
+			percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
+			df$PC1v=percentVar[1]
+			df$PC2v=percentVar[2]
+			df$PC3v=percentVar[3]
 
 			suppressMessages({
-				ggplot(data, aes(PC1, PC2, color = condition, group = condition, shape = replicate)) +
-					ggtitle("PCA plot - PC1 vs PC2") +
-					scale_shape_manual(values = c(1:length(unique(data$replicate)) )) +
-					# coord_fixed() +
-					theme_bw() +
-					theme(aspect.ratio=1, legend.box = "horizontal", legend.title=element_blank()) +
-					geom_point(size = 3) +
-					xlab(paste0("PC1:",percentVar[1],"% variance")) +
-					ylab(paste0("PC2:",percentVar[2],"% variance"))
-				suppressMessages(ggsave(file.path(odir,paste("pca_12_",method,"_top",n,".pdf",sep=""))))
+				pca_plot(df, method, n, "PC1", "PC2", file.path(odir,"pca_plots_shaped"))
+				pca_plot(df, method, n, "PC1", "PC3", file.path(odir,"pca_plots_shaped"))
+				pca_plot(df, method, n, "PC2", "PC3", file.path(odir,"pca_plots_shaped"))
+				pca_plot(df, method, n, "PC1", "PC2", file.path(odir,"pca_plots"), FALSE)
+				pca_plot(df, method, n, "PC1", "PC3", file.path(odir,"pca_plots"), FALSE)
+				pca_plot(df, method, n, "PC2", "PC3", file.path(odir,"pca_plots"), FALSE)
 			})
+
+			if (!is.null(exp$factor1)) {
+				dfs = lapply(levels(exp$factor1), function(f) {
+					e = exp[exp$factor1 == f,]
+					nor = normed[,colnames(normed) %in% e$sample]
+					v = order(rowVars(nor), decreasing = TRUE)
+					topidx = v[1:n]
+					pca = prcomp(t(nor[topidx, ]), scale = F)
+					percentVar = round(100*pca$sdev^2/sum(pca$sdev^2),1)
+					data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], PC3 = pca$x[,3], condition = e$condition, replicate = e$replicate,
+						PC1v=percentVar[1], PC2v=percentVar[2], PC3v=percentVar[3], factor=f
+					)
+				})
+
+				suppressMessages({
+					pca_list_plot(dfs, method, n, "PC1", "PC2", file.path(odir,"pca_plots_shaped"))
+					pca_list_plot(dfs, method, n, "PC1", "PC3", file.path(odir,"pca_plots_shaped"))
+					pca_list_plot(dfs, method, n, "PC2", "PC3", file.path(odir,"pca_plots_shaped"))
+					pca_list_plot(dfs, method, n, "PC1", "PC2", file.path(odir,"pca_plots"), FALSE)
+					pca_list_plot(dfs, method, n, "PC1", "PC3", file.path(odir,"pca_plots"), FALSE)
+					pca_list_plot(dfs, method, n, "PC2", "PC3", file.path(odir,"pca_plots"), FALSE)
+				})
+			}
 		}
 	}
-
 
 	vsdr = vsd[,vsd$condition %in% c(ctr[i],treat[i])]
 
@@ -572,19 +748,21 @@ makename = function(name){
 get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 
 	design_interactionterms = get_design(experiments,T)
-	design(dds) = as.formula(design_interactionterms)
 	# each condition needs all factors - twice to be able to run Ca_Fx vs Cb_Fx with replicates
 	# use try catch to ensure this
-	try = tryCatch(
-		{
-			DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM)
-		},
-		error = function(e){
-			cat("WARNING: ",file=stderr())
-			message(e)
-			return(NA)
-		}
-	)
+	suppressMessages({
+		try = tryCatch(
+			{
+				design(dds) = as.formula(design_interactionterms)
+				DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM)
+			},
+			error = function(e){
+				cat("WARNING: ",file=stderr())
+				message(e)
+				return(NA)
+			}
+		)
+	})
 	if(is.na(try)){
 		message(". calculating effects (interaction terms) of secondary factors not possible.")
 		return()
@@ -601,13 +779,16 @@ get_interactionterm = function(dds,experiments,outdir,ctr,treat){
 		}
 
 		for (i in 1:(length(terms)-1)){
-			ctr_term = terms[i]
+			ctr_term = as.character(terms[i]) # need to remove factor for releveling
 			# avoid alphabetically sorted levels. ensure first factor/condition listed is the one to be used as main/reference
 			dds$condition = relevel(dds$condition, ref = ctr)
 			dds[[fac]] = relevel(dds[[fac]], ref = ctr_term)
 
 			cat(paste("calculating effects (interaction terms) of secondary factors with reference ",ctr_term," on ",ctr," vs ",treat," with design formula: ",design_interactionterms,"\n",sep=""))
-			dds = DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM) # as suggested upon relevel: run nbinomWaldTest or DESeq() i.e. estimate size factors <- automatically re-used, estimate dispersion <- no need to re-do it, nbinomWaldTest/nbinomLRT
+            suppressMessages({
+                dds = DESeq(dds, parallel = TRUE, BPPARAM = BPPARAM)
+			})
+			# as suggested upon relevel: run nbinomWaldTest or DESeq() i.e. estimate size factors <- automatically re-used, estimate dispersion <- no need to re-do it, nbinomWaldTest/nbinomLRT
 			# LRT tests multiple terms at once e.g. multiple levels of a factor or all interactions between two variables
 			# dds <- nbinomLRT(dds, reduced = ???)
 
@@ -669,7 +850,7 @@ for (i in 1:length(ctr)){
 		toplus[[ctr[i]]]=unique(c(toplus[[ctr[i]]],treat[i]))
 	}
 
-	odir = file.path(outdir,paste(ctr[i],"-vs-",treat[i],sep=""))
+	odir = file.path(outdir,paste0(ctr[i],"-vs-",treat[i]))
 	dir.create(odir, recursive = T, showWarnings = F)
 
 	thisexperiments = experiments[experiments$condition %in% c(ctr[i],treat[i]),]

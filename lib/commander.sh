@@ -351,60 +351,12 @@ function commander::runcmd(){
 	return 0
 }
 
-# old code from times, when jobs were executed via xargs instead of gnu parallel. may it be useful for someone stumbling across
-# function commander::runalter_xargs(){
-# 	function _usage(){
-# 		commander::print {COMMANDER[0]}<<- EOF
-# 			${FUNCNAME[-2]} usage:
-# 			-i <instances> | number of parallel
-# 			-p <id|name>   | xargs process id or job name
-# 		EOF
-# 		return 1
-# 	}
-
-# 	local OPTIND arg mandatory pid instances
-# 	while getopts 'p:i:' arg; do
-# 		case $arg in
-# 			p)	((++mandatory)); pid=$OPTARG;;
-# 			i)	((++mandatory)); instances=$OPTARG;;
-# 			*)	_usage;;
-# 		esac
-# 	done
-# 	[[ $# -eq 0 ]] && { _usage || return 0; }
-# 	[[ $mandatory -lt 2 ]] && _usage
-
-# 	BASHBONE_ERROR="no such job name: $pid"
-# 	[[ $pid =~ ^[0-9]+$ ]] || pid=$(($(ps -o pgid= -p $(pgrep -o -f "job.$pid.*.sh"))))
-# 	BASHBONE_ERROR="not a valid job id: $pid"
-# 	[[ "$(ps -o comm= -p $pid)" == xargs ]]
-
-# 	local i=$(pgrep -c -P $pid)
-# 	i=$((i-instances))
-# 	[[ $i -eq 0 ]] && return 0
-
-# 	if [[ $i -gt 0 ]]; then
-# 		# decrement
-# 		while [[ $((i--)) -gt 0 ]]; do
-# 			kill -USR2 $pid
-# 			sleep 0.1
-# 		done
-# 	else
-# 		# increment
-# 		while [[ $((i++)) -lt 0 ]]; do
-# 			kill -USR1 $pid
-# 			sleep 0.1
-# 		done
-# 	fi
-
-# 	return 0
-# }
-
 function commander::runalter(){
 	function _usage(){
 		commander::print <<- EOF
 			commander::runalter
 
-			increment or decrement the number of parallel running instances of a GNU parallel process
+			increment or decrement the number of instances i.e. parallel running jobs of a xargs or GNU parallel process
 
 			-i <instances> | mandatory. number of new parallel instances
 			-p <id|name>   | mandatory. GNU parallel process id or job name. see also commander::runstat
@@ -424,11 +376,31 @@ function commander::runalter(){
 	[[ $mandatory -lt 2 ]] && _usage
 
 	BASHBONE_ERROR="no such job name: $pid"
-
 	[[ $pid =~ ^[0-9]+$ ]] || pid=$(($(ps -o ppid= -p $(pgrep -o -f "job.$pid.*.sh"))))
+
 	BASHBONE_ERROR="not a valid job id: $pid"
-	[[ "$(ps -o cmd= -p $pid)" =~ perl[[:space:]]+[^[:space:]]+parallel[[:space:]] ]]
-	echo $instances > "$(ps -o cmd= --ppid $pid | head -1 | sed -E 's/^bash\s+//' | xargs -I {} bash -c 'echo "$(dirname "$1")/instances.$(basename "$1" | cut -d "." -f 2)"' bash {})"
+	if [[ "$(ps -o comm= -p $pid)" == xargs ]]; then
+			local i=$(pgrep -c -P $pid)
+			i=$((i-instances))
+			[[ $i -eq 0 ]] && return 0
+			if [[ $i -gt 0 ]]; then
+				# decrement
+				while [[ $((i--)) -gt 0 ]]; do
+					kill -USR2 $pid
+					sleep 0.1
+				done
+			else
+				# increment
+				while [[ $((i++)) -lt 0 ]]; do
+					kill -USR1 $pid
+					sleep 0.1
+				done
+			fi
+	elif [[ "$(ps -o cmd= -p $pid)" =~ perl[[:space:]]+[^[:space:]]+parallel[[:space:]] ]]; then
+		echo $instances > "$(ps -o cmd= --ppid $pid | head -1 | sed -E 's/^bash\s+//' | xargs -I {} bash -c 'echo "$(dirname "$1")/instances.$(basename "$1" | cut -d "." -f 2)"' bash {})"
+	else
+		false
+	fi
 
 	return 0
 }
@@ -497,7 +469,8 @@ function commander::qsubcmd(){
 			-i <instances> | optional. number of parallel instances/tasks. see also commander::qalter. default: all
 			-q <queue>     | mandatory unless -p option is used. name of the SGE queue, the job will be submitted to
 			-p <env>       | mandatory unless -q option is used. name of the SGE parallel environment, the job will be submitted to
-			-t <threads>   | optional. given the -p option, the number of threads equatable to number of cpus/sockets to be allocated per instance. default: 1
+			-t <threads>   | optional. given the -p option, the number of threads equatable to number of sockets to be allocated per instance. default: 1
+			-m <memory>    | optional. the hard limit of usable memory per job task in MB. applied if h_vmem consumable can be set and distributed across sockets according to -t option.
 			-s <idx[:idx]> | optional. restrict the execution of commands by array index start or range. default: 1
 			-d <jobid|name>| optional. the job which is going to be submitted depends on results of a currently running job and will be put on halt. see also commander::qstat
 			-a <cmds>      | mandatory. array of commands. see also commander::makecmd
@@ -509,15 +482,15 @@ function commander::qsubcmd(){
 
 			example 2:
 			commander::qsubcmd -v -l hostname="!server1&!server2" -l mem_free="150G" -p all.pe -i 2 -r -n first -o ~/logs -a cmds1
-			commander::qsubcmd -v -l hostname="server1|server2" -p all.pe -t 4 -r -n second -r -o ~/logs -a cmds2 -d first
+			commander::qsubcmd -v -l hostname="server1|server2" -p all.pe -t 4 -m 200000 -r -n second -r -o ~/logs -a cmds2 -d first
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv q queue logdir complex params startid=1 stopid depends
+	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv q queue logdir complex params startid=1 stopid depends memory
 	declare -n _cmds_qsubcmd # be very careful with circular name reference
 	declare -a mapdata complexes logs
-	while getopts 'vbwrt:i:o:l:p:q:c:n:a:s:d:' arg; do
+	while getopts 'vbwrt:m:i:o:l:p:q:c:n:a:s:d:' arg; do
 		case $arg in
 			v)	verbose=true;;
 			b)	benchmark=true;;
@@ -525,6 +498,7 @@ function commander::qsubcmd(){
 			r)	override=true;;
 			c)	cenv=$OPTARG;;
 			t)	threads=$OPTARG;;
+			m)	memory=$OPTARG;;
 			i)	instances=$OPTARG;;
 			o)	((++mandatory)); logdir="$OPTARG"; mkdir -p "$logdir"; logdir="$(realpath -s "$logdir")";;
 			l)	complexes+=("-l $OPTARG");;
@@ -558,6 +532,10 @@ function commander::qsubcmd(){
 
 	[[ $penv ]] && params="$penv $threads" || params="$queue"
 	[[ $depends ]] && params+=" $depends"
+
+	if [[ $memory ]] && qconf -sc | grep -Fw h_vmem | awk 'tolower($6)~/^no/{exit 1}'; then
+		[[ $penv ]] && params+=" -l h_vmem=$((memory/threads))M" || params+=" -l h_vmem=${memory}M"
+	fi
 
 	[[ $jobname ]] || jobname="$(command mktemp -u XXXXXXXXXX)"
 	local ex="$logdir/exitcodes.$jobname"

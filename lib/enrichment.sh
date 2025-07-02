@@ -99,6 +99,7 @@ function enrichment::_ora(){
 			unifile <- args[4];
 			odir <- args[5];
 			domain <- args[6];
+			set.seed(12345);
 
 			genes <- scan(idsfile, character(), quote="", quiet=T);
 			universe <- scan(unifile, character(), quote="", quiet=T);
@@ -248,6 +249,7 @@ function enrichment::_gsea(){
 			ddsr <- args[3];
 			odir <- args[4];
 			domain <- args[5];
+			set.seed(12345);
 
 			df <- read.table(ddsr, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 			df <- df[df$baseMean > 0,];
@@ -384,6 +386,7 @@ function enrichment::_reducego(){
 			suppressMessages(library("clusterProfiler"));
 			suppressMessages(library("ggplot2"));
 			options(warn=-1);
+			set.seed(12345);
 
 			df.ora <- read.table(ora, header=T, sep="\t", stringsAsFactors=F, check.names=F, quote="");
 			colnames(df.ora) <- c("ID","setSize","Count","pvalue","p.adjust","NES","Description","core_enrichment");
@@ -502,7 +505,7 @@ function enrichment::_revigo(){
 	[[ $# -eq 0 ]] && { _usage || return 0; }
 	[[ $mandatory -lt 5 ]] && _usage
 
-	# for pvalue instead of padj do revigo <(awk 'NR>1 && \$3<=0.05' $odir/gsea.tsv) --stdout
+	# for pvalue instead of padj do revigo <(awk 'NR>1 && \$3<=0.05' $odir/gsea.tsv) --stdout # --stdout optional - should be default
 	# need to remove [_'"\t*$#%^!]
 	# use own buffered reader to handle corner case where orafile is empty or revigo db does not contain any go term and thus instead of an error returns userValue_2 to userValue_XXXXXX in a single line
 	commander::makecmd -a _cmds1_revigo -s ' ' -o "$outdir/revigo.tsv" -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[1]}<<- CMD {COMMANDER[2]}<<- 'CMD' {COMMANDER[3]}<<- 'CMD'
@@ -521,9 +524,9 @@ function enrichment::_revigo(){
 			fi;
 		done < <(setsid --wait bash -c "echo \$((\$(ps -o pgid= -p \$\$))); revigo -Xmx1024m -XX:ParallelGCThreads=1 -XX:ConcGCThreads=1 <(awk 'NR>1 && \$4<=0.05 {print \$1\"\\t\"\$4}'
 	CMD
-		'$orafile')
+		'$orafile'
 	CMD
-		--stdout" & wait $! 2> /dev/null || { e=$?; [[ $e -eq 15 || $e -eq 0 ]] && exit 0 || exit $e; }
+		) & wait $! 2> /dev/null || { e=$?; [[ $e -eq 15 || $e -eq 0 ]] && exit 0 || exit $e; }
 	CMD
 		) | perl -lane '
 			next if $.<3;
