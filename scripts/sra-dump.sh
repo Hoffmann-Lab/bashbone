@@ -134,7 +134,7 @@ else
 				ids=($id)
 			else
 				# alternative for GEO accessions: Rscript -e 'library(GEOquery); geo_data <- getGEO(geo_accession); info <- geo_data@header[["characteristics_ch1"]];'
-				ids=($(esearch -db gds -query "$id" | efetch | grep -oE 'Sample\s*Accession:\s*\S*' 1 | awk '{print $NF}'))
+				ids=($(esearch -db gds -query "$id" | efetch | grep -oE 'Sample\s*Accession:\s*\S*' | awk '{print $NF}'))
 			fi
 			for id in "${ids[@]}"; do
 				mapfile -t mapdata < <(esearch -db sra -query "$id" | efetch -format xml | grep .)
