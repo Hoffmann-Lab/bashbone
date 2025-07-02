@@ -469,7 +469,8 @@ function commander::qsubcmd(){
 			-i <instances> | optional. number of parallel instances/tasks. see also commander::qalter. default: all
 			-q <queue>     | mandatory unless -p option is used. name of the SGE queue, the job will be submitted to
 			-p <env>       | mandatory unless -q option is used. name of the SGE parallel environment, the job will be submitted to
-			-t <threads>   | optional. given the -p option, the number of threads equatable to number of cpus/sockets to be allocated per instance. default: 1
+			-t <threads>   | optional. given the -p option, the number of threads equatable to number of sockets to be allocated per instance. default: 1
+			-m <memory>    | optional. the hard limit of usable memory per job task in MB. applied if h_vmem consumable can be set and distributed across sockets according to -t option.
 			-s <idx[:idx]> | optional. restrict the execution of commands by array index start or range. default: 1
 			-d <jobid|name>| optional. the job which is going to be submitted depends on results of a currently running job and will be put on halt. see also commander::qstat
 			-a <cmds>      | mandatory. array of commands. see also commander::makecmd
@@ -481,15 +482,15 @@ function commander::qsubcmd(){
 
 			example 2:
 			commander::qsubcmd -v -l hostname="!server1&!server2" -l mem_free="150G" -p all.pe -i 2 -r -n first -o ~/logs -a cmds1
-			commander::qsubcmd -v -l hostname="server1|server2" -p all.pe -t 4 -r -n second -r -o ~/logs -a cmds2 -d first
+			commander::qsubcmd -v -l hostname="server1|server2" -p all.pe -t 4 -m 200000 -r -n second -r -o ~/logs -a cmds2 -d first
 		EOF
 		return 1
 	}
 
-	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv q queue logdir complex params startid=1 stopid depends
+	local OPTIND arg mandatory threads=1 instances verbose=false benchmark=false dowait="n" override=false cenv penv q queue logdir complex params startid=1 stopid depends memory
 	declare -n _cmds_qsubcmd # be very careful with circular name reference
 	declare -a mapdata complexes logs
-	while getopts 'vbwrt:i:o:l:p:q:c:n:a:s:d:' arg; do
+	while getopts 'vbwrt:m:i:o:l:p:q:c:n:a:s:d:' arg; do
 		case $arg in
 			v)	verbose=true;;
 			b)	benchmark=true;;
@@ -497,6 +498,7 @@ function commander::qsubcmd(){
 			r)	override=true;;
 			c)	cenv=$OPTARG;;
 			t)	threads=$OPTARG;;
+			m)	memory=$OPTARG;;
 			i)	instances=$OPTARG;;
 			o)	((++mandatory)); logdir="$OPTARG"; mkdir -p "$logdir"; logdir="$(realpath -s "$logdir")";;
 			l)	complexes+=("-l $OPTARG");;
@@ -530,6 +532,10 @@ function commander::qsubcmd(){
 
 	[[ $penv ]] && params="$penv $threads" || params="$queue"
 	[[ $depends ]] && params+=" $depends"
+
+	if [[ $memory ]] && qconf -sc | grep -Fw h_vmem | awk 'tolower($6)~/^no/{exit 1}'; then
+		[[ $penv ]] && params+=" -l h_vmem=$((memory/threads))M" || params+=" -l h_vmem=${memory}M"
+	fi
 
 	[[ $jobname ]] || jobname="$(command mktemp -u XXXXXXXXXX)"
 	local ex="$logdir/exitcodes.$jobname"
