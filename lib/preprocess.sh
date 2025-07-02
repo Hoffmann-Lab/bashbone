@@ -758,8 +758,6 @@ function preprocess::sortmerna(){
 		return 1
 	}
 
-	# sortmerna --version |& grep version | tail -1 | grep -oE '[0-9.]+' | head -1
-
 	local OPTIND arg mandatory skip=false threads outdir tmpdir="${TMPDIR:-/tmp}"
 	declare -n _fq1_sortmerna _fq2_sortmerna
 	while getopts 'S:s:t:i:o:1:2:' arg; do
