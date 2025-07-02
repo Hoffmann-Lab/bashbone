@@ -107,7 +107,7 @@ function quantify::salmon(){
 				commander::printinfo "indexing reference for salmon"
 
 				commander::makecmd -a cmdidx -s ';' -c {COMMANDER[0]}<<- CMD
-					salmon index -t "$genome" -i "$genomeidxdir" -p $threads
+					salmon --no-version-check index -t "$genome" -i "$genomeidxdir" -p $threads
 				CMD
 			else
 				commander::printinfo "extracting and indexing transcriptome for salmon"
@@ -130,7 +130,7 @@ function quantify::salmon(){
 					samtools faidx --fai-idx /dev/stdout "$genome" | cut -f 1 > "$genomeidxdir/decoys.txt";
 					cat "$genomeidxdir/transcriptome.gtf" "$gtf" > "$genomeidxdir/decoygenome.gtf";
 					cat "$genomeidxdir/transcriptome.fa" "$genome" > "$genomeidxdir/decoygenome.fa";
-					salmon index -t "$genomeidxdir/decoygenome.fa" -d "$genomeidxdir/decoys.txt" -i "$genomeidxdir" -p $threads
+					salmon --no-version-check index -t "$genomeidxdir/decoygenome.fa" -d "$genomeidxdir/decoys.txt" -i "$genomeidxdir" -p $threads
 				CMD
 			fi
 
@@ -287,7 +287,7 @@ function quantify::salmon(){
 				esac
 
 				commander::makecmd -a cmd1 -s ';' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- CMD
-					salmon quant
+					salmon --no-version-check quant
 						$params
 						--discardOrphans
 						--minAssignedFrags 1
@@ -717,20 +717,15 @@ function quantify::bamcoverage(){
 			commander::makecmd -a cmd5 -s ' ' -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD' {COMMANDER[2]}<<- CMD
 				helper::sort -f "$bed" -t $threads -M "$maxmemory" -k1,1 -k2,2n -k3,3n
 			CMD
-				| awk -F '\t' '{f+=FNR==1?1:0} f==1{id=$1":"$2"-"$3; if($4){id=$4}; s="."; if($6){s=$6}; o[$1]=o[$1]id"\t"$1"\t"$2+1"\t"$3"\t.\t.\t"s"\n"} f==2{printf o[$1]}'
+				| awk -F '\t' '{f+=FNR==1?1:0} f==1{id=$1":"$2"-"$3; if($4){id=$4}; s="."; if($6){s=$6}; o[$1]=o[$1]id"\t"$1"\t"$2+1"\t"$3"\t"s"\n"} f==2{printf o[$1]}'
 			CMD
 				- "$chrsizes" > "$saf"
 			CMD
-			# commander::makecmd -a cmd5 -s ' ' -c {COMMANDER[0]}<<- 'CMD' {COMMANDER[2]}<<- CMD
-			# 	awk -v OFS='\t' '{id=$1":"$2"-"$3; if($4){id=$4}; s="."; if($6){s=$6}; print id,$1,$2+1,$3,".",".",s}'
-			# CMD
-			# 	"$bed" > "$saf"
-			# CMD
 		else
 			commander::makecmd -a cmd5 -s '|' -o "$saf" -c {COMMANDER[0]}<<- CMD {COMMANDER[1]}<<- 'CMD'
 				bedtools makewindows -w $windowsize -g "$chrsizes"
 			CMD
-				awk -v OFS='\t' '{id=$1":"$2"-"$3; print id,$1,$2+1,$3,".",".","."}'
+				awk -v OFS='\t' '{id=$1":"$2"-"$3; print id,$1,$2+1,$3,"."}'
 			CMD
 		fi
 	else
